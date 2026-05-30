@@ -123,16 +123,20 @@ class KotlinNotificationHandler {
           }
         }
 
-    if (diagnostics.isNotEmpty()) {
-      val filePath =
-          try {
-            java.nio.file.Paths.get(java.net.URI(uri))
-          } catch (e: Exception) {
-            KslLogs.error("Invalid URI: {}", uri, e)
-            return
-          }
+    val filePath =
+        try {
+          java.nio.file.Paths.get(java.net.URI(uri))
+        } catch (e: Exception) {
+          KslLogs.error("Invalid URI: {}", uri, e)
+          return
+        }
 
+    if (diagnostics.isNotEmpty()) {
       diagnosticsCallback?.invoke(DiagnosticResult(filePath, diagnostics))
+    } else {
+      // An empty publishDiagnostics payload is still semantically meaningful: it clears stale editor
+      // diagnostics for this file. Dropping the callback here makes the IDE behave as if nothing changed.
+      diagnosticsCallback?.invoke(DiagnosticResult(filePath, emptyList()))
     }
   }
 

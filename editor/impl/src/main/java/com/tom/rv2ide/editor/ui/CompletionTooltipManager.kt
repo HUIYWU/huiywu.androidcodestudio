@@ -9,6 +9,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import androidx.cardview.widget.CardView
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.models.CompletionItem
 import com.tom.rv2ide.lsp.models.DefinitionParams
 import com.tom.rv2ide.progress.ICancelChecker
@@ -121,10 +122,11 @@ class CompletionTooltipManager(private val context: Context, private val editor:
               withContext(Dispatchers.Main) { displayTooltip(hoverResult.value, anchorY) }
             }
           } catch (e: Exception) {
-            if (e !is CancellationException) {
+            if (e !is CancellationException && IdeLogConfig.shouldLogIde()) {
               log.debug("Failed to fetch hover info", e)
             }
           }
+
         }
   }
 
@@ -193,8 +195,11 @@ class CompletionTooltipManager(private val context: Context, private val editor:
       try {
         windowManager.removeView(view)
       } catch (e: Exception) {
-        log.debug("Error removing tooltip view", e)
+        if (IdeLogConfig.shouldLogIde()) {
+          log.debug("Error removing tooltip view", e)
+        }
       }
+
       tooltipView = null
       isShowing = false
     }

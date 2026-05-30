@@ -36,6 +36,8 @@ import com.tom.rv2ide.lsp.api.ILanguageClient;
 import com.tom.rv2ide.lsp.models.CodeActionItem;
 import com.tom.rv2ide.lsp.models.DiagnosticItem;
 import com.tom.rv2ide.lsp.models.DiagnosticResult;
+import com.tom.rv2ide.lsp.models.DiagnosticSeverity;
+import com.tom.rv2ide.lsp.models.LineIndex;
 import com.tom.rv2ide.lsp.models.PerformCodeActionParams;
 import com.tom.rv2ide.lsp.models.ShowDocumentParams;
 import com.tom.rv2ide.lsp.models.ShowDocumentResult;
@@ -62,7 +64,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.stream.Collectors;
 import kotlin.Unit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,6 +75,14 @@ public class IDELanguageClientImpl implements ILanguageClient {
 
   public static final int MAX_DIAGNOSTIC_FILES = 10;
   public static final int MAX_DIAGNOSTIC_ITEMS_PER_FILE = 20;
+  /**
+   * Hard cap for diagnostics applied as editor underlines. A malformed large Java file can produce
+   * thousands of diagnostics; mapping all of them to character offsets and pushing them into Sora's
+   * DiagnosticsContainer is expensive on the UI thread.
+   */
+  private static final int MAX_EDITOR_DIAGNOSTIC_REGIONS = 200;
+  private static final int MAX_LARGE_FILE_EDITOR_DIAGNOSTIC_REGIONS = 80;
+  private static final long LARGE_FILE_DIAGNOSTIC_BYTES = 512L * 1024L;
   protected static final Logger LOG = LoggerFactory.getLogger(IDELanguageClientImpl.class);
   private static IDELanguageClientImpl mInstance;
   private final Map<File, List<DiagnosticItem>> diagnostics = new HashMap<>();
@@ -126,7 +135,9 @@ public class IDELanguageClientImpl implements ILanguageClient {
 
     if (result == DiagnosticResult.NO_UPDATE || !canUseActivity()) {
       if (result == DiagnosticResult.NO_UPDATE) {
-        LOG.info("publishDiagnostics skipped: NO_UPDATE");
+        if (IdeLogConfig.shouldLogIde()) {
+          LOG.info("publishDiagnostics skipped: NO_UPDATE");
+        }
       } else {
         LOG.warn("publishDiagnostics skipped: activity unavailable");
       }
@@ -179,19 +190,29 @@ public class IDELanguageClientImpl implements ILanguageClient {
         try {
           final var content = editor.getText();
           contentLength = content.length();
+          final List<DiagnosticItem> editorDiagnostics = selectDiagnosticsForEditor(
+              result.getDiagnostics(),
+              file,
+              contentLength);
 
           final long mapRegionsStartMs = android.os.SystemClock.elapsedRealtime();
-          container.addDiagnostics(
-              result.getDiagnostics().stream()
-                  .map(diagnostic -> diagnostic.asDiagnosticRegion(content))
-                  .collect(Collectors.toList()));
+          final LineIndex lineIndex = LineIndex.from(content);
+          final var regions = new ArrayList<io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion>(
+              editorDiagnostics.size());
+          for (DiagnosticItem diagnostic : editorDiagnostics) {
+            regions.add(diagnostic.asDiagnosticRegion(lineIndex));
+          }
+          container.addDiagnostics(regions);
           mapRegionsCostMs = android.os.SystemClock.elapsedRealtime() - mapRegionsStartMs;
-          LOG.info(
-              "publishDiagnostics mapped {} diagnostic regions for file={} (mapRegionsCostMs={}, contentLength={})",
-              result.getDiagnostics().size(),
-              file.getAbsolutePath(),
-              mapRegionsCostMs,
-              contentLength);
+          if (IdeLogConfig.shouldLogIde()) {
+            LOG.info(
+                "publishDiagnostics mapped {} of {} diagnostic regions for file={} (mapRegionsCostMs={}, contentLength={})",
+                editorDiagnostics.size(),
+                result.getDiagnostics().size(),
+                file.getAbsolutePath(),
+                mapRegionsCostMs,
+                contentLength);
+          }
         } catch (Throwable err) {
           LOG.error("Unable to map DiagnosticItem to DiagnosticRegion", err);
         }
@@ -199,10 +220,12 @@ public class IDELanguageClientImpl implements ILanguageClient {
         final long applyToEditorStartMs = android.os.SystemClock.elapsedRealtime();
         editor.setDiagnostics(container);
         applyToEditorCostMs = android.os.SystemClock.elapsedRealtime() - applyToEditorStartMs;
-        LOG.info(
-            "publishDiagnostics applied diagnostics to editor for file={} (applyToEditorCostMs={})",
-            file.getAbsolutePath(),
-            applyToEditorCostMs);
+        if (IdeLogConfig.shouldLogIde()) {
+          LOG.info(
+              "publishDiagnostics applied diagnostics to editor for file={} (applyToEditorCostMs={})",
+              file.getAbsolutePath(),
+              applyToEditorCostMs);
+        }
       } else {
         LOG.warn(
             "publishDiagnostics editor match MISS: CodeEditorView has null editor for file={}",
@@ -210,25 +233,117 @@ public class IDELanguageClientImpl implements ILanguageClient {
       }
     }
 
+    final List<DiagnosticItem> previousDiagnostics = diagnostics.get(file);
+    final boolean updateDiagnosticsAdapter =
+        shouldUpdateDiagnosticsAdapter(previousDiagnostics, result.getDiagnostics());
     diagnostics.put(file, result.getDiagnostics());
 
     final long updateAdapterStartMs = android.os.SystemClock.elapsedRealtime();
-    activity.setDiagnosticsAdapter(newDiagnosticsAdapter());
+    if (updateDiagnosticsAdapter) {
+      activity.setDiagnosticsAdapter(newDiagnosticsAdapter());
+    }
     final long updateAdapterCostMs = android.os.SystemClock.elapsedRealtime() - updateAdapterStartMs;
     final long totalCostMs = android.os.SystemClock.elapsedRealtime() - totalStartMs;
 
-    LOG.info(
-        "publishDiagnostics perf: file={}, totalCostMs={}, editorLookupCostMs={}, mapRegionsCostMs={}, applyToEditorCostMs={}, updateAdapterCostMs={}, diagnosticCount={}, contentLength={}, thread={}, isMainThread={}",
-        file.getAbsolutePath(),
-        totalCostMs,
-        editorLookupCostMs,
-        mapRegionsCostMs,
-        applyToEditorCostMs,
-        updateAdapterCostMs,
-        diagnosticCount,
-        contentLength,
-        threadName,
-        isMainThread);
+    if (IdeLogConfig.shouldLogIde()) {
+      LOG.info(
+          "publishDiagnostics perf: file={}, totalCostMs={}, editorLookupCostMs={}, mapRegionsCostMs={}, applyToEditorCostMs={}, updateAdapterCostMs={}, diagnosticCount={}, contentLength={}, adapterUpdated={}, thread={}, isMainThread={}",
+          file.getAbsolutePath(),
+          totalCostMs,
+          editorLookupCostMs,
+          mapRegionsCostMs,
+          applyToEditorCostMs,
+          updateAdapterCostMs,
+          diagnosticCount,
+          contentLength,
+          updateDiagnosticsAdapter,
+          threadName,
+          isMainThread);
+    }
+  }
+
+  /**
+   * Avoid rebuilding the bottom-sheet diagnostics list when a repeated publish has the same visible
+   * summary. The editor underline layer is still refreshed above; this only skips extra adapter
+   * allocation/binding work for duplicate diagnostic bursts.
+   */
+  private boolean shouldUpdateDiagnosticsAdapter(
+      @Nullable final List<DiagnosticItem> previous,
+      @Nullable final List<DiagnosticItem> current) {
+    final int previousSize = previous == null ? 0 : previous.size();
+    final int currentSize = current == null ? 0 : current.size();
+    if (previousSize != currentSize) {
+      return true;
+    }
+    if (previousSize == 0) {
+      return false;
+    }
+
+    final DiagnosticItem previousFirst = previous.get(0);
+    final DiagnosticItem currentFirst = current.get(0);
+    final DiagnosticItem previousLast = previous.get(previousSize - 1);
+    final DiagnosticItem currentLast = current.get(currentSize - 1);
+    return !sameDiagnosticSummary(previousFirst, currentFirst)
+        || !sameDiagnosticSummary(previousLast, currentLast);
+  }
+
+  private boolean sameDiagnosticSummary(
+      @Nullable final DiagnosticItem first,
+      @Nullable final DiagnosticItem second) {
+    if (first == second) {
+      return true;
+    }
+    if (first == null || second == null) {
+      return false;
+    }
+    return first.getSeverity() == second.getSeverity()
+        && Objects.equals(first.getCode(), second.getCode())
+        && Objects.equals(first.getMessage(), second.getMessage())
+        && Objects.equals(first.getRange(), second.getRange());
+  }
+
+  private List<DiagnosticItem> selectDiagnosticsForEditor(
+      @Nullable final List<DiagnosticItem> source,
+      @NonNull final File file,
+      final int contentLength) {
+    if (source == null || source.isEmpty()) {
+      return Collections.emptyList();
+    }
+
+    final int limit = file.length() >= LARGE_FILE_DIAGNOSTIC_BYTES
+        || contentLength >= LARGE_FILE_DIAGNOSTIC_BYTES
+            ? MAX_LARGE_FILE_EDITOR_DIAGNOSTIC_REGIONS
+            : MAX_EDITOR_DIAGNOSTIC_REGIONS;
+    if (source.size() <= limit) {
+      return source;
+    }
+
+    final List<DiagnosticItem> selected = new ArrayList<>(limit);
+    for (DiagnosticItem diagnostic : source) {
+      if (diagnostic != null && diagnostic.getSeverity() == DiagnosticSeverity.ERROR) {
+        selected.add(diagnostic);
+        if (selected.size() == limit) {
+          break;
+        }
+      }
+    }
+    if (selected.size() < limit) {
+      for (DiagnosticItem diagnostic : source) {
+        if (diagnostic != null && diagnostic.getSeverity() != DiagnosticSeverity.ERROR) {
+          selected.add(diagnostic);
+          if (selected.size() == limit) {
+            break;
+          }
+        }
+      }
+    }
+
+    LOG.warn(
+        "Limiting editor diagnostic underlines to {} of {} items for file {}",
+        selected.size(),
+        source.size(),
+        file.getName());
+    return selected;
   }
 
   @Nullable

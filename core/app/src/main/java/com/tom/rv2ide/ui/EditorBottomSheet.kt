@@ -50,6 +50,8 @@ import com.tom.rv2ide.adapters.DiagnosticsAdapter
 import com.tom.rv2ide.adapters.EditorBottomSheetTabAdapter
 import com.tom.rv2ide.adapters.SearchListAdapter
 import com.tom.rv2ide.databinding.LayoutEditorBottomSheetBinding
+import com.tom.rv2ide.fragments.DiagnosticsListFragment
+import com.tom.rv2ide.fragments.SearchResultFragment
 import com.tom.rv2ide.fragments.output.ShareableOutputFragment
 import com.tom.rv2ide.models.LogLine
 import com.tom.rv2ide.resources.R.string
@@ -120,6 +122,16 @@ constructor(
     const val CHILD_ACTION = 2
   }
 
+  private fun canShareOutput(fragment: Fragment?): Boolean {
+    return fragment is ShareableOutputFragment
+  }
+
+  private fun shouldShowHeaderControls(fragment: Fragment?): Boolean {
+    return fragment is ShareableOutputFragment ||
+    fragment is DiagnosticsListFragment ||
+    fragment is SearchResultFragment
+  }
+
   private fun initialize(context: FragmentActivity) {
     val mediator =
         TabLayoutMediator(binding.tabs, binding.pager, true, true) { tab, position ->
@@ -143,14 +155,18 @@ constructor(
         object : OnTabSelectedListener {
           override fun onTabSelected(tab: Tab) {
             val fragment: Fragment = pagerAdapter.getFragmentAtIndex(tab.position)
-            if (fragment is ShareableOutputFragment) {
+            if (canShareOutput(fragment)) {
               binding.clearFab.show()
               binding.shareOutputFab.show()
-              binding.headerContainer.visibility = View.VISIBLE
             } else {
               binding.clearFab.hide()
               binding.shareOutputFab.hide()
-              // Hide header immediately for search/diagnostics
+            }
+
+            if (shouldShowHeaderControls(fragment)) {
+              binding.headerContainer.visibility = View.VISIBLE
+            } else {
+              // Hide header immediately for pages that do not support header controls
               if (behavior.state == BottomSheetBehavior.STATE_EXPANDED) {
                 binding.headerContainer.visibility = View.GONE
               }
@@ -253,9 +269,9 @@ constructor(
   fun onSlide(sheetOffset: Float) {
     val selectedTab = binding.tabs.selectedTabPosition
     val fragment = pagerAdapter.getFragmentAtIndex(selectedTab)
-    val isOutputFragment = fragment is ShareableOutputFragment
+    val shouldShowHeader = shouldShowHeaderControls(fragment)
     
-    if (!isOutputFragment && behavior.state == BottomSheetBehavior.STATE_EXPANDED) {
+    if (!shouldShowHeader && behavior.state == BottomSheetBehavior.STATE_EXPANDED) {
       binding.headerContainer.visibility = View.GONE
       return
     }
@@ -346,16 +362,17 @@ constructor(
     val selectedTab = binding.tabs.selectedTabPosition
     val fragment = pagerAdapter.getFragmentAtIndex(selectedTab)
     
-    val isOutputFragment = fragment is ShareableOutputFragment
+    val shouldShowHeader = shouldShowHeaderControls(fragment)
     
     if (KeyboardUtils.isSoftInputVisible(activity)) {
-      if (isOutputFragment) {
+      if (shouldShowHeader) {
+        binding.headerContainer.visibility = View.VISIBLE
         binding.headerContainer.displayedChild = CHILD_SYMBOL_INPUT
       } else {
         binding.headerContainer.visibility = View.GONE
       }
     } else {
-      if (isOutputFragment || behavior.state == BottomSheetBehavior.STATE_COLLAPSED) {
+      if (shouldShowHeader || behavior.state == BottomSheetBehavior.STATE_COLLAPSED) {
         binding.headerContainer.visibility = View.VISIBLE
         binding.headerContainer.displayedChild = CHILD_HEADER
       } else {

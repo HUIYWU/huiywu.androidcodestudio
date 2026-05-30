@@ -27,6 +27,7 @@ import android.view.inputmethod.EditorInfo
 import androidx.annotation.StringRes
 import com.blankj.utilcode.util.FileUtils
 import com.blankj.utilcode.util.SizeUtils
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.editor.R.string
 import com.tom.rv2ide.editor.adapters.CompletionListAdapter
 import com.tom.rv2ide.editor.api.IEditor
@@ -47,6 +48,7 @@ import com.tom.rv2ide.eventbus.events.editor.DocumentCloseEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentOpenEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentSaveEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentSelectedEvent
+import com.tom.rv2ide.eventbus.events.editor.LazyDocumentTextProvider
 import com.tom.rv2ide.flashbar.Flashbar
 import com.tom.rv2ide.lsp.api.ILanguageClient
 import com.tom.rv2ide.lsp.api.ILanguageServer
@@ -188,12 +190,13 @@ constructor(
     get() {
       return _diagnosticWindow ?: DiagnosticWindow(this).also { _diagnosticWindow = it }
     }
-
   companion object {
 
     private const val SELECTION_CHANGE_DELAY = 500L
+    private const val LARGE_DOCUMENT_EVENT_TEXT_THRESHOLD = 256 * 1024
 
     internal val log = LoggerFactory.getLogger(IDEEditor::class.java)
+
 
     /** Create input type flags for the editor. */
     fun createInputTypeFlags(): Int {
@@ -258,11 +261,15 @@ constructor(
       return
     }
     if (command == null) {
-      log.warn("Cannot execute command in editor. Command is null.")
+      if (IdeLogConfig.shouldLogIde()) {
+        log.warn("Cannot execute command in editor. Command is null.")
+      }
       return
     }
 
-    log.info(String.format("Executing command '%s' for completion item.", command.title))
+    if (IdeLogConfig.shouldLogIde()) {
+      log.info(String.format("Executing command '%s' for completion item.", command.title))
+    }
     when (command.command) {
       Command.TRIGGER_COMPLETION -> {
         val completion = getComponent(EditorAutoCompletion::class.java)
@@ -520,7 +527,9 @@ constructor(
     }
     file
         ?: run {
-          log.info("Cannot notify language server. File is null.")
+          if (IdeLogConfig.shouldLogIde()) {
+            log.info("Cannot notify language server. File is null.")
+          }
           return
         }
 
@@ -862,7 +871,6 @@ constructor(
 
         languageClient.showLocations(result.locations)
       }
-
   protected open fun dispatchDocumentOpenEvent() {
     if (isReleased) {
       return
@@ -872,7 +880,12 @@ constructor(
 
     this.fileVersion = 0
 
-    val openEvent = DocumentOpenEvent(file.toPath(), text.toString(), fileVersion)
+    // Large documents are already held by the editor widget. Forcing another eager String copy into
+    // the open event can briefly double memory usage and make big-file opening noticeably worse.
+    // Keep the open event payload minimal for such files and let downstream readers obtain content
+    // from the active document cache instead of the event body.
+    val openText = if (text.length > LARGE_DOCUMENT_EVENT_TEXT_THRESHOLD) "" else text.toString()
+    val openEvent = DocumentOpenEvent(file.toPath(), openText, fileVersion)
 
     eventDispatcher.dispatch(openEvent)
   }
@@ -901,19 +914,31 @@ constructor(
             Position(end.line, end.column, end.index),
         )
     val changedText = event.changedText.toString()
+    val fullTextProvider =
+        if (type == ChangeType.NEW_TEXT && text.length > LARGE_DOCUMENT_EVENT_TEXT_THRESHOLD) {
+          // NEW_TEXT usually means a whole-document replacement. For large buffers, eagerly
+          // materializing another full snapshot here is expensive. Defer it until a consumer
+          // actually requests the full text.
+          LazyDocumentTextProvider { text.toString() }
+        } else {
+          null
+        }
+    val newText = if (fullTextProvider == null) text.toString() else null
     val changeEvent =
         DocumentChangeEvent(
             file,
             changedText,
-            text.toString(),
+            newText,
             ++fileVersion,
             type,
             changeDelta,
             changeRange,
+            fullTextProvider,
         )
 
     eventDispatcher.dispatch(changeEvent)
   }
+
 
   protected open fun dispatchDocumentSelectedEvent() {
     if (isReleased) {
@@ -988,7 +1013,9 @@ constructor(
   private fun logError(err: Throwable?, action: String) {
     err ?: return
     if (CancelChecker.isCancelled(err)) {
-      log.warn("{} has been cancelled", action)
+      if (IdeLogConfig.shouldLogIde()) {
+        log.warn("{} has been cancelled", action)
+      }
     } else {
       log.error("{} failed", action)
     }

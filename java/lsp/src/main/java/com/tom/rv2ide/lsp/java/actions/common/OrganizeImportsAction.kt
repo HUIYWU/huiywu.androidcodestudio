@@ -6,6 +6,7 @@ import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
 import com.tom.rv2ide.actions.requireEditor
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.editor.api.IEditor
 import com.tom.rv2ide.lsp.java.JavaLanguageServer
 import com.tom.rv2ide.lsp.java.actions.BaseJavaCodeAction
@@ -48,7 +49,9 @@ class OrganizeImportsAction : BaseJavaCodeAction() {
       val server = data[JavaLanguageServer::class.java]
       val settings = server!!.settings as JavaServerSettings
       val output = ImportOrderer.reorderImports(content.toString(), settings.style)
-      watch.log()
+      if (IdeLogConfig.shouldLogIde()) {
+        watch.log()
+      }
       output
     } catch (e: FormatterException) {
       log.error("Failed to reorder imports", e)

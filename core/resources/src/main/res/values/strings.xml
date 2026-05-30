@@ -544,6 +544,8 @@
   
   <string name="lsp_options_kotlin_title">Kotlin Language Server</string>
   <string name="lsp_options_kotlin_summary">Kotlin language server offering intelligent coding features including code completion, error highlighting, and more</string>
+  <string name="kotlin_lsp_backend_title">Kotlin LSP Backend</string>
+  <string name="kotlin_lsp_backend_summary">Select which Kotlin language server backend is active</string>
   <string name="kotlin_server_required">Kotlin language server must be installed to use this feature</string>
 
   <string name="lsp_options_c_cpp_title">C &amp; C++ Language Server</string>
@@ -1024,7 +1026,7 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="idepref_jdkVersion_summary">Currently selected: %1$s (requires restart if changed)</string>
   <string name="lsp_update_check_failed">Failed to check for updates: %s</string>
   <string name="lsp_update_available_title">Component update available</string>
-  <string name="lsp_update_available_description">New update available for the Kotlin language server v%s</string>
+  <string name="lsp_update_available_description">New update available for %1$s v%2$s</string>
   <string name="lsp_update_button">Update</string>
   <string name="lsp_download_url_unavailable">Download URL not available</string>
   <string name="lsp_downloading_title">Downloading</string>
@@ -1035,13 +1037,13 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="lsp_extracting_files">Extracting files...</string>
   <string name="lsp_extracting_progress">Extracting files... (%d files)</string>
   <string name="lsp_installation_complete_title">Installation Complete</string>
-  <string name="lsp_installation_complete_description">Kotlin language server v%s installed successfully</string>
+  <string name="lsp_installation_complete_description">%1$s v%2$s installed successfully</string>
   <string name="lsp_installation_failed_title">Installation Failed</string>
   <string name="lsp_error_message">Error: %s</string>
   <string name="lsp_unknown_error">Unknown error</string>
   <string name="lsp_cancel_button">Cancel</string>
   <string name="lsp_update_success_title">Update Successful</string>
-  <string name="lsp_update_success_description">Kotlin language server v%s has been installed successfully</string>
+  <string name="lsp_update_success_description">%1$s v%2$s has been installed successfully</string>
   <string name="lsp_ok_button">OK</string>
   <string name="lsp_installation_failed_description">Failed to install update: %s</string>
   <string name="lsp_retry_button">Retry</string>

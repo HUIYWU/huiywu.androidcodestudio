@@ -23,7 +23,7 @@ package com.tom.rv2ide.lsp.kotlin
 import org.slf4j.LoggerFactory
 
 object KslLogs {
-  private const val ENABLE_LSP_LOGS = false // Set to true for debug builds
+  private const val ENABLE_LSP_LOGS = true // Keep KLS lifecycle/JSON-RPC diagnostics visible for field debugging
 
   private val log = LoggerFactory.getLogger(KslLogs::class.java)
 

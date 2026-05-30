@@ -19,7 +19,7 @@ package com.tom.rv2ide.lsp.kotlin.providers
 
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import com.tom.rv2ide.lsp.kotlin.KotlinServerProcessManager
+import com.tom.rv2ide.lsp.kotlin.KotlinLspConnection
 import com.tom.rv2ide.lsp.kotlin.KslLogs
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.lsp.models.CodeFormatResult
@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
 
-class KotlinCodeFormatProvider(private val processManager: KotlinServerProcessManager) {
+class KotlinCodeFormatProvider(private val processManager: KotlinLspConnection) {
 
   companion object {
     private val log = LoggerFactory.getLogger(KotlinCodeFormatProvider::class.java)

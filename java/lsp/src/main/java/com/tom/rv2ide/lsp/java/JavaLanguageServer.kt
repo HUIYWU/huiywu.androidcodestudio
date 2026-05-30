@@ -16,6 +16,7 @@
  */
 package com.tom.rv2ide.lsp.java
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import androidx.annotation.RestrictTo
 import com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentCloseEvent
@@ -66,6 +67,7 @@ import com.tom.rv2ide.utils.DocumentUtils
 import com.tom.rv2ide.utils.VMUtils
 import java.nio.file.Path
 import java.util.Objects
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -86,6 +88,7 @@ class JavaLanguageServer : ILanguageServer {
   private var selectedFile: Path? = null
   private val timer = AnalyzeTimer { analyzeSelected() }
   private var cachedCompletion: CachedCompletion
+  private var lastJavaChangeDelta = 0
 
   val settings: IServerSettings
     get() {
@@ -97,6 +100,8 @@ class JavaLanguageServer : ILanguageServer {
   companion object {
 
     const val SERVER_ID = "ide.lsp.java"
+    private const val LARGE_CHANGE_DELTA_FOR_DIAGNOSTIC_DEBOUNCE = 2_000
+    private const val LARGE_CHANGE_ANALYZE_INTERVAL_MS = 1_500L
     private val log = LoggerFactory.getLogger(JavaLanguageServer::class.java)
   }
 
@@ -166,7 +171,9 @@ class JavaLanguageServer : ILanguageServer {
     }
 
     if (diagnosticProvider!!.isAnalyzing()) {
-      log.warn("Cancelling source code analysis due to completion request")
+      if (IdeLogConfig.shouldLogIde()) {
+        log.warn("Cancelling source code analysis due to completion request")
+      }
       diagnosticProvider.cancel()
     }
 
@@ -261,6 +268,15 @@ class JavaLanguageServer : ILanguageServer {
     if (VMUtils.isJvm()) {
       return
     }
+    val interval =
+        if (abs(lastJavaChangeDelta) >= LARGE_CHANGE_DELTA_FOR_DIAGNOSTIC_DEBOUNCE) {
+          LARGE_CHANGE_ANALYZE_INTERVAL_MS
+        } else {
+          AnalyzeTimer.DEFAULT_INTERVAL
+        }
+    if (timer.interval != interval) {
+      timer.interval = interval
+    }
     if (!timer.isStarted) {
       timer.start()
     } else {
@@ -274,6 +290,7 @@ class JavaLanguageServer : ILanguageServer {
     if (!DocumentUtils.isJavaFile(event.changedFile)) {
       return
     }
+    lastJavaChangeDelta = event.changeDelta
 
     // TODO Find an alternative to efficiently update changeDelta in JavaCompilerService instance
     JavaCompilerService.NO_MODULE_COMPILER.onDocumentChange(event)
@@ -290,13 +307,22 @@ class JavaLanguageServer : ILanguageServer {
   fun onFileSelected(event: DocumentSelectedEvent) {
     selectedFile = event.selectedFile
   }
-
   @Subscribe(threadMode = ThreadMode.ASYNC)
   @Suppress("unused")
   fun onFileOpened(event: DocumentOpenEvent) {
     selectedFile = event.openedFile
+    lastJavaChangeDelta = 0
+
+    // Some editor flows intentionally omit the eager text payload for very large files to avoid an
+    // additional full-buffer String allocation during open. Recover the initial snapshot from the
+    // active document cache when that happens so Java analysis still sees the correct content.
+    if (event.text.isBlank()) {
+      event.text = com.tom.rv2ide.projects.FileManager.getDocumentContents(event.openedFile)
+    }
+
     startOrRestartAnalyzeTimer()
   }
+
 
   @Subscribe(threadMode = ThreadMode.ASYNC)
   @Suppress("unused")
@@ -310,12 +336,16 @@ class JavaLanguageServer : ILanguageServer {
   }
 
   private fun analyzeSelected() {
-    if (selectedFile == null || client == null) {
+    val fileToAnalyze = selectedFile
+    if (fileToAnalyze == null || client == null) {
       return
     }
 
     CoroutineScope(Dispatchers.Default).launch {
-      val result = analyze(selectedFile!!)
+      val result = analyze(fileToAnalyze)
+      if (result == DiagnosticResult.NO_UPDATE) {
+        return@launch
+      }
       withContext(Dispatchers.Main) { client?.publishDiagnostics(result) }
     }
   }

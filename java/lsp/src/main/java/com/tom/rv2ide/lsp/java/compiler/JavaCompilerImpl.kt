@@ -17,13 +17,14 @@
 
 package com.tom.rv2ide.lsp.java.compiler
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.javac.services.compiler.ReusableContext
 import com.tom.rv2ide.javac.services.compiler.ReusableJavaCompiler
 import com.tom.rv2ide.lsp.java.parser.ts.TSJavaParser
 import com.tom.rv2ide.lsp.java.parser.ts.TSMethodPruner.prune
 import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.utils.VMUtils
-import com.tom.rv2ide.utils.withStopWatch
+import com.tom.rv2ide.utils.StopWatch
 import jdkx.tools.JavaFileObject
 import jdkx.tools.JavaFileObject.Kind.SOURCE
 import kotlin.io.path.name
@@ -58,22 +59,24 @@ class JavaCompilerImpl(context: Context?) : ReusableJavaCompiler(context) {
       return super.parse(filename, content)
     }
 
+    val watch =
+        StopWatch("${if(file is SourceFileObject) "[${file.path.name}] " else ""}Prune method bodies")
     val pruned =
-        withStopWatch(
-            "${if(file is SourceFileObject) "[${file.path.name}] " else ""}Prune method bodies"
-        ) { watch ->
+        run {
           val contentBuilder = StringBuilder(content)
 
-          return@withStopWatch TSJavaParser.parse(file).use { parseResult ->
+          TSJavaParser.parse(file).use { parseResult ->
             prune(
                 contentBuilder,
                 parseResult.tree,
                 compilerConfig.completionInfo?.cursor?.index ?: -1,
             )
 
-            watch.log()
+            if (IdeLogConfig.shouldLogIde()) {
+              watch.log()
+            }
 
-            return@use contentBuilder
+            contentBuilder
           }
         }
 

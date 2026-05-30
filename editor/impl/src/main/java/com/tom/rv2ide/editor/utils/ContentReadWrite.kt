@@ -84,11 +84,11 @@ object ContentReadWrite {
     return Content().apply {
       isUndoEnabled = false
       inputStream().use { input ->
-        val total = input.available().let { if (it == 0) 1 else it } // avoid divide by 0
+        val total = length().takeIf { it > 0L } ?: 1L
         input.reader().use { reader ->
           val buffer = CharArray(DEFAULT_BUFFER_SIZE * 2)
           val wrapper = CharArrayWrapper(buffer, 0)
-          var totalRead = 0.0
+          var totalRead = 0L
           var count: Int
           while (true) {
             count = reader.read(buffer)
@@ -101,7 +101,7 @@ object ContentReadWrite {
 
             totalRead += count
 
-            val progress = floor((totalRead / total) * 100).toInt()
+            val progress = floor((totalRead.toDouble() / total.toDouble()) * 100).toInt().coerceIn(0, 100)
 
             if (buffer[count - 1] == '\r') {
               val peek = reader.read()

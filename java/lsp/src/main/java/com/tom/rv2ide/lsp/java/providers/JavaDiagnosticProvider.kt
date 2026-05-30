@@ -144,7 +144,9 @@ class JavaDiagnosticProvider {
                 compiler.compile(file).get { task -> doAnalyze(file, task) }
               } catch (err: Throwable) {
                 if (CancelChecker.isCancelled(err)) {
-                  log.error("Analyze request cancelled")
+                  if (IdeLogConfig.shouldLogIde()) {
+                    log.error("Analyze request cancelled")
+                  }
                 } else {
                   log.warn("Unable to analyze file", err)
                 }

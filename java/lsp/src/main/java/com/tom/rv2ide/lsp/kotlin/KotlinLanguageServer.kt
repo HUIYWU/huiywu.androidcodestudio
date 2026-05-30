@@ -28,10 +28,12 @@ import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.lsp.kotlin.providers.KotlinCodeFormatProvider
 import com.tom.rv2ide.lsp.models.*
 import com.tom.rv2ide.models.Range
+import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.utils.VMUtils
 import io.github.rosemoe.sora.widget.CodeEditor
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.*
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -52,9 +54,11 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   private val analyzeTimer = com.tom.rv2ide.lsp.java.utils.AnalyzeTimer { analyzeSelected() }
   private var selectedFile: java.nio.file.Path? = null
   private val diagnosticProvider = KotlinDiagnosticProvider()
+  private val backendSpec = KotlinLspBackendFactory.createSpec(context)
+  private val processManager: KotlinLspConnection = backendSpec.connection
+  private val backendConfigurator: KotlinLspBackendConfigurator = backendSpec.configurator
 
-  private val processManager = KotlinServerProcessManager(context)
-  private val documentManager = KotlinDocumentManager(processManager)
+  private val documentManager = KotlinDocumentManager(processManager) { initialized }
   private val requestHandler = KotlinRequestHandler(processManager, documentManager)
   private val eventHandler = KotlinEventHandler(documentManager)
 
@@ -70,6 +74,9 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
   private val diagnosticRenderer = KotlinDiagnosticRenderer()
   private val activeEditors = mutableMapOf<Path, CodeEditor>()
+  // Track the last structural fallback we published so we only clear/replace what this local
+  // fallback owns, without interfering with server diagnostics for unrelated edits.
+  private val localFallbackDiagnostics = ConcurrentHashMap<Path, List<DiagnosticItem>>()
 
   private val completionScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -109,9 +116,9 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
   override fun setupWorkspace(workspace: IWorkspace) {
     formatProvider = KotlinCodeFormatProvider(processManager)
-
-    workspaceSetup = KotlinWorkspaceSetup(context, workspace)
+    workspaceSetup = KotlinWorkspaceSetup(context, workspace, backendConfigurator)
     workspaceSetup?.setup(processManager)
+
 
     javaCompilerBridge = KotlinJavaCompilerBridge(workspace)
     requestHandler.setJavaCompilerBridge(javaCompilerBridge)
@@ -121,6 +128,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
     importAnalyzer.updateImportCache(compilerService)
 
     initialized = true
+    documentManager.flushPendingOpens()
     startOrRestartAnalyzeTimer()
 
     // Subscribe to editor events if not already
@@ -229,12 +237,20 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
     }
 
     return try {
-      // Only check for import issues - let KLS server handle other diagnostics
-      val content = file.toFile().readText()
+      // IDEEditor.analyze() is used as a local fallback entry (for example after builds). Read from
+      // FileManager first so unsaved editor text is analyzed instead of stale disk contents.
+      val content = FileManager.getDocumentContents(file)
+      val localDiagnostics = diagnosticProvider.analyze(file, content).diagnostics
       val importDiagnostics = importAnalyzer.analyzeMissingImports(file, content)
 
-      if (importDiagnostics.isNotEmpty()) {
-        DiagnosticResult(file, importDiagnostics)
+      val mergedDiagnostics =
+          buildList {
+            addAll(localDiagnostics)
+            addAll(importDiagnostics)
+          }
+
+      if (mergedDiagnostics.isNotEmpty()) {
+        DiagnosticResult(file, mergedDiagnostics)
       } else {
         DiagnosticResult.NO_UPDATE
       }
@@ -379,17 +395,45 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
     }
   }
 
+  private fun publishLocalStructuralFallback(file: Path) {
+    try {
+      val content = FileManager.getDocumentContents(file)
+      val structuralDiagnostics =
+          diagnosticProvider
+              .analyze(file, content)
+              .diagnostics
+              .filter { it.code.startsWith("STRUCTURAL_") }
+
+      val previousStructuralDiagnostics = localFallbackDiagnostics[file].orEmpty()
+      val hasStructuralChanges = structuralDiagnostics != previousStructuralDiagnostics
+      if (!hasStructuralChanges) {
+        return
+      }
+
+      localFallbackDiagnostics[file] = structuralDiagnostics
+
+      if (structuralDiagnostics.isNotEmpty()) {
+        // This local fallback only covers obvious delimiter damage during live editing. Keep it
+        // isolated from server diagnostics instead of trying to merge uncertain snapshots.
+        publishDiagnosticsToEditor(DiagnosticResult(file, structuralDiagnostics))
+      } else if (previousStructuralDiagnostics.isNotEmpty()) {
+        _client?.publishDiagnostics(DiagnosticResult(file, emptyList()))
+        activeEditors[file]?.let { editor ->
+          diagnosticRenderer.renderDiagnostics(editor, DiagnosticResult(file, emptyList()))
+        }
+      }
+    } catch (e: Exception) {
+      KslLogs.warn("Failed to publish local structural fallback for {}", file, e)
+    }
+  }
+
   private fun analyzeSelected() {
     val file = selectedFile ?: return
-    val client = _client ?: return
     CoroutineScope(Dispatchers.Default).launch {
-      // Ensure file is opened in KLS server before any analysis
+      // Keep the document opened in KLS, but avoid forcing an extra didSave here.
+      // DocumentChangeEvent already sends didChange + debounced didSave with the latest in-memory text.
       documentManager.ensureDocumentOpen(file)
-
-      // Trigger a save to force linting
-      documentManager.notifyDocumentSave(file)
-
-      // The KLS server will send diagnostics via KotlinNotificationHandler
+      publishLocalStructuralFallback(file)
     }
   }
 

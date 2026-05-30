@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
 class KotlinImportManager(
-    private val processManager: KotlinServerProcessManager,
+    private val processManager: KotlinLspConnection,
     private val documentManager: KotlinDocumentManager,
 ) {
 

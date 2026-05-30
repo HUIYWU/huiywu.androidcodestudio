@@ -24,6 +24,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.googlejavaformat.java.Formatter;
 import com.google.googlejavaformat.java.FormatterException;
 import com.google.googlejavaformat.java.Replacement;
+import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.lsp.api.IServerSettings;
 import com.tom.rv2ide.lsp.java.models.JavaServerSettings;
 import com.tom.rv2ide.lsp.models.CodeFormatResult;
@@ -73,9 +74,11 @@ public class CodeFormatProvider {
 
       final ImmutableList<Replacement> replacements =
           formatter.getFormatReplacements(content, ranges);
-
-      watch.log();
+      if (IdeLogConfig.shouldLogIde()) {
+        watch.log();
+      }
       return createResult(replacements);
+
     } catch (Throwable e) {
       LOG.error("Failed to format code.", e);
       return CodeFormatResult.NONE;

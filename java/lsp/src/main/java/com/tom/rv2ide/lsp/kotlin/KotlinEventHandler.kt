@@ -26,7 +26,7 @@ class KotlinEventHandler(private val documentManager: KotlinDocumentManager) {
   private val lastChangeTime = java.util.concurrent.ConcurrentHashMap<String, Long>()
   private val changeThrottleMs = 100L // Only process changes every 100ms
   private val lastSaveTime = java.util.concurrent.ConcurrentHashMap<String, Long>()
-  private val saveDebounceMs = 0L
+  private val saveDebounceMs = 350L
 
   @org.greenrobot.eventbus.Subscribe(threadMode = org.greenrobot.eventbus.ThreadMode.ASYNC)
   fun onContentChange(event: com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent) {
@@ -45,20 +45,23 @@ class KotlinEventHandler(private val documentManager: KotlinDocumentManager) {
     lastChangeTime[uri] = currentTime
 
     try {
-      val content = event.newText ?: file.toFile().readText()
+      val content = event.newText
 
-      if (content.isNotEmpty() && event.version > 0) {
+      if (!content.isNullOrEmpty() && event.version > 0) {
         val currentVersion = documentManager.getDocumentVersion(uri)
         if (event.version > currentVersion) {
           documentManager.setDocumentVersion(uri, event.version)
           documentManager.notifyDocumentChange(file, content, event.version)
-          // Debounced save to trigger immediate linting on the server
+          // KLS diagnostics are commonly refreshed on didSave. Send it after didChange instead of
+          // relying on stale disk content or a no-op save hook.
           val lastSaved = lastSaveTime[uri] ?: 0L
           if (currentTime - lastSaved >= saveDebounceMs) {
-            // documentManager.notifyDocumentSave(file)
+            documentManager.notifyDocumentSave(file, content)
             lastSaveTime[uri] = currentTime
           }
         }
+      } else {
+        KslLogs.debug("Skip Kotlin document change without in-memory content: {}", uri)
       }
     } catch (e: Exception) {
       KslLogs.error("Failed to handle document change", e)
@@ -71,7 +74,8 @@ class KotlinEventHandler(private val documentManager: KotlinDocumentManager) {
     if (!(file.toString().endsWith(".kt") || file.toString().endsWith(".kts"))) return
 
     KslLogs.debug("Document open event for: {}", file)
-    documentManager.ensureDocumentOpen(file, event.text)
+    val initialText = event.text.ifEmpty { com.tom.rv2ide.projects.FileManager.getDocumentContents(file) }
+    documentManager.ensureDocumentOpen(file, initialText)
   }
 
   @org.greenrobot.eventbus.Subscribe(threadMode = org.greenrobot.eventbus.ThreadMode.ASYNC)

@@ -167,11 +167,10 @@ class KotlinClasspathProvider {
 
   private fun addAndroidGeneratedSources(module: AndroidModule, classpaths: MutableSet<String>) {
     try {
-      val moduleDir = File(module.path)
-      val buildDir = File(moduleDir, "build")
+      val buildDir = module.buildDir
 
       if (!buildDir.exists()) {
-        KslLogs.warn("Build directory not found for module: {}", module.path)
+        KslLogs.warn("Build directory not found for module: {}", buildDir.absolutePath)
         return
       }
 
@@ -257,9 +256,9 @@ class KotlinClasspathProvider {
         findCompiledClassDirectories(intermediatesDir, classpaths)
       }
 
-      KslLogs.info("Added {} generated source paths for module: {}", addedCount, module.path)
+      KslLogs.info("Added {} generated source paths for module: {}", addedCount, module.projectDir.absolutePath)
     } catch (e: Exception) {
-      KslLogs.error("Failed to add Android-generated sources for module: {}", module.path, e)
+      KslLogs.error("Failed to add Android-generated sources for module: {}", module.projectDir.absolutePath, e)
     }
   }
 

@@ -20,6 +20,7 @@ package com.tom.rv2ide.projects
 import android.text.TextUtils
 import androidx.annotation.RestrictTo
 import com.tom.rv2ide.builder.model.IJavaCompilerSettings
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.javac.services.fs.CacheFSInfoSingleton
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.projects.android.AndroidModule
@@ -141,8 +142,10 @@ abstract class ModuleProject(
     val topLevelClasses = JarFsClasspathReader().listClasses(paths).filter { it.isTopLevel }
     topLevelClasses.forEach { this.compileClasspathClasses.append(it.name) }
 
-    watch.log()
-    log.debug("Found {} classpaths.", topLevelClasses.size)
+    if (IdeLogConfig.shouldLogIde()) {
+      watch.log()
+      log.debug("Found {} classpaths.", topLevelClasses.size)
+    }
 
     if (this is AndroidModule) {
       BootClasspathProvider.update(bootClassPaths.map { it.path })
@@ -169,8 +172,10 @@ abstract class ModuleProject(
           }
     }
 
-    watch.log()
-    log.debug("Found {} source files.", count)
+    if (IdeLogConfig.shouldLogIde()) {
+      watch.log()
+      log.debug("Found {} source files.", count)
+    }
   }
 
   fun getSourceFilesInDir(dir: Path): List<SourceNode> =

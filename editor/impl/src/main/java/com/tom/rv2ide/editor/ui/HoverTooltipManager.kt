@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.models.DefinitionParams
 import com.tom.rv2ide.models.Position
 import com.tom.rv2ide.progress.ICancelChecker
@@ -120,10 +121,11 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
               withContext(Dispatchers.Main) { displayTooltip(content) }
             }
           } catch (e: Exception) {
-            if (e !is CancellationException) {
+            if (e !is CancellationException && IdeLogConfig.shouldLogIde()) {
               log.debug("Failed to fetch hover info", e)
             }
           }
+
         }
   }
 
@@ -292,8 +294,11 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
       try {
         tooltipContainer.removeView(view)
       } catch (e: Exception) {
-        log.debug("Error removing tooltip view", e)
+        if (IdeLogConfig.shouldLogIde()) {
+          log.debug("Error removing tooltip view", e)
+        }
       }
+
       tooltipView = null
     }
   }

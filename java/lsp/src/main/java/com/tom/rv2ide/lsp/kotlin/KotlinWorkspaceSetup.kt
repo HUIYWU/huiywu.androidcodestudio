@@ -27,7 +27,6 @@ import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.projectdata.state.lsp.Index
 import com.tom.rv2ide.projectdata.logs.LogStream
-import com.tom.rv2ide.utils.Environment
 import java.io.File
 import java.nio.file.*
 import java.util.concurrent.TimeUnit
@@ -38,7 +37,11 @@ import org.slf4j.LoggerFactory
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
 
-class KotlinWorkspaceSetup(private val context: Context, private val workspace: IWorkspace) {
+class KotlinWorkspaceSetup(
+    private val context: Context,
+    private val workspace: IWorkspace,
+    private val backendConfigurator: KotlinLspBackendConfigurator,
+) {
 
   companion object {
     private val log = LoggerFactory.getLogger(KotlinWorkspaceSetup::class.java)
@@ -54,57 +57,17 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
   private var watcherJob: Job? = null
   private val watchScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-  private fun sendScriptConfiguration(processManager: KotlinServerProcessManager) {
-    KslLogs.info("Sending script configuration...")
-
-    val scriptConfigParams =
-        JsonObject().apply {
-          add(
-              "settings",
-              JsonObject().apply {
-                add(
-                    "kotlin",
-                    JsonObject().apply {
-                      add(
-                          "scripts",
-                          JsonObject().apply {
-                            addProperty("enabled", true)
-                            addProperty("buildScriptsEnabled", true)
-
-                            // Add script templates
-                            add(
-                                "templates",
-                                JsonArray().apply {
-                                  add("kotlin.script.templates.standard.ScriptTemplateWithArgs")
-                                },
-                            )
-
-                            // Add script classpath (same as regular Kotlin)
-                            val classpathList = classpathProvider.getClasspathList()
-                            add(
-                                "classpath",
-                                JsonArray().apply { classpathList.forEach { path -> add(path) } },
-                            )
-                          },
-                      )
-                    },
-                )
-              },
-          )
-        }
-
-    processManager.sendNotification("workspace/didChangeConfiguration", scriptConfigParams)
+  fun setup(processManager: KotlinLspConnection) {
+    val workspaceRootDir = resolveKlsWorkspaceRootDir()
+    val workspaceRoot = workspaceRootDir.toPath().toUri().toString()
     KslLogs.info(
-        "Script configuration sent with {} classpath entries",
-        classpathProvider.getClasspathList().size,
+        "Setting up workspace with root: {} (projectRoot={})",
+        workspaceRoot,
+        workspace.getProjectDir().absolutePath,
     )
-  }
-
-  fun setup(processManager: KotlinServerProcessManager) {
-    val workspaceRoot = workspace.getProjectDir().toURI().toString()
-    KslLogs.info("Setting up workspace with root: {}", workspaceRoot)
     Index.setIsIndexing(true)
     LogStream.emitLineBlocking("Setting up workspace...")
+
 
     LspFeatures.setProcessManager(processManager)
     initializeCompilerService()
@@ -119,7 +82,7 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
     KslLogs.info("Cache status: {}", if (cacheValid) "VALID" else "INVALID/MISSING")
     KslLogs.info(indexCache.getCacheStats())
 
-    createKlsClasspathScript()
+    backendConfigurator.beforeServerStart(processManager, classpathProvider)
     processManager.startServer(classpathProvider)
 
     val initParams = createInitParams(workspaceRoot)
@@ -130,8 +93,7 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
       KslLogs.info("Server initialized successfully")
       processManager.sendNotification("initialized", JsonObject())
 
-      // *** FIX: Send script-specific configuration ***
-      sendScriptConfiguration(processManager)
+      backendConfigurator.afterServerInitialized(processManager, classpathProvider)
 
       if (cacheValid) {
         restoreCachedIndex(processManager)
@@ -141,14 +103,14 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
     }
   }
 
-  private fun startBuildWatcher(processManager: KotlinServerProcessManager) {
+  private fun startBuildWatcher(processManager: KotlinLspConnection) {
     try {
       buildWatcher = FileSystems.getDefault().newWatchService()
 
       // Watch all Android module build directories
       val modulesToWatch = mutableListOf<File>()
       workspace.getSubProjects().filterIsInstance<AndroidModule>().forEach { module ->
-        val buildDir = File(module.path, "build")
+        val buildDir = module.buildDir
         if (buildDir.exists()) {
           modulesToWatch.add(buildDir)
         }
@@ -235,7 +197,7 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
     }
   }
 
-  private suspend fun reloadClasspathAndIndex(processManager: KotlinServerProcessManager) {
+  private suspend fun reloadClasspathAndIndex(processManager: KotlinLspConnection) {
     withContext(Dispatchers.IO) {
       try {
         Index.setIsIndexing(true)  // Set flag when reload starts
@@ -244,8 +206,8 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
         // Invalidate classpath cache
         classpathProvider.invalidateCache()
 
-        // Recreate classpath script with new paths
-        createKlsClasspathScript()
+        // Re-run backend-specific startup preparation with refreshed classpath
+        backendConfigurator.beforeServerStart(processManager, classpathProvider)
 
         // Clear index cache
         indexCache.clearCache()
@@ -255,7 +217,7 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
         val currentHash = indexCache.computeClasspathHash(currentClasspath)
 
         // Trigger reindexing (this will also manage the Index flag)
-        val workspaceRoot = workspace.getProjectDir().toURI().toString()
+        val workspaceRoot = workspace.getProjectDir().toPath().toUri().toString()
         triggerIndexing(processManager, workspaceRoot, currentHash)
 
         KslLogs.info("Classpath and index reloaded successfully")
@@ -266,7 +228,7 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
     }
   }
 
-  private fun restoreCachedIndex(processManager: KotlinServerProcessManager) {
+  private fun restoreCachedIndex(processManager: KotlinLspConnection) {
     KslLogs.info("Restoring index from cache...")
     Index.setIsIndexing(true)  // Set indexing flag when starting cache restoration
 
@@ -298,12 +260,12 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
       // Index flag will be managed by triggerIndexing
       val currentClasspath = classpathProvider.getClasspathList()
       val currentHash = indexCache.computeClasspathHash(currentClasspath)
-      triggerIndexing(processManager, workspace.getProjectDir().toURI().toString(), currentHash)
+      triggerIndexing(processManager, workspace.getProjectDir().toPath().toUri().toString(), currentHash)
     }
   }
 
   private fun triggerIndexing(
-      processManager: KotlinServerProcessManager,
+      processManager: KotlinLspConnection,
       workspaceRoot: String,
       classpathHash: String,
   ) {
@@ -334,7 +296,13 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
 
     processManager.sendRequest("workspace/symbol", symbolParams) { result ->
       try {
-        val symbols = result?.getAsJsonArray("symbols") ?: JsonArray()
+        val symbols =
+            when {
+              result == null -> JsonArray()
+              result.has("symbols") -> result.getAsJsonArray("symbols") ?: JsonArray()
+              result.has("result") -> result.getAsJsonArray("result") ?: JsonArray()
+              else -> JsonArray()
+            }
         val symbolCount = symbols.size()
         KslLogs.info("Indexing complete, found {} symbols", symbolCount)
 
@@ -368,7 +336,7 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
   fun getIndexCache(): KotlinIndexCache = indexCache
 
   // Add method to manually trigger reload
-  fun manualReloadClasspath(processManager: KotlinServerProcessManager) {
+  fun manualReloadClasspath(processManager: KotlinLspConnection) {
     watchScope.launch { reloadClasspathAndIndex(processManager) }
   }
 
@@ -388,6 +356,54 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
       KslLogs.error("Failed to initialize compiler service", e)
       compilerService = KotlinCompilerService.NO_MODULE_COMPILER
     }
+  }
+
+  private fun resolveKlsWorkspaceRootDir(): File {
+    val mainModule = findMainAndroidModule()
+    if (mainModule != null) {
+      val moduleDir = mainModule.projectDir
+      if (moduleDir.exists() && moduleDir.isDirectory) {
+        // IMPORTANT: Do NOT use the module dir directly as the KLS workspace root.
+        //
+        // KLS (org.javacs.kt) builds its SourcePath by enumerating *.kt/*.kts files
+        // directly under each workspace folder. The folder-level `*.kts` exclusion only
+        // applies to recursive subdirectory scanning, NOT to script files sitting at the
+        // top of the workspace folder. As a result, `<module>/build.gradle.kts` gets pulled
+        // into SourcePath and is compiled together with normal sources in compileAllFiles().
+        // Compiling a Gradle Kotlin script as a plain .kt file throws
+        // KotlinFrontEndException / NoDescriptorForDeclarationException, which poisons the
+        // whole compile batch and makes normal .kt files return 0 diagnostics.
+        //
+        // To avoid this, descend into `<module>/src` when it exists: this directory contains
+        // all real Kotlin/Java sources (src/main/kotlin, src/main/java, variants, ...) but
+        // never contains a build.gradle.kts, so KLS can no longer enumerate the build script
+        // into its SourcePath.
+        val srcDir = File(moduleDir, "src")
+        if (srcDir.exists() && srcDir.isDirectory) {
+          KslLogs.info(
+              "Using main Android module src dir as KLS workspace root: {} (module={}, gradlePath={})",
+              srcDir.absolutePath,
+              moduleDir.absolutePath,
+              mainModule.path,
+          )
+          return srcDir
+        }
+
+        KslLogs.info(
+            "Using main Android module as KLS workspace root: {} (gradlePath={}, no src dir found)",
+            moduleDir.absolutePath,
+            mainModule.path,
+        )
+        return moduleDir
+      }
+      KslLogs.warn(
+          "Main Android module directory is invalid, fallback to project root: dir={}, gradlePath={}",
+          moduleDir.absolutePath,
+          mainModule.path,
+      )
+    }
+
+    return workspace.getProjectDir()
   }
 
   private fun findMainAndroidModule(): ModuleProject? {
@@ -410,11 +426,28 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
 
   private fun createInitParams(workspaceRoot: String): JsonObject {
     KslLogs.info("=== CREATING INIT PARAMS ===")
+    val workspaceRootPath = try {
+      File(java.net.URI(workspaceRoot)).absolutePath
+    } catch (_: Exception) {
+      workspace.getProjectDir().absolutePath
+    }
 
     val params =
         JsonObject().apply {
           addProperty("processId", android.os.Process.myPid())
           addProperty("rootUri", workspaceRoot)
+          addProperty("rootPath", workspaceRootPath)
+          add(
+              "workspaceFolders",
+              JsonArray().apply {
+                add(
+                    JsonObject().apply {
+                      addProperty("uri", workspaceRoot)
+                      addProperty("name", File(workspaceRootPath).name.ifEmpty { "workspace" })
+                    },
+                )
+              },
+          )
 
           add(
               "capabilities",
@@ -517,8 +550,12 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
                   add(
                       "scripts",
                       JsonObject().apply {
-                        addProperty("enabled", true)
-                        // Define script definition templates
+                        // Disable Gradle Kotlin script support for Android source editing. The current KLS
+                        // build crashes while analyzing settings.gradle.kts, which prevents reliable
+                        // diagnostics for normal .kt files.
+                        addProperty("enabled", false)
+                        addProperty("buildScriptsEnabled", false)
+                        // Keep template metadata present for compatibility, but scripts remain disabled.
                         add(
                             "templates",
                             JsonArray().apply {
@@ -542,79 +579,5 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
 
     KslLogs.info("Full init params created with script support and formatting")
     return params
-  }
-
-  private fun findJavaPath(): String {
-    val candidates =
-        listOf(
-            "/data/data/com.tom.rv2ide/files/usr/bin/java",
-            "/data/data/com.tom.rv2ide/files/usr/opt/openjdk/bin/java",
-            System.getenv("JAVA_HOME")?.let { "$it/bin/java" },
-        )
-
-    val foundPath = candidates.filterNotNull().firstOrNull { path -> File(path).exists() }
-
-    if (foundPath != null) {
-      KslLogs.info("Found Java at: {}", foundPath)
-      return foundPath
-    }
-
-    KslLogs.warn("Java not found in standard locations, using default")
-    return "/data/data/com.tom.rv2ide/files/usr/bin/java"
-  }
-
-  private fun createKlsClasspathScript() {
-    try {
-      val classpathScript = File(Environment.SERVER_CONFIG_DIR, "classpath")
-
-      // Get the FULL classpath including all build directories
-      val androidClasspath = classpathProvider.getClasspath()
-      val androidSdkPath = classpathProvider.getAndroidSdkPath()
-
-      val javaPath = findJavaPath()
-      val javaHome =
-          File(javaPath).parentFile?.parentFile?.absolutePath
-              ?: "/data/data/com.tom.rv2ide/files/usr"
-
-      val javaBinPath = File(javaPath).parent ?: "/data/data/com.tom.rv2ide/files/usr/bin"
-
-      val scriptContent =
-          """#!/system/bin/sh
-# kls-classpath script for Kotlin Language Server
-# This script provides Android classpath and Java environment
-
-# Set Java home and path
-export JAVA_HOME="${javaHome}"
-export PATH="${javaBinPath}:${'$'}PATH"
-
-# Set Android SDK path
-export ANDROID_SDK_ROOT="${androidSdkPath}"
-export ANDROID_HOME="${androidSdkPath}"
-
-# Disable Gradle dependency resolution
-export KOTLIN_LSP_DISABLE_DEPENDENCY_RESOLUTION=true
-export KOTLIN_LSP_USE_PREDEFINED_CLASSPATH=true
-
-# Output the classpath (already includes everything from build dirs)
-echo "${androidClasspath}"
-"""
-              .trimIndent()
-
-      classpathScript.writeText(scriptContent)
-      classpathScript.setExecutable(true, false)
-
-      try {
-        Runtime.getRuntime().exec(arrayOf("chmod", "755", classpathScript.absolutePath)).waitFor()
-      } catch (e: Exception) {
-        KslLogs.debug("chmod command not available, relying on setExecutable")
-      }
-
-      KslLogs.info(
-          "Created kls-classpath script with {} entries",
-          classpathProvider.getClasspathList().size,
-      )
-    } catch (e: Exception) {
-      KslLogs.error("Failed to create kls-classpath script", e)
-    }
   }
 }

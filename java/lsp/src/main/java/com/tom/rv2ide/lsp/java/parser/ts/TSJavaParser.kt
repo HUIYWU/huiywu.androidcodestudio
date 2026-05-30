@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.lsp.java.parser.ts
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.eventbus.events.file.FileDeletionEvent
 import com.tom.rv2ide.eventbus.events.file.FileRenameEvent
 import com.tom.rv2ide.lsp.java.parser.IJavaParser
@@ -74,7 +75,9 @@ object TSJavaParser : IJavaParser<TSParseResult> {
       if (result != null) {
         if (result.fileModified == file.lastModified) {
           // cache hit and cache modified == file modified
-          log.info("Using cached parse tree")
+          if (IdeLogConfig.shouldLogIde()) {
+            log.info("Using cached parse tree")
+          }
           return result
         }
         // cache hit, but cache modified != file modified
@@ -89,7 +92,9 @@ object TSJavaParser : IJavaParser<TSParseResult> {
       parser.requestCancellationAndWait()
     }
     val parseTree = parser.parseString(content)
-    watch.log()
+    if (IdeLogConfig.shouldLogIde()) {
+      watch.log()
+    }
 
     val result = TSParseResult(file, parseTree)
 

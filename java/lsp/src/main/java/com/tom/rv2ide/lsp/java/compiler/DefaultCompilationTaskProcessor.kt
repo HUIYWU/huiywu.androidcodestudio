@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.lsp.java.compiler
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.utils.StopWatch
 import java.util.function.Consumer
 import openjdk.source.tree.CompilationUnitTree
@@ -32,16 +33,22 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
   override fun process(task: JavacTaskImpl, processCompilationUnit: Consumer<CompilationUnitTree>) {
     val watch = StopWatch("Process compilation task")
     val trees = task.parse()
-    watch.lapFromLast("Parsed treees")
+    if (IdeLogConfig.shouldLogIde()) {
+      watch.lapFromLast("Parsed treees")
+    }
 
     trees.forEach(processCompilationUnit::accept)
-    watch.lapFromLast("Processed trees")
+    if (IdeLogConfig.shouldLogIde()) {
+      watch.lapFromLast("Processed trees")
+    }
 
     //    val entered = JavacTaskUtil.enterTrees(task, trees)
     //    watch.lapFromLast("Entered trees")
     //
     //    val analyzed = JavacTaskUtil.analyze(task, entered)
     task.analyze()
-    watch.lapFromLast("Analyzed all trees")
+    if (IdeLogConfig.shouldLogIde()) {
+      watch.lapFromLast("Analyzed all trees")
+    }
   }
 }

@@ -107,7 +107,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       return completeInternal(params);
     } catch (Throwable err) {
       if (CancelChecker.isCancelled(err)) {
-        LOG.info("Completion request cancelled");
+        if (IdeLogConfig.shouldLogIde()) {
+          LOG.info("Completion request cancelled");
+        }
       } else {
         LOG.error("An error occurred while computing completions", err);
       }

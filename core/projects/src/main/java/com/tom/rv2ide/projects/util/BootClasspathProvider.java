@@ -54,7 +54,9 @@ public class BootClasspathProvider {
     var count = 0;
     for (final var classpath : classpaths) {
       if (bootClasspathClasses.containsKey(classpath)) {
-        LOG.info("Skipping indexing for boot classpath as it is already indexed: {}", classpath);
+        if (IdeLogConfig.shouldLogIde()) {
+          LOG.info("Skipping indexing for boot classpath as it is already indexed: {}", classpath);
+        }
         continue;
       }
 

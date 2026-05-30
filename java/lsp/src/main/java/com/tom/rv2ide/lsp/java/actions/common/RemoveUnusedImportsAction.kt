@@ -6,6 +6,7 @@ import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
 import com.tom.rv2ide.actions.requireEditor
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.java.actions.BaseJavaCodeAction
 import com.tom.rv2ide.resources.R.string
 import io.github.rosemoe.sora.widget.CodeEditor
@@ -43,7 +44,9 @@ class RemoveUnusedImportsAction : BaseJavaCodeAction() {
       val editor = data.requireEditor()
       val content = editor.text
       val output = RemoveUnusedImports.removeUnusedImports(content.toString())
-      watch.log()
+      if (IdeLogConfig.shouldLogIde()) {
+        watch.log()
+      }
       output
     } catch (e: FormatterException) {
       log.error("Failed to remove unused imports", e)

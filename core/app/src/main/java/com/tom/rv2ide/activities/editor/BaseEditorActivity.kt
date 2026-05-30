@@ -38,6 +38,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.activity.viewModels
 import androidx.annotation.GravityInt
@@ -296,7 +297,7 @@ abstract class BaseEditorActivity :
     @JvmStatic protected val log: Logger = LoggerFactory.getLogger(BaseEditorActivity::class.java)
 
     private const val OPTIONS_MENU_INVALIDATION_DELAY = 150L
-    private const val AUTO_SAVE_DELAY_MS = 2000L // 2 seconds
+    private const val AUTO_SAVE_DELAY_MS = 15000L // 15 seconds
 
     const val EDITOR_CONTAINER_SCALE_FACTOR = 0.87f
     const val KEY_BOTTOM_SHEET_SHOWN = "editor_bottomSheetShown"
@@ -358,7 +359,9 @@ abstract class BaseEditorActivity :
           if (currentHash != lastHash && currentContent.isNotEmpty()) {
             editorContentHashes[editor] = currentHash
             pendingSaveFiles[file] = true
-            log.debug("Content changed, marked for auto-save: ${file.absolutePath}")
+            if (IdeLogConfig.shouldLogIde()) {
+              log.debug("Content changed, marked for auto-save: ${file.absolutePath}")
+            }
           }
         }
       }
@@ -448,7 +451,7 @@ abstract class BaseEditorActivity :
                     }
 
                 if (saveSuccess) {
-                  withContext(Dispatchers.Main) { showAutoSaveIndicator(file.name) }
+                  log.debug("Auto-save successful for file: ${file.absolutePath}")
                 }
               }
             }
@@ -467,7 +470,6 @@ abstract class BaseEditorActivity :
       if (file != null && file.exists() && file.canWrite()) {
         file.writeText(content)
         log.debug("Fallback save successful for: ${file.absolutePath}")
-        showAutoSaveIndicator(file.name)
       }
     } catch (e: Exception) {
       log.error("Fallback save failed for: ${editor.file?.absolutePath}", e)
@@ -494,23 +496,26 @@ abstract class BaseEditorActivity :
     }
     return null
   }
-
   /** Show a subtle indicator that a file was auto-saved */
   private fun showAutoSaveIndicator(fileName: String) {
+    val previousStatusText = editorViewModel.statusText
+    val previousStatusGravity = editorViewModel.statusGravity
+
     // Update status to show auto-save happened
     val statusText = "Auto-saved: $fileName"
     doSetStatus(statusText, android.view.Gravity.CENTER)
 
-    // Clear the status after a short delay
+    // Restore the previous status after a short delay
     ThreadUtils.runOnUiThreadDelayed(
         {
-          if (!isDestroying) {
-            doSetStatus("", android.view.Gravity.START)
+          if (!isDestroying && editorViewModel.statusText == statusText) {
+            doSetStatus(previousStatusText, previousStatusGravity)
           }
         },
         1500,
     )
   }
+
 
   /** Initialize auto-save for an editor (alternative to TextWatcher) */
   protected fun initializeAutoSaveForEditor(editor: CodeEditorView) {

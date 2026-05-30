@@ -98,10 +98,10 @@ object FileManager {
 
     return createFileInputStream(file)
   }
-
   fun onDocumentOpen(event: DocumentOpenEvent) {
     activeDocuments[event.openedFile.normalize()] = createDocument(event)
   }
+
 
   fun onDocumentContentChange(event: DocumentChangeEvent) {
     val document = activeDocuments[event.changedFile.normalize()]
@@ -136,12 +136,36 @@ object FileManager {
   }
 
   private fun createDocument(event: DocumentOpenEvent): ActiveDocument {
+    val initialContent = readOpenEventText(event)
+    // Keep the event coherent for subscribers posted after FileManager.onDocumentOpen(). Large-file
+    // editor flows may intentionally omit the eager payload, but downstream language services still
+    // expect DocumentOpenEvent.text to contain the initial snapshot when available.
+    if (event.text.isEmpty() && initialContent.isNotEmpty()) {
+      event.text = initialContent
+    }
     return ActiveDocument(
         file = event.openedFile,
         version = event.version,
         modified = Instant.now(),
-        content = event.text,
+        content = initialContent,
     )
+  }
+
+  private fun readOpenEventText(event: DocumentOpenEvent): String {
+    if (event.text.isNotEmpty()) {
+      return event.text
+    }
+
+    return try {
+      if (Files.exists(event.openedFile) && Files.size(event.openedFile) > 0L) {
+        getFileContents(event.openedFile)
+      } else {
+        ""
+      }
+    } catch (error: Exception) {
+      log.warn("Unable to recover opened document contents for {}", event.openedFile, error)
+      ""
+    }
   }
 
   private fun createDocument(event: DocumentChangeEvent): ActiveDocument {

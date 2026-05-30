@@ -26,6 +26,12 @@ object LSPPreferences {
   const val ACS_KOTLIN_LSP_CURSOR_HOVER = "acs_kotlin_lsp_hover_enabled"
   const val ACS_KOTLIN_LSP_DIAGNOSTICS = "acs_kotlin_lsp_diagnostics_enabled"
   const val ACS_KOTLIN_LSP_FORMAT_STYLE = "acs_kotlin_lsp_format_style"
+  const val ACS_KOTLIN_LSP_BACKEND = "acs_kotlin_lsp_backend"
+
+  const val KOTLIN_LSP_BACKEND_JAVACS = "javacs"
+  const val KOTLIN_LSP_BACKEND_FWCD = "fwcd"
+  const val KOTLIN_LSP_BACKEND_STUB = "stub"
+  const val DEFAULT_KOTLIN_LSP_BACKEND = KOTLIN_LSP_BACKEND_JAVACS
 
   var codeDiagnostics: Boolean
     get() = prefManager.getBoolean(ACS_KOTLIN_LSP_DIAGNOSTICS, true)
@@ -38,10 +44,16 @@ object LSPPreferences {
     set(value) {
       prefManager.putBoolean(ACS_KOTLIN_LSP_CURSOR_HOVER, value)
     }
-
   var codeFormatStyle: String
     get() = prefManager.getString(ACS_KOTLIN_LSP_FORMAT_STYLE, "google")
     set(value) {
       prefManager.putString(ACS_KOTLIN_LSP_FORMAT_STYLE, value)
     }
+
+  var kotlinLspBackend: String
+    get() = prefManager.getString(ACS_KOTLIN_LSP_BACKEND, DEFAULT_KOTLIN_LSP_BACKEND)
+    set(value) {
+      prefManager.putString(ACS_KOTLIN_LSP_BACKEND, value)
+    }
 }
+

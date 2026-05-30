@@ -18,6 +18,7 @@
 package com.tom.rv2ide.setup.updater.lsp.data
 
 import android.util.Log
+import com.tom.rv2ide.preferences.internal.LSPPreferences
 import com.tom.rv2ide.shell.executeProcessAsync
 import com.tom.rv2ide.utils.Environment
 import java.io.File
@@ -40,57 +41,66 @@ object LSPProperties {
 
     val kotlinLspVersion: String
         get() {
-            return try {
-                
-                val serverHome = Environment.SERVERS_KOTLIN_DIR
-                val libDir = File(serverHome, "lib")
-                if (!libDir.exists()) {
-                    return "1.3.14"
-                }
-
-                val jars = libDir.listFiles { file: File -> file.name.endsWith(".jar") }
-                if (jars == null || jars.isEmpty()) {
-                    return "1.3.14"
-                }
-
-                val classpath = jars.joinToString(":") { it.absolutePath }
-                val javaExec = Environment.JAVA?.absolutePath ?: "java"
-                val javaHome = Environment.JAVA_HOME?.absolutePath ?: Environment.PREFIX.absolutePath
-                val home = Environment.HOME.absolutePath
-                
-                val command = listOf(
-                    javaExec,
-                    "-classpath",
-                    classpath,
-                    "org.javacs.kt.MainKt",
-                    "--versionNumber"
-                )
-                val process = executeProcessAsync {
-                    this.command = command
-                    redirectErrorStream = true
-                    environment = mapOf(
-                        "JAVA_HOME" to javaHome,
-                        "HOME" to home
-                    )
-                }
-
-                val output = process.inputStream.bufferedReader().use { it.readText().trim() }
-                val completed = process.waitFor(5, TimeUnit.SECONDS)
-                if (!completed) {
-                    process.destroy()
-                    return "1.3.14"
-                }
-
-                val exitValue = process.exitValue()
-                if (exitValue == 0 && output.isNotEmpty()) {
-                    output
-                } else {
-                    "1.3.14"
-                }
-            } catch (e: Exception) {
-                "1.3.14"
+            return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
+                LSPPreferences.KOTLIN_LSP_BACKEND_FWCD ->
+                    readPropertyValue(Environment.ACSIDE.toString(), "KotlinLspVersion.fwcd", false) ?: "unknown"
+                LSPPreferences.KOTLIN_LSP_BACKEND_STUB ->
+                    readPropertyValue(Environment.ACSIDE.toString(), "KotlinLspVersion.stub", false) ?: "stub"
+                else -> detectJavacsVersion()
             }
         }
+
+    private fun detectJavacsVersion(): String {
+        return try {
+            val serverHome = Environment.SERVERS_KOTLIN_DIR
+            val libDir = File(serverHome, "lib")
+            if (!libDir.exists()) {
+                return readPropertyValue(Environment.ACSIDE.toString(), "KotlinLspVersion.javacs", false) ?: "1.3.14"
+            }
+
+            val jars = libDir.listFiles { file: File -> file.name.endsWith(".jar") }
+            if (jars == null || jars.isEmpty()) {
+                return readPropertyValue(Environment.ACSIDE.toString(), "KotlinLspVersion.javacs", false) ?: "1.3.14"
+            }
+
+            val classpath = jars.joinToString(":") { it.absolutePath }
+            val javaExec = Environment.JAVA?.absolutePath ?: "java"
+            val javaHome = Environment.JAVA_HOME?.absolutePath ?: Environment.PREFIX.absolutePath
+            val home = Environment.HOME.absolutePath
+
+            val command = listOf(
+                javaExec,
+                "-classpath",
+                classpath,
+                "org.javacs.kt.MainKt",
+                "--versionNumber"
+            )
+            val process = executeProcessAsync {
+                this.command = command
+                redirectErrorStream = true
+                environment = mapOf(
+                    "JAVA_HOME" to javaHome,
+                    "HOME" to home
+                )
+            }
+
+            val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+            val completed = process.waitFor(5, TimeUnit.SECONDS)
+            if (!completed) {
+                process.destroy()
+                return readPropertyValue(Environment.ACSIDE.toString(), "KotlinLspVersion.javacs", false) ?: "1.3.14"
+            }
+
+            val exitValue = process.exitValue()
+            if (exitValue == 0 && output.isNotEmpty()) {
+                output
+            } else {
+                readPropertyValue(Environment.ACSIDE.toString(), "KotlinLspVersion.javacs", false) ?: "1.3.14"
+            }
+        } catch (e: Exception) {
+            readPropertyValue(Environment.ACSIDE.toString(), "KotlinLspVersion.javacs", false) ?: "1.3.14"
+        }
+    }
 
     @Throws(IOException::class, NoSuchElementException::class)
     fun readPropertyValue(

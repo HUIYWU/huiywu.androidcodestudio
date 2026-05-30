@@ -63,7 +63,8 @@ class ClangEventHandler(private val documentManager: ClangDocumentManager) {
     if (ext !in setOf("c", "cpp", "cc", "cxx", "h", "hpp")) return
 
     ClangLogs.debug("Document open event for: {}", file)
-    documentManager.ensureDocumentOpen(file, event.text)
+    val initialText = event.text.ifEmpty { com.tom.rv2ide.projects.FileManager.getDocumentContents(file) }
+    documentManager.ensureDocumentOpen(file, initialText)
   }
 
   @org.greenrobot.eventbus.Subscribe(threadMode = org.greenrobot.eventbus.ThreadMode.ASYNC)

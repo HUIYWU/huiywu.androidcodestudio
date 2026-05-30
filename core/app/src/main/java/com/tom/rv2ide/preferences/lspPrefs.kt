@@ -18,8 +18,10 @@
 package com.tom.rv2ide.preferences
 
 import androidx.preference.Preference
+import com.tom.rv2ide.lsp.kotlin.KotlinLspBackendId
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.preferences.internal.LSPPreferences
+import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_BACKEND
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_CURSOR_HOVER
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_DIAGNOSTICS
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_FORMAT_STYLE
@@ -70,12 +72,12 @@ private class KotlinCategory(
 
   init {
     addPreference(KotlinLSP())
+    addPreference(KotlinBackend())
     addPreference(KotlinHover())
     addPreference(KotlinDiagnostics())
     addPreference(KotlinFormatStyle())
   }
 }
-
 @Parcelize
 private class KotlinLSP(
     override val key: String = "lsp_kotlin_server",
@@ -84,10 +86,50 @@ private class KotlinLSP(
 ) :
     LSPPreference(
         hint = string.server_status,
-        getValue = { getStatus(isKotlinServerInstalled()) },
-        serverId = "Kotlin",
-        isInstalled = ::isKotlinServerInstalled,
+        getValue = { getStatus(isActiveKotlinBackendInstalled()) },
+        serverId = { activeKotlinBackendManifestId() },
+        isInstalled = ::isActiveKotlinBackendInstalled,
     )
+
+
+@Parcelize
+private class KotlinBackend(
+    override val key: String = ACS_KOTLIN_LSP_BACKEND,
+    override val title: Int = string.kotlin_lsp_backend_title,
+    override val icon: Int? = drawable.ic_format_code,
+) : SingleChoicePreference() {
+
+  @IgnoredOnParcel override val dialogCancellable = true
+
+  @IgnoredOnParcel
+  override val summary: Int?
+    get() = string.kotlin_lsp_backend_summary
+
+  private val backendEntries = listOf(
+      PreferenceChoices.Entry("javacs", LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS, LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS),
+      PreferenceChoices.Entry("fwcd", LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_FWCD, LSPPreferences.KOTLIN_LSP_BACKEND_FWCD),
+      PreferenceChoices.Entry("stub", LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_STUB, LSPPreferences.KOTLIN_LSP_BACKEND_STUB),
+  )
+
+  override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> = backendEntries.toTypedArray()
+
+  override fun onSelectionChanged(
+      preference: Preference,
+      entry: PreferenceChoices.Entry,
+      position: Int,
+      isSelected: Boolean,
+  ) = Unit
+
+  override fun onChoiceConfirmed(
+      preference: Preference,
+      entry: PreferenceChoices.Entry?,
+      position: Int,
+  ) {
+    val selected = entry?.data as? String ?: return
+    LSPPreferences.kotlinLspBackend = selected
+  }
+}
+
 
 @Parcelize
 private class KotlinHover(
@@ -103,7 +145,7 @@ private class KotlinHover(
   @IgnoredOnParcel
   override val summary: Int?
     get() =
-        if (isKotlinServerInstalled()) {
+        if (isActiveKotlinBackendInstalled()) {
           string.acs_lsp_hover_summary
         } else {
           string.kotlin_server_required
@@ -113,7 +155,7 @@ private class KotlinHover(
       context: android.content.Context
   ): androidx.preference.Preference {
     val pref = super.onCreatePreference(context)
-    pref.isEnabled = isKotlinServerInstalled()
+    pref.isEnabled = isActiveKotlinBackendInstalled()
     return pref
   }
 }
@@ -132,7 +174,7 @@ private class KotlinDiagnostics(
   @IgnoredOnParcel
   override val summary: Int?
     get() =
-        if (isKotlinServerInstalled()) {
+        if (isActiveKotlinBackendInstalled()) {
           string.acs_lsp_diagnostics_summary
         } else {
           string.kotlin_server_required
@@ -142,7 +184,7 @@ private class KotlinDiagnostics(
       context: android.content.Context
   ): androidx.preference.Preference {
     val pref = super.onCreatePreference(context)
-    pref.isEnabled = isKotlinServerInstalled()
+    pref.isEnabled = isActiveKotlinBackendInstalled()
     return pref
   }
 }
@@ -159,7 +201,7 @@ private class KotlinFormatStyle(
   @IgnoredOnParcel
   override val summary: Int?
     get() =
-        if (isKotlinServerInstalled()) {
+        if (isActiveKotlinBackendInstalled()) {
           string.acs_lsp_kotlin_code_style_summary
         } else {
           string.kotlin_server_required
@@ -195,7 +237,7 @@ private class KotlinFormatStyle(
       context: android.content.Context
   ): androidx.preference.Preference {
     val pref = super.onCreatePreference(context)
-    pref.isEnabled = isKotlinServerInstalled()
+    pref.isEnabled = isActiveKotlinBackendInstalled()
     return pref
   }
 }
@@ -223,16 +265,37 @@ private class CCPPLSP(
     LSPPreference(
         hint = string.server_status,
         getValue = { getStatus(isCCppServerInstalled()) },
-        serverId = "C_CPP",
+        serverId = { "C_CPP" },
         isInstalled = ::isCCppServerInstalled,
     )
 */
 
 private fun getStatus(installed: Boolean): String = if (installed) "installed" else "not installed"
+private fun activeKotlinBackendId(): KotlinLspBackendId {
+  return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
+    LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> KotlinLspBackendId.FWCD
+    LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> KotlinLspBackendId.STUB
+    else -> KotlinLspBackendId.JAVACS
+  }
+}
 
-private fun isKotlinServerInstalled(): Boolean {
-  val serverDir = File(Environment.HOME, "acs/servers/kotlin/server")
-  return serverDir.exists() && serverDir.isDirectory && serverDir.listFiles()?.isNotEmpty() == true
+private fun activeKotlinBackendManifestId(): String =
+    when (activeKotlinBackendId()) {
+      KotlinLspBackendId.JAVACS -> "javacs"
+      KotlinLspBackendId.FWCD -> "fwcd"
+      KotlinLspBackendId.STUB -> "stub"
+    }
+
+private fun isActiveKotlinBackendInstalled(): Boolean =
+
+    when (activeKotlinBackendId()) {
+      KotlinLspBackendId.JAVACS -> isDirectoryInstalled(Environment.SERVERS_KOTLIN_DIR)
+      KotlinLspBackendId.FWCD -> isDirectoryInstalled(File(Environment.SERVERS_KOTLIN_DIR, "fwcd"))
+      KotlinLspBackendId.STUB -> true
+    }
+
+private fun isDirectoryInstalled(dir: File): Boolean {
+  return dir.exists() && dir.isDirectory && dir.listFiles()?.isNotEmpty() == true
 }
 
 private fun isCCppServerInstalled(): Boolean {

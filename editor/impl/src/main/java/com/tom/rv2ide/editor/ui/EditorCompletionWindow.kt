@@ -112,25 +112,29 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
 
   override fun select(pos: Int): Boolean {
     if (pos >= adapter!!.count) {
-      log.warn(
-          "Rejecting completion select request because position is out of bounds: pos={}, count={}, currentSelection={}, itemsSize={}",
-          pos,
-          adapter!!.count,
-          currentSelection,
-          items.size,
-      )
+      if (IdeLogConfig.shouldLogIde()) {
+        log.warn(
+            "Rejecting completion select request because position is out of bounds: pos={}, count={}, currentSelection={}, itemsSize={}",
+            pos,
+            adapter!!.count,
+            currentSelection,
+            items.size,
+        )
+      }
       return false
     }
     return try {
       val selectedItem = items.getOrNull(pos)
-      log.info(
-          "Selecting completion item: pos={}, count={}, currentSelection={}, itemClass={}, item={}",
-          pos,
-          adapter!!.count,
-          currentSelection,
-          selectedItem?.javaClass?.name,
-          selectedItem,
-      )
+      if (IdeLogConfig.shouldLogIde()) {
+        log.info(
+            "Selecting completion item: pos={}, count={}, currentSelection={}, itemClass={}, item={}",
+            pos,
+            adapter!!.count,
+            currentSelection,
+            selectedItem?.javaClass?.name,
+            selectedItem,
+        )
+      }
       super.select(pos)
     } catch (e: Throwable) {
       val selectedItem = items.getOrNull(pos)
@@ -149,13 +153,15 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
   override fun select() : Boolean {
     try {
       val selectedItem = items.getOrNull(currentSelection)
-      log.info(
-          "Selecting current completion item: currentSelection={}, count={}, itemClass={}, item={}",
-          currentSelection,
-          adapter?.count,
-          selectedItem?.javaClass?.name,
-          selectedItem,
-      )
+      if (IdeLogConfig.shouldLogIde()) {
+        log.info(
+            "Selecting current completion item: currentSelection={}, count={}, itemClass={}, item={}",
+            currentSelection,
+            adapter?.count,
+            selectedItem?.javaClass?.name,
+            selectedItem,
+        )
+      }
       return super.select()
     } catch (e: Throwable) {
       val selectedItem = items.getOrNull(currentSelection)

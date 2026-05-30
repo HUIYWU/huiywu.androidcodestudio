@@ -53,50 +53,56 @@ data class DiagnosticItem(
         HINT -> SEVERITY_TYPO
       }
     }
-
-    // Helper to convert line/column to character index
-    fun lineColumnToIndex(content: CharSequence, line: Int, column: Int): Int {
-      var currentLine = 0
-      var index = 0
-
-      while (currentLine < line && index < content.length) {
-        if (content[index] == '\n') {
-          currentLine++
-        }
-        index++
-      }
-
-      return minOf(index + column, content.length)
-    }
   }
 
   fun asDiagnosticRegion(content: CharSequence): DiagnosticRegion {
-    try {
-      // Convert line/column positions to character indices
-      val startIndex = lineColumnToIndex(content, range.start.line, range.start.column)
-      val endIndex = lineColumnToIndex(content, range.end.line, range.end.column)
-
-      return DiagnosticRegion(startIndex, endIndex, mapSeverity(severity))
-    } catch (e: Exception) {
-      // KslLogs.error("Failed to create diagnostic region", e)
-      // Return a minimal valid region
-      return DiagnosticRegion(0, 1, mapSeverity(severity))
-    }
+    return asDiagnosticRegion(LineIndex.from(content))
   }
 
-  private fun lineColumnToIndex(content: CharSequence, line: Int, column: Int): Int {
-    var currentLine = 0
-    var index = 0
+  fun asDiagnosticRegion(lineIndex: LineIndex): DiagnosticRegion {
+    return try {
+      val startIndex = lineIndex.lineColumnToIndex(range.start.line, range.start.column)
+      val endIndex = lineIndex.lineColumnToIndex(range.end.line, range.end.column)
 
-    while (currentLine < line && index < content.length) {
-      if (content[index] == '\n') {
-        currentLine++
-      }
-      index++
+      DiagnosticRegion(startIndex, endIndex, mapSeverity(severity))
+    } catch (e: Exception) {
+      // Keep diagnostics publishing fail-soft. A single malformed diagnostic range must not prevent
+      // the editor from receiving the rest of the diagnostics batch.
+      DiagnosticRegion(0, 1, mapSeverity(severity))
     }
+  }
+}
 
-    // Add column offset
-    return minOf(index + column, content.length)
+class LineIndex private constructor(
+    private val lineStarts: IntArray,
+    private val contentLength: Int,
+) {
+
+  fun lineColumnToIndex(line: Int, column: Int): Int {
+    if (lineStarts.isEmpty()) {
+      return 0
+    }
+    val safeLine = line.coerceIn(0, lineStarts.lastIndex)
+    val safeColumn = column.coerceAtLeast(0)
+    return (lineStarts[safeLine] + safeColumn).coerceIn(0, contentLength)
+  }
+
+  companion object {
+    /**
+     * Builds a reusable line-start table for a diagnostics publish batch. This avoids repeatedly
+     * scanning a large editor buffer for every diagnostic range.
+     */
+    @JvmStatic
+    fun from(content: CharSequence): LineIndex {
+      val starts = ArrayList<Int>()
+      starts.add(0)
+      for (index in 0 until content.length) {
+        if (content[index] == '\n') {
+          starts.add(index + 1)
+        }
+      }
+      return LineIndex(starts.toIntArray(), content.length)
+    }
   }
 }
 

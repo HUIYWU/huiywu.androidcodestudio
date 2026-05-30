@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.lsp.internal.model
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.models.CompletionParams
 import com.tom.rv2ide.progress.ICancelChecker
 import com.tom.rv2ide.utils.DocumentUtils
@@ -86,27 +87,37 @@ private constructor(
 
     // The changes must be of same length
     if (deltaPrefix != deltaColumn) {
-      log.info("...unequal change in prefix and column")
+      if (IdeLogConfig.shouldLogIde()) {
+        log.info("...unequal change in prefix and column")
+      }
       return false
     }
 
     if (position.line == -1 || position.column == -1) {
-      log.info("...invalid cached completion position")
+      if (IdeLogConfig.shouldLogIde()) {
+        log.info("...invalid cached completion position")
+      }
       return false
     }
 
     if (position.line != params.position.line || position.column > params.position.column) {
-      log.info("...cursor line changed")
+      if (IdeLogConfig.shouldLogIde()) {
+        log.info("...cursor line changed")
+      }
       return false
     }
 
     if (!DocumentUtils.isSameFile(file, params.file)) {
-      log.info("...no cache available for current file")
+      if (IdeLogConfig.shouldLogIde()) {
+        log.info("...no cache available for current file")
+      }
       return false
     }
 
     if (!partial.startsWith(prefix) || partial.endsWith(".")) {
-      log.info("...incompatible partial identifier")
+      if (IdeLogConfig.shouldLogIde()) {
+        log.info("...incompatible partial identifier")
+      }
       return false
     }
 

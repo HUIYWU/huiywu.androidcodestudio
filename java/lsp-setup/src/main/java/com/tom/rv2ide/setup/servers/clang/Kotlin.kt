@@ -18,13 +18,16 @@
 package com.tom.rv2ide.setup.servers.kotlin
 
 import android.content.Context
+import com.tom.rv2ide.preferences.internal.LSPPreferences
 import com.tom.rv2ide.setup.servers.ILanguageServerInstaller
 import com.tom.rv2ide.utils.Environment
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URL
 import java.util.zip.ZipInputStream
-import org.json.JSONObject
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
 /**
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
@@ -33,52 +36,59 @@ import org.json.JSONObject
 class Kotlin(private val context: Context) : ILanguageServerInstaller {
   
   companion object {
-    private const val SERVER_ID = "Kotlin"
-    private const val MANIFEST_URL = "https://raw.githubusercontent.com/AndroidCSOfficial/acs-language-servers/refs/heads/main/servers-manifest.json"
+    private const val MANIFEST_URL = "https://raw.githubusercontent.com/HUIYWU/huiywu.language-servers/refs/heads/main/servers-manifest.json"
   }
+
+  private val json = Json { ignoreUnknownKeys = true }
   
   override fun isInstalled(): Boolean {
-    val kotlinBinary = File(Environment.SERVERS_KOTLIN_DIR, "bin/kotlin-language-server")
-    val atLeastOneJar = File(Environment.SERVERS_KOTLIN_DIR, "lib/kotlin-stdlib-2.1.0.jar")
-    return kotlinBinary.exists() && atLeastOneJar.exists()
+    val backendId = activeBackendManifestId()
+    val manifest = runCatching { json.decodeFromString<Manifest>(URL(MANIFEST_URL).readText()) }.getOrNull()
+    val server = manifest?.let { selectServerItem(it, backendId) }
+    val serverHome = installRootFor(backendId, server)
+
+    val candidates =
+        buildList {
+          add(File(serverHome, "bin/kotlin-language-server"))
+          add(File(serverHome, "bin/kotlin-language-server.sh"))
+          add(File(serverHome, "kotlin-language-server"))
+          add(File(serverHome, "kotlin-language-server.sh"))
+          add(File(serverHome, "server/bin/kotlin-language-server"))
+          add(File(serverHome, "server/bin/kotlin-language-server.sh"))
+        }
+
+    val hasLauncher = candidates.any { it.exists() && it.isFile }
+    val hasJar =
+        File(serverHome, "lib").listFiles()?.any { it.isFile && it.extension == "jar" } == true ||
+            File(serverHome, "server/lib").listFiles()?.any { it.isFile && it.extension == "jar" } == true
+
+    return when (backendId) {
+      "stub" -> true
+      "fwcd" -> hasLauncher
+      else -> hasLauncher && hasJar
+    }
   }
   
   override fun install(onOutput: (String) -> Unit): Boolean {
     return try {
       onOutput("Fetching Kotlin language server information...")
       
-      val json = URL(MANIFEST_URL).readText()
-      val jsonObject = JSONObject(json)
-      val serversArray = jsonObject.getJSONArray("Servers")
-      
-      var downloadLink: String? = null
-      var version: String? = null
-      
-      for (i in 0 until serversArray.length()) {
-        val server = serversArray.getJSONObject(i)
-        if (server.getString("id") == SERVER_ID) {
-          downloadLink = server.getString("link")
-          version = server.getString("version")
-          if (downloadLink == "null") {
-            downloadLink = null
-          }
-          break
-        }
-      }
+      val manifest = json.decodeFromString<Manifest>(URL(MANIFEST_URL).readText())
+      val backendId = activeBackendManifestId()
+      val server = selectServerItem(manifest, backendId)
+      val downloadLink = server?.artifact?.url ?: server?.link
+      val version = server?.version
       
       if (downloadLink == null) {
         onOutput("\nError: No download link available for Kotlin language server")
-        onOutput("Server ID searched: $SERVER_ID")
+        onOutput("Backend searched: $backendId")
         return false
       }
       
       onOutput("Found Kotlin language server version: $version")
       onOutput("Download URL: $downloadLink")
       
-      val serversDir = File(Environment.HOME, "acs/servers")
-      serversDir.mkdirs()
-      
-      val serverDir = File(serversDir, SERVER_ID.lowercase())
+      val serverDir = installRootFor(backendId, server)
       serverDir.mkdirs()
       
       onOutput("\nConnecting to download server...")
@@ -89,7 +99,7 @@ class Kotlin(private val context: Context) : ILanguageServerInstaller {
       val fileLength = connection.contentLength
       val inputStream = connection.getInputStream()
       
-      val tempFile = File(serversDir, "temp_${SERVER_ID}.zip")
+      val tempFile = File(serverDir.parentFile ?: serverDir, "temp_${backendId}.zip")
       val outputStream = FileOutputStream(tempFile)
       
       onOutput("Downloading Kotlin language server...")
@@ -176,4 +186,90 @@ class Kotlin(private val context: Context) : ILanguageServerInstaller {
       false
     }
   }
+
+  private fun activeBackendManifestId(): String =
+      when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
+        LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> "fwcd"
+        LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> "stub"
+        else -> "javacs"
+      }
+
+  private fun selectServerItem(manifest: Manifest, serverId: String): ServerItem? {
+    return manifest.servers.firstOrNull {
+      it.id.equals(serverId, ignoreCase = true) &&
+          it.language.equals("kotlin", ignoreCase = true)
+    }
+        ?: manifest.servers.firstOrNull {
+          it.backend?.equals(serverId, ignoreCase = true) == true &&
+              it.language.equals("kotlin", ignoreCase = true)
+        }
+        ?: manifest.servers.firstOrNull {
+          it.id.equals("kotlin", ignoreCase = true) && serverId.equals("javacs", ignoreCase = true)
+        }
+        ?: manifest.servers.firstOrNull { it.language.equals("kotlin", ignoreCase = true) }
+        ?: manifest.legacyServers.firstOrNull {
+          it.id.equals(serverId, ignoreCase = true) ||
+              it.backend?.equals(serverId, ignoreCase = true) == true
+        }
+        ?: manifest.legacyServers.firstOrNull {
+          it.id.equals("kotlin", ignoreCase = true) && serverId.equals("javacs", ignoreCase = true)
+        }
+        ?: manifest.legacyServers.firstOrNull()
+  }
+
+  private fun installRootFor(serverId: String, server: ServerItem?): File {
+    val install = server?.install
+    val targetRelativeTo = install?.targetRelativeTo?.trim()
+    val targetSubdir = install?.targetSubdir?.trim().orEmpty()
+
+    val baseDir =
+        when (targetRelativeTo) {
+          "SERVERS_KOTLIN_DIR" -> Environment.SERVERS_KOTLIN_DIR
+          "SERVERS_DIR" -> Environment.SERVERS_DIR
+          "HOME" -> Environment.HOME
+          else -> null
+        }
+
+    if (baseDir != null) {
+      return if (targetSubdir.isNotEmpty()) File(baseDir, targetSubdir) else baseDir
+    }
+
+    return when (serverId.trim().lowercase()) {
+      "fwcd" -> File(Environment.SERVERS_KOTLIN_DIR, "fwcd")
+      "stub" -> File(Environment.SERVERS_KOTLIN_DIR, "stub")
+      else -> File(Environment.HOME, "acs/servers/${serverId.lowercase()}")
+    }
+  }
+
+  @Serializable
+  data class Manifest(
+      val servers: List<ServerItem> = emptyList(),
+      @SerialName("Servers") val legacyServers: List<ServerItem> = emptyList(),
+  )
+
+  @Serializable
+  data class ServerItem(
+      val id: String,
+      val language: String = "kotlin",
+      val name: String? = null,
+      val backend: String? = null,
+      val version: String,
+      val artifact: Artifact? = null,
+      val install: Install? = null,
+      val link: String? = null,
+  )
+
+  @Serializable
+  data class Artifact(
+      val type: String? = null,
+      val entry: String? = null,
+      val url: String? = null,
+  )
+
+  @Serializable
+  data class Install(
+      val layout: String? = null,
+      val targetRelativeTo: String? = null,
+      val targetSubdir: String? = null,
+  )
 }

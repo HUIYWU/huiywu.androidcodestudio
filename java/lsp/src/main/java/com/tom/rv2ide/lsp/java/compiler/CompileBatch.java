@@ -27,6 +27,7 @@ import static com.tom.rv2ide.utils.Environment.JAVA_HOME;
 import androidx.annotation.NonNull;
 import androidx.core.util.Pair;
 import com.tom.rv2ide.builder.model.IJavaCompilerSettings;
+import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.javac.services.compiler.ReusableBorrow;
 import com.tom.rv2ide.javac.services.partial.DiagnosticListenerImpl;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
@@ -116,8 +117,10 @@ public class CompileBatch implements AutoCloseable {
       throw new IllegalStateException(
           "Duplicate CompilationUnitTree for file:" + tree.getSourceFile().toUri());
     }
+    if (IdeLogConfig.shouldLogIde()) {
+      watch.log();
+    }
 
-    watch.log();
   }
 
   private ReusableBorrow batchTask(

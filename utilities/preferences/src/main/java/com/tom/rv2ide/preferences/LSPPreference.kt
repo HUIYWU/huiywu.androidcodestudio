@@ -36,6 +36,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 /*
@@ -46,7 +47,7 @@ abstract class LSPPreference(
     val hint: Int? = null,
     val setValue: ((Any) -> Unit)? = null,
     val getValue: (() -> Any)? = null,
-    val serverId: String? = null,
+    val serverId: (() -> String?)? = null,
     val isInstalled: (() -> Boolean)? = null,
 ) : DialogPreference() {
 
@@ -60,21 +61,22 @@ abstract class LSPPreference(
     dialog.setView(binding.root)
 
     val installed = isInstalled?.invoke() ?: true
+    val resolvedServerId = serverId?.invoke()
 
-    if (serverId != null) {
+    if (resolvedServerId != null) {
       if (installed) {
         // Show uninstall button when installed
         dialog.setNeutralButton(string.lsp_server_uninstall) { _, _ ->
-          showUninstallConfirmation(dialog.context, serverId)
+          showUninstallConfirmation(dialog.context, resolvedServerId)
         }
       } else {
         // Show download button when not installed
         dialog.setNeutralButton(string.updater_download) { _, _ ->
-          downloadServer(dialog.context, serverId)
+          downloadServer(dialog.context, resolvedServerId)
         }
 
         // Fetch server info
-        fetchServerInfo(serverId) { url, version ->
+        fetchServerInfo(resolvedServerId) { url, version ->
           downloadUrl = url
           serverVersion = version
         }
@@ -137,7 +139,11 @@ abstract class LSPPreference(
 
     CoroutineScope(Dispatchers.IO).launch {
       try {
-        val serverDir = File(Environment.HOME, "acs/servers/${serverId.lowercase()}")
+        val manifest = runCatching {
+              JSONObject(URL(manifestUrl()).readText())
+            }.getOrNull()
+        val server = manifest?.let { selectServerItem(it, serverId) }
+        val serverDir = installRootFor(serverId, server)
 
         if (serverDir.exists()) {
           val deleted = serverDir.deleteRecursively()
@@ -181,20 +187,10 @@ abstract class LSPPreference(
   private fun fetchServerInfo(serverId: String, callback: (String?, String?) -> Unit) {
     CoroutineScope(Dispatchers.IO).launch {
       try {
-        val json = URL(manifestUrl()).readText()
-        val jsonObject = JSONObject(json)
-        val serversArray = jsonObject.getJSONArray("Servers")
-
-        for (i in 0 until serversArray.length()) {
-          val server = serversArray.getJSONObject(i)
-          if (server.getString("id") == serverId) {
-            val link = server.getString("link")
-            val version = server.getString("version")
-            if (link != "null") {
-              withContext(Dispatchers.Main) { callback(link, version) }
-            }
-            break
-          }
+        val manifest = JSONObject(URL(manifestUrl()).readText())
+        val server = selectServerItem(manifest, serverId)
+        withContext(Dispatchers.Main) {
+          callback(server?.artifactUrl(), server?.optString("version").takeUnless { it.isNullOrBlank() })
         }
       } catch (e: Exception) {
         e.printStackTrace()
@@ -260,21 +256,9 @@ abstract class LSPPreference(
           progressText.text = context.getString(string.lsp_server_fetching_info)
         }
 
-        val json = URL(manifestUrl()).readText()
-        val jsonObject = JSONObject(json)
-        val serversArray = jsonObject.getJSONArray("Servers")
-
-        var downloadLink: String? = null
-        for (i in 0 until serversArray.length()) {
-          val server = serversArray.getJSONObject(i)
-          if (server.getString("id") == serverId) {
-            downloadLink = server.getString("link")
-            if (downloadLink == "null") {
-              downloadLink = null
-            }
-            break
-          }
-        }
+        val manifest = JSONObject(URL(manifestUrl()).readText())
+        val server = selectServerItem(manifest, serverId)
+        val downloadLink = server?.artifactUrl()
 
         if (downloadLink == null) {
           withContext(Dispatchers.Main) {
@@ -287,10 +271,7 @@ abstract class LSPPreference(
           return@launch
         }
 
-        val serversDir = File(Environment.HOME, "acs/servers")
-        serversDir.mkdirs()
-
-        val serverDir = File(serversDir, serverId.lowercase())
+        val serverDir = installRootFor(serverId, server)
         serverDir.mkdirs()
 
         withContext(Dispatchers.Main) {
@@ -303,7 +284,7 @@ abstract class LSPPreference(
         val fileLength = connection.contentLength
         val inputStream = connection.getInputStream()
 
-        val tempFile = File(serversDir, "temp_${serverId}.zip")
+        val tempFile = File(serverDir.parentFile ?: serverDir, "temp_${serverId}.zip")
         val outputStream = FileOutputStream(tempFile)
 
         withContext(Dispatchers.Main) {
@@ -410,9 +391,79 @@ abstract class LSPPreference(
 
   // TODO: allow the user to change repo url
   private fun manifestUrl(): String =
-      "https://raw.githubusercontent.com/AndroidCSOfficial/acs-language-servers/refs/heads/main/servers-manifest.json"
+      "https://raw.githubusercontent.com/HUIYWU/huiywu.language-servers/refs/heads/main/servers-manifest.json"
 
-  private fun showToast(context: android.content.Context, message: String) {
-    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+  private fun selectServerItem(manifest: JSONObject, serverId: String): JSONObject? {
+    return findServerItem(manifest.optJSONArray("servers"), serverId)
+        ?: findServerItem(manifest.optJSONArray("Servers"), serverId)
+  }
+
+  private fun findServerItem(array: JSONArray?, serverId: String): JSONObject? {
+    if (array == null) return null
+
+    val normalizedId = serverId.trim().lowercase()
+    var firstKotlin: JSONObject? = null
+    var legacyKotlinForJavacs: JSONObject? = null
+    var firstItem: JSONObject? = null
+
+    for (i in 0 until array.length()) {
+      val item = array.optJSONObject(i) ?: continue
+      if (firstItem == null) firstItem = item
+
+      val id = item.optString("id").trim().lowercase()
+      val language = item.optString("language", "kotlin").trim().lowercase()
+      val backend = item.optString("backend").trim().lowercase()
+
+      if (language == "kotlin" && firstKotlin == null) {
+        firstKotlin = item
+      }
+      if (normalizedId == "javacs" && id == "kotlin") {
+        legacyKotlinForJavacs = item
+      }
+      if (language == "kotlin" && id == normalizedId) {
+        return item
+      }
+      if (language == "kotlin" && backend == normalizedId) {
+        return item
+      }
+      if (id == normalizedId || backend == normalizedId) {
+        return item
+      }
+    }
+
+    return legacyKotlinForJavacs ?: firstKotlin ?: firstItem
+  }
+
+  private fun installRootFor(serverId: String, server: JSONObject?): File {
+    val install = server?.optJSONObject("install")
+    val targetRelativeTo = install?.optString("targetRelativeTo")?.trim()
+    val targetSubdir = install?.optString("targetSubdir")?.trim().orEmpty()
+
+    val baseDir =
+        when (targetRelativeTo) {
+          "SERVERS_KOTLIN_DIR" -> Environment.SERVERS_KOTLIN_DIR
+          "SERVERS_DIR" -> Environment.SERVERS_DIR
+          "HOME" -> Environment.HOME
+          else -> null
+        }
+
+    if (baseDir != null) {
+      return if (targetSubdir.isNotEmpty()) File(baseDir, targetSubdir) else baseDir
+    }
+
+    return when (serverId.trim().lowercase()) {
+      "fwcd" -> File(Environment.SERVERS_KOTLIN_DIR, "fwcd")
+      "stub" -> File(Environment.SERVERS_KOTLIN_DIR, "stub")
+      else -> File(Environment.HOME, "acs/servers/${serverId.lowercase()}")
+    }
+  }
+
+  private fun JSONObject.artifactUrl(): String? {
+    val artifactUrl = optJSONObject("artifact")?.optString("url")
+    if (!artifactUrl.isNullOrBlank() && artifactUrl != "null") {
+      return artifactUrl
+    }
+    val legacyLink = optString("link")
+    return legacyLink.takeUnless { it.isBlank() || it == "null" }
   }
 }

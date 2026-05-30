@@ -18,6 +18,7 @@
 package com.tom.rv2ide.setup.updater.lsp
 
 import android.content.Context
+import com.tom.rv2ide.preferences.internal.LSPPreferences
 import android.widget.Toast
 import com.tom.rv2ide.setup.R
 import com.tom.rv2ide.resources.R.string
@@ -28,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -58,7 +60,8 @@ import java.util.zip.ZipInputStream
  */
 class KotlinLspUpdater(private val context: Context) {
 
-    private val manifestUrl = "https://raw.githubusercontent.com/AndroidCSOfficial/acs-language-servers/refs/heads/main/servers-manifest.json"
+    private val manifestUrl = "https://raw.githubusercontent.com/HUIYWU/huiywu.language-servers/refs/heads/main/servers-manifest.json"
+    private val json = Json { ignoreUnknownKeys = true }
 
     /**
      * Checks for available updates by fetching the remote manifest and comparing versions.
@@ -76,15 +79,15 @@ class KotlinLspUpdater(private val context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val jsonString = URL(manifestUrl).readText()
-                val manifest = Json.decodeFromString<Manifest>(jsonString)
-                val serverItem = manifest.Servers.firstOrNull()
+                val manifest = json.decodeFromString<Manifest>(jsonString)
+                val serverItem = selectServerItem(manifest)
 
                 if (serverItem != null) {
                     val updateAvailable = isUpdateAvailable(serverItem.version, currentVersion)
                     withContext(Dispatchers.Main) {
                         onResult?.invoke(updateAvailable, serverItem.version)
                         if (updateAvailable) {
-                            showUpdateDialog(serverItem.version, serverItem.link)
+                            showUpdateDialog(serverItem.version, serverItem.artifact?.url ?: serverItem.link, serverItem)
                         }
                     }
                 } else {
@@ -111,21 +114,51 @@ class KotlinLspUpdater(private val context: Context) {
     private fun isUpdateAvailable(remoteVersion: String, currentVersion: String): Boolean {
         val remoteParts = remoteVersion.split(".").mapNotNull { it.toIntOrNull() }
         val currentParts = currentVersion.split(".").mapNotNull { it.toIntOrNull() }
-        
+
         val maxLength = maxOf(remoteParts.size, currentParts.size)
-        
+
         for (i in 0 until maxLength) {
             val remotePart = remoteParts.getOrNull(i) ?: 0
             val currentPart = currentParts.getOrNull(i) ?: 0
-            
+
             if (remotePart > currentPart) {
                 return true
             } else if (remotePart < currentPart) {
                 return false
             }
         }
-        
+
         return false
+    }
+
+    private fun selectServerItem(manifest: Manifest): ServerItem? {
+        val backendId = activeBackendManifestId()
+        return manifest.servers.firstOrNull {
+            it.id.equals(backendId, ignoreCase = true) &&
+                it.language.equals("kotlin", ignoreCase = true)
+        }
+            ?: manifest.servers.firstOrNull {
+                it.backend?.equals(backendId, ignoreCase = true) == true &&
+                    it.language.equals("kotlin", ignoreCase = true)
+            }
+            ?: manifest.servers.firstOrNull {
+                it.id.equals("kotlin", ignoreCase = true) && backendId == "javacs"
+            }
+            ?: manifest.servers.firstOrNull { it.language.equals("kotlin", ignoreCase = true) }
+            ?: manifest.legacyServers.firstOrNull {
+                it.id.equals(backendId, ignoreCase = true) ||
+                    it.backend?.equals(backendId, ignoreCase = true) == true
+            }
+            ?: manifest.legacyServers.firstOrNull { it.id.equals("kotlin", ignoreCase = true) && backendId == "javacs" }
+            ?: manifest.legacyServers.firstOrNull()
+    }
+
+    private fun activeBackendManifestId(): String {
+        return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
+            LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> "fwcd"
+            LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> "stub"
+            else -> "javacs"
+        }
     }
 
     /**
@@ -137,10 +170,10 @@ class KotlinLspUpdater(private val context: Context) {
      * @param fetchedVersion The version string of the available update.
      * @param downloadUrl The URL from which to download the update package, or `null` if unavailable.
      */
-    private fun showUpdateDialog(fetchedVersion: String, downloadUrl: String?) {
+    private fun showUpdateDialog(fetchedVersion: String, downloadUrl: String?, serverItem: ServerItem? = null) {
         LspUpdateDialog(context)
             .setTitle(context.getString(R.string.lsp_update_available_title))
-            .setDescription(context.getString(R.string.lsp_update_available_description, fetchedVersion))
+            .setDescription(context.getString(R.string.lsp_update_available_description, kotlinBackendDisplayName(), fetchedVersion))
             .setPrimaryButton(context.getString(R.string.lsp_update_button)) { dialog ->
                 if (downloadUrl == null) {
                     Toast.makeText(context, context.getString(R.string.lsp_download_url_unavailable), Toast.LENGTH_SHORT).show()
@@ -186,18 +219,18 @@ class KotlinLspUpdater(private val context: Context) {
                         updater.updateTitle(context.getString(R.string.lsp_download_complete_title))
                         updater.updateDescription(context.getString(R.string.lsp_cleaning_old_installation))
 
-                        cleanupOldInstallation(updater)
+                        cleanupOldInstallation(updater, serverItem)
 
                         updater.updateDescription(context.getString(R.string.lsp_extracting_files))
 
-                        extractZipFile(file.absolutePath, updater)
+                        extractZipFile(file.absolutePath, updater, serverItem)
 
                         file.delete()
 
                         updateVersionInProperties(fetchedVersion)
 
                         updater.updateTitle(context.getString(R.string.lsp_installation_complete_title))
-                        updater.updateDescription(context.getString(R.string.lsp_installation_complete_description, fetchedVersion))
+                        updater.updateDescription(context.getString(R.string.lsp_installation_complete_description, kotlinBackendDisplayName(), fetchedVersion))
 
                         kotlinx.coroutines.delay(1500)
 
@@ -212,7 +245,7 @@ class KotlinLspUpdater(private val context: Context) {
                         kotlinx.coroutines.delay(2000)
 
                         withContext(Dispatchers.Main) {
-                            showErrorDialog(e.message ?: context.getString(R.string.lsp_unknown_error), fetchedVersion, downloadUrl)
+                            showErrorDialog(e.message ?: context.getString(R.string.lsp_unknown_error), fetchedVersion, downloadUrl, serverItem)
                         }
                     }
                 }
@@ -231,11 +264,34 @@ class KotlinLspUpdater(private val context: Context) {
      *
      * @param updater The dialog updater for displaying cleanup progress.
      */
-    private fun cleanupOldInstallation(updater: LspUpdateDialog.ProgressUpdater) {
-        val targetDir = File(Environment.HOME, "acs/servers/kotlin")
-        
+    private fun cleanupOldInstallation(updater: LspUpdateDialog.ProgressUpdater, serverItem: ServerItem? = null) {
+        val targetDir = kotlinInstallRoot(serverItem)
+
         if (targetDir.exists()) {
             targetDir.deleteRecursively()
+        }
+    }
+
+    private fun kotlinInstallRoot(serverItem: ServerItem? = null): File {
+        val install = serverItem?.install
+        val targetRelativeTo = install?.targetRelativeTo?.trim()
+        val targetSubdir = install?.targetSubdir?.trim().orEmpty()
+
+        val baseDir = when (targetRelativeTo) {
+            "SERVERS_KOTLIN_DIR" -> Environment.SERVERS_KOTLIN_DIR
+            "SERVERS_DIR" -> Environment.SERVERS_DIR
+            "HOME" -> Environment.HOME
+            else -> null
+        }
+
+        if (baseDir != null) {
+            return if (targetSubdir.isNotEmpty()) File(baseDir, targetSubdir) else baseDir
+        }
+
+        return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
+            LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> File(Environment.SERVERS_KOTLIN_DIR, "fwcd")
+            LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> File(Environment.SERVERS_KOTLIN_DIR, "stub")
+            else -> File(Environment.HOME, "acs/servers/kotlin")
         }
     }
 
@@ -249,8 +305,8 @@ class KotlinLspUpdater(private val context: Context) {
      * @param updater The dialog updater for displaying extraction progress.
      * @throws Exception if extraction fails.
      */
-    private suspend fun extractZipFile(zipFilePath: String, updater: LspUpdateDialog.ProgressUpdater) {
-        val targetDir = File(Environment.HOME, "acs/servers/kotlin")
+    private suspend fun extractZipFile(zipFilePath: String, updater: LspUpdateDialog.ProgressUpdater, serverItem: ServerItem? = null) {
+        val targetDir = kotlinInstallRoot(serverItem)
         targetDir.mkdirs()
 
         ZipInputStream(File(zipFilePath).inputStream()).use { zipInputStream ->
@@ -290,11 +346,27 @@ class KotlinLspUpdater(private val context: Context) {
         try {
             LSPProperties.writePropertyValue(
                 filePath = Environment.ACSIDE.toString(),
-                key = "KotlinLspVersion",
+                key = kotlinVersionPropertyKey(),
                 value = version
             )
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+    private fun kotlinVersionPropertyKey(): String {
+        return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
+            LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> "KotlinLspVersion.fwcd"
+            LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> "KotlinLspVersion.stub"
+            else -> "KotlinLspVersion.javacs"
+        }
+    }
+
+
+    private fun kotlinBackendDisplayName(): String {
+        return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
+            LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> "Kotlin language server (fwcd)"
+            LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> "Kotlin language server (stub)"
+            else -> "Kotlin language server (javacs)"
         }
     }
 
@@ -306,7 +378,7 @@ class KotlinLspUpdater(private val context: Context) {
     private fun showSuccessDialog(version: String) {
         LspUpdateDialog(context)
             .setTitle(context.getString(R.string.lsp_update_success_title))
-            .setDescription(context.getString(R.string.lsp_update_success_description, version))
+            .setDescription(context.getString(R.string.lsp_update_success_description, kotlinBackendDisplayName(), version))
             .setPrimaryButton(context.getString(R.string.lsp_ok_button)) { dialog ->
                 dialog.dismiss()
             }
@@ -322,13 +394,13 @@ class KotlinLspUpdater(private val context: Context) {
      * @param version The version string of the update that failed to install.
      * @param downloadUrl The URL that was used for the failed download attempt.
      */
-    private fun showErrorDialog(error: String, version: String, downloadUrl: String) {
+    private fun showErrorDialog(error: String, version: String, downloadUrl: String, serverItem: ServerItem? = null) {
         LspUpdateDialog(context)
             .setTitle(context.getString(R.string.lsp_installation_failed_title))
             .setDescription(context.getString(R.string.lsp_installation_failed_description, error))
             .setPrimaryButton(context.getString(R.string.lsp_retry_button)) { dialog ->
                 dialog.dismiss()
-                showUpdateDialog(version, downloadUrl)
+                showUpdateDialog(version, downloadUrl, serverItem)
             }
             .setSecondaryButton(context.getString(R.string.lsp_cancel_button)) { dialog ->
                 dialog.dismiss()
@@ -339,22 +411,46 @@ class KotlinLspUpdater(private val context: Context) {
     /**
      * Data class representing the structure of the remote manifest JSON.
      *
-     * @property Servers A list of available server items in the manifest.
+     * Supports both the new `servers` schema and the legacy `Servers` schema
+     * during the migration period.
      */
     @Serializable
-    data class Manifest(val Servers: List<ServerItem>)
+    data class Manifest(
+        val servers: List<ServerItem> = emptyList(),
+        @SerialName("Servers") val legacyServers: List<ServerItem> = emptyList()
+    )
 
-    /**
-     * Data class representing a single server entry in the manifest.
-     *
-     * @property id The unique identifier for the server.
-     * @property version The version string of the server.
-     * @property link The download URL for the server package, or `null` if not available.
-     */
     @Serializable
     data class ServerItem(
         val id: String,
+        val language: String = "kotlin",
+        val name: String? = null,
+        val backend: String? = null,
         val version: String,
-        val link: String?
+        val artifact: Artifact? = null,
+        val install: Install? = null,
+        val runtime: Runtime? = null,
+        val link: String? = null
+    )
+
+    @Serializable
+    data class Artifact(
+        val type: String? = null,
+        val entry: String? = null,
+        val url: String? = null
+    )
+
+    @Serializable
+    data class Install(
+        val layout: String? = null,
+        val targetRelativeTo: String? = null,
+        val targetSubdir: String? = null
+    )
+
+    @Serializable
+    data class Runtime(
+        val launcherCandidates: List<String> = emptyList(),
+        val configHome: String? = null,
+        val cacheHome: String? = null
     )
 }

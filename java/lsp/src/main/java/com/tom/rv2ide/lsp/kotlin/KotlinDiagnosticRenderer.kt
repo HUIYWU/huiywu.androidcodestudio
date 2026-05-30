@@ -18,6 +18,7 @@
 package com.tom.rv2ide.lsp.kotlin
 
 import com.tom.rv2ide.lsp.models.DiagnosticResult
+import com.tom.rv2ide.lsp.models.LineIndex
 import io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer
 import io.github.rosemoe.sora.widget.CodeEditor
 import org.slf4j.LoggerFactory
@@ -42,11 +43,13 @@ class KotlinDiagnosticRenderer {
         return
       }
 
-      // Convert diagnostics to regions
+      // Convert diagnostics to regions. Build the line index once per publish batch instead of
+      // re-scanning the full editor content for every diagnostic item.
+      val lineIndex = LineIndex.from(content)
       val regions =
           result.diagnostics.mapNotNull { diagnostic ->
             try {
-              diagnostic.asDiagnosticRegion(content)
+              diagnostic.asDiagnosticRegion(lineIndex)
             } catch (e: Exception) {
               log.error("Failed to convert diagnostic to region", e)
               null

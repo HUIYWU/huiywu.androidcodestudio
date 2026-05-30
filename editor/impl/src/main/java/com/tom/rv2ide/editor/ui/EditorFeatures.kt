@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.editor.ui
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.editor.api.IEditor
 import com.tom.rv2ide.editor.ui.IDEEditor.Companion.log
 import com.tom.rv2ide.models.Position
@@ -42,7 +43,9 @@ class EditorFeatures(var editor: IDEEditor? = null) : IEditor {
   override fun setSelection(start: Position, end: Position) {
     withEditor {
       if (!isValidPosition(start, true) || !isValidPosition(end, true)) {
-        log.warn("Invalid selection range: start={} end={}", start, end)
+        if (IdeLogConfig.shouldLogIde()) {
+          log.warn("Invalid selection range: start={} end={}", start, end)
+        }
         return@withEditor
       }
 

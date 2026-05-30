@@ -39,6 +39,7 @@ import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.syntax.colorschemes.SchemeAndroidIDE
 import com.tom.rv2ide.tasks.cancelIfActive
 import com.tom.rv2ide.tasks.runOnUiThread
+import com.tom.rv2ide.utils.LargeFileOptimizationHelper
 import com.tom.rv2ide.utils.customOrJBMono
 import com.tom.rv2ide.artificial.completion.SuggestionView
 import io.github.rosemoe.sora.text.Content
@@ -157,6 +158,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     addView(editorContainer)
     addView(searchLayout, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
+    applyLargeFileOptimizationsBeforeRead(file)
     readFileAndApplySelection(file, selection)
 
     // Setup content change listener after initialization
@@ -326,6 +328,15 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
       action()
     } finally {
       _binding?.editor?.isEditable = true
+    }
+  }
+
+  private fun applyLargeFileOptimizationsBeforeRead(file: File) {
+    val largeFileHelper = LargeFileOptimizationHelper(context, binding.editor)
+    if (largeFileHelper.shouldApplyOptimizations(file)) {
+      // Apply editor props before file content is read and assigned. This keeps expensive Sora
+      // features disabled for the first large-file setText pass, not only for later edits.
+      largeFileHelper.applyLargeFileOptimizations(file)
     }
   }
 

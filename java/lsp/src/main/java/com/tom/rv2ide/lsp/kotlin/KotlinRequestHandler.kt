@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory
  */
 
 class KotlinRequestHandler(
-    private val processManager: KotlinServerProcessManager,
+    private val processManager: KotlinLspConnection,
     private val documentManager: KotlinDocumentManager,
 ) {
 
@@ -39,6 +39,8 @@ class KotlinRequestHandler(
     private val log = LoggerFactory.getLogger(KotlinRequestHandler::class.java)
     private const val COMPLETION_TIMEOUT = 10000L
     private const val DEBOUNCE_DELAY = 0L
+    private const val HOVER_DEBOUNCE_MS = 350L
+    private const val HOVER_MIN_INTERVAL_MS = 500L
   }
 
   private val completionConverter = KotlinCompletionConverter()
@@ -49,6 +51,7 @@ class KotlinRequestHandler(
 
   // Debouncing for rapid typing
   private val lastCompletionRequest = AtomicLong(0)
+  private val lastHoverRequest = AtomicLong(0)
   private var activeCompletionJob: Job? = null
   private var javaCompilerBridge: KotlinJavaCompilerBridge? = null
 
@@ -59,66 +62,11 @@ class KotlinRequestHandler(
 
   suspend fun hover(params: DefinitionParams): MarkupContent =
       withContext(Dispatchers.IO) {
-        if (LspFeatures.isHoverEnabled() != true) {
-          return@withContext MarkupContent("", MarkupKind.PLAIN)
-        }
-        val deferred = CompletableDeferred<MarkupContent>()
-        try {
-          documentManager.ensureDocumentOpen(params.file)
-          val lspParams =
-              JsonObject().apply {
-                add(
-                    "textDocument",
-                    JsonObject().apply { addProperty("uri", params.file.toUri().toString()) },
-                )
-                add(
-                    "position",
-                    JsonObject().apply {
-                      addProperty("line", params.position.line)
-                      addProperty("character", params.position.column)
-                    },
-                )
-              }
-
-          processManager.sendRequest("textDocument/hover", lspParams) { result ->
-            val content =
-                if (result != null && result.has("contents")) {
-                  val contents = result.get("contents")
-                  when {
-                    contents.isJsonObject -> {
-                      val obj = contents.asJsonObject
-                      MarkupContent(
-                          obj.get("value")?.asString ?: "",
-                          if (obj.get("kind")?.asString == "markdown") MarkupKind.MARKDOWN
-                          else MarkupKind.PLAIN,
-                      )
-                    }
-                    contents.isJsonArray -> {
-                      // Concatenate array of strings/objects into markdown
-                      val values =
-                          contents.asJsonArray
-                              .map { el ->
-                                if (el.isJsonObject) el.asJsonObject.get("value")?.asString ?: ""
-                                else el.asString
-                              }
-                              .filter { it.isNotEmpty() }
-                      MarkupContent(values.joinToString("\n\n"), MarkupKind.MARKDOWN)
-                    }
-                    else -> {
-                      MarkupContent(contents.asString, MarkupKind.PLAIN)
-                    }
-                  }
-                } else {
-                  MarkupContent("", MarkupKind.PLAIN)
-                }
-            deferred.complete(content)
-          }
-        } catch (e: Exception) {
-          KslLogs.error("Error requesting hover", e)
-          deferred.complete(MarkupContent("", MarkupKind.PLAIN))
-        }
-
-        withTimeoutOrNull(2000) { deferred.await() } ?: MarkupContent("", MarkupKind.PLAIN)
+        // Temporarily short-circuit Kotlin LSP hover.
+        // Current KLS hover requests repeatedly trigger dummy.virtual.kt expression-analysis crashes
+        // (NoTopLevelDescriptorProvider.shouldNotBeCalled), which starve diagnostics/completion.
+        // Stabilizing source diagnostics takes priority over hover until the server-side issue is isolated.
+        return@withContext MarkupContent("", MarkupKind.PLAIN)
       }
 
   suspend fun complete(params: CompletionParams): CompletionResult = coroutineScope {
@@ -147,20 +95,17 @@ class KotlinRequestHandler(
           val currentTime = System.currentTimeMillis()
           val lastSync = lastSyncTime[uri] ?: 0L
   
-          // Non-blocking sync
+          // Keep KLS in sync before requesting completion. The previous fire-and-forget sync could let
+          // textDocument/completion race ahead of didOpen/didChange, producing stale suggestions.
           if (!documentManager.isDocumentOpen(uri)) {
-              launch(Dispatchers.IO) {
-                  documentManager.ensureDocumentOpen(params.file)
-                  lastSyncTime[uri] = currentTime
-              }
-          } else if (currentTime - lastSync > 100L && fileContent.isNotEmpty()) { // Reduced from 300L
-              launch(Dispatchers.IO) {
-                  val currentVersion = documentManager.getDocumentVersion(uri)
-                  val newVersion = currentVersion + 1
-                  documentManager.setDocumentVersion(uri, newVersion)
-                  documentManager.notifyDocumentChange(params.file, fileContent, newVersion)
-                  lastSyncTime[uri] = currentTime
-              }
+              documentManager.ensureDocumentOpen(params.file, fileContent.takeIf { it.isNotEmpty() })
+              lastSyncTime[uri] = currentTime
+          } else if (currentTime - lastSync > syncThrottleMs && fileContent.isNotEmpty()) {
+              val currentVersion = documentManager.getDocumentVersion(uri)
+              val newVersion = currentVersion + 1
+              documentManager.setDocumentVersion(uri, newVersion)
+              documentManager.notifyDocumentChange(params.file, fileContent, newVersion)
+              lastSyncTime[uri] = currentTime
           }
   
           val lspParams = JsonObject().apply {

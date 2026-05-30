@@ -22,6 +22,7 @@ import com.tom.rv2ide.lsp.models.DiagnosticSeverity
 import com.tom.rv2ide.models.Position
 import com.tom.rv2ide.models.Range
 import java.nio.file.Path
+import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
@@ -35,11 +36,18 @@ class KotlinDiagnosticProvider {
 
   companion object {
     private val log = LoggerFactory.getLogger(KotlinDiagnosticProvider::class.java)
+    private const val MAX_STRUCTURAL_DIAGNOSTICS = 4
   }
+
+  private data class DelimiterState(
+      val char: Char,
+      val line: Int,
+      val column: Int,
+  )
 
   private var analyzing = AtomicBoolean(false)
 
-  fun analyze(file: Path): DiagnosticResult {
+  fun analyze(file: Path, contentOverride: String? = null): DiagnosticResult {
     if (analyzing.get()) {
       log.debug("Already analyzing, skipping: {}", file)
       return DiagnosticResult.NO_UPDATE
@@ -50,8 +58,12 @@ class KotlinDiagnosticProvider {
     try {
       log.debug("Analyzing Kotlin file: {}", file)
 
-      val content = file.toFile().readText()
+      val content = contentOverride ?: file.toFile().readText()
       val diagnostics = mutableListOf<DiagnosticItem>()
+
+      // Keep a tiny local structural syntax fallback because fwcd can miss transient body-delimiter
+      // errors during active editing on Android. This only covers obviously broken delimiter states.
+      analyzeStructuralSyntax(content, diagnostics)
 
       // Basic syntax checking
       analyzeSyntax(content, diagnostics)
@@ -80,6 +92,191 @@ class KotlinDiagnosticProvider {
       return DiagnosticResult.NO_UPDATE
     } finally {
       analyzing.set(false)
+    }
+  }
+
+  private fun analyzeStructuralSyntax(content: String, diagnostics: MutableList<DiagnosticItem>) {
+    val stack = ArrayDeque<DelimiterState>()
+    val openToClose = mapOf('(' to ')', '[' to ']', '{' to '}')
+    var index = 0
+    var line = 0
+    var column = 0
+    var inLineComment = false
+    var inBlockComment = false
+    var inString = false
+    var inChar = false
+    var escaped = false
+
+    fun addStructuralDiagnostic(line: Int, startCol: Int, endCol: Int, message: String, code: String) {
+      if (diagnostics.count { it.code.startsWith("STRUCTURAL_") } >= MAX_STRUCTURAL_DIAGNOSTICS) {
+        return
+      }
+      diagnostics.add(
+          createDiagnosticWithColumn(
+              line = line,
+              startCol = startCol,
+              endCol = endCol,
+              message = message,
+              code = code,
+              severity = DiagnosticSeverity.ERROR,
+          )
+      )
+    }
+
+    while (index < content.length) {
+      val ch = content[index]
+      val next = if (index + 1 < content.length) content[index + 1] else '\u0000'
+
+      if (inLineComment) {
+        if (ch == '\n') {
+          inLineComment = false
+          line++
+          column = 0
+        } else {
+          column++
+        }
+        index++
+        continue
+      }
+
+      if (inBlockComment) {
+        if (ch == '*' && next == '/') {
+          inBlockComment = false
+          column += 2
+          index += 2
+          continue
+        }
+        if (ch == '\n') {
+          line++
+          column = 0
+        } else {
+          column++
+        }
+        index++
+        continue
+      }
+
+      if (inString) {
+        if (escaped) {
+          escaped = false
+        } else if (ch == '\\') {
+          escaped = true
+        } else if (ch == '"') {
+          inString = false
+        }
+
+        if (ch == '\n') {
+          line++
+          column = 0
+        } else {
+          column++
+        }
+        index++
+        continue
+      }
+
+      if (inChar) {
+        if (escaped) {
+          escaped = false
+        } else if (ch == '\\') {
+          escaped = true
+        } else if (ch == '\'') {
+          inChar = false
+        }
+
+        if (ch == '\n') {
+          line++
+          column = 0
+        } else {
+          column++
+        }
+        index++
+        continue
+      }
+
+      if (ch == '/' && next == '/') {
+        inLineComment = true
+        column += 2
+        index += 2
+        continue
+      }
+
+      if (ch == '/' && next == '*') {
+        inBlockComment = true
+        column += 2
+        index += 2
+        continue
+      }
+
+      if (ch == '"') {
+        inString = true
+        column++
+        index++
+        continue
+      }
+
+      if (ch == '\'') {
+        inChar = true
+        column++
+        index++
+        continue
+      }
+
+      when (ch) {
+        '(', '[', '{' -> stack.addLast(DelimiterState(ch, line, column))
+        ')', ']', '}' -> {
+          val expectedOpen =
+              when (ch) {
+                ')' -> '('
+                ']' -> '['
+                '}' -> '{'
+                else -> null
+              }
+
+          val open = if (stack.isEmpty()) null else stack.removeLast()
+          if (expectedOpen == null) {
+            // no-op
+          } else if (open == null) {
+            addStructuralDiagnostic(
+                line = line,
+                startCol = column,
+                endCol = column + 1,
+                message = "Unmatched closing '$ch'",
+                code = "STRUCTURAL_UNMATCHED_CLOSING",
+            )
+          } else if (open.char != expectedOpen) {
+            val expectedClose = openToClose[open.char] ?: ch
+            addStructuralDiagnostic(
+                line = line,
+                startCol = column,
+                endCol = column + 1,
+                message = "Mismatched closing '$ch'; expected '$expectedClose' for '${open.char}'",
+                code = "STRUCTURAL_MISMATCHED_DELIMITER",
+            )
+          }
+        }
+      }
+
+      if (ch == '\n') {
+        line++
+        column = 0
+      } else {
+        column++
+      }
+      index++
+    }
+
+    while (stack.isNotEmpty() &&
+        diagnostics.count { it.code.startsWith("STRUCTURAL_") } < MAX_STRUCTURAL_DIAGNOSTICS) {
+      val openState = stack.removeLast()
+      val expectedClose = openToClose[openState.char] ?: openState.char
+      addStructuralDiagnostic(
+          line = openState.line,
+          startCol = openState.column,
+          endCol = openState.column + 1,
+          message = "Unclosed '${openState.char}'; expected '$expectedClose'",
+          code = "STRUCTURAL_UNCLOSED_DELIMITER",
+      )
     }
   }
 

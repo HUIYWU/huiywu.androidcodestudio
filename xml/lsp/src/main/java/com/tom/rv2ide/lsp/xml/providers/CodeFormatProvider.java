@@ -1,5 +1,6 @@
 package com.tom.rv2ide.lsp.xml.providers;
 
+import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.lsp.models.CodeFormatResult;
 import com.tom.rv2ide.lsp.models.FormatCodeParams;
 import com.tom.rv2ide.lsp.xml.providers.format.XMLFormatter;
@@ -27,7 +28,10 @@ public class CodeFormatProvider {
       LOG.error("Error formatting code using DOM formatter", error);
       return CodeFormatResult.NONE;
     } finally {
-      watch.log();
+      if (IdeLogConfig.shouldLogIde()) {
+        watch.log();
+      }
     }
+
   }
 }

@@ -19,7 +19,7 @@ package com.tom.rv2ide.lsp.kotlin.etc
 
 import com.google.gson.JsonObject
 import com.tom.rv2ide.app.BaseApplication
-import com.tom.rv2ide.lsp.kotlin.KotlinServerProcessManager
+import com.tom.rv2ide.lsp.kotlin.KotlinLspConnection
 import com.tom.rv2ide.managers.PreferenceManager
 
 /**
@@ -39,9 +39,9 @@ object LspFeatures {
   private val preferenceManager: PreferenceManager
     get() = BaseApplication.getBaseInstance().prefManager
 
-  private var processManager: KotlinServerProcessManager? = null
+    private var processManager: KotlinLspConnection? = null
 
-  fun setProcessManager(manager: KotlinServerProcessManager) {
+  fun setProcessManager(manager: KotlinLspConnection) {
     processManager = manager
   }
 
@@ -51,7 +51,7 @@ object LspFeatures {
    * @return Boolean indicating hover enabled status, or null if not set
    */
   fun isHoverEnabled(): Boolean? {
-    return preferenceManager.getBoolean(KOTLIN_HOVER_KEY, false)
+    return preferenceManager.getBoolean(KOTLIN_HOVER_KEY, true)
   }
 
   /**
@@ -60,7 +60,9 @@ object LspFeatures {
    * @return Boolean indicating diagnostics enabled status, or null if not set
    */
   fun isDiagnosticsEnabled(): Boolean? {
-    return preferenceManager.getBoolean(KOTLIN_DIAGNOSTICS_KEY, false)
+    // Keep this default aligned with LSPPreferences.codeDiagnostics. A false default silently drops
+    // KLS publishDiagnostics before the user ever touches the Kotlin diagnostics switch.
+    return preferenceManager.getBoolean(KOTLIN_DIAGNOSTICS_KEY, true)
   }
 
   /** @return String of of the style */
