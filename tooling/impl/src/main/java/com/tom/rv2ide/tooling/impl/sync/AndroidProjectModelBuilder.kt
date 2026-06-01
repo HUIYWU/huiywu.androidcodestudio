@@ -156,6 +156,36 @@ class AndroidProjectModelBuilder(initializationParams: InitializeProjectParams) 
       log(
           "Compose libraries not referenced by mainArtifact.compileDependencies: ${composeUnreferencedKeys.take(20)}")
     }
+
+    logMaterial3DependencySummary(projectPath, configurationVariant, libraries, dependencyKeys)
+  }
+
+  private fun logMaterial3DependencySummary(
+      projectPath: String,
+      configurationVariant: String,
+      libraries: Map<String, Library>,
+      dependencyKeys: Set<String>,
+  ) {
+    val material3Entries = libraries.entries.filter { (key, library) ->
+      isMaterial3Interesting(key) || isMaterial3Interesting(describeLibrary(library))
+    }
+    val referenced = material3Entries.filter { dependencyKeys.contains(it.key) }
+    val unreferenced = material3Entries.filterNot { dependencyKeys.contains(it.key) }
+
+    log(
+        "Material3 dependency summary: projectPath=$projectPath, variant=$configurationVariant, material3Libraries=${material3Entries.size}, referenced=${referenced.size}, unreferenced=${unreferenced.size}")
+
+    if (material3Entries.isNotEmpty()) {
+      val preview = material3Entries
+          .take(20)
+          .joinToString(" | ") { (key, library) -> "$key => ${describeLibrary(library)}" }
+      log("Material3 libraries preview: $preview")
+    }
+
+    if (unreferenced.isNotEmpty()) {
+      log(
+          "Material3 libraries not referenced by mainArtifact.compileDependencies: ${unreferenced.take(20).map { it.key }}")
+    }
   }
 
   private fun collectGraphKeys(item: GraphItem, result: MutableSet<String>) {
@@ -174,6 +204,12 @@ class AndroidProjectModelBuilder(initializationParams: InitializeProjectParams) 
         normalized.contains("ui-graphics") ||
         normalized.contains("foundation") ||
         normalized.contains("runtime")
+  }
+
+  private fun isMaterial3Interesting(value: String?): Boolean {
+    if (value.isNullOrBlank()) return false
+    val normalized = value.lowercase()
+    return normalized.contains("androidx.compose.material3") || normalized.contains("material3")
   }
 
   private fun describeLibrary(library: Library): String {
