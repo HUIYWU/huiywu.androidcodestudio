@@ -137,9 +137,47 @@ class KotlinClasspathProvider {
 
     val existingPaths = classpaths.filter { File(it).exists() }.toList()
     KslLogs.info("Total classpath entries: {}, existing: {}", classpaths.size, existingPaths.size)
+    logAndroidxComposeClasspathSummary(existingPaths)
 
     cachedClasspathList = existingPaths
     return existingPaths
+  }
+
+  private fun logAndroidxComposeClasspathSummary(classpaths: List<String>) {
+    val interestingKeywords =
+        listOf(
+            "androidx.activity",
+            "activity-compose",
+            "androidx.compose",
+            "compose-",
+            "lifecycle-runtime-ktx",
+            "lifecycle-runtime-compose",
+            "core-ktx",
+        )
+
+    val hits =
+        classpaths.filter { path ->
+          val normalized = path.lowercase()
+          interestingKeywords.any { keyword -> normalized.contains(keyword.lowercase()) }
+        }
+
+    val preview = hits.take(20)
+    KslLogs.info(
+        "AndroidX/Compose classpath hits: count={}, preview={}",
+        hits.size,
+        if (preview.isEmpty()) "[]" else preview.joinToString(prefix = "[", postfix = if (hits.size > preview.size) ", ...]" else "]"),
+    )
+
+    val componentActivityCandidates =
+        classpaths.filter { path ->
+          val name = File(path).name.lowercase()
+          name.contains("activity") || name.contains("androidx") || name.contains("compose")
+        }
+    KslLogs.debug(
+        "AndroidX/Compose candidate entries for ComponentActivity lookup: count={}, preview={}",
+        componentActivityCandidates.size,
+        componentActivityCandidates.take(20).joinToString(prefix = "[", postfix = if (componentActivityCandidates.size > 20) ", ...]" else "]"),
+    )
   }
 
   private fun addClasspathEntry(file: File, classpaths: MutableSet<String>) {
@@ -619,41 +657,22 @@ class KotlinClasspathProvider {
       val projectManager = IProjectManager.getInstance()
       val workspace = projectManager.getWorkspace() ?: return emptyList()
 
-      val module = workspace.findProject(projectPath) as? ModuleProject ?: return emptyList()
+      val project = workspace.findProject(projectPath) as? ModuleProject ?: return emptyList()
+      val classpaths = mutableSetOf<String>()
 
-      val classpaths = mutableListOf<String>()
-      for (cp in module.getModuleClasspaths()) {
-        classpaths.add(cp.absolutePath)
-      }
-      classpaths
-    } catch (e: Exception) {
-      KslLogs.error("Failed to get module classpath for project: $projectPath", e)
-      emptyList()
-    }
-  }
-
-  /** Gets all source directories from the project system. */
-  fun getSourceDirectories(): List<String> {
-    return try {
-      val projectManager = IProjectManager.getInstance()
-      val workspace = projectManager.getWorkspace() ?: return emptyList()
-
-      val sourceDirs = mutableSetOf<String>()
-
-      val allProjects = mutableListOf(workspace.getRootProject())
-      allProjects.addAll(workspace.getSubProjects())
-
-      for (project in allProjects) {
-        if (project is ModuleProject) {
-          for (sourceDir in project.getSourceDirectories()) {
-            sourceDirs.add(sourceDir.absolutePath)
-          }
-        }
+      // Add module-specific classpaths
+      project.getModuleClasspaths().forEach { cp ->
+        if (cp.exists()) classpaths.add(cp.absolutePath)
       }
 
-      sourceDirs.toList()
+      // Add compile classpaths
+      project.getCompileClasspaths().forEach { cp ->
+        if (cp.exists()) classpaths.add(cp.absolutePath)
+      }
+
+      classpaths.toList()
     } catch (e: Exception) {
-      KslLogs.error("Failed to get source directories", e)
+      KslLogs.error("Failed to get module classpath for: {}", projectPath, e)
       emptyList()
     }
   }
