@@ -32,7 +32,6 @@ import com.tom.rv2ide.builder.model.UNKNOWN_PACKAGE
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
-import com.tom.rv2ide.projects.classpath.JarFsClasspathReader
 import com.tom.rv2ide.tooling.api.ProjectType.Android
 import com.tom.rv2ide.tooling.api.models.BasicAndroidVariantMetadata
 import com.tom.rv2ide.tooling.api.models.GradleTask
@@ -239,7 +238,6 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
       collectLibraries(root, lib.dependencies, result)
     }
   }
-
   private fun preferredAndroidLibraryClasspathFiles(
     key: String,
     lib: DefaultLibrary,
@@ -251,13 +249,6 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
     }?.let { extractClassesJarFromAar(it) }
 
     if (aarClassesJar != null) {
-      log.info(
-        "Using AAR classes.jar for compose/androidx library: key={}, coords={}, aar={}, classesJar={}",
-        key,
-        describeLibraryCoordinates(lib),
-        artifact?.absolutePath,
-        aarClassesJar.absolutePath
-      )
       return linkedSetOf<File>().apply {
         add(aarClassesJar)
         addAll(compileJarFiles)
@@ -266,6 +257,7 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
 
     return compileJarFiles
   }
+
 
   private fun extractClassesJarFromAar(aarFile: File): File? {
     return try {
@@ -287,13 +279,6 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
       log.warn("Failed to extract classes.jar from AAR: {}", aarFile.absolutePath, error)
       null
     }
-  }
-
-  private fun maybeLogComposeLibraryClasspath(
-    key: String,
-    lib: DefaultLibrary,
-    files: Collection<File>
-  ) {
   }
 
   private fun shouldInspectComposeLibrary(key: String, lib: DefaultLibrary): Boolean {
