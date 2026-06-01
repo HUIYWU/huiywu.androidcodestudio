@@ -25,6 +25,7 @@ import com.tom.rv2ide.projects.classpath.ClassInfo
 import com.tom.rv2ide.projects.classpath.IClasspathReader
 import com.tom.rv2ide.projects.classpath.JarFsClasspathReader
 import java.io.File
+import java.util.zip.ZipFile
 import org.slf4j.LoggerFactory
 
 /*
@@ -68,7 +69,7 @@ class KotlinClasspathProvider {
       try {
         val allClassPaths = service.getFileManager().getAllClassPaths()
         for (cp in allClassPaths) {
-          classpaths.add(cp.absolutePath)
+          addClasspathEntry(cp, classpaths)
         }
       } catch (e: Exception) {
         KslLogs.error("Failed to get classpath from compiler service", e)
@@ -90,20 +91,20 @@ class KotlinClasspathProvider {
             // Add compile classpaths from each module
             val compileClasspaths = project.getCompileClasspaths()
             for (cp in compileClasspaths) {
-              classpaths.add(cp.absolutePath)
+              addClasspathEntry(cp, classpaths)
             }
 
             // Add module-specific classpaths (includes external dependencies)
             val moduleClasspaths = project.getModuleClasspaths()
             for (cp in moduleClasspaths) {
-              classpaths.add(cp.absolutePath)
+              addClasspathEntry(cp, classpaths)
             }
 
             // If it's an Android module, add additional Android-specific classpaths
             if (project is AndroidModule) {
               // Add boot classpaths (android.jar, etc.)
               for (bootCp in project.bootClassPaths) {
-                classpaths.add(bootCp.absolutePath)
+                addClasspathEntry(bootCp, classpaths)
               }
 
               // resolveVersionCatalogDependencies(project, classpaths)
@@ -111,7 +112,7 @@ class KotlinClasspathProvider {
               // Add generated jar
               val generatedJar = project.getGeneratedJar()
               if (generatedJar.exists()) {
-                classpaths.add(generatedJar.absolutePath)
+                addClasspathEntry(generatedJar, classpaths)
                 KslLogs.info("Added generated JAR: {}", generatedJar.absolutePath)
               }
 
@@ -119,7 +120,7 @@ class KotlinClasspathProvider {
               val variant = project.getSelectedVariant()
               if (variant != null) {
                 for (classJar in variant.mainArtifact.classJars) {
-                  classpaths.add(classJar.absolutePath)
+                  addClasspathEntry(classJar, classpaths)
                 }
               }
 
@@ -139,6 +140,41 @@ class KotlinClasspathProvider {
 
     cachedClasspathList = existingPaths
     return existingPaths
+  }
+
+  private fun addClasspathEntry(file: File, classpaths: MutableSet<String>) {
+    if (!file.exists()) return
+    if (file.isFile && file.extension.equals("aar", ignoreCase = true)) {
+      val extractedJar = extractClassesJarFromAar(file)
+      if (extractedJar != null && extractedJar.exists()) {
+        classpaths.add(extractedJar.absolutePath)
+        KslLogs.info("✓ Added extracted AAR classes.jar: {} -> {}", file.name, extractedJar.absolutePath)
+      } else {
+        KslLogs.warn("Could not extract classes.jar from AAR, keeping original path: {}", file.absolutePath)
+        classpaths.add(file.absolutePath)
+      }
+      return
+    }
+    classpaths.add(file.absolutePath)
+  }
+
+  private fun extractClassesJarFromAar(aarFile: File): File? {
+    return try {
+      val extractDir = File(aarFile.parentFile, "${aarFile.nameWithoutExtension}-extracted")
+      val classesJar = File(extractDir, "classes.jar")
+      if (classesJar.exists()) return classesJar
+      extractDir.mkdirs()
+      ZipFile(aarFile).use { zip ->
+        val classesEntry = zip.getEntry("classes.jar") ?: return null
+        zip.getInputStream(classesEntry).use { input ->
+          classesJar.outputStream().use { output -> input.copyTo(output) }
+        }
+      }
+      classesJar.takeIf { it.exists() }
+    } catch (e: Exception) {
+      KslLogs.warn("Failed to extract classes.jar from AAR: {}", aarFile.absolutePath, e)
+      null
+    }
   }
 
   /** Resolves Maven coordinates to JAR file in Gradle cache. */
