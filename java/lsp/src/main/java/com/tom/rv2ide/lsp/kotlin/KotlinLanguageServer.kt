@@ -90,13 +90,18 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
     }
 
     processManager.setDiagnosticsCallback { diagnostics ->
+      KslLogs.debug(
+          "KLS TRACE diagnostics.forward source=server file={} count={} summary={}",
+          diagnostics.file,
+          diagnostics.diagnostics.size,
+          summarizeDiagnosticsForTrace(diagnostics.diagnostics),
+      )
       if (LspFeatures.isDiagnosticsEnabled() == true) {
-        _client?.publishDiagnostics(diagnostics)
-
-        activeEditors[diagnostics.file]?.let { editor ->
-          diagnosticRenderer.renderDiagnostics(editor, diagnostics)
-        }
+        _client?.publishDiagnostics(
+            diagnostics.copy(channel = DiagnosticResult.CHANNEL_SERVER)
+        )
       }
+
       // If disabled, just ignore the diagnostics
     }
   }
@@ -116,7 +121,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
   override fun setupWorkspace(workspace: IWorkspace) {
     formatProvider = KotlinCodeFormatProvider(processManager)
-    workspaceSetup = KotlinWorkspaceSetup(context, workspace, backendConfigurator)
+    workspaceSetup = KotlinWorkspaceSetup(context, workspace, backendConfigurator, backendSpec.id)
     workspaceSetup?.setup(processManager)
 
 
@@ -374,9 +379,21 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
     if (VMUtils.isJvm()) return
     if (!analyzeTimer.isStarted) analyzeTimer.start() else analyzeTimer.restart()
   }
+  private fun summarizeDiagnosticsForTrace(diagnostics: List<DiagnosticItem>, limit: Int = 3): String {
+    if (diagnostics.isEmpty()) return "[]"
+    return diagnostics
+        .take(limit)
+        .joinToString(prefix = "[", postfix = if (diagnostics.size > limit) ", ...]" else "]") { diagnostic ->
+          val code = diagnostic.code.ifBlank { "<no-code>" }
+          val source = diagnostic.source.ifBlank { "<no-source>" }
+          val message = diagnostic.message.replace("\n", " ").take(80)
+          "$code|$source|$message"
+        }
+  }
 
   private fun publishDiagnosticsToEditor(result: DiagnosticResult) {
     if (result == DiagnosticResult.NO_UPDATE) return
+
 
     try {
       // Get the file content to convert positions
@@ -413,15 +430,32 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
       localFallbackDiagnostics[file] = structuralDiagnostics
 
       if (structuralDiagnostics.isNotEmpty()) {
+        KslLogs.debug(
+            "KLS TRACE diagnostics.forward source=local_structural file={} count={} summary={}",
+            file,
+            structuralDiagnostics.size,
+            summarizeDiagnosticsForTrace(structuralDiagnostics),
+        )
         // This local fallback only covers obvious delimiter damage during live editing. Keep it
         // isolated from server diagnostics instead of trying to merge uncertain snapshots.
-        publishDiagnosticsToEditor(DiagnosticResult(file, structuralDiagnostics))
+        publishDiagnosticsToEditor(
+            DiagnosticResult(
+                file,
+                structuralDiagnostics,
+                DiagnosticResult.CHANNEL_LOCAL_STRUCTURAL,
+            )
+        )
       } else if (previousStructuralDiagnostics.isNotEmpty()) {
-        _client?.publishDiagnostics(DiagnosticResult(file, emptyList()))
-        activeEditors[file]?.let { editor ->
-          diagnosticRenderer.renderDiagnostics(editor, DiagnosticResult(file, emptyList()))
-        }
+        KslLogs.debug("KLS TRACE diagnostics.clear source=local_structural file={}", file)
+        _client?.publishDiagnostics(
+            DiagnosticResult(
+                file,
+                emptyList(),
+                DiagnosticResult.CHANNEL_LOCAL_STRUCTURAL,
+            )
+        )
       }
+
     } catch (e: Exception) {
       KslLogs.warn("Failed to publish local structural fallback for {}", file, e)
     }

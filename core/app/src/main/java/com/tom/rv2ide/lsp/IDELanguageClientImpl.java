@@ -85,7 +85,8 @@ public class IDELanguageClientImpl implements ILanguageClient {
   private static final long LARGE_FILE_DIAGNOSTIC_BYTES = 512L * 1024L;
   protected static final Logger LOG = LoggerFactory.getLogger(IDELanguageClientImpl.class);
   private static IDELanguageClientImpl mInstance;
-  private final Map<File, List<DiagnosticItem>> diagnostics = new HashMap<>();
+  private static final String DIAGNOSTIC_CHANNEL_DEFAULT = DiagnosticResult.DEFAULT_CHANNEL;
+  private final Map<File, Map<String, List<DiagnosticItem>>> diagnosticsByChannel = new HashMap<>();
   protected EditorHandlerActivity activity;
 
   private IDELanguageClientImpl(EditorHandlerActivity provider) {
@@ -145,22 +146,25 @@ public class IDELanguageClientImpl implements ILanguageClient {
     }
 
     boolean error = result == null;
-    activity.handleDiagnosticsResultVisibility(error || result.getDiagnostics().isEmpty());
-
     if (error) {
       LOG.warn("publishDiagnostics skipped: result is null");
       return;
     }
 
     File file = result.getFile().toFile();
-    final int diagnosticCount = result.getDiagnostics() == null ? -1 : result.getDiagnostics().size();
+    final String channel =
+        result.getChannel() == null || result.getChannel().isBlank()
+            ? DIAGNOSTIC_CHANNEL_DEFAULT
+            : result.getChannel();
+    final int incomingDiagnosticCount = result.getDiagnostics() == null ? -1 : result.getDiagnostics().size();
     if (IdeLogConfig.shouldLogIde()) {
       LOG.debug(
-          "publishDiagnostics received: file={}, exists={}, isFile={}, count={}, thread={}, isMainThread={}",
+          "publishDiagnostics received: file={}, exists={}, isFile={}, count={}, channel={}, thread={}, isMainThread={}",
           file.getAbsolutePath(),
           file.exists(),
           file.isFile(),
-          diagnosticCount,
+          incomingDiagnosticCount,
+          channel,
           threadName,
           isMainThread);
     }
@@ -168,6 +172,11 @@ public class IDELanguageClientImpl implements ILanguageClient {
       LOG.warn("publishDiagnostics dropped: target file missing or not regular file={}", file);
       return;
     }
+
+    final List<DiagnosticItem> previousDiagnostics = getMergedDiagnostics(file);
+    putDiagnosticsForChannel(file, channel, result.getDiagnostics());
+    final List<DiagnosticItem> mergedDiagnostics = getMergedDiagnostics(file);
+    activity.handleDiagnosticsResultVisibility(mergedDiagnostics.isEmpty());
 
     final long editorLookupStartMs = android.os.SystemClock.elapsedRealtime();
     final var editorView = activity.getEditorForFile(file);
@@ -191,7 +200,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
           final var content = editor.getText();
           contentLength = content.length();
           final List<DiagnosticItem> editorDiagnostics = selectDiagnosticsForEditor(
-              result.getDiagnostics(),
+              mergedDiagnostics,
               file,
               contentLength);
 
@@ -208,7 +217,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
             LOG.info(
                 "publishDiagnostics mapped {} of {} diagnostic regions for file={} (mapRegionsCostMs={}, contentLength={})",
                 editorDiagnostics.size(),
-                result.getDiagnostics().size(),
+                mergedDiagnostics.size(),
                 file.getAbsolutePath(),
                 mapRegionsCostMs,
                 contentLength);
@@ -233,10 +242,8 @@ public class IDELanguageClientImpl implements ILanguageClient {
       }
     }
 
-    final List<DiagnosticItem> previousDiagnostics = diagnostics.get(file);
     final boolean updateDiagnosticsAdapter =
-        shouldUpdateDiagnosticsAdapter(previousDiagnostics, result.getDiagnostics());
-    diagnostics.put(file, result.getDiagnostics());
+        shouldUpdateDiagnosticsAdapter(previousDiagnostics, mergedDiagnostics);
 
     final long updateAdapterStartMs = android.os.SystemClock.elapsedRealtime();
     if (updateDiagnosticsAdapter) {
@@ -247,14 +254,16 @@ public class IDELanguageClientImpl implements ILanguageClient {
 
     if (IdeLogConfig.shouldLogIde()) {
       LOG.info(
-          "publishDiagnostics perf: file={}, totalCostMs={}, editorLookupCostMs={}, mapRegionsCostMs={}, applyToEditorCostMs={}, updateAdapterCostMs={}, diagnosticCount={}, contentLength={}, adapterUpdated={}, thread={}, isMainThread={}",
+          "publishDiagnostics perf: file={}, totalCostMs={}, editorLookupCostMs={}, mapRegionsCostMs={}, applyToEditorCostMs={}, updateAdapterCostMs={}, incomingDiagnosticCount={}, mergedDiagnosticCount={}, channel={}, contentLength={}, adapterUpdated={}, thread={}, isMainThread={}",
           file.getAbsolutePath(),
           totalCostMs,
           editorLookupCostMs,
           mapRegionsCostMs,
           applyToEditorCostMs,
           updateAdapterCostMs,
-          diagnosticCount,
+          incomingDiagnosticCount,
+          mergedDiagnostics.size(),
+          channel,
           contentLength,
           updateDiagnosticsAdapter,
           threadName,
@@ -346,10 +355,46 @@ public class IDELanguageClientImpl implements ILanguageClient {
     return selected;
   }
 
+  private List<DiagnosticItem> getMergedDiagnostics(@NonNull final File file) {
+    final var byChannel = diagnosticsByChannel.get(file);
+    if (byChannel == null || byChannel.isEmpty()) {
+      return Collections.emptyList();
+    }
+
+    final var merged = new ArrayList<DiagnosticItem>();
+    final var orderedChannels = new ArrayList<>(byChannel.keySet());
+    Collections.sort(orderedChannels);
+    for (final var channel : orderedChannels) {
+      final var channelDiagnostics = byChannel.get(channel);
+      if (channelDiagnostics != null && !channelDiagnostics.isEmpty()) {
+        merged.addAll(channelDiagnostics);
+      }
+    }
+    merged.sort(DiagnosticItem.START_COMPARATOR);
+    return merged;
+  }
+
+  private void putDiagnosticsForChannel(
+      @NonNull final File file,
+      @NonNull final String channel,
+      @Nullable final List<DiagnosticItem> channelDiagnostics) {
+    final var normalized = channelDiagnostics == null ? Collections.<DiagnosticItem>emptyList() : channelDiagnostics;
+    final var byChannel = diagnosticsByChannel.computeIfAbsent(file, ignored -> new HashMap<>());
+    if (normalized.isEmpty()) {
+      byChannel.remove(channel);
+      if (byChannel.isEmpty()) {
+        diagnosticsByChannel.remove(file);
+      }
+      return;
+    }
+
+    byChannel.put(channel, new ArrayList<>(normalized));
+  }
+
   @Nullable
   @Override
   public DiagnosticItem getDiagnosticAt(final File file, final int line, final int column) {
-    return DiagnosticUtil.binarySearchDiagnostic(this.diagnostics.get(file), line, column);
+    return DiagnosticUtil.binarySearchDiagnostic(getMergedDiagnostics(file), line, column);
   }
 
   @Override
@@ -492,7 +537,18 @@ public class IDELanguageClientImpl implements ILanguageClient {
   }
 
   public DiagnosticsAdapter newDiagnosticsAdapter() {
-    return new DiagnosticsAdapter(mapAsGroup(this.diagnostics), activity);
+    return new DiagnosticsAdapter(mapAsGroup(buildMergedDiagnosticsSnapshot()), activity);
+  }
+
+  private Map<File, List<DiagnosticItem>> buildMergedDiagnosticsSnapshot() {
+    final var merged = new HashMap<File, List<DiagnosticItem>>();
+    for (final var entry : diagnosticsByChannel.entrySet()) {
+      final var mergedDiagnostics = getMergedDiagnostics(entry.getKey());
+      if (!mergedDiagnostics.isEmpty()) {
+        merged.put(entry.getKey(), mergedDiagnostics);
+      }
+    }
+    return merged;
   }
 
   private List<DiagnosticGroup> mapAsGroup(Map<File, List<DiagnosticItem>> map) {

@@ -123,6 +123,28 @@ class KotlinNotificationHandler {
           }
         }
 
+    val summary =
+        if (diagnostics.isEmpty()) {
+          "[]"
+        } else {
+          diagnostics.take(3).joinToString(prefix = "[", postfix = if (diagnostics.size > 3) ", ...]" else "]") { diagnostic ->
+            val code = diagnostic.code.ifBlank { "<no-code>" }
+            val source = diagnostic.source.ifBlank { "<no-source>" }
+            val message = diagnostic.message.replace("\n", " ").take(80)
+            "$code|$source|$message"
+          }
+        }
+    if (diagnostics.isEmpty()) {
+      KslLogs.debug("KLS TRACE diagnostics.clear uri={} count=0", uri)
+    } else {
+      KslLogs.debug(
+          "KLS TRACE diagnostics.recv uri={} count={} summary={}",
+          uri,
+          diagnostics.size,
+          summary,
+      )
+    }
+
     val filePath =
         try {
           java.nio.file.Paths.get(java.net.URI(uri))
@@ -130,14 +152,18 @@ class KotlinNotificationHandler {
           KslLogs.error("Invalid URI: {}", uri, e)
           return
         }
-
     if (diagnostics.isNotEmpty()) {
-      diagnosticsCallback?.invoke(DiagnosticResult(filePath, diagnostics))
+      diagnosticsCallback?.invoke(
+          DiagnosticResult(filePath, diagnostics, DiagnosticResult.CHANNEL_SERVER)
+      )
     } else {
       // An empty publishDiagnostics payload is still semantically meaningful: it clears stale editor
       // diagnostics for this file. Dropping the callback here makes the IDE behave as if nothing changed.
-      diagnosticsCallback?.invoke(DiagnosticResult(filePath, emptyList()))
+      diagnosticsCallback?.invoke(
+          DiagnosticResult(filePath, emptyList(), DiagnosticResult.CHANNEL_SERVER)
+      )
     }
+
   }
 
   private fun handleLogMessage(params: JsonObject?) {

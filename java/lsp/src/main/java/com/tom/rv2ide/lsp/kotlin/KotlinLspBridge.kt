@@ -75,8 +75,10 @@ class KotlinLspBridge(private val ideClient: ILanguageClient) : LanguageClient {
           com.tom.rv2ide.lsp.models.DiagnosticResult(
               java.nio.file.Paths.get(params.uri),
               diagnostics,
+              DiagnosticResult.CHANNEL_SERVER,
           )
       )
+
     }
   }
 

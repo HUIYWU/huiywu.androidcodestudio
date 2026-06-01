@@ -36,9 +36,17 @@ class KotlinEventHandler(private val documentManager: KotlinDocumentManager) {
     val uri = file.toUri().toString()
     val currentTime = System.currentTimeMillis()
     val lastChange = lastChangeTime[uri] ?: 0L
+    val deltaSinceLastChange = currentTime - lastChange
 
     // Throttle rapid changes
-    if (currentTime - lastChange < changeThrottleMs) {
+    if (deltaSinceLastChange < changeThrottleMs) {
+      KslLogs.debug(
+          "KLS TRACE change.drop.throttled uri={} eventVersion={} deltaMs={} thresholdMs={}",
+          uri,
+          event.version,
+          deltaSinceLastChange,
+          changeThrottleMs,
+      )
       return
     }
 
@@ -50,18 +58,56 @@ class KotlinEventHandler(private val documentManager: KotlinDocumentManager) {
       if (!content.isNullOrEmpty() && event.version > 0) {
         val currentVersion = documentManager.getDocumentVersion(uri)
         if (event.version > currentVersion) {
+          KslLogs.debug(
+              "KLS TRACE change.accept uri={} eventVersion={} currentVersion={} contentLength={}",
+              uri,
+              event.version,
+              currentVersion,
+              content.length,
+          )
           documentManager.setDocumentVersion(uri, event.version)
           documentManager.notifyDocumentChange(file, content, event.version)
           // KLS diagnostics are commonly refreshed on didSave. Send it after didChange instead of
           // relying on stale disk content or a no-op save hook.
           val lastSaved = lastSaveTime[uri] ?: 0L
-          if (currentTime - lastSaved >= saveDebounceMs) {
-            documentManager.notifyDocumentSave(file, content)
+          val deltaSinceLastSave = currentTime - lastSaved
+          if (deltaSinceLastSave >= saveDebounceMs) {
+            KslLogs.debug(
+                "KLS TRACE save.trigger.afterChange uri={} eventVersion={} deltaSinceLastSaveMs={} contentLength={}",
+                uri,
+                event.version,
+                deltaSinceLastSave,
+                content.length,
+            )
+            documentManager.notifyDocumentSave(file, content, reason = "afterChangeDebounce")
             lastSaveTime[uri] = currentTime
+          } else {
+            KslLogs.debug(
+                "KLS TRACE save.skip.debounced uri={} eventVersion={} deltaSinceLastSaveMs={} thresholdMs={}",
+                uri,
+                event.version,
+                deltaSinceLastSave,
+                saveDebounceMs,
+            )
           }
+        } else {
+          KslLogs.debug(
+              "KLS TRACE change.skip.staleVersion uri={} eventVersion={} currentVersion={} contentLength={}",
+              uri,
+              event.version,
+              currentVersion,
+              content.length,
+          )
         }
       } else {
         KslLogs.debug("Skip Kotlin document change without in-memory content: {}", uri)
+        KslLogs.debug(
+            "KLS TRACE change.skip.noContent uri={} eventVersion={} hasContent={} contentLength={}",
+            uri,
+            event.version,
+            !content.isNullOrEmpty(),
+            content?.length ?: -1,
+        )
       }
     } catch (e: Exception) {
       KslLogs.error("Failed to handle document change", e)

@@ -41,6 +41,7 @@ class KotlinWorkspaceSetup(
     private val context: Context,
     private val workspace: IWorkspace,
     private val backendConfigurator: KotlinLspBackendConfigurator,
+    private val backendId: KotlinLspBackendId = KotlinLspBackendId.JAVACS,
 ) {
 
   companion object {
@@ -56,9 +57,10 @@ class KotlinWorkspaceSetup(
   private var buildWatcher: WatchService? = null
   private var watcherJob: Job? = null
   private val watchScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+  private val resolvedWorkspaceRootDir: File by lazy { resolveKlsWorkspaceRootDir() }
 
   fun setup(processManager: KotlinLspConnection) {
-    val workspaceRootDir = resolveKlsWorkspaceRootDir()
+    val workspaceRootDir = resolvedWorkspaceRootDir
     val workspaceRoot = workspaceRootDir.toPath().toUri().toString()
     KslLogs.info(
         "Setting up workspace with root: {} (projectRoot={})",
@@ -86,6 +88,7 @@ class KotlinWorkspaceSetup(
     processManager.startServer(classpathProvider)
 
     val initParams = createInitParams(workspaceRoot)
+    logInitializeSummary(initParams)
 
     KslLogs.info("Sending initialize request...")
 
@@ -100,6 +103,109 @@ class KotlinWorkspaceSetup(
       } else {
         triggerIndexing(processManager, workspaceRoot, currentHash)
       }
+    }
+  }
+  private fun summarizeJsonKeys(obj: JsonObject?): String {
+    if (obj == null || obj.entrySet().isEmpty()) return "[]"
+    return obj.entrySet().map { it.key }.sorted().joinToString(prefix = "[", postfix = "]")
+  }
+
+  private fun summarizeJsonArrayStrings(array: JsonArray?, limit: Int = 5): String {
+    if (array == null || array.size() == 0) return "[]"
+    val values =
+        array.mapNotNull { element ->
+          runCatching {
+                when {
+                  element.isJsonPrimitive -> element.asString
+                  element.isJsonObject -> {
+                    val obj = element.asJsonObject
+                    obj.get("name")?.asString ?: obj.get("uri")?.asString ?: obj.toString()
+                  }
+                  else -> element.toString()
+                }
+              }
+              .getOrNull()
+        }
+    if (values.isEmpty()) return "[]"
+    val shown = values.take(limit)
+    return shown.joinToString(prefix = "[", postfix = if (values.size > limit) ", ...]" else "]")
+  }
+
+  private fun logInitializeSummary(params: JsonObject) {
+    val workspaceFolders = params.getAsJsonArray("workspaceFolders")
+    val initOptions = params.getAsJsonObject("initializationOptions")
+    val scripts = initOptions?.getAsJsonObject("scripts")
+    val completion = initOptions?.getAsJsonObject("completion")
+    val classpathCount = initOptions?.getAsJsonArray("classpath")?.size() ?: 0
+    val snippetsEnabled =
+        completion
+            ?.getAsJsonObject("snippets")
+            ?.get("enabled")
+            ?.takeIf { !it.isJsonNull }
+            ?.asBoolean
+    KslLogs.debug(
+        "KLS TRACE init.send backend={} rootUri={} rootPath={} workspaceFolders={} initOptionKeys={} classpathCount={} scriptsEnabled={} buildScriptsEnabled={} usePredefinedClasspath={} disableDependencyResolution={} indexing={} externalSources={} snippetsEnabled={} capabilitiesKeys={}",
+        backendId.name.lowercase(),
+        params.get("rootUri")?.asString ?: "",
+        params.get("rootPath")?.asString ?: "",
+        summarizeJsonArrayStrings(workspaceFolders),
+        summarizeJsonKeys(initOptions),
+        classpathCount,
+        scripts?.get("enabled")?.takeIf { !it.isJsonNull }?.asBoolean,
+        scripts?.get("buildScriptsEnabled")?.takeIf { !it.isJsonNull }?.asBoolean,
+        initOptions?.get("usePredefinedClasspath")?.takeIf { !it.isJsonNull }?.asBoolean,
+        initOptions?.get("disableDependencyResolution")?.takeIf { !it.isJsonNull }?.asBoolean,
+        initOptions?.get("indexing")?.takeIf { !it.isJsonNull }?.asString,
+        initOptions?.get("externalSources")?.takeIf { !it.isJsonNull }?.asString,
+        snippetsEnabled,
+        summarizeJsonKeys(params.getAsJsonObject("capabilities")),
+    )
+  }
+
+  private fun logDidChangeConfigurationSummary(source: String, params: JsonObject) {
+    val settings = params.getAsJsonObject("settings")
+    val settingsKeys = summarizeJsonKeys(settings)
+    KslLogs.debug(
+        "KLS TRACE didChangeConfiguration.send backend={} source={} settingsKeys={} settingsEmpty={}",
+        backendId.name.lowercase(),
+        source,
+        settingsKeys,
+        settings == null || settings.entrySet().isEmpty(),
+    )
+  }
+
+  private fun createFwcdRuntimeConfig(indexingEnabled: Boolean): JsonObject {
+    return JsonObject().apply {
+      add(
+          "settings",
+          JsonObject().apply {
+            add(
+                "kotlin",
+                JsonObject().apply {
+                  add(
+                      "scripts",
+                      JsonObject().apply {
+                        addProperty("enabled", false)
+                        addProperty("buildScriptsEnabled", false)
+                      },
+                  )
+                  add(
+                      "completion",
+                      JsonObject().apply {
+                        add(
+                            "snippets",
+                            JsonObject().apply { addProperty("enabled", true) },
+                        )
+                      },
+                  )
+                  add(
+                      "indexing",
+                      JsonObject().apply { addProperty("enabled", indexingEnabled) },
+                  )
+                },
+            )
+          },
+      )
     }
   }
 
@@ -217,7 +323,7 @@ class KotlinWorkspaceSetup(
         val currentHash = indexCache.computeClasspathHash(currentClasspath)
 
         // Trigger reindexing (this will also manage the Index flag)
-        val workspaceRoot = workspace.getProjectDir().toPath().toUri().toString()
+        val workspaceRoot = resolvedWorkspaceRootDir.toPath().toUri().toString()
         triggerIndexing(processManager, workspaceRoot, currentHash)
 
         KslLogs.info("Classpath and index reloaded successfully")
@@ -235,23 +341,9 @@ class KotlinWorkspaceSetup(
     val cachedSymbols = indexCache.loadCache()
     if (cachedSymbols != null && cachedSymbols.size() > 0) {
       // Send cached configuration
-      val configParams =
-          JsonObject().apply {
-            add(
-                "settings",
-                JsonObject().apply {
-                  // add("kotlin", JsonObject().apply {
-                  // addProperty("indexing", "cached")
-                  // add("completion", JsonObject().apply {
-                  // add("snippets", JsonObject().apply {
-                  // addProperty("enabled", true)
-                  // })
-                  // })
-                  // })
-                },
-            )
-          }
+      val configParams = createFwcdRuntimeConfig(indexingEnabled = false)
 
+      logDidChangeConfigurationSummary("restoreCachedIndex", configParams)
       processManager.sendNotification("workspace/didChangeConfiguration", configParams)
       KslLogs.info("Cache restored with {} symbols - indexing skipped", cachedSymbols.size())
       Index.setIsIndexing(false)  // Reset flag after cache restoration
@@ -260,7 +352,7 @@ class KotlinWorkspaceSetup(
       // Index flag will be managed by triggerIndexing
       val currentClasspath = classpathProvider.getClasspathList()
       val currentHash = indexCache.computeClasspathHash(currentClasspath)
-      triggerIndexing(processManager, workspace.getProjectDir().toPath().toUri().toString(), currentHash)
+      triggerIndexing(processManager, resolvedWorkspaceRootDir.toPath().toUri().toString(), currentHash)
     }
   }
 
@@ -272,23 +364,9 @@ class KotlinWorkspaceSetup(
     KslLogs.info("Triggering classpath indexing...")
     Index.setIsIndexing(true)  // Set indexing flag when starting
 
-    val configParams =
-        JsonObject().apply {
-          add(
-              "settings",
-              JsonObject().apply {
-                // add("kotlin", JsonObject().apply {
-                // addProperty("indexing", "enable")
-                // add("completion", JsonObject().apply {
-                // add("snippets", JsonObject().apply {
-                // addProperty("enabled", true)
-                // })
-                // })
-                // })
-              },
-          )
-        }
+    val configParams = createFwcdRuntimeConfig(indexingEnabled = true)
 
+    logDidChangeConfigurationSummary("triggerIndexing", configParams)
     processManager.sendNotification("workspace/didChangeConfiguration", configParams)
 
     // Request symbols to warm up and cache the index
@@ -363,43 +441,46 @@ class KotlinWorkspaceSetup(
     if (mainModule != null) {
       val moduleDir = mainModule.projectDir
       if (moduleDir.exists() && moduleDir.isDirectory) {
-        // IMPORTANT: Do NOT use the module dir directly as the KLS workspace root.
+        if (backendId == KotlinLspBackendId.FWCD) {
+          KslLogs.info(
+              "Using main Android module as FWCD workspace root: {} (gradlePath={})",
+              moduleDir.absolutePath,
+              mainModule.path,
+          )
+          return moduleDir
+        }
+
+        // IMPORTANT: Do NOT use the module dir directly as the KLS workspace root for the
+        // legacy javacs backend.
         //
-        // KLS (org.javacs.kt) builds its SourcePath by enumerating *.kt/*.kts files
-        // directly under each workspace folder. The folder-level `*.kts` exclusion only
-        // applies to recursive subdirectory scanning, NOT to script files sitting at the
-        // top of the workspace folder. As a result, `<module>/build.gradle.kts` gets pulled
-        // into SourcePath and is compiled together with normal sources in compileAllFiles().
-        // Compiling a Gradle Kotlin script as a plain .kt file throws
-        // KotlinFrontEndException / NoDescriptorForDeclarationException, which poisons the
-        // whole compile batch and makes normal .kt files return 0 diagnostics.
-        //
-        // To avoid this, descend into `<module>/src` when it exists: this directory contains
-        // all real Kotlin/Java sources (src/main/kotlin, src/main/java, variants, ...) but
-        // never contains a build.gradle.kts, so KLS can no longer enumerate the build script
-        // into its SourcePath.
+        // That backend can enumerate <module>/build.gradle.kts into its source path and poison
+        // diagnostics for normal Kotlin sources. Keep the historical src-dir workaround there,
+        // but do not apply it to fwcd.
         val srcDir = File(moduleDir, "src")
         if (srcDir.exists() && srcDir.isDirectory) {
           KslLogs.info(
-              "Using main Android module src dir as KLS workspace root: {} (module={}, gradlePath={})",
+              "Using main Android module src dir as legacy KLS workspace root: {} (module={}, gradlePath={}, backend={})",
               srcDir.absolutePath,
               moduleDir.absolutePath,
               mainModule.path,
+              backendId.name.lowercase(),
           )
           return srcDir
         }
 
         KslLogs.info(
-            "Using main Android module as KLS workspace root: {} (gradlePath={}, no src dir found)",
+            "Using main Android module as KLS workspace root: {} (gradlePath={}, backend={}, no src dir found)",
             moduleDir.absolutePath,
             mainModule.path,
+            backendId.name.lowercase(),
         )
         return moduleDir
       }
       KslLogs.warn(
-          "Main Android module directory is invalid, fallback to project root: dir={}, gradlePath={}",
+          "Main Android module directory is invalid, fallback to project root: dir={}, gradlePath={}, backend={}",
           moduleDir.absolutePath,
           mainModule.path,
+          backendId.name.lowercase(),
       )
     }
 
