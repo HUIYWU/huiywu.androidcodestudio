@@ -62,6 +62,7 @@ class KotlinClasspathProvider {
     }
 
     val classpaths = mutableSetOf<String>()
+    val compilerServicePaths = mutableListOf<String>()
 
     // First, try to get classpaths from the compiler service
     val service = compilerService
@@ -69,6 +70,7 @@ class KotlinClasspathProvider {
       try {
         val allClassPaths = service.getFileManager().getAllClassPaths()
         for (cp in allClassPaths) {
+          compilerServicePaths.add(cp.absolutePath)
           addClasspathEntry(cp, classpaths)
         }
       } catch (e: Exception) {
@@ -137,11 +139,54 @@ class KotlinClasspathProvider {
     maybeAddComposeFallbackFromGradleCache(classpaths)
 
     val existingPaths = classpaths.filter { File(it).exists() }.toList()
+    logCompilerServiceClasspathDiff(compilerServicePaths, existingPaths)
     KslLogs.info("Total classpath entries: {}, existing: {}", classpaths.size, existingPaths.size)
     logAndroidxComposeClasspathSummary(existingPaths)
 
     cachedClasspathList = existingPaths
     return existingPaths
+  }
+
+  private fun logCompilerServiceClasspathDiff(
+      compilerServicePaths: List<String>,
+      providerPaths: List<String>,
+  ) {
+    val compilerSet = compilerServicePaths.toSet()
+    val providerSet = providerPaths.toSet()
+    val compilerOnly = compilerSet - providerSet
+    val providerOnly = providerSet - compilerSet
+
+    fun interesting(paths: Set<String>): List<String> =
+        paths.filter { path ->
+          val normalized = path.lowercase()
+          normalized.contains("compose") ||
+              normalized.contains("material3") ||
+              normalized.contains("runtime") ||
+              normalized.contains("foundation") ||
+              normalized.contains("activity") ||
+              normalized.contains("androidx")
+        }
+
+    val compilerOnlyInteresting = interesting(compilerOnly)
+    val providerOnlyInteresting = interesting(providerOnly)
+
+    KslLogs.info(
+        "Compiler/provider classpath diff: compilerServiceCount={}, providerCount={}, compilerOnly={}, providerOnly={}",
+        compilerServicePaths.size,
+        providerPaths.size,
+        compilerOnly.size,
+        providerOnly.size,
+    )
+    KslLogs.info(
+        "Compiler-only interesting paths: count={}, preview={}",
+        compilerOnlyInteresting.size,
+        compilerOnlyInteresting.take(20).joinToString(prefix = "[", postfix = if (compilerOnlyInteresting.size > 20) ", ...]" else "]"),
+    )
+    KslLogs.info(
+        "Provider-only interesting paths: count={}, preview={}",
+        providerOnlyInteresting.size,
+        providerOnlyInteresting.take(20).joinToString(prefix = "[", postfix = if (providerOnlyInteresting.size > 20) ", ...]" else "]"),
+    )
   }
 
   private fun logAndroidxComposeClasspathSummary(classpaths: List<String>) {
