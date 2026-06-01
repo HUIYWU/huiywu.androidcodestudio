@@ -435,8 +435,16 @@ class KotlinWorkspaceSetup(
       compilerService = KotlinCompilerService.NO_MODULE_COMPILER
     }
   }
+private fun resolveKlsWorkspaceRootDir(): File {
+    val projectRoot = workspace.getProjectDir()
+    if (backendId == KotlinLspBackendId.FWCD && projectRoot.exists() && projectRoot.isDirectory) {
+      KslLogs.info(
+          "Using project root as FWCD workspace root: {}",
+          projectRoot.absolutePath,
+      )
+      return projectRoot
+    }
 
-  private fun resolveKlsWorkspaceRootDir(): File {
     val mainModule = findMainAndroidModule()
     if (mainModule != null) {
       val moduleDir = mainModule.projectDir
@@ -476,6 +484,10 @@ class KotlinWorkspaceSetup(
         )
         return moduleDir
       }
+    }
+
+    return workspace.getProjectDir()
+  }
       KslLogs.warn(
           "Main Android module directory is invalid, fallback to project root: dir={}, gradlePath={}, backend={}",
           moduleDir.absolutePath,
