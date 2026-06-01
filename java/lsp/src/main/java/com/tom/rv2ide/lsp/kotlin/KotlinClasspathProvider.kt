@@ -134,6 +134,7 @@ class KotlinClasspathProvider {
     }
 
     addKotlinScriptingJarsFromGradleCache(classpaths)
+    maybeAddComposeFallbackFromGradleCache(classpaths)
 
     val existingPaths = classpaths.filter { File(it).exists() }.toList()
     KslLogs.info("Total classpath entries: {}, existing: {}", classpaths.size, existingPaths.size)
@@ -193,11 +194,11 @@ class KotlinClasspathProvider {
     )
   }
 
-  private fun logTargetClassPresence(candidatePaths: List<String>, fqcnList: List<String>) {
+  private fun probeTargetClassPresence(candidatePaths: List<String>, fqcnList: List<String>): Map<String, Boolean> {
     val files = candidatePaths.map(::File).filter { it.exists() && it.isFile }
     if (files.isEmpty()) {
       KslLogs.warn("Target class probe skipped: no candidate classpath files")
-      return
+      return fqcnList.associateWith { false }
     }
 
     val classes =
@@ -205,16 +206,134 @@ class KotlinClasspathProvider {
           classpathReader.listClasses(files)
         } catch (e: Exception) {
           KslLogs.warn("Target class probe failed while listing classes from {} candidate files", files.size, e)
-          return
+          return fqcnList.associateWith { false }
         }
 
+    return fqcnList.associateWith { fqcn -> classes.any { it.name == fqcn } }
+  }
+
+  private fun logTargetClassPresence(candidatePaths: List<String>, fqcnList: List<String>): Map<String, Boolean> {
+    val results = probeTargetClassPresence(candidatePaths, fqcnList)
     fqcnList.forEach { fqcn ->
-      val hit = classes.firstOrNull { it.name == fqcn }
+      val present = results[fqcn] == true
       KslLogs.info(
           "Target class probe: class={} present={} sampleSource={}",
           fqcn,
-          hit != null,
-          if (hit != null) "classpath-candidates" else "",
+          present,
+          if (present) "classpath-candidates" else "",
+      )
+    }
+    return results
+  }
+
+  private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String>) {
+    val probeTargets =
+        listOf(
+            "androidx.activity.ComponentActivity",
+            "androidx.compose.ui.Modifier",
+            "androidx.compose.material3.Text",
+        )
+    val candidatePaths =
+        classpaths.filter { path ->
+          val normalized = path.lowercase()
+          normalized.contains("activity") ||
+              normalized.contains("androidx") ||
+              normalized.contains("compose") ||
+              normalized.contains("lifecycle") ||
+              normalized.contains("core-ktx")
+        }
+    val probeResults = probeTargetClassPresence(candidatePaths, probeTargets)
+    val hasActivity = probeResults["androidx.activity.ComponentActivity"] == true
+    val hasComposeUi = probeResults["androidx.compose.ui.Modifier"] == true
+    val hasComposeMaterial3 = probeResults["androidx.compose.material3.Text"] == true
+
+    if (!hasActivity || (hasComposeUi && hasComposeMaterial3)) {
+      return
+    }
+
+    KslLogs.warn(
+        "Compose fallback triggered: activityPresent={}, composeUiPresent={}, material3Present={}",
+        hasActivity,
+        hasComposeUi,
+        hasComposeMaterial3,
+    )
+
+    val added = mutableSetOf<String>()
+    val gradleHomes =
+        listOf(
+            File(System.getProperty("user.home", ""), ".gradle"),
+            File("/data/data/com.tom.rv2ide/files/home/.gradle"),
+            File("/storage/emulated/0/.gradle"),
+            File(System.getProperty("user.home", ""), "../../.gradle"),
+        )
+
+    val composeCoordinates =
+        listOf(
+            "androidx.compose.ui:ui",
+            "androidx.compose.runtime:runtime",
+            "androidx.compose.foundation:foundation",
+            "androidx.compose.material3:material3",
+            "androidx.compose.ui:ui-text",
+            "androidx.compose.ui:ui-graphics",
+        )
+
+    for (gradleHome in gradleHomes) {
+      if (!gradleHome.exists()) continue
+
+      val modulesCache = File(gradleHome, "caches/modules-2/files-2.1")
+      if (modulesCache.exists()) {
+        composeCoordinates.forEach { coordinatePrefix ->
+          val parts = coordinatePrefix.split(":")
+          if (parts.size != 2) return@forEach
+          val groupPath = parts[0].replace('.', File.separatorChar)
+          val artifactDir = File(modulesCache, "$groupPath/${parts[1]}")
+          if (!artifactDir.exists()) return@forEach
+          artifactDir.walkTopDown().forEach { file ->
+            if (
+                file.isFile &&
+                    file.extension == "jar" &&
+                    !file.name.contains("sources") &&
+                    !file.name.contains("javadoc")
+            ) {
+              if (classpaths.add(file.absolutePath)) {
+                added.add(file.absolutePath)
+              }
+            }
+          }
+        }
+      }
+
+      val transformsRoots =
+          listOf(
+              File(gradleHome, "caches/9.0.0/transforms"),
+              File(gradleHome, "caches/transforms-3"),
+          )
+      transformsRoots.forEach { transformsRoot ->
+        if (!transformsRoot.exists()) return@forEach
+        transformsRoot.walkTopDown().forEach { file ->
+          val normalized = file.absolutePath.lowercase()
+          val interesting =
+              normalized.contains("compose") ||
+                  normalized.contains("material3") ||
+                  normalized.contains("ui-text") ||
+                  normalized.contains("ui-graphics") ||
+                  normalized.contains("foundation") ||
+                  normalized.contains("runtime")
+          if (!interesting) return@forEach
+          if (file.isFile && file.name == "classes.jar") {
+            if (classpaths.add(file.absolutePath)) {
+              added.add(file.absolutePath)
+            }
+          }
+        }
+      }
+    }
+
+    KslLogs.warn("Compose fallback added {} Gradle cache entries", added.size)
+    if (added.isNotEmpty()) {
+      KslLogs.info(
+          "Compose fallback preview: {}",
+          added.take(20).joinToString(prefix = "[", postfix = if (added.size > 20) ", ...]" else "]"),
       )
     }
   }
@@ -548,9 +667,10 @@ class KotlinClasspathProvider {
 
               // AAR extracted JARs
               "intermediates/aar_libs_jars/debug",
-          )
+            )
 
       var foundScriptRuntime = false
+      var addedExternalJarCount = 0
 
       externalLibLocations.forEach { location ->
         val dir = File(buildDir, location)
@@ -558,7 +678,8 @@ class KotlinClasspathProvider {
           // Recursively find all JARs
           dir.walkTopDown().forEach { file ->
             if (file.isFile && file.extension == "jar") {
-              classpaths.add(file.absolutePath)
+              addClasspathEntry(file, classpaths)
+              addedExternalJarCount++
 
               // Check if this is the script runtime
               if (
@@ -572,6 +693,47 @@ class KotlinClasspathProvider {
           }
         }
       }
+
+      val transformsDir = File(buildDir, "intermediates/transforms")
+      if (transformsDir.exists() && transformsDir.isDirectory) {
+        var addedTransformCount = 0
+        transformsDir.walkTopDown().forEach { file ->
+          if (!file.exists()) return@forEach
+
+          val normalizedPath = file.absolutePath.lowercase()
+          val isInterestingTransformPath =
+              normalizedPath.contains("/transformed/") ||
+                  normalizedPath.contains("/transforms/") ||
+                  normalizedPath.contains("compose") ||
+                  normalizedPath.contains("material3") ||
+                  normalizedPath.contains("activity") ||
+                  normalizedPath.contains("lifecycle")
+
+          if (!isInterestingTransformPath) return@forEach
+
+          if (file.isFile && file.extension == "jar") {
+            addClasspathEntry(file, classpaths)
+            addedTransformCount++
+          } else if (file.isFile && file.name == "classes.jar") {
+            addClasspathEntry(file, classpaths)
+            addedTransformCount++
+          } else if (file.isDirectory && file.name == "classes") {
+            classpaths.add(file.absolutePath)
+            addedTransformCount++
+          }
+        }
+        KslLogs.info(
+            "Scanned AGP transforms for external libraries: added {} candidate entries from {}",
+            addedTransformCount,
+            transformsDir.absolutePath,
+        )
+      }
+
+      KslLogs.info(
+          "Added {} external library jar entries from build intermediates for {}",
+          addedExternalJarCount,
+          buildDir.absolutePath,
+      )
 
       if (!foundScriptRuntime) {
         KslLogs.warn("⚠ kotlin-script-runtime NOT found in build artifacts!")
