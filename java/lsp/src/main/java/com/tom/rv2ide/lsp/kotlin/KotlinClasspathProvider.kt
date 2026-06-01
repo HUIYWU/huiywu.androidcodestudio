@@ -228,18 +228,18 @@ class KotlinClasspathProvider {
         componentActivityCandidates.size,
         componentActivityCandidates.take(20).joinToString(prefix = "[", postfix = if (componentActivityCandidates.size > 20) ", ...]" else "]"),
     )
-
     logTargetClassPresence(
         componentActivityCandidates,
         listOf(
             "androidx.activity.ComponentActivity",
             "androidx.compose.ui.Modifier",
-            "androidx.compose.material3.Text",
+            "androidx.compose.material3.TextKt",
         ),
     )
   }
 
   private fun probeTargetClassPresence(candidatePaths: List<String>, fqcnList: List<String>): Map<String, Boolean> {
+
     val files = candidatePaths.map(::File).filter { it.exists() && it.isFile }
     if (files.isEmpty()) {
       KslLogs.warn("Target class probe skipped: no candidate classpath files")
@@ -270,13 +270,12 @@ class KotlinClasspathProvider {
     }
     return results
   }
-
-  private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String>) {
+private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String>) {
     val probeTargets =
         listOf(
             "androidx.activity.ComponentActivity",
             "androidx.compose.ui.Modifier",
-            "androidx.compose.material3.Text",
+            "androidx.compose.material3.TextKt",
         )
     val candidatePaths =
         classpaths.filter { path ->
@@ -290,7 +289,8 @@ class KotlinClasspathProvider {
     val probeResults = probeTargetClassPresence(candidatePaths, probeTargets)
     val hasActivity = probeResults["androidx.activity.ComponentActivity"] == true
     val hasComposeUi = probeResults["androidx.compose.ui.Modifier"] == true
-    val hasComposeMaterial3 = probeResults["androidx.compose.material3.Text"] == true
+    val hasComposeMaterial3 = probeResults["androidx.compose.material3.TextKt"] == true
+
 
     if (!hasActivity || (hasComposeUi && hasComposeMaterial3)) {
       return
