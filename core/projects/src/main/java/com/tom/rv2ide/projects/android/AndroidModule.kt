@@ -226,8 +226,34 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
         result.addAll(module.getCompileClasspaths())
       } else if (lib.type == ANDROID_LIBRARY) {
         val compileJarFiles = lib.androidLibraryData?.compileJarFiles.orEmpty()
+        if (shouldInspectMaterial3Library(library, lib)) {
+          log.info(
+            "Material3 collectLibraries hit: key={}, coords={}, artifact={}, compileJarCount={}",
+            library,
+            describeLibraryCoordinates(lib),
+            lib.artifact?.absolutePath,
+            compileJarFiles.size
+          )
+        }
         val preferredFiles = preferredAndroidLibraryClasspathFiles(library, lib, compileJarFiles)
+        if (shouldInspectMaterial3Library(library, lib)) {
+          log.info(
+            "Material3 preferred files: key={}, count={}, files={}",
+            library,
+            preferredFiles.size,
+            preferredFiles.joinToString(prefix = "[", postfix = "]") { it.absolutePath }
+          )
+        }
         result.addAll(preferredFiles)
+        if (shouldInspectMaterial3Library(library, lib)) {
+          val matched = result.filter { it.absolutePath.contains("material3", ignoreCase = true) }
+          log.info(
+            "Material3 result presence after addAll: key={}, resultMaterial3Count={}, resultFiles={}",
+            library,
+            matched.size,
+            matched.joinToString(prefix = "[", postfix = "]") { it.absolutePath }
+          )
+        }
       } else if (lib.type == JAVA_LIBRARY) {
         val artifact = lib.artifact
         if (artifact != null) {
@@ -244,9 +270,20 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
     compileJarFiles: Collection<File>
   ): Collection<File> {
     val artifact = lib.artifact
+    val shouldInspectMaterial3 = shouldInspectMaterial3Library(key, lib)
     val aarClassesJar = artifact?.takeIf {
       shouldInspectComposeLibrary(key, lib) && it.isFile && it.extension.equals("aar", ignoreCase = true)
     }?.let { extractClassesJarFromAar(it) }
+
+    if (shouldInspectMaterial3) {
+      log.info(
+        "Material3 preferredAndroidLibraryClasspathFiles: key={}, artifact={}, extractedAarClassesJar={}, compileJars={}",
+        key,
+        artifact?.absolutePath,
+        aarClassesJar?.absolutePath,
+        compileJarFiles.joinToString(prefix = "[", postfix = "]") { it.absolutePath }
+      )
+    }
 
     if (aarClassesJar != null) {
       return linkedSetOf<File>().apply {
@@ -291,6 +328,12 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
       normalized.contains("androidx.compose.material3") ||
       normalized.contains("androidx.activity") ||
       normalized.contains("androidx.lifecycle")
+  }
+
+  private fun shouldInspectMaterial3Library(key: String, lib: DefaultLibrary): Boolean {
+    val coordinates = describeLibraryCoordinates(lib)
+    val candidate = "$key $coordinates ${lib.artifact?.name.orEmpty()}"
+    return candidate.lowercase().contains("androidx.compose.material3")
   }
 
   private fun describeLibraryCoordinates(lib: DefaultLibrary): String {
