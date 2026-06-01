@@ -608,54 +608,52 @@ class KotlinWorkspaceSetup(
               },
           )
 
-          compilerService?.let { service ->
-            val allClassPaths = service.getFileManager().getAllClassPaths()
-            val classpathArray = JsonArray()
+          val effectiveClassPaths = classpathProvider.getClasspathList()
+          val classpathArray = JsonArray()
 
-            allClassPaths.forEach { file -> classpathArray.add(file.absolutePath) }
+          effectiveClassPaths.forEach { path -> classpathArray.add(path) }
 
-            val initOptions =
-                JsonObject().apply {
-                  addProperty("storagePath", workspace.getProjectDir().resolve(".acside").absolutePath)
+          val initOptions =
+              JsonObject().apply {
+                addProperty("storagePath", workspace.getProjectDir().resolve(".acside").absolutePath)
 
-                  addProperty("indexing", "auto")
-                  addProperty("externalSources", "auto")
+                addProperty("indexing", "auto")
+                addProperty("externalSources", "auto")
 
-                  add(
-                      "completion",
-                      JsonObject().apply {
-                        add("snippets", JsonObject().apply { addProperty("enabled", true) })
-                      },
-                  )
+                add(
+                    "completion",
+                    JsonObject().apply {
+                      add("snippets", JsonObject().apply { addProperty("enabled", true) })
+                    },
+                )
 
-                  add(
-                      "scripts",
-                      JsonObject().apply {
-                        // Disable Gradle Kotlin script support for Android source editing. The current KLS
-                        // build crashes while analyzing settings.gradle.kts, which prevents reliable
-                        // diagnostics for normal .kt files.
-                        addProperty("enabled", false)
-                        addProperty("buildScriptsEnabled", false)
-                        // Keep template metadata present for compatibility, but scripts remain disabled.
-                        add(
-                            "templates",
-                            JsonArray().apply {
-                              add("kotlin.script.templates.standard.ScriptTemplateWithArgs")
-                            },
-                        )
-                      },
-                  )
+                add(
+                    "scripts",
+                    JsonObject().apply {
+                      // Disable Gradle Kotlin script support for Android source editing. The current KLS
+                      // build crashes while analyzing settings.gradle.kts, which prevents reliable
+                      // diagnostics for normal .kt files.
+                      addProperty("enabled", false)
+                      addProperty("buildScriptsEnabled", false)
+                      // Keep template metadata present for compatibility, but scripts remain disabled.
+                      add(
+                          "templates",
+                          JsonArray().apply {
+                            add("kotlin.script.templates.standard.ScriptTemplateWithArgs")
+                          },
+                      )
+                    },
+                )
 
-                  // Classpath settings
-                  addProperty("usePredefinedClasspath", true)
-                  addProperty("disableDependencyResolution", true)
-                  add("classpath", classpathArray)
-                }
+                // Classpath settings
+                addProperty("usePredefinedClasspath", true)
+                addProperty("disableDependencyResolution", true)
+                add("classpath", classpathArray)
+              }
 
-            add("initializationOptions", initOptions)
+          add("initializationOptions", initOptions)
 
-            KslLogs.info("Configured KLS with {} classpath entries", allClassPaths.size)
-          }
+          KslLogs.info("Configured KLS with {} classpath entries", effectiveClassPaths.size)
         }
 
     KslLogs.info("Full init params created with script support and formatting")
