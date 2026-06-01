@@ -170,14 +170,53 @@ class KotlinClasspathProvider {
 
     val componentActivityCandidates =
         classpaths.filter { path ->
-          val name = File(path).name.lowercase()
-          name.contains("activity") || name.contains("androidx") || name.contains("compose")
+          val normalized = path.lowercase()
+          normalized.contains("activity") ||
+              normalized.contains("androidx") ||
+              normalized.contains("compose") ||
+              normalized.contains("lifecycle") ||
+              normalized.contains("core-ktx")
         }
     KslLogs.debug(
         "AndroidX/Compose candidate entries for ComponentActivity lookup: count={}, preview={}",
         componentActivityCandidates.size,
         componentActivityCandidates.take(20).joinToString(prefix = "[", postfix = if (componentActivityCandidates.size > 20) ", ...]" else "]"),
     )
+
+    logTargetClassPresence(
+        componentActivityCandidates,
+        listOf(
+            "androidx.activity.ComponentActivity",
+            "androidx.compose.ui.Modifier",
+            "androidx.compose.material3.Text",
+        ),
+    )
+  }
+
+  private fun logTargetClassPresence(candidatePaths: List<String>, fqcnList: List<String>) {
+    val files = candidatePaths.map(::File).filter { it.exists() && it.isFile }
+    if (files.isEmpty()) {
+      KslLogs.warn("Target class probe skipped: no candidate classpath files")
+      return
+    }
+
+    val classes =
+        try {
+          classpathReader.listClasses(files)
+        } catch (e: Exception) {
+          KslLogs.warn("Target class probe failed while listing classes from {} candidate files", files.size, e)
+          return
+        }
+
+    fqcnList.forEach { fqcn ->
+      val hit = classes.firstOrNull { it.name == fqcn }
+      KslLogs.info(
+          "Target class probe: class={} present={} sampleSource={}",
+          fqcn,
+          hit != null,
+          if (hit != null) "classpath-candidates" else "",
+      )
+    }
   }
 
   private fun addClasspathEntry(file: File, classpaths: MutableSet<String>) {
