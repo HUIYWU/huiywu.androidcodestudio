@@ -32,6 +32,7 @@ import com.tom.rv2ide.builder.model.UNKNOWN_PACKAGE
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
+import com.tom.rv2ide.projects.classpath.JarFsClasspathReader
 import com.tom.rv2ide.tooling.api.ProjectType.Android
 import com.tom.rv2ide.tooling.api.models.BasicAndroidVariantMetadata
 import com.tom.rv2ide.tooling.api.models.GradleTask
@@ -225,13 +226,91 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
 
         result.addAll(module.getCompileClasspaths())
       } else if (lib.type == ANDROID_LIBRARY) {
-        result.addAll(lib.androidLibraryData!!.compileJarFiles)
+        val compileJarFiles = lib.androidLibraryData?.compileJarFiles.orEmpty()
+        val preferredFiles = preferredAndroidLibraryClasspathFiles(library, lib, compileJarFiles)
+        result.addAll(preferredFiles)
       } else if (lib.type == JAVA_LIBRARY) {
-        result.add(lib.artifact!!)
+        val artifact = lib.artifact
+        if (artifact != null) {
+          result.add(artifact)
+        }
       }
 
       collectLibraries(root, lib.dependencies, result)
     }
+  }
+
+  private fun preferredAndroidLibraryClasspathFiles(
+    key: String,
+    lib: DefaultLibrary,
+    compileJarFiles: Collection<File>
+  ): Collection<File> {
+    val artifact = lib.artifact
+    val aarClassesJar = artifact?.takeIf {
+      shouldInspectComposeLibrary(key, lib) && it.isFile && it.extension.equals("aar", ignoreCase = true)
+    }?.let { extractClassesJarFromAar(it) }
+
+    if (aarClassesJar != null) {
+      log.info(
+        "Using AAR classes.jar for compose/androidx library: key={}, coords={}, aar={}, classesJar={}",
+        key,
+        describeLibraryCoordinates(lib),
+        artifact?.absolutePath,
+        aarClassesJar.absolutePath
+      )
+      return linkedSetOf<File>().apply {
+        add(aarClassesJar)
+        addAll(compileJarFiles)
+      }
+    }
+
+    return compileJarFiles
+  }
+
+  private fun extractClassesJarFromAar(aarFile: File): File? {
+    return try {
+      val extractDir = File(aarFile.parentFile, "${aarFile.nameWithoutExtension}-acs-extracted")
+      val classesJar = File(extractDir, "classes.jar")
+      if (classesJar.exists()) {
+        classesJar
+      } else {
+        extractDir.mkdirs()
+        java.util.zip.ZipFile(aarFile).use { zip ->
+          val classesEntry = zip.getEntry("classes.jar") ?: return null
+          zip.getInputStream(classesEntry).use { input ->
+            classesJar.outputStream().use { output -> input.copyTo(output) }
+          }
+        }
+        classesJar.takeIf { it.exists() }
+      }
+    } catch (error: Exception) {
+      log.warn("Failed to extract classes.jar from AAR: {}", aarFile.absolutePath, error)
+      null
+    }
+  }
+
+  private fun maybeLogComposeLibraryClasspath(
+    key: String,
+    lib: DefaultLibrary,
+    files: Collection<File>
+  ) {
+  }
+
+  private fun shouldInspectComposeLibrary(key: String, lib: DefaultLibrary): Boolean {
+    val coordinates = describeLibraryCoordinates(lib)
+    val candidate = "$key $coordinates ${lib.artifact?.name.orEmpty()}"
+    val normalized = candidate.lowercase()
+    return normalized.contains("androidx.compose.ui") ||
+      normalized.contains("androidx.compose.runtime") ||
+      normalized.contains("androidx.compose.foundation") ||
+      normalized.contains("androidx.compose.material3") ||
+      normalized.contains("androidx.activity") ||
+      normalized.contains("androidx.lifecycle")
+  }
+
+  private fun describeLibraryCoordinates(lib: DefaultLibrary): String {
+    val info = lib.libraryInfo
+    return listOfNotNull(info?.group, info?.name, info?.version).joinToString(":")
   }
 
   override fun getCompileModuleProjects(): List<ModuleProject> {

@@ -14,7 +14,6 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.tooling.impl.internal
 
 import com.android.builder.model.v2.dsl.BuildType
@@ -97,8 +96,7 @@ internal class AndroidProjectImpl(
       androidProject.variants.find { it.name == param.value }?.toMetadata()
     }
   }
-
-  private fun Variant.toMetadata(): AndroidVariantMetadata {
+private fun Variant.toMetadata(): AndroidVariantMetadata {
     return AndroidVariantMetadata(
         name = name,
         mainArtifact = mainArtifact.toMetadata(name),
@@ -110,15 +108,165 @@ internal class AndroidProjectImpl(
     return CompletableFuture.supplyAsync { basicAndroidProject.bootClasspath }
   }
 
-  override fun getLibraryMap(): CompletableFuture<Map<String, DefaultLibrary>> {
+override fun getLibraryMap(): CompletableFuture<Map<String, DefaultLibrary>> {
     return CompletableFuture.supplyAsync {
       val seen = HashMap<String, DefaultLibrary>()
       val compileDependencies = variantDependencies.mainArtifact.compileDependencies
       val libraries = variantDependencies.libraries
+
+      logComposeDependencySummary(compileDependencies, libraries)
+
       for (dependency in compileDependencies) {
         seen[dependency.key] ?: fillLibrary(dependency, libraries, seen)
       }
+
+      addImportantComposeLibraries(libraries, seen)
+      logComposeSeenSummary(seen)
       seen
+    }
+  }
+
+  private fun addImportantComposeLibraries(
+      libraries: Map<String, Library>,
+      seen: MutableMap<String, DefaultLibrary>,
+  ) {
+    val added = mutableListOf<String>()
+    libraries.forEach { (key, library) ->
+      if (seen.containsKey(key)) return@forEach
+      if (!shouldForceIncludeLibrary(key, library)) return@forEach
+
+      seen[key] = com.tom.rv2ide.tooling.api.util.AndroidModulePropertyCopier.copy(library)
+      added += "$key => ${describeLibrary(library)}"
+    }
+
+    logComposeForcedIncludeSummary(added)
+  }
+
+  private fun shouldForceIncludeLibrary(key: String, library: Library): Boolean {
+    val info = library.libraryInfo
+    val group = info?.group.orEmpty()
+    val name = info?.name.orEmpty()
+    val coordinates = listOfNotNull(info?.group, info?.name, info?.version).joinToString(":")
+    val candidate = listOf(key, group, name, coordinates, describeLibrary(library)).joinToString(" ")
+
+    if (!isForceIncludeInteresting(candidate)) {
+      return false
+    }
+
+    return library.androidLibraryData?.compileJarFiles?.isNotEmpty() == true || library.artifact != null
+  }
+
+  private fun logComposeForcedIncludeSummary(added: List<String>) {
+    debugCompose(
+        "Compose forced include summary: variant=$configuredVariant, added=${added.size}")
+
+    if (added.isNotEmpty()) {
+      debugCompose("Compose forced include preview: ${added.take(20)}")
+    }
+  }
+
+  private fun isForceIncludeInteresting(value: String?): Boolean {
+    if (value.isNullOrBlank()) return false
+    val normalized = value.lowercase()
+    return normalized.contains("androidx.compose.ui") ||
+        normalized.contains("androidx.compose.runtime") ||
+        normalized.contains("androidx.compose.foundation") ||
+        normalized.contains("androidx.compose.material3") ||
+        normalized.contains("androidx.activity") ||
+        normalized.contains("androidx.lifecycle")
+  }
+
+  private fun logComposeDependencySummary(
+      compileDependencies: List<GraphItem>,
+      libraries: Map<String, Library>,
+  ) {
+    val dependencyKeys = linkedSetOf<String>()
+    compileDependencies.forEach { collectGraphKeys(it, dependencyKeys) }
+
+    val composeLibraryEntries = libraries.entries.filter { (key, library) ->
+      isComposeInteresting(key) || isComposeInteresting(describeLibrary(library))
+    }
+
+    val composeLibraryKeys = composeLibraryEntries.map { it.key }.toSet()
+    val composeReferencedKeys = composeLibraryKeys.filter { dependencyKeys.contains(it) }
+    val composeUnreferencedKeys = composeLibraryKeys.filterNot { dependencyKeys.contains(it) }
+
+    debugCompose(
+        "Compose dependency summary: variant=$configuredVariant, mainCompileRoots=${compileDependencies.size}, mainCompileGraphKeys=${dependencyKeys.size}, totalLibraries=${libraries.size}, composeLibraries=${composeLibraryEntries.size}, composeReferenced=${composeReferencedKeys.size}, composeUnreferenced=${composeUnreferencedKeys.size}")
+
+    if (composeLibraryEntries.isNotEmpty()) {
+      val preview = composeLibraryEntries
+          .take(20)
+          .joinToString(" | ") { (key, library) -> "$key => ${describeLibrary(library)}" }
+      debugCompose("Compose libraries preview: $preview")
+    }
+
+    if (composeUnreferencedKeys.isNotEmpty()) {
+      debugCompose(
+          "Compose libraries not referenced by mainArtifact.compileDependencies: ${composeUnreferencedKeys.take(20)}")
+    }
+  }
+
+  private fun logComposeSeenSummary(seen: Map<String, DefaultLibrary>) {
+    val composeSeen = seen.entries.filter { (key, library) ->
+      isComposeInteresting(key) || isComposeInteresting(describeLibrary(library))
+    }
+
+    debugCompose(
+        "Compose seen summary after fillLibrary: variant=$configuredVariant, seenLibraries=${seen.size}, composeSeen=${composeSeen.size}")
+
+    if (composeSeen.isNotEmpty()) {
+      val preview = composeSeen.take(20).joinToString(" | ") { (key, library) ->
+        "$key => ${describeLibrary(library)}"
+      }
+      debugCompose("Compose seen preview: $preview")
+    }
+  }
+
+  private fun debugCompose(message: String) {
+    println("[AndroidProjectImpl] $message")
+  }
+
+
+  private fun collectGraphKeys(item: GraphItem, result: MutableSet<String>) {
+    if (!result.add(item.key)) return
+    item.dependencies.forEach { dependency -> collectGraphKeys(dependency, result) }
+  }
+
+  private fun isComposeInteresting(value: String?): Boolean {
+    if (value.isNullOrBlank()) return false
+    val normalized = value.lowercase()
+    return normalized.contains("androidx.compose") ||
+        normalized.contains("compose-ui") ||
+        normalized.contains("compose.ui") ||
+        normalized.contains("material3") ||
+        normalized.contains("ui-text") ||
+        normalized.contains("ui-graphics") ||
+        normalized.contains("foundation") ||
+        normalized.contains("runtime")
+  }
+
+  private fun describeLibrary(library: Library): String {
+    val info = library.libraryInfo
+    val coordinates = listOfNotNull(info?.group, info?.name, info?.version).joinToString(":")
+    val compileJarPreview = library.androidLibraryData?.compileJarFiles?.take(3)?.joinToString(",") { it.name }
+    val artifactName = library.artifact?.name
+    return buildString {
+      append("type=")
+      append(library.type)
+      if (coordinates.isNotBlank()) {
+        append(", coords=")
+        append(coordinates)
+      }
+      if (!artifactName.isNullOrBlank()) {
+        append(", artifact=")
+        append(artifactName)
+      }
+      if (!compileJarPreview.isNullOrBlank()) {
+        append(", compileJars=[")
+        append(compileJarPreview)
+        append("]")
+      }
     }
   }
 
@@ -171,6 +319,7 @@ internal class AndroidProjectImpl(
       }
     }
   }
+
 
   override fun getMetadata(): CompletableFuture<ProjectMetadata> {
     return CompletableFuture.supplyAsync {
