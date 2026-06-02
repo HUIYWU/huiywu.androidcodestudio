@@ -25,7 +25,7 @@ import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_BACKEND
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_CURSOR_HOVER
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_DIAGNOSTICS
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_FORMAT_STYLE
-import com.tom.rv2ide.resources.R.drawable
+import com.tom.rv2ide.R.drawable
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.utils.Environment
 import java.io.File
