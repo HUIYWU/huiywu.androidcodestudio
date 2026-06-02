@@ -532,7 +532,6 @@
   <string name="action_download">下载</string>
   <string name="action_reinstall">重新安装</string>
   <string name="action_remove">移除</string>
-  <string name="action_cancel">取消</string>
   <string name="action_ok">确定</string>
   <string name="status_not_installed">未安装</string>
   <string name="label_versions">个版本</string>

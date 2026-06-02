@@ -992,7 +992,6 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="action_download">Download</string>
   <string name="action_reinstall">Reinstall</string>
   <string name="action_remove">Remove</string>
-  <string name="action_cancel">Cancel</string>
   <string name="action_ok">OK</string>
   <string name="status_not_installed">Not installed</string>
   <string name="label_versions">versions</string>
