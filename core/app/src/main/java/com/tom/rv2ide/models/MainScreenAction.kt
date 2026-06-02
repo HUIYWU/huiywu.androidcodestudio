@@ -71,7 +71,7 @@ constructor(
         val preferences =
             MainScreenAction(ACTION_PREFERENCES, R.string.msg_preferences, R.drawable.ic_settings)
 
-        val donate = MainScreenAction(ACTION_DONATE, R.string.btn_idecfg, R.drawable.ic_cfg_main)
+        val donate = MainScreenAction(ACTION_DONATE, R.string.title_ide_configurations, R.drawable.ic_cfg_main)
 
         val docs = MainScreenAction(ACTION_DOCS, R.string.btn_docs, R.drawable.ic_docs)
 

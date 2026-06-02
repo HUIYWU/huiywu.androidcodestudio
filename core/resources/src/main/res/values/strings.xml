@@ -101,13 +101,12 @@
  <string name="action_save">Save</string>
  
  <string name="no_acs_title">ACS Components Missing</string>
-  <string name="no_acs_summary">This application appears to be incomplete or unofficial, as it is missing the required ACS build system. For full functionality, please install the official Android Code Studio from a trusted source.</string>
+ <string name="no_acs_summary">This application appears to be incomplete or unofficial, as it is missing the required ACS build system. For full functionality, please install the official Android Code Studio from a trusted source.</string>
+<string name="no_internet">No internet connection</string>
 
-  <string name="no_internet">No internet connection</string>
-  <string name="btn_proceed_str">Proceed</string>
+ <string name="acs_install_title">ACS build system</string>
+ <string name="acs_ask_install_message">Do you want to install %1$s?</string>
 
-  <string name="acs_install_title">ACS build system</string>
-  <string name="acs_ask_install_message">Are you sure you want to install %1$s?</string>
 
   <string
     name="copy"
@@ -878,6 +877,11 @@
   <string name="git_clone_branch">Branch (optional)</string>
   <string name="git_clone_options">Clone Options</string>
   <string name="git_clone_custom_options">Custom Options (e.g., --filter=blob:none)</string>
+  <string name="git_clone_option_shallow">Shallow clone (faster)</string>
+  <string name="git_clone_option_single_branch">Clone single branch only</string>
+  <string name="git_clone_option_submodules">Clone with submodules</string>
+  <string name="git_clone_option_no_tags">Don't fetch tags</string>
+  <string name="git_clone_option_bare">Create bare repository</string>
   <string name="git_clone_invalid_url">Invalid repository URL</string>
 
   <string name="btn_sync">Sync</string>
@@ -993,6 +997,7 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="action_reinstall">Reinstall</string>
   <string name="action_remove">Remove</string>
   <string name="action_ok">OK</string>
+  <string name="status_installed">Installed</string>
   <string name="status_not_installed">Not installed</string>
   <string name="label_versions">versions</string>
   <string name="state_loading_versions">Loading versions...</string>

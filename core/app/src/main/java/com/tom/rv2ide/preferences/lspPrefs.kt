@@ -18,6 +18,7 @@
 package com.tom.rv2ide.preferences
 
 import androidx.preference.Preference
+import com.tom.rv2ide.app.BaseApplication
 import com.tom.rv2ide.lsp.kotlin.KotlinLspBackendId
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.preferences.internal.LSPPreferences
@@ -25,7 +26,7 @@ import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_BACKEND
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_CURSOR_HOVER
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_DIAGNOSTICS
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_FORMAT_STYLE
-import com.tom.rv2ide.R.drawable
+import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.utils.Environment
 import java.io.File
@@ -94,20 +95,19 @@ private class KotlinBackend(
     get() = string.kotlin_lsp_backend_summary
 
   override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
-    val context = preference.context
     return arrayOf(
         PreferenceChoices.Entry(
-            context.getString(string.kotlin_lsp_backend_javacs),
+            "Javacs-base",
             LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS,
             LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS,
         ),
         PreferenceChoices.Entry(
-            context.getString(string.kotlin_lsp_backend_fwcd),
+            "Fwcd",
             LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_FWCD,
             LSPPreferences.KOTLIN_LSP_BACKEND_FWCD,
         ),
         PreferenceChoices.Entry(
-            context.getString(string.kotlin_lsp_backend_stub),
+            "Stub",
             LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_STUB,
             LSPPreferences.KOTLIN_LSP_BACKEND_STUB,
         ),
@@ -218,15 +218,14 @@ private class KotlinFormatStyle(
   }
 
   override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
-    val context = preference.context
     val currentStyle = LSPPreferences.codeFormatStyle
     return STYLES.map { style ->
           PreferenceChoices.Entry(
               label =
                   when (style) {
-                    STYLE_GOOGLE -> context.getString(string.acs_lsp_kotlin_code_style_google)
-                    STYLE_KOTLINLANG -> context.getString(string.acs_lsp_kotlin_code_style_kotlinlang)
-                    STYLE_FACEBOOK -> context.getString(string.acs_lsp_kotlin_code_style_facebook)
+                    STYLE_GOOGLE -> "Google"
+                    STYLE_KOTLINLANG -> "JetBrains"
+                    STYLE_FACEBOOK -> "Facebook"
                     else -> style
                   },
               _isChecked = currentStyle == style,
@@ -283,7 +282,14 @@ private class CCPPLSP(
     )
 */
 
-private fun getStatus(installed: Boolean): String = if (installed) "installed" else "not installed"
+private fun getStatus(installed: Boolean): String {
+  val context = BaseApplication.getBaseInstance()
+  return if (installed) {
+    context.getString(string.status_installed)
+  } else {
+    context.getString(string.status_not_installed)
+  }
+}
 private fun activeKotlinBackendId(): KotlinLspBackendId {
   return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
     LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> KotlinLspBackendId.FWCD

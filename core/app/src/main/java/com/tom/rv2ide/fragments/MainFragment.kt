@@ -84,15 +84,15 @@ class MainFragment : BaseFragment() {
     // Common git clone options
     private val COMMON_GIT_OPTIONS =
         listOf(
-            GitOption("--depth 1", "Shallow clone (faster)"),
-            GitOption("--single-branch", "Clone single branch only"),
-            GitOption("--recursive", "Clone with submodules"),
-            GitOption("--no-tags", "Don't fetch tags"),
-            GitOption("--bare", "Create bare repository"),
+            GitOption("--depth 1", string.git_clone_option_shallow),
+            GitOption("--single-branch", string.git_clone_option_single_branch),
+            GitOption("--recursive", string.git_clone_option_submodules),
+            GitOption("--no-tags", string.git_clone_option_no_tags),
+            GitOption("--bare", string.git_clone_option_bare),
         )
   }
 
-  data class GitOption(val flag: String, val description: String)
+  data class GitOption(val flag: String, val descriptionRes: Int)
 
   override fun onCreateView(
       inflater: LayoutInflater,
@@ -602,7 +602,7 @@ class MainFragment : BaseFragment() {
 
     COMMON_GIT_OPTIONS.forEach { option ->
       val chip = Chip(requireContext())
-      chip.text = option.description
+      chip.text = getString(option.descriptionRes)
       chip.isCheckable = true
       chip.isCheckedIconVisible = true
       chip.tag = option.flag

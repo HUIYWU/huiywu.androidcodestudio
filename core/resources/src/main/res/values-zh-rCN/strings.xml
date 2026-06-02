@@ -67,7 +67,11 @@
   <string name="msg_create_new_project">创建新项目</string>
   <string name="msg_open_existing_project">打开现有项目</string>
   <string name="title_confirm_project_close">关闭项目</string>
+  <string name="open_project">打开项目</string>
+  <string name="search_projects_hint">搜索项目…</string>
+  <string name="recent_badge">最近</string>
   <!-- Templates -->
+  <string name="choose_template">选择模板</string>
   <string name="msg_confirm_project_close">您确定要关闭该项目吗？该项目关闭后，所有已启动的 Gradle 守护进程都将停止。</string>
   <string name="template_basic">基本项目</string>
   <string name="template_empty">空项目</string>
@@ -195,6 +199,8 @@
   <string name="idepref_java_matchLower_summary">若启用，输入大小写字母都将提示类名及其作用域成员</string>
   <string name="idepref_editor_ligatures_title">连体字</string>
   <string name="idepref_editor_ligatures_summary">启用或禁用连体字</string>
+  <string name="idepref_editor_keyboard_sugg_title">显示键盘建议</string>
+  <string name="idepref_editor_keyboard_sugg_summary">在编辑器中输入时启用或禁用键盘建议。</string>
   <string name="yes">是</string>
   <string name="no">否</string>
   <string name="msg_viewaction_add_attr">添加属性</string>
@@ -347,6 +353,14 @@
   <string name="git_clone">克隆</string>
   <string name="git_clone_repo">克隆 git 仓库</string>
   <string name="git_clone_repo_url">存储库 URL</string>
+  <string name="git_clone_branch">分支（可选）</string>
+  <string name="git_clone_options">克隆选项</string>
+  <string name="git_clone_custom_options">自定义选项（例如：--filter=blob:none）</string>
+  <string name="git_clone_option_shallow">浅克隆（更快）</string>
+  <string name="git_clone_option_single_branch">仅克隆单个分支</string>
+  <string name="git_clone_option_submodules">连同子模块一起克隆</string>
+  <string name="git_clone_option_no_tags">不获取标签</string>
+  <string name="git_clone_option_bare">创建裸仓库</string>
   <string name="git_clone_in_progress">克隆存储库</string>
   <string name="git_clone_success">git 克隆成功</string>
   <string name="git_clone_failed">无法克隆 git 存储库</string>
@@ -427,6 +441,8 @@
   <string name="msg_build_variants_fetch_failed">无法获取构建变体</string>
   <string name="title_choose_application">选择应用项</string>
   <string name="err_selected_variant_not_found">找不到选定的构建变体</string>
+  <string name="acs_install_title">ACS 构建系统</string>
+  <string name="acs_ask_install_message">是否要安装 %1$s？</string>
   <string name="title_disconnect_log_senders">断开日志发送器</string>
   <string name="title_begin_long_select">开始长选</string>
   <string name="idepref_editor_stickScroll_title">粘滞滚动</string>
@@ -533,6 +549,7 @@
   <string name="action_reinstall">重新安装</string>
   <string name="action_remove">移除</string>
   <string name="action_ok">确定</string>
+  <string name="status_installed">已安装</string>
   <string name="status_not_installed">未安装</string>
   <string name="label_versions">个版本</string>
   <string name="state_loading_versions">正在加载版本...</string>
@@ -812,6 +829,7 @@
   <string name="acs_lsp_kotlin_code_style_kotlinlang">Kotlin 官方</string>
   <string name="acs_lsp_kotlin_code_style_facebook">Facebook</string>
   <string name="server_status">服务器状态：%s</string>
+  <string name="lsp_server_uninstall">卸载</string>
   <string name="git">Git</string>
   <string name="checkout">检出</string>
   <string name="remove">移除</string>

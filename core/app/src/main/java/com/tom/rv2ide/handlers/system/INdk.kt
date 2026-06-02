@@ -218,7 +218,7 @@ class INdk(
         ctx = context,
         title = context.getString(R.string.acs_install_title),
         message = context.getString(R.string.acs_ask_install_message, version),
-        negativeBtnTitle = context.getString(R.string.btn_proceed_str),
+        negativeBtnTitle = context.getString(R.string.action_ok),
         onNegativeClick = {
           val cpuArch = getCpuArchitecture()
           if (!listOf("armeabi-v7a", "arm64-v8a", "x86_64").contains(cpuArch)) {
