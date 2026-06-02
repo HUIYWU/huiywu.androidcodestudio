@@ -89,7 +89,7 @@
             android:id="@+id/btn_cancel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@android:string/cancel"
+            android:text="@string/action_cancel"
             style="@style/Widget.Material3.Button.TextButton" />
 
         <com.google.android.material.button.MaterialButton

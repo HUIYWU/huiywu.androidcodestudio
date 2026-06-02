@@ -39,22 +39,9 @@ import kotlinx.parcelize.Parcelize
 @Parcelize
 class LSPPreferencesScreen(
     override val key: String = "idepref_editor_lsp",
-    override val title: Int = string.servers,
+    override val title: Int = string.language_servers,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceGroup() {
-
-  init {
-    addPreference(LSPOptions())
-  }
-}
-
-@Parcelize
-private class LSPOptions(
-    override val key: String = "idepref_lsp_options",
-    override val title: Int = string.lsp_options,
-    override val summary: Int? = string.lsp_options_summary,
-    override val children: List<IPreference> = mutableListOf(),
-) : IPreferenceScreen() {
 
   init {
     addPreference(KotlinCategory())
@@ -67,6 +54,7 @@ private class KotlinCategory(
     override val key: String = "lsp_kotlin_category",
     override val title: Int = string.kotlin,
     override val summary: Int? = string.kotlin_lsp_category_summary,
+    override val icon: Int? = drawable.ic_kotlin,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 
@@ -83,6 +71,7 @@ private class KotlinLSP(
     override val key: String = "lsp_kotlin_server",
     override val title: Int = string.lsp_options_kotlin_title,
     override val summary: Int? = string.lsp_options_kotlin_summary,
+    override val icon: Int? = drawable.ic_server,
 ) :
     LSPPreference(
         hint = string.server_status,
@@ -91,12 +80,11 @@ private class KotlinLSP(
         isInstalled = ::isActiveKotlinBackendInstalled,
     )
 
-
 @Parcelize
 private class KotlinBackend(
     override val key: String = ACS_KOTLIN_LSP_BACKEND,
     override val title: Int = string.kotlin_lsp_backend_title,
-    override val icon: Int? = drawable.ic_format_code,
+    override val icon: Int? = drawable.ic_backend,
 ) : SingleChoicePreference() {
 
   @IgnoredOnParcel override val dialogCancellable = true
@@ -105,13 +93,27 @@ private class KotlinBackend(
   override val summary: Int?
     get() = string.kotlin_lsp_backend_summary
 
-  private val backendEntries = listOf(
-      PreferenceChoices.Entry("javacs", LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS, LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS),
-      PreferenceChoices.Entry("fwcd", LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_FWCD, LSPPreferences.KOTLIN_LSP_BACKEND_FWCD),
-      PreferenceChoices.Entry("stub", LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_STUB, LSPPreferences.KOTLIN_LSP_BACKEND_STUB),
-  )
+  override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
+    val context = preference.context
+    return arrayOf(
+        PreferenceChoices.Entry(
+            context.getString(string.kotlin_lsp_backend_javacs),
+            LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS,
+            LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS,
+        ),
+        PreferenceChoices.Entry(
+            context.getString(string.kotlin_lsp_backend_fwcd),
+            LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_FWCD,
+            LSPPreferences.KOTLIN_LSP_BACKEND_FWCD,
+        ),
+        PreferenceChoices.Entry(
+            context.getString(string.kotlin_lsp_backend_stub),
+            LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_STUB,
+            LSPPreferences.KOTLIN_LSP_BACKEND_STUB,
+        ),
+    )
+  }
 
-  override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> = backendEntries.toTypedArray()
 
   override fun onSelectionChanged(
       preference: Preference,
@@ -216,9 +218,20 @@ private class KotlinFormatStyle(
   }
 
   override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
+    val context = preference.context
     val currentStyle = LSPPreferences.codeFormatStyle
-    return STYLES.mapIndexed { index, style ->
-          PreferenceChoices.Entry(style, currentStyle == style, style)
+    return STYLES.map { style ->
+          PreferenceChoices.Entry(
+              label =
+                  when (style) {
+                    STYLE_GOOGLE -> context.getString(string.acs_lsp_kotlin_code_style_google)
+                    STYLE_KOTLINLANG -> context.getString(string.acs_lsp_kotlin_code_style_kotlinlang)
+                    STYLE_FACEBOOK -> context.getString(string.acs_lsp_kotlin_code_style_facebook)
+                    else -> style
+                  },
+              _isChecked = currentStyle == style,
+              data = style,
+          )
         }
         .toTypedArray()
   }

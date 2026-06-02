@@ -81,7 +81,7 @@ class ICMake(
 
     when {
       availableVersions.isEmpty() -> {
-        statusText = "Not installed"
+        statusText = context.getString(R.string.status_not_installed)
         color = Color.RED
         removeBtn?.visibility = View.GONE
       }
@@ -97,7 +97,7 @@ class ICMake(
       }
       else -> {
         statusText =
-            "${availableVersions.first()}...${availableVersions.last()} (${availableVersions.size} versions)"
+            "${availableVersions.first()}...${availableVersions.last()} (${availableVersions.size} ${context.getString(R.string.label_versions)})"
         color = if (isDarkTheme) Color.GREEN else Color.rgb(0, 75, 0)
         removeBtn?.visibility = View.VISIBLE
       }
@@ -126,14 +126,14 @@ class ICMake(
 
     when {
       availableVersions.isEmpty() -> {
-        Toast.makeText(context, "No CMake versions found to remove", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.msg_no_cmake_versions_found_to_remove), Toast.LENGTH_SHORT).show()
       }
       availableVersions.size == 1 -> {
         removeCmakeVersion(availableVersions.first())
       }
       else -> {
         showVersionSelectionDialog(
-            title = "Select CMake Version to Remove",
+            title = context.getString(R.string.dialog_select_cmake_version_to_remove),
             versions = availableVersions,
             onVersionSelected = { selectedVersion -> removeCmakeVersion(selectedVersion) },
         )
@@ -147,7 +147,7 @@ class ICMake(
           ctx = context,
           title = context.getString(R.string.no_acs_title),
           message = context.getString(R.string.no_acs_summary),
-          negativeBtnTitle = "OK",
+          negativeBtnTitle = context.getString(R.string.action_ok),
       )
       return
     }
@@ -160,10 +160,10 @@ class ICMake(
 
     if (
         selectedVersion.isNullOrEmpty() ||
-            selectedVersion == "Loading versions..." ||
-            selectedVersion == "No versions available"
+            selectedVersion == context.getString(R.string.state_loading_versions) ||
+            selectedVersion == context.getString(R.string.state_no_versions_available)
     ) {
-      flashError("Please select a CMake version from the dropdown first")
+      flashError(context.getString(R.string.msg_select_cmake_version_from_dropdown_first))
       return
     }
 
@@ -181,19 +181,19 @@ class ICMake(
   private fun removeCmakeVersion(version: String) {
     val utils = IDEUtils()
     MaterialAlertDialogBuilder(context)
-        .setTitle("Remove CMake")
-        .setMessage("Are you sure you want to remove CMake version $version?")
-        .setPositiveButton("Remove") { dialog, _ ->
+        .setTitle(R.string.dialog_remove_cmake_title)
+        .setMessage(context.getString(R.string.dialog_remove_cmake_message, version))
+        .setPositiveButton(R.string.action_remove) { dialog, _ ->
           if (utils.deleteCMake(context, version)) {
-            Toast.makeText(context, "Successfully removed CMake $version", Toast.LENGTH_SHORT)
+            Toast.makeText(context, context.getString(R.string.msg_remove_cmake_success, version), Toast.LENGTH_SHORT)
                 .show()
             updateStatus()
           } else {
-            Toast.makeText(context, "Failed to remove CMake $version", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.msg_remove_cmake_failed, version), Toast.LENGTH_SHORT).show()
           }
           dialog.dismiss()
         }
-        .setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
+        .setNegativeButton(R.string.action_cancel) { dialog, _ -> dialog.dismiss() }
         .create()
         .show()
   }
@@ -210,7 +210,7 @@ class ICMake(
           onVersionSelected(selectedVersion)
           dialog.dismiss()
         }
-        .setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
+        .setNegativeButton(R.string.action_cancel) { dialog, _ -> dialog.dismiss() }
         .create()
         .show()
   }
@@ -224,7 +224,7 @@ class ICMake(
         onNegativeClick = {
           val cpuArch = getCpuArchitecture()
           if (!listOf("armeabi-v7a", "arm64-v8a", "x86_64").contains(cpuArch)) {
-            flashError("Unsupported architecture: $cpuArch")
+            flashError(context.getString(R.string.msg_unsupported_architecture, cpuArch))
             return@showErrorDialog
           }
 
@@ -236,7 +236,7 @@ class ICMake(
                 else -> throw IllegalStateException("This should never happen")
               }
 
-          flashProgress(configure = { message("Getting package information...") }) { infoFlashbar ->
+          flashProgress(configure = { message(context.getString(R.string.msg_getting_package_information)) }) { infoFlashbar ->
             lifecycleScope.launch(Dispatchers.Main) {
               try {
                 val filenameResult =
@@ -253,17 +253,17 @@ class ICMake(
                 infoFlashbar.dismiss()
 
                 if (!filenameResult.success) {
-                  flashError("Failed to get package filename: ${filenameResult.errorOutput}")
+                  flashError(context.getString(R.string.msg_failed_to_get_package_filename, filenameResult.errorOutput))
                   return@launch
                 }
 
                 val filename = filenameResult.output.trim()
                 if (filename.isEmpty()) {
-                  flashError("Empty filename received from manifest")
+                  flashError(context.getString(R.string.msg_empty_filename_received_from_manifest))
                   return@launch
                 }
 
-                flashProgress(configure = { message("Downloading $version...") }) { downloadFlashbar
+                flashProgress(configure = { message(context.getString(R.string.msg_downloading_version, version)) }) { downloadFlashbar
                   ->
                   lifecycleScope.launch(Dispatchers.IO) {
                     try {
@@ -278,14 +278,14 @@ class ICMake(
                         downloadFlashbar.dismiss()
 
                         if (downloadResult.output.contains("successfully", ignoreCase = true)) {
-                          val successFlash = flashSuccess("Successfully downloaded")
+                          val successFlash = flashSuccess(context.getString(R.string.msg_download_success))
 
                           lifecycleScope.launch(Dispatchers.IO) {
                             delay(1000)
                             withContext(Dispatchers.Main) { successFlash?.dismiss() }
 
                             withContext(Dispatchers.Main) {
-                              flashProgress(configure = { message("Extracting $version...") }) {
+                              flashProgress(configure = { message(context.getString(R.string.msg_extracting_version, version)) }) {
                                   extractFlashbar ->
                                 lifecycleScope.launch(Dispatchers.IO) {
                                   try {
@@ -300,13 +300,13 @@ class ICMake(
 
                                     withContext(Dispatchers.Main) {
                                       extractFlashbar.dismiss()
-                                      flashSuccess("Installation completed successfully!")
+                                      flashSuccess(context.getString(R.string.msg_installation_completed_successfully))
                                       updateStatus()
                                     }
                                   } catch (e: Exception) {
                                     withContext(Dispatchers.Main) {
                                       extractFlashbar.dismiss()
-                                      flashError("Installation failed: ${e.message}")
+                                      flashError(context.getString(R.string.msg_installation_failed, e.message ?: ""))
                                       android.util.Log.e("ICMake", "Extraction error", e)
                                     }
                                   }
@@ -317,17 +317,21 @@ class ICMake(
                         } else {
                           showErrorDialog(
                               ctx = context,
-                              title = "Download Failed",
+                              title = context.getString(R.string.title_download_failed),
                               message =
-                                  "Package verification failed:\n${downloadResult.output}\n${downloadResult.errorOutput}",
-                              negativeBtnTitle = "OK",
+                                  context.getString(
+                                      R.string.msg_package_verification_failed,
+                                      downloadResult.output,
+                                      downloadResult.errorOutput,
+                                  ),
+                              negativeBtnTitle = context.getString(R.string.action_ok),
                           )
                         }
                       }
                     } catch (e: Exception) {
                       withContext(Dispatchers.Main) {
                         downloadFlashbar.dismiss()
-                        flashError("Download failed: ${e.message}")
+                        flashError(context.getString(R.string.msg_download_failed, e.message ?: ""))
                         e.printStackTrace()
                       }
                     }
@@ -335,7 +339,7 @@ class ICMake(
                 }
               } catch (e: Exception) {
                 infoFlashbar.dismiss()
-                flashError("Failed to get package info: ${e.message}")
+                flashError(context.getString(R.string.msg_failed_to_get_package_info, e.message ?: ""))
                 e.printStackTrace()
               }
             }

@@ -123,70 +123,14 @@ class AndroidProjectModelBuilder(initializationParams: InitializeProjectParams) 
         androidDsl,
     )
   }
-
   private fun logComposeDependencySummary(
       projectPath: String,
       configurationVariant: String,
       variantDependencies: VariantDependencies,
   ) {
-    val compileDependencies = variantDependencies.mainArtifact.compileDependencies
-    val libraries = variantDependencies.libraries
-    val dependencyKeys = linkedSetOf<String>()
-    compileDependencies.forEach { collectGraphKeys(it, dependencyKeys) }
-
-    val composeLibraryEntries = libraries.entries.filter { (key, library) ->
-      isComposeInteresting(key) || isComposeInteresting(describeLibrary(library))
-    }
-
-    val composeLibraryKeys = composeLibraryEntries.map { it.key }.toSet()
-    val composeReferencedKeys = composeLibraryKeys.filter { dependencyKeys.contains(it) }
-    val composeUnreferencedKeys = composeLibraryKeys.filterNot { dependencyKeys.contains(it) }
-
-    log(
-        "Compose dependency summary: projectPath=$projectPath, variant=$configurationVariant, mainCompileRoots=${compileDependencies.size}, mainCompileGraphKeys=${dependencyKeys.size}, totalLibraries=${libraries.size}, composeLibraries=${composeLibraryEntries.size}, composeReferenced=${composeReferencedKeys.size}, composeUnreferenced=${composeUnreferencedKeys.size}")
-
-    if (composeLibraryEntries.isNotEmpty()) {
-      val preview = composeLibraryEntries
-          .take(20)
-          .joinToString(" | ") { (key, library) -> "$key => ${describeLibrary(library)}" }
-      log("Compose libraries preview: $preview")
-    }
-
-    if (composeUnreferencedKeys.isNotEmpty()) {
-      log(
-          "Compose libraries not referenced by mainArtifact.compileDependencies: ${composeUnreferencedKeys.take(20)}")
-    }
-
-    logMaterial3DependencySummary(projectPath, configurationVariant, libraries, dependencyKeys)
   }
 
-  private fun logMaterial3DependencySummary(
-      projectPath: String,
-      configurationVariant: String,
-      libraries: Map<String, Library>,
-      dependencyKeys: Set<String>,
-  ) {
-    val material3Entries = libraries.entries.filter { (key, library) ->
-      isMaterial3Interesting(key) || isMaterial3Interesting(describeLibrary(library))
-    }
-    val referenced = material3Entries.filter { dependencyKeys.contains(it.key) }
-    val unreferenced = material3Entries.filterNot { dependencyKeys.contains(it.key) }
 
-    log(
-        "Material3 dependency summary: projectPath=$projectPath, variant=$configurationVariant, material3Libraries=${material3Entries.size}, referenced=${referenced.size}, unreferenced=${unreferenced.size}")
-
-    if (material3Entries.isNotEmpty()) {
-      val preview = material3Entries
-          .take(20)
-          .joinToString(" | ") { (key, library) -> "$key => ${describeLibrary(library)}" }
-      log("Material3 libraries preview: $preview")
-    }
-
-    if (unreferenced.isNotEmpty()) {
-      log(
-          "Material3 libraries not referenced by mainArtifact.compileDependencies: ${unreferenced.take(20).map { it.key }}")
-    }
-  }
 
   private fun collectGraphKeys(item: GraphItem, result: MutableSet<String>) {
     if (!result.add(item.key)) return

@@ -152,19 +152,19 @@ class RemotesFragment : Fragment() {
         }
         
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Add Remote")
+            .setTitle(R.string.git_add_remote_title)
             .setView(dialogView)
-            .setPositiveButton("Add") { _, _ ->
+            .setPositiveButton(R.string.git_add) { _, _ ->
                 val name = editTextName.text.toString().trim()
                 val url = editTextUrl.text.toString().trim()
                 
                 if (name.isNotBlank() && url.isNotBlank()) {
                     viewModel.addRemote(name, url)
                 } else {
-                    showErrorDialog("Invalid Input", "Name and URL cannot be empty")
+                    showErrorDialog(getString(R.string.git_invalid_input_title), getString(R.string.git_name_and_url_cannot_be_empty))
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.action_cancel, null)
             .show()
     }
     

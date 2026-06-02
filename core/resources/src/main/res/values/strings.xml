@@ -66,27 +66,41 @@
   <string name="ai_agent_enable_summary">Enable AI-powered code generation</string>
   <string name="ai_agent_api_key">Gemini API Key</string>
   <string name="ai_agent_api_key_summary">Enter your Google Gemini API key to use AI features</string>
-  <string name="ai_agent_api_key_dialog_title">Enter Gemini API Key</string>
+ <string name="ai_agent_api_key_dialog_title">Gemini API Key</string>
+ <string name="ai_agent_api_key_dialog_message">Enter your Google Gemini API key</string>
+ <string name="ai_agent_gemini_api_key_hint">Enter your Google Gemini API key</string>
 
   <!-- AI Agent Deepseek -->
   <string name="ai_agent_deepseek_api_key">Deepseek API Key</string>
   <string name="ai_agent_deepseek_api_key_summary">Enter your Deepseek API key to use AI features</string>
-  <string name="ai_agent_deepseek_api_key_dialog_title">Enter Deepseek API Key</string>
+ <string name="ai_agent_deepseek_api_key_dialog_title">Deepseek API Key</string>
+ <string name="ai_agent_deepseek_api_key_dialog_message">Enter your Deepseek API key</string>
+ <string name="ai_agent_deepseek_api_key_hint">Enter your Deepseek API key</string>
 
   <!-- AI Agent OpenAI -->
   <string name="ai_agent_openai_api_key">OpenAI API Key</string>
-  <string name="ai_agent_openai_api_key_summary">Enter your Deepseek API key to use AI features</string>
-  <string name="ai_agent_openai_api_key_dialog_title">Enter Deepseek API Key</string>
+ <string name="ai_agent_openai_api_key_summary">Enter your OpenAI API key to use AI features</string>
+ <string name="ai_agent_openai_api_key_dialog_title">OpenAI API Key</string>
+ <string name="ai_agent_openai_api_key_dialog_message">Enter your OpenAI API key</string>
+ <string name="ai_agent_openai_api_key_hint">Enter your OpenAI API key</string>
 
   <!-- AI Agent anthropic -->
   <string name="ai_agent_anthropic_api_key">Anthropic API Key</string>
-  <string name="ai_agent_anthropic_api_key_summary">Enter your Deepseek API key to use AI features</string>
-  <string name="ai_agent_anthropic_api_key_dialog_title">Enter Deepseek API Key</string>
+ <string name="ai_agent_anthropic_api_key_summary">Enter your Anthropic API key to use AI features</string>
+ <string name="ai_agent_anthropic_api_key_dialog_title">Anthropic API Key</string>
+ <string name="ai_agent_anthropic_api_key_dialog_message">Enter your Anthropic API key</string>
+ <string name="ai_agent_anthropic_api_key_hint">Enter your Anthropic API key</string>
 
   <!-- AI Agent grok -->
   <string name="ai_agent_grok_api_key">Grok API Key</string>
-
-  <string name="no_acs_title">ACS Components Missing</string>
+ <string name="ai_agent_grok_api_key_hint">Enter your xAI Grok API key</string>
+ <string name="ai_agent_grok_api_key_dialog_title">Grok API Key</string>
+ <string name="ai_agent_grok_api_key_dialog_message">Enter your xAI Grok API key</string>
+ <string name="ai_agent_click_to_set_api_key">Click to set API key</string>
+ <string name="ai_agent_api_key_masked">API Key: %1$s...</string>
+ <string name="action_save">Save</string>
+ 
+ <string name="no_acs_title">ACS Components Missing</string>
   <string name="no_acs_summary">This application appears to be incomplete or unofficial, as it is missing the required ACS build system. For full functionality, please install the official Android Code Studio from a trusted source.</string>
 
   <string name="no_internet">No internet connection</string>
@@ -200,6 +214,9 @@
   <string name="delete_project_title">Delete Project?</string>
   <string name="delete_project_message">Are you sure you want to delete \"%1$s\"?\n\nThis will permanently delete all files in this project. This action cannot be undone.</string>
   <string name="delete">Delete</string>
+  <string name="git">Git</string>
+  <string name="checkout">Checkout</string>
+  <string name="remove">Remove</string>
   <string name="project_deleted_success">Project deleted successfully</string>
   <string name="project_delete_failed">Failed to delete project</string>
   <string name="backup_success">Backup completed successfully</string>
@@ -530,9 +547,7 @@
   <string name="msg_action_open_application">Do you want to open the application?</string>
 
 
-  <string name="servers">Servers</string>
-  <string name="lsp_options">Language server protocol</string>
-  <string name="lsp_options_summary">Configure and setup servers</string>
+  <string name="language_servers">Language Servers</string>
   
   <string name="lsp_installed_title">Successfully installed</string>
   <string name="lsp_installed_summary">Installation completed successfully!</string>
@@ -546,6 +561,9 @@
   <string name="lsp_options_kotlin_summary">Kotlin language server offering intelligent coding features including code completion, error highlighting, and more</string>
   <string name="kotlin_lsp_backend_title">Kotlin LSP Backend</string>
   <string name="kotlin_lsp_backend_summary">Select which Kotlin language server backend is active</string>
+  <string name="kotlin_lsp_backend_javacs">Javac-based</string>
+  <string name="kotlin_lsp_backend_fwcd">FWCD</string>
+  <string name="kotlin_lsp_backend_stub">Stub</string>
   <string name="kotlin_server_required">Kotlin language server must be installed to use this feature</string>
 
   <string name="lsp_options_c_cpp_title">C &amp; C++ Language Server</string>
@@ -559,7 +577,10 @@
 
   <string name="acs_lsp_kotlin_code_style_title">Code Format</string>
   <string name="acs_lsp_kotlin_code_style_summary">Preferred formatting style</string>
-
+  <string name="acs_lsp_kotlin_code_style_google">Google</string>
+  <string name="acs_lsp_kotlin_code_style_kotlinlang">Kotlin Official</string>
+  <string name="acs_lsp_kotlin_code_style_facebook">Facebook</string>
+ 
   <string name="server_status">Server Status: %s</string>
 
   <string name="kotlin">Kotlin</string>
@@ -965,6 +986,242 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="msg_launch_failure_no_app_module">Cannot run application. No application modules found in project.</string>
   <string name="title_launch_app">Launch app</string>
   <string name="title_ide_configurations">IDE Configurations</string>
+  <string name="subtitle_ide_build_system_configurations">IDE build system configurations</string>
+  <string name="title_android_ndk_build_system">Android NDK Build System</string>
+  <string name="title_cmake_build_system">CMake Build System</string>
+  <string name="action_download">Download</string>
+  <string name="action_reinstall">Reinstall</string>
+  <string name="action_remove">Remove</string>
+  <string name="action_cancel">Cancel</string>
+  <string name="action_ok">OK</string>
+  <string name="status_not_installed">Not installed</string>
+  <string name="label_versions">versions</string>
+  <string name="state_loading_versions">Loading versions...</string>
+  <string name="state_no_versions_available">No versions available</string>
+  <string name="state_failed_to_load">Failed to load</string>
+  <string name="state_error_loading">Error loading</string>
+  <string name="msg_no_ndk_versions_found_to_remove">No NDK versions found to remove</string>
+  <string name="msg_no_cmake_versions_found_to_remove">No CMake versions found to remove</string>
+  <string name="dialog_select_ndk_version_to_remove">Select NDK Version to Remove</string>
+  <string name="dialog_select_cmake_version_to_remove">Select CMake Version to Remove</string>
+  <string name="msg_select_ndk_version_from_dropdown_first">Please select an NDK version from the dropdown first</string>
+  <string name="msg_select_cmake_version_from_dropdown_first">Please select a CMake version from the dropdown first</string>
+  <string name="dialog_remove_ndk_title">Remove NDK</string>
+  <string name="dialog_remove_ndk_message">Are you sure you want to remove NDK version %1$s?</string>
+  <string name="msg_remove_ndk_success">Successfully removed NDK %1$s</string>
+  <string name="msg_remove_ndk_failed">Failed to remove NDK %1$s</string>
+  <string name="dialog_remove_cmake_title">Remove CMake</string>
+  <string name="dialog_remove_cmake_message">Are you sure you want to remove CMake version %1$s?</string>
+  <string name="msg_remove_cmake_success">Successfully removed CMake %1$s</string>
+  <string name="msg_remove_cmake_failed">Failed to remove CMake %1$s</string>
+  <string name="msg_unsupported_architecture">Unsupported architecture: %1$s</string>
+  <string name="msg_getting_package_information">Getting package information...</string>
+  <string name="msg_failed_to_get_package_filename">Failed to get package filename: %1$s</string>
+  <string name="msg_empty_filename_received_from_manifest">Empty filename received from manifest</string>
+  <string name="msg_downloading_version">Downloading %1$s...</string>
+  <string name="msg_download_success">Successfully downloaded</string>
+  <string name="msg_extracting_version">Extracting %1$s...</string>
+  <string name="msg_installation_completed_successfully">Installation completed successfully!</string>
+  <string name="msg_installation_failed">Installation failed: %1$s</string>
+  <string name="title_download_failed">Download Failed</string>
+  <string name="review_changes_title">Review Changes</string>
+  <string name="review_changes_summary_title">Summary</string>
+  <string name="review_changes_files_to_be_modified_title">Files to be Modified</string>
+  <string name="review_changes_code_preview_title">Code Preview</string>
+  <string name="review_changes_apply_changes">Apply Changes</string>
+  <string name="review_changes_total_changes">📊 Total Changes: %1$d file(s)
+</string>
+  <string name="review_changes_new_files">🆕 New Files: %1$d
+</string>
+  <string name="review_changes_modified_files">✏️ Modified Files: %1$d
+</string>
+  <string name="ai_file_write_permissions_title">AI File Write Permissions</string>
+  <string name="ai_enable_file_writing">Enable AI file writing</string>
+  <string name="ai_require_confirmation_before_writing">Require confirmation before writing</string>
+  <string name="ai_auto_backup_files_before_writing">Auto backup files before writing</string>
+  <string name="ai_file_writing_warning">Warning: Enabling file writing allows AI to modify your project files. Always review changes before applying.</string>
+  <string name="ai_file_write_permission_title">AI File Write Permission</string>
+  <string name="ai_file_write_permission_message">AI wants to write to:
+%1$s
+
+Allow this action?</string>
+  <string name="ai_allow">Allow</string>
+  <string name="ai_deny">Deny</string>
+  <string name="ai_always_allow">Always Allow</string>
+  <string name="ai_permissions_title">AI Permissions</string>
+  <string name="git_remote_name_hint">Remote name (e.g., origin)</string>
+  <string name="git_remote_url_hint">Remote URL</string>
+  <string name="git_add_remote_title">Add Remote</string>
+  <string name="git_add">Add</string>
+  <string name="git_invalid_input_title">Invalid Input</string>
+  <string name="git_name_and_url_cannot_be_empty">Name and URL cannot be empty</string>
+  <string name="git_commit_message_hint">Commit message</string>
+  <string name="git_repository_url_hint">Repository URL</string>
+  <string name="git_credentials_optional">Credentials (Optional)</string>
+  <string name="git_username_hint">Username</string>
+  <string name="git_user_configuration">Git User Configuration</string>
+  <string name="name_label">Name:</string>
+  <string name="default_user_name">User</string>
+  <string name="email_label">Email:</string>
+  <string name="default_user_email">user@example.com</string>
+  <string name="edit_user_config">Edit User Config</string>
+  <string name="credentials">Credentials</string>
+  <string name="save_username_password_for_push_pull">Save username and password for push/pull</string>
+  <string name="status_label">Status:</string>
+  <string name="not_saved">Not saved</string>
+  <string name="clear_saved_credentials">Clear Saved Credentials</string>
+  <string name="remote_operations">Remote Operations</string>
+  <string name="action_refresh">Refresh</string>
+  <string name="git_fetch">Fetch</string>
+  <string name="git_no_remotes_configured_message">No remotes configured
+Add a remote to push/pull changes</string>
+  <string name="project_settings">Project Settings</string>
+  <string name="backup_my_project">Backup My Project</string>
+  <string name="search_icons">Search Icons...</string>
+  <string name="chat_prompt_hint">What would you like me to do?</string>
+  <string name="clear">Clear</string>
+  <string name="send">Send</string>
+  <string name="status">Status</string>
+  <string name="ready_to_assist_you">Ready to assist you</string>
+  <string name="modification_summary">Modification Summary</string>
+  <string name="dynamic_color">Dynamic Color</string>
+  <string name="alpha">Alpha</string>
+  <string name="red">Red</string>
+  <string name="green">Green</string>
+  <string name="blue">Blue</string>
+  <string name="menu">Menu</string>
+  <string name="history_icon">History icon</string>
+  <string name="file_status">File status</string>
+  <string name="file_icon">File icon</string>
+  <string name="search_logs">Search logs</string>
+  <string name="no_terminal_session">No Terminal Session</string>
+  <string name="create_your_first_terminal_session">Create your first terminal session</string>
+  <string name="initialize_terminal">Initialize Terminal</string>
+  <string name="build_variant">Build Variant</string>
+  <string name="appearance">Appearance</string>
+  <string name="text_size">Text Size</string>
+  <string name="hide_extra_keys_toolbar">Hide extra keys toolbar</string>
+  <string name="file_tree">File Tree</string>
+  <string name="current_branch_main">Current: main</string>
+  <string name="new_branch">New Branch</string>
+  <string name="stage_all">Stage All</string>
+  <string name="git_commit">Commit</string>
+  <string name="no_changes_detected">No changes detected</string>
+  <string name="no_repository_found">No Repository Found</string>
+  <string name="repository_init_subtitle">Initialize a new repository, clone an existing one, or open an existing repository</string>
+  <string name="initialize_repository">Initialize Repository</string>
+  <string name="agent_settings">Agent Settings</string>
+  <string name="modified">Modified</string>
+  <string name="modifying">Modifying...</string>
+  <string name="clone_repository">Clone Repository</string>
+  <string name="open_existing_repository">Open Existing Repository</string>
+  <string name="commit_history">Commit History</string>
+  <string name="no_commits_yet">No commits yet</string>
+  <string name="stage">Stage</string>
+  <string name="unstage">Unstage</string>
+  <string name="discard">Discard</string>
+  <string name="edit_version_and_sdk">Edit Version &amp; SDK</string>
+  <string name="git_password_token_hint">Password/Token</string>
+  <string name="color_picker_current_color">Current Color</string>
+  <string name="color_picker_hex_color_hint">Hex Color (e.g., #FF6200EE)</string>
+  <string name="color_picker_presets">Color Presets</string>
+  <string name="icon_preview">Icon Preview</string>
+  <string name="edit_icon">Edit Icon</string>
+  <string name="save_and_copy">Save &amp; Copy</string>
+  <string name="loading">Loading...</string>
+  <string name="updating_dependencies">Updating Dependencies</string>
+  <string name="local_llm_config_title">Configure Local LLM</string>
+  <string name="local_llm_base_url">Base URL</string>
+  <string name="local_llm_model_name">Model Name</string>
+  <string name="git_branch_name_hint">Branch name</string>
+  <string name="ai_preferences_provider_hint">AI Provider</string>
+  <string name="ai_preferences_model_hint">Model / Agent</string>
+  <string name="ai_preferences_auto_switch_provider_title">Auto-Switch Provider</string>
+  <string name="ai_preferences_auto_switch_provider_summary">Automatically switch provider on errors</string>
+  <string name="ai_preferences_code_completion_title">Code Completion</string>
+  <string name="ai_preferences_code_completion_summary">Enable AI-powered code suggestions</string>
+  <string name="ai_preferences_provider_label">Provider:</string>
+  <string name="ai_preferences_model_label">Model:</string>
+  <string name="ai_preferences_not_set">Not set</string>
+  <string name="local_llm_default_base_url">http://localhost:1234</string>
+  <string name="local_llm_default_model_name">local-model</string>
+  <string name="file_browser_select_destination">Select Destination</string>
+  <string name="file_browser_goto_my_project">Go to My Project</string>
+  <string name="file_browser_paste_here">Paste Here</string>
+  <string name="git_user_name_hint">User Name</string>
+  <string name="import_project">Import Project</string>
+  <string name="git_user_email_hint">User Email</string>
+  <string name="module_config_version_name">Version Name</string>
+  <string name="module_config_version_code">Version Code</string>
+  <string name="module_config_min_sdk">Min SDK</string>
+  <string name="module_config_target_sdk">Target SDK</string>
+  <string name="module_config_compile_sdk">Compile SDK</string>
+  <string name="ai_agent_simple_prompt_hint">Ask AI anything...</string>
+  <string name="dependency_update_title">Update Dependency</string>
+  <string name="action_update">Update</string>
+  <string name="asset_studio_title">Asset Studio</string>
+  <string name="asset_studio_preview">Preview</string>
+  <string name="asset_studio_preview_size">120dp × 120dp</string>
+  <string name="asset_studio_preview_percentage_90">90%</string>
+  <string name="asset_studio_preview_percentage_0">0%</string>
+  <string name="asset_studio_source">Source</string>
+  <string name="asset_studio_select_image">Select Image</string>
+  <string name="asset_studio_load_xml">Load XML</string>
+  <string name="asset_studio_source_description">Choose an image or XML vector to create app icons</string>
+  <string name="asset_studio_icon_settings">Icon Settings</string>
+  <string name="asset_studio_icon_name_hint">Icon Name</string>
+  <string name="asset_studio_default_icon_name">ic_my_icon</string>
+  <string name="asset_studio_shape">Shape</string>
+  <string name="asset_studio_shape_circle">Circle</string>
+  <string name="asset_studio_shape_square">Square</string>
+  <string name="asset_studio_shape_rounded">Rounded</string>
+  <string name="asset_studio_background_color">Background Color</string>
+  <string name="asset_studio_choose_color">Choose Color</string>
+  <string name="asset_studio_custom">Custom</string>
+  <string name="asset_studio_foreground_scale">Foreground Scale</string>
+  <string name="asset_studio_rounded_corners">Rounded Corners</string>
+  <string name="file_name">File Name</string>
+  <string name="destination">Destination</string>
+  <string name="resource_type_drawable">drawable</string>
+  <string name="resource_type_mipmap">mipmap</string>
+  <string name="asset_studio_generate_icons">Generate Icons</string>
+  <string name="asset_studio_m3_icons">M3 Icons</string>
+  <string name="asset_studio_no_recent_assets">No recent assets</string>
+  <string name="asset_studio_icon_imported_from_material_icons">Icon imported from Material Icons</string>
+  <string name="asset_studio_failed_to_load_vector_from_selection">Failed to load vector from selection</string>
+  <string name="asset_studio_error_loading_image">Error loading image: %1$s</string>
+  <string name="asset_studio_xml_loaded_successfully">XML loaded successfully</string>
+  <string name="asset_studio_failed_to_create_vector_drawable_from_xml">Failed to create VectorDrawable from XML</string>
+  <string name="asset_studio_failed_to_read_xml_content">Failed to read XML content</string>
+  <string name="asset_studio_error_loading_xml">Error loading XML: %1$s</string>
+  <string name="asset_studio_xml_content_length">XML content length: %1$d</string>
+  <string name="asset_studio_xml_preview_updated">XML Preview updated</string>
+  <string name="asset_studio_image_preview_updated">Image Preview updated</string>
+  <string name="asset_studio_select_image_or_xml_first">Please select an image or XML file first</string>
+  <string name="asset_studio_browse_in_app">Browse in app</string>
+  <string name="asset_studio_paste_vector_xml">Paste Vector XML</string>
+  <string name="asset_studio_material_icons">Material Icons</string>
+  <string name="asset_studio_paste_vector_xml_hint">Paste &lt;vector&gt; XML here</string>
+  <string name="asset_studio_import_vector_xml">Import Vector XML</string>
+  <string name="asset_studio_import">Import</string>
+  <string name="asset_studio_vector_imported">Vector imported</string>
+  <string name="asset_studio_failed_to_parse_vector_xml">Failed to parse vector XML</string>
+  <string name="asset_studio_save_location_drawable">drawable</string>
+  <string name="asset_studio_save_location_mipmap">mipmap</string>
+  <string name="asset_studio_save_to">Save to</string>
+  <string name="asset_studio_generate">Generate</string>
+  <string name="asset_studio_no_project_opened">No project opened</string>
+  <string name="asset_studio_generated_icons_success">Generated %1$d icons in res/%2$s-*</string>
+  <string name="asset_studio_error_generating_icons">Error generating icons: %1$s</string>
+  <string name="msg_package_verification_failed">Package verification failed:
+%1$s
+%2$s</string>
+  <string name="msg_download_failed">Download failed: %1$s</string>
+  <string name="msg_failed_to_get_package_info">Failed to get package info: %1$s</string>
+  <string name="msg_no_ndk_versions_found_in_repository">No NDK versions found in the repository</string>
+  <string name="msg_no_cmake_versions_found_in_repository">No CMake versions found in the repository</string>
+  <string name="msg_failed_to_fetch_versions">Failed to fetch versions: %1$s</string>
+  <string name="msg_error_fetching_versions">Error fetching versions: %1$s</string>
   <string name="title_experiment_flavor">Experimental</string>
   <string name="msg_experimental_flavor">You are using %1$s variant of Android Code Studio on a %2$s device. This configuration may work, but it\'ll result in reduced performance and possible security vulnerabilities. Please avoid using this configuration whenever possible.</string>
   <string name="idepref_editor_pinLineNumbers_title">Pin line numbers</string>

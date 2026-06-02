@@ -23,7 +23,7 @@
         android:layout_width="wrap_content"
         android:textSize="20sp"
         android:paddingBottom="20dp"
-        android:text="IDE Configurations" />
+        android:text="@string/title_ide_configurations" />
     
     <com.google.android.material.card.MaterialCardView
         android:layout_height="wrap_content"
@@ -60,7 +60,7 @@
                 android:textSize="18dp"
                 android:textColor="?attr/colorOnBackground"
                 android:textStyle="bold"
-                android:text="Android development kit" />
+                android:text="@string/title_android_ndk_build_system" />
 
         </LinearLayout>
 
@@ -87,7 +87,7 @@
                 android:layout_width="wrap_content"
                 android:layout_margin="4dp"
                 android:id="@+id/reinstall_btn"
-                android:text="Reinstall" />
+                android:text="@string/action_reinstall" />
 
             <com.google.android.material.button.MaterialButton
                 android:layout_height="wrap_content"
@@ -96,7 +96,7 @@
                 android:backgroundTint="?attr/colorErrorContainer"
                 android:textColor="?attr/colorOnBackground"
                 android:id="@+id/remove_btn"
-                android:text="Remove" />
+                android:text="@string/remove" />
 
         </LinearLayout>
 

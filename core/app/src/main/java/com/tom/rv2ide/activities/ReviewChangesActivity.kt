@@ -53,7 +53,7 @@ class ReviewChangesActivity : AppCompatActivity() {
         setSupportActionBar(toolbar)
         supportActionBar?.apply {
             setDisplayHomeAsUpEnabled(true)
-            title = "Review Changes"
+            title = getString(R.string.review_changes_title)
         }
         toolbar.setNavigationOnClickListener {
             setResult(RESULT_CANCELED)
@@ -96,9 +96,9 @@ class ReviewChangesActivity : AppCompatActivity() {
         val modifiedFiles = totalFiles - newFiles
 
         val summary = buildString {
-            append("📊 Total Changes: $totalFiles file(s)\n")
-            if (newFiles > 0) append("🆕 New Files: $newFiles\n")
-            if (modifiedFiles > 0) append("✏️ Modified Files: $modifiedFiles\n")
+            append(getString(R.string.review_changes_total_changes, totalFiles))
+            if (newFiles > 0) append(getString(R.string.review_changes_new_files, newFiles))
+            if (modifiedFiles > 0) append(getString(R.string.review_changes_modified_files, modifiedFiles))
         }
 
         summaryText.text = summary

@@ -157,12 +157,6 @@ override fun getLibraryMap(): CompletableFuture<Map<String, DefaultLibrary>> {
   }
 
   private fun logComposeForcedIncludeSummary(added: List<String>) {
-    debugCompose(
-        "Compose forced include summary: variant=$configuredVariant, added=${added.size}")
-
-    if (added.isNotEmpty()) {
-      debugCompose("Compose forced include preview: ${added.take(20)}")
-    }
   }
 
   private fun isForceIncludeInteresting(value: String?): Boolean {
@@ -174,57 +168,15 @@ override fun getLibraryMap(): CompletableFuture<Map<String, DefaultLibrary>> {
         normalized.contains("androidx.compose.material3") ||
         normalized.contains("androidx.activity") ||
         normalized.contains("androidx.lifecycle")
-  }
-
   private fun logComposeDependencySummary(
       compileDependencies: List<GraphItem>,
       libraries: Map<String, Library>,
   ) {
-    val dependencyKeys = linkedSetOf<String>()
-    compileDependencies.forEach { collectGraphKeys(it, dependencyKeys) }
-
-    val composeLibraryEntries = libraries.entries.filter { (key, library) ->
-      isComposeInteresting(key) || isComposeInteresting(describeLibrary(library))
-    }
-
-    val composeLibraryKeys = composeLibraryEntries.map { it.key }.toSet()
-    val composeReferencedKeys = composeLibraryKeys.filter { dependencyKeys.contains(it) }
-    val composeUnreferencedKeys = composeLibraryKeys.filterNot { dependencyKeys.contains(it) }
-
-    debugCompose(
-        "Compose dependency summary: variant=$configuredVariant, mainCompileRoots=${compileDependencies.size}, mainCompileGraphKeys=${dependencyKeys.size}, totalLibraries=${libraries.size}, composeLibraries=${composeLibraryEntries.size}, composeReferenced=${composeReferencedKeys.size}, composeUnreferenced=${composeUnreferencedKeys.size}")
-
-    if (composeLibraryEntries.isNotEmpty()) {
-      val preview = composeLibraryEntries
-          .take(20)
-          .joinToString(" | ") { (key, library) -> "$key => ${describeLibrary(library)}" }
-      debugCompose("Compose libraries preview: $preview")
-    }
-
-    if (composeUnreferencedKeys.isNotEmpty()) {
-      debugCompose(
-          "Compose libraries not referenced by mainArtifact.compileDependencies: ${composeUnreferencedKeys.take(20)}")
-    }
   }
 
   private fun logComposeSeenSummary(seen: Map<String, DefaultLibrary>) {
-    val composeSeen = seen.entries.filter { (key, library) ->
-      isComposeInteresting(key) || isComposeInteresting(describeLibrary(library))
-    }
-
-    debugCompose(
-        "Compose seen summary after fillLibrary: variant=$configuredVariant, seenLibraries=${seen.size}, composeSeen=${composeSeen.size}")
-
-    if (composeSeen.isNotEmpty()) {
-      val preview = composeSeen.take(20).joinToString(" | ") { (key, library) ->
-        "$key => ${describeLibrary(library)}"
-      }
-      debugCompose("Compose seen preview: $preview")
-    }
   }
 
-  private fun debugCompose(message: String) {
-    println("[AndroidProjectImpl] $message")
   }
 
 
