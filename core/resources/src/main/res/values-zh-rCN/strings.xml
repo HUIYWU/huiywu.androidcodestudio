@@ -726,7 +726,6 @@
   <string name="asset_studio_custom">自定义</string>
   <string name="asset_studio_foreground_scale">前景缩放</string>
   <string name="asset_studio_rounded_corners">圆角程度</string>
-  <string name="file_name">文件名</string>
   <string name="destination">目标位置</string>
   <string name="resource_type_drawable">drawable</string>
   <string name="resource_type_mipmap">mipmap</string>

@@ -1180,7 +1180,6 @@ Add a remote to push/pull changes</string>
   <string name="asset_studio_custom">Custom</string>
   <string name="asset_studio_foreground_scale">Foreground Scale</string>
   <string name="asset_studio_rounded_corners">Rounded Corners</string>
-  <string name="file_name">File Name</string>
   <string name="destination">Destination</string>
   <string name="resource_type_drawable">drawable</string>
   <string name="resource_type_mipmap">mipmap</string>
