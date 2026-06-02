@@ -61,8 +61,8 @@ class KotlinDiagnosticProvider {
       val content = contentOverride ?: file.toFile().readText()
       val diagnostics = mutableListOf<DiagnosticItem>()
 
-      // Keep a tiny local structural syntax fallback because fwcd can miss transient body-delimiter
-      // errors during active editing on Android. This only covers obviously broken delimiter states.
+      // Keep a tiny local structural syntax fallback for transient delimiter / structure
+      // errors during active editing. This only covers obviously broken structural states.
       analyzeStructuralSyntax(content, diagnostics)
 
       // Basic syntax checking

@@ -31,7 +31,6 @@ import org.slf4j.LoggerFactory
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
-
 class KotlinClasspathProvider {
 
   private var compilerService: KotlinCompilerService? = null
@@ -40,6 +39,10 @@ class KotlinClasspathProvider {
 
   private var cachedClasspathList: List<String>? = null
   private var cachedClasspath: String? = null
+
+  private val enableGradleCacheScriptingFallback: Boolean
+    get() = System.getProperty("androidcodestudio.kls.enableGradleCacheScriptingFallback", "false").toBoolean()
+
 
   fun initialize(service: KotlinCompilerService?) {
     this.compilerService = service
@@ -63,6 +66,7 @@ class KotlinClasspathProvider {
 
     val classpaths = mutableSetOf<String>()
     val compilerServicePaths = mutableListOf<String>()
+    val projectDerivedFallbackAdded = mutableSetOf<String>()
 
     // First, try to get classpaths from the compiler service
     val service = compilerService
@@ -126,7 +130,9 @@ class KotlinClasspathProvider {
                 }
               }
 
+              val beforeAndroidGenerated = classpaths.toSet()
               addAndroidGeneratedSources(project, classpaths)
+              projectDerivedFallbackAdded.addAll(classpaths.toSet() - beforeAndroidGenerated)
             }
           }
         }
@@ -135,13 +141,18 @@ class KotlinClasspathProvider {
       KslLogs.error("Failed to get classpath from project system", e)
     }
 
-    addKotlinScriptingJarsFromGradleCache(classpaths)
-    maybeAddComposeFallbackFromGradleCache(classpaths)
+    val beforeScriptingFallback = classpaths.toSet()
+    if (enableGradleCacheScriptingFallback) {
+      addKotlinScriptingJarsFromGradleCache(classpaths)
+    } else {
+      KslLogs.debug("Gradle cache scripting fallback disabled")
+    }
+    val scriptingFallbackAdded = classpaths.toSet() - beforeScriptingFallback
 
     val existingPaths = classpaths.filter { File(it).exists() }.toList()
     logCompilerServiceClasspathDiff(compilerServicePaths, existingPaths)
+    logClasspathLayerSummary(existingPaths, projectDerivedFallbackAdded, scriptingFallbackAdded)
     KslLogs.info("Total classpath entries: {}, existing: {}", classpaths.size, existingPaths.size)
-    logAndroidxComposeClasspathSummary(existingPaths)
 
     cachedClasspathList = existingPaths
     return existingPaths
@@ -159,12 +170,11 @@ class KotlinClasspathProvider {
     fun interesting(paths: Set<String>): List<String> =
         paths.filter { path ->
           val normalized = path.lowercase()
-          normalized.contains("compose") ||
-              normalized.contains("material3") ||
-              normalized.contains("runtime") ||
-              normalized.contains("foundation") ||
-              normalized.contains("activity") ||
-              normalized.contains("androidx")
+          normalized.contains("android") ||
+              normalized.contains("androidx") ||
+              normalized.contains("kotlin") ||
+              normalized.contains("gradle") ||
+              normalized.contains("cache")
         }
 
     val compilerOnlyInteresting = interesting(compilerOnly)
@@ -189,198 +199,109 @@ class KotlinClasspathProvider {
     )
   }
 
-  private fun logAndroidxComposeClasspathSummary(classpaths: List<String>) {
-    val interestingKeywords =
-        listOf(
-            "androidx.activity",
-            "activity-compose",
-            "androidx.compose",
-            "compose-",
-            "lifecycle-runtime-ktx",
-            "lifecycle-runtime-compose",
-            "core-ktx",
-        )
+  private fun logClasspathLayerSummary(
+      existingPaths: List<String>,
+      projectDerivedFallbackAdded: Set<String>,
+      scriptingFallbackAdded: Set<String>,
+  ) {
+    val existingSet = existingPaths.toSet()
+    val projectDerivedExisting = projectDerivedFallbackAdded.filter { it in existingSet }
+    val scriptingExisting = scriptingFallbackAdded.filter { it in existingSet }
+    val authoritativeCount =
+        existingSet.size - projectDerivedExisting.size - scriptingExisting.size
 
-    val hits =
-        classpaths.filter { path ->
-          val normalized = path.lowercase()
-          interestingKeywords.any { keyword -> normalized.contains(keyword.lowercase()) }
+    fun preview(paths: Collection<String>): String =
+        if (paths.isEmpty()) {
+          "[]"
+        } else {
+          paths.take(12).joinToString(prefix = "[", postfix = if (paths.size > 12) ", ...]" else "]")
         }
 
-    val preview = hits.take(20)
     KslLogs.info(
-        "AndroidX/Compose classpath hits: count={}, preview={}",
-        hits.size,
-        if (preview.isEmpty()) "[]" else preview.joinToString(prefix = "[", postfix = if (hits.size > preview.size) ", ...]" else "]"),
+        "Classpath layer summary: authoritativeExisting={}, projectDerivedFallbackExisting={}, scriptingFallbackExisting={}",
+        authoritativeCount,
+        projectDerivedExisting.size,
+        scriptingExisting.size,
     )
-
-    val componentActivityCandidates =
-        classpaths.filter { path ->
-          val normalized = path.lowercase()
-          normalized.contains("activity") ||
-              normalized.contains("androidx") ||
-              normalized.contains("compose") ||
-              normalized.contains("lifecycle") ||
-              normalized.contains("core-ktx")
-        }
-    KslLogs.debug(
-        "AndroidX/Compose candidate entries for ComponentActivity lookup: count={}, preview={}",
-        componentActivityCandidates.size,
-        componentActivityCandidates.take(20).joinToString(prefix = "[", postfix = if (componentActivityCandidates.size > 20) ", ...]" else "]"),
+    KslLogs.info(
+        "Project-derived fallback existing preview: {}",
+        preview(projectDerivedExisting),
     )
-    logTargetClassPresence(
-        componentActivityCandidates,
-        listOf(
-            "androidx.activity.ComponentActivity",
-            "androidx.compose.ui.Modifier",
-            "androidx.compose.material3.TextKt",
-        ),
+    KslLogs.info(
+        "Scripting fallback existing preview: {}",
+        preview(scriptingExisting),
     )
   }
 
-  private fun probeTargetClassPresence(candidatePaths: List<String>, fqcnList: List<String>): Map<String, Boolean> {
 
-    val files = candidatePaths.map(::File).filter { it.exists() && it.isFile }
-    if (files.isEmpty()) {
-      KslLogs.warn("Target class probe skipped: no candidate classpath files")
-      return fqcnList.associateWith { false }
-    }
-
-    val classes =
-        try {
-          classpathReader.listClasses(files)
-        } catch (e: Exception) {
-          KslLogs.warn("Target class probe failed while listing classes from {} candidate files", files.size, e)
-          return fqcnList.associateWith { false }
-        }
-
-    return fqcnList.associateWith { fqcn -> classes.any { it.name == fqcn } }
-  }
-
-  private fun logTargetClassPresence(candidatePaths: List<String>, fqcnList: List<String>): Map<String, Boolean> {
-    val results = probeTargetClassPresence(candidatePaths, fqcnList)
-    fqcnList.forEach { fqcn ->
-      val present = results[fqcn] == true
-      KslLogs.info(
-          "Target class probe: class={} present={} sampleSource={}",
-          fqcn,
-          present,
-          if (present) "classpath-candidates" else "",
-      )
-    }
-    return results
-  }
-private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String>) {
-    val probeTargets =
-        listOf(
-            "androidx.activity.ComponentActivity",
-            "androidx.compose.ui.Modifier",
-            "androidx.compose.material3.TextKt",
-        )
-    val candidatePaths =
-        classpaths.filter { path ->
-          val normalized = path.lowercase()
-          normalized.contains("activity") ||
-              normalized.contains("androidx") ||
-              normalized.contains("compose") ||
-              normalized.contains("lifecycle") ||
-              normalized.contains("core-ktx")
-        }
-    val probeResults = probeTargetClassPresence(candidatePaths, probeTargets)
-    val hasActivity = probeResults["androidx.activity.ComponentActivity"] == true
-    val hasComposeUi = probeResults["androidx.compose.ui.Modifier"] == true
-    val hasComposeMaterial3 = probeResults["androidx.compose.material3.TextKt"] == true
-
-
-    if (!hasActivity || (hasComposeUi && hasComposeMaterial3)) {
-      return
-    }
-
-    KslLogs.warn(
-        "Compose fallback triggered: activityPresent={}, composeUiPresent={}, material3Present={}",
-        hasActivity,
-        hasComposeUi,
-        hasComposeMaterial3,
-    )
-
-    val added = mutableSetOf<String>()
-    val gradleHomes =
+  private fun gradleHomeCandidates(): List<File> {
+    val raw =
         listOf(
             File(System.getProperty("user.home", ""), ".gradle"),
             File("/data/data/com.tom.rv2ide/files/home/.gradle"),
             File("/storage/emulated/0/.gradle"),
+            // Android app's own gradle cache fallback
             File(System.getProperty("user.home", ""), "../../.gradle"),
         )
 
-    val composeCoordinates =
-        listOf(
-            "androidx.compose.ui:ui",
-            "androidx.compose.runtime:runtime",
-            "androidx.compose.foundation:foundation",
-            "androidx.compose.material3:material3",
-            "androidx.compose.ui:ui-text",
-            "androidx.compose.ui:ui-graphics",
-        )
-
-    for (gradleHome in gradleHomes) {
-      if (!gradleHome.exists()) continue
-
-      val modulesCache = File(gradleHome, "caches/modules-2/files-2.1")
-      if (modulesCache.exists()) {
-        composeCoordinates.forEach { coordinatePrefix ->
-          val parts = coordinatePrefix.split(":")
-          if (parts.size != 2) return@forEach
-          val groupPath = parts[0].replace('.', File.separatorChar)
-          val artifactDir = File(modulesCache, "$groupPath/${parts[1]}")
-          if (!artifactDir.exists()) return@forEach
-          artifactDir.walkTopDown().forEach { file ->
-            if (
-                file.isFile &&
-                    file.extension == "jar" &&
-                    !file.name.contains("sources") &&
-                    !file.name.contains("javadoc")
-            ) {
-              if (classpaths.add(file.absolutePath)) {
-                added.add(file.absolutePath)
-              }
-            }
-          }
-        }
-      }
-
-      val transformsRoots =
-          listOf(
-              File(gradleHome, "caches/9.0.0/transforms"),
-              File(gradleHome, "caches/transforms-3"),
-          )
-      transformsRoots.forEach { transformsRoot ->
-        if (!transformsRoot.exists()) return@forEach
-        transformsRoot.walkTopDown().forEach { file ->
-          val normalized = file.absolutePath.lowercase()
-          val interesting =
-              normalized.contains("compose") ||
-                  normalized.contains("material3") ||
-                  normalized.contains("ui-text") ||
-                  normalized.contains("ui-graphics") ||
-                  normalized.contains("foundation") ||
-                  normalized.contains("runtime")
-          if (!interesting) return@forEach
-          if (file.isFile && file.name == "classes.jar") {
-            if (classpaths.add(file.absolutePath)) {
-              added.add(file.absolutePath)
-            }
-          }
-        }
+    val seen = mutableSetOf<String>()
+    val unique = mutableListOf<File>()
+    raw.forEach { dir ->
+      val key = runCatching { dir.canonicalPath }.getOrElse { dir.absolutePath }
+      if (seen.add(key)) {
+        unique.add(dir)
       }
     }
+    return unique
+  }
 
-    KslLogs.warn("Compose fallback added {} Gradle cache entries", added.size)
-    if (added.isNotEmpty()) {
-      KslLogs.info(
-          "Compose fallback preview: {}",
-          added.take(20).joinToString(prefix = "[", postfix = if (added.size > 20) ", ...]" else "]"),
-      )
-    }
+  private fun gradleModulesCacheDirs(gradleHome: File): List<File> =
+      listOf(File(gradleHome, "caches/modules-2/files-2.1"))
+
+  private fun isRuntimeJarCandidate(file: File): Boolean =
+      file.isFile &&
+          file.extension == "jar" &&
+          !file.name.contains("sources") &&
+          !file.name.contains("javadoc")
+
+  private fun collectArtifactJarsFromGradleModulesCache(
+      modulesCache: File,
+      group: String,
+      artifact: String,
+  ): Set<String> {
+    val artifactDir = File(modulesCache, "${group.replace('.', File.separatorChar)}/$artifact")
+    if (!artifactDir.exists()) return emptySet()
+
+    return artifactDir
+        .walkTopDown()
+        .filter(::isRuntimeJarCandidate)
+        .map { it.absolutePath }
+        .toSet()
+  }
+
+  private fun collectVersionedKotlinArtifactJars(
+      artifactBaseDir: File,
+      preferredVersion: String?,
+  ): Set<String> {
+    if (!artifactBaseDir.exists()) return emptySet()
+
+    val versionDirs = artifactBaseDir.listFiles()?.filter { it.isDirectory } ?: return emptySet()
+    val versionDir =
+        if (preferredVersion != null) {
+          versionDirs.find { it.name == preferredVersion }
+        } else {
+          null
+        } ?: versionDirs.maxByOrNull { it.name } ?: return emptySet()
+
+    return versionDir
+        .listFiles()
+        ?.asSequence()
+        ?.filter { it.isDirectory }
+        ?.flatMap { hashDir -> hashDir.listFiles().orEmpty().asSequence() }
+        ?.filter(::isRuntimeJarCandidate)
+        ?.map { it.absolutePath }
+        ?.toSet()
+        ?: emptySet()
   }
 
   private fun addClasspathEntry(file: File, classpaths: MutableSet<String>) {
@@ -389,7 +310,6 @@ private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String
       val extractedJar = extractClassesJarFromAar(file)
       if (extractedJar != null && extractedJar.exists()) {
         classpaths.add(extractedJar.absolutePath)
-        KslLogs.info("✓ Added extracted AAR classes.jar: {} -> {}", file.name, extractedJar.absolutePath)
       } else {
         KslLogs.warn("Could not extract classes.jar from AAR, keeping original path: {}", file.absolutePath)
         classpaths.add(file.absolutePath)
@@ -545,18 +465,9 @@ private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String
    */
   private fun addKotlinScriptingJarsFromGradleCache(classpaths: MutableSet<String>) {
     try {
-      // Gradle cache locations
-      val gradleHomeDirs =
-          listOf(
-              File(System.getProperty("user.home", ""), ".gradle"),
-              File("/data/data/com.tom.rv2ide/files/home/.gradle"),
-              File("/storage/emulated/0/.gradle"),
-              // Android app's own gradle cache
-              File(System.getProperty("user.home", ""), "../../.gradle"),
-          )
+      val gradleHomeDirs = gradleHomeCandidates()
 
       val kotlinVersion = getKotlinVersionFromProject()
-      KslLogs.info("Looking for Kotlin scripting JARs (version: {})", kotlinVersion ?: "any")
 
       val scriptingArtifacts =
           listOf(
@@ -571,66 +482,36 @@ private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String
       for (gradleHome in gradleHomeDirs) {
         if (!gradleHome.exists()) continue
 
-        val modulesCache = File(gradleHome, "caches/modules-2/files-2.1/org.jetbrains.kotlin")
-        if (!modulesCache.exists()) {
-          KslLogs.debug("Gradle cache not found at: {}", modulesCache.absolutePath)
-          continue
-        }
+        val modulesCaches =
+            gradleModulesCacheDirs(gradleHome).map { File(it, "org.jetbrains.kotlin") }
 
-        KslLogs.info("Scanning Gradle cache: {}", modulesCache.absolutePath)
+        var foundInThisGradleHome = 0
+        modulesCaches.forEach { modulesCache ->
+          if (!modulesCache.exists()) {
+            KslLogs.debug("Gradle cache not found at: {}", modulesCache.absolutePath)
+            return@forEach
+          }
 
-        scriptingArtifacts.forEach { artifactName ->
-          val artifactDir = File(modulesCache, artifactName)
-
-          if (artifactDir.exists()) {
-            // Find the version directory (prefer matching kotlin version if detected)
-            val versionDirs = artifactDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
-
-            val preferredVersion =
-                if (kotlinVersion != null) {
-                  versionDirs.find { it.name == kotlinVersion }
-                } else {
-                  null
-                }
-
-            val versionDir = preferredVersion ?: versionDirs.maxByOrNull { it.name }
-
-            if (versionDir != null) {
-              // Navigate to the JAR: version/hash/artifact-version.jar
-              versionDir.listFiles()?.forEach { hashDir ->
-                if (hashDir.isDirectory) {
-                  hashDir.listFiles()?.forEach { file ->
-                    if (
-                        file.isFile &&
-                            file.extension == "jar" &&
-                            !file.name.contains("sources") &&
-                            !file.name.contains("javadoc")
-                    ) {
-
-                      classpaths.add(file.absolutePath)
-                      foundCount++
-                      KslLogs.info("✓ Added Kotlin scripting JAR: {}", file.name)
-                    }
-                  }
-                }
+          scriptingArtifacts.forEach { artifactName ->
+            val artifactDir = File(modulesCache, artifactName)
+            val jars = collectVersionedKotlinArtifactJars(artifactDir, kotlinVersion)
+            jars.forEach { jarPath ->
+              if (classpaths.add(jarPath)) {
+                foundCount++
+                foundInThisGradleHome++
               }
             }
           }
         }
 
-        // If we found JARs in this Gradle home, no need to check others
-        if (foundCount > 0) {
-          KslLogs.info("Found {} Kotlin scripting JARs in Gradle cache", foundCount)
+        if (foundInThisGradleHome > 0) {
+          KslLogs.info("Added {} Kotlin scripting JARs from Gradle cache fallback", foundCount)
           break
         }
       }
 
       if (foundCount == 0) {
-        KslLogs.warn("⚠ No Kotlin scripting JARs found in Gradle cache!")
-        KslLogs.warn("⚠ This might happen if:")
-        KslLogs.warn("⚠   1. Gradle hasn't been run yet (run a build first)")
-        KslLogs.warn("⚠   2. Using a custom Gradle installation")
-        KslLogs.warn("⚠   3. Gradle cache was cleared")
+        KslLogs.info("Gradle cache scripting fallback found no matching Kotlin scripting JARs")
       }
     } catch (e: Exception) {
       KslLogs.error("Failed to add Kotlin scripting JARs from Gradle cache", e)
@@ -732,7 +613,6 @@ private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String
                       file.name.contains("kotlin-scripting")
               ) {
                 foundScriptRuntime = true
-                KslLogs.info("✓ Found Kotlin script JAR: {}", file.name)
               }
             }
           }
@@ -748,11 +628,7 @@ private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String
           val normalizedPath = file.absolutePath.lowercase()
           val isInterestingTransformPath =
               normalizedPath.contains("/transformed/") ||
-                  normalizedPath.contains("/transforms/") ||
-                  normalizedPath.contains("compose") ||
-                  normalizedPath.contains("material3") ||
-                  normalizedPath.contains("activity") ||
-                  normalizedPath.contains("lifecycle")
+                  normalizedPath.contains("/transforms/")
 
           if (!isInterestingTransformPath) return@forEach
 
@@ -781,9 +657,7 @@ private fun maybeAddComposeFallbackFromGradleCache(classpaths: MutableSet<String
       )
 
       if (!foundScriptRuntime) {
-        KslLogs.warn("⚠ kotlin-script-runtime NOT found in build artifacts!")
-        KslLogs.warn("⚠ Make sure your build.gradle.kts includes:")
-        KslLogs.warn("⚠   implementation(\"org.jetbrains.kotlin:kotlin-script-runtime:<version>\")")
+        KslLogs.debug("kotlin-script-runtime not found in build artifacts")
       }
     } catch (e: Exception) {
       KslLogs.error("Failed to add external library JARs", e)

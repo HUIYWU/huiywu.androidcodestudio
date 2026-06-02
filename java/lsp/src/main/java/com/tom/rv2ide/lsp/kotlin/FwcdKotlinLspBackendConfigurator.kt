@@ -19,24 +19,23 @@ package com.tom.rv2ide.lsp.kotlin
 /**
  * Configurator for the fwcd/kotlin-language-server backend.
  *
- * Compared to the bundled org.javacs.kt backend, fwcd already relies primarily on
- * its own classpath resolver / kls-classpath script contract. Therefore this first
- * integration intentionally avoids sending javacs-specific script settings via
- * `workspace/didChangeConfiguration` until a concrete fwcd runtime bundle is added
- * and its exact init/config surface is validated in a real environment.
+ * Compared to the bundled org.javacs.kt backend, fwcd uses a different startup and
+ * configuration surface. This configurator currently keeps backend-specific setup
+ * minimal and avoids sending javacs-specific `workspace/didChangeConfiguration`
+ * payloads unless fwcd explicitly requires them.
  */
 object FwcdKotlinLspBackendConfigurator : KotlinLspBackendConfigurator {
   override fun beforeServerStart(
       processManager: KotlinLspConnection,
       classpathProvider: KotlinClasspathProvider,
   ) {
-    KslLogs.info("FWCD Kotlin backend selected - no pre-start configuration applied")
+    KslLogs.info("FWCD Kotlin backend selected - no backend-specific pre-start configuration")
   }
 
   override fun afterServerInitialized(
       processManager: KotlinLspConnection,
       classpathProvider: KotlinClasspathProvider,
   ) {
-    KslLogs.info("FWCD Kotlin backend initialized - no backend-specific post-init configuration applied yet")
+    KslLogs.info("FWCD Kotlin backend initialized - no backend-specific post-init configuration")
   }
 }

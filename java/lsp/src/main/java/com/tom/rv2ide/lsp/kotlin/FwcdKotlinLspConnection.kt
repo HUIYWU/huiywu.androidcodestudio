@@ -23,17 +23,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Process launcher for a future fwcd/kotlin-language-server bundle.
+ * Process launcher for the fwcd/kotlin-language-server backend.
  *
  * Recommended private layout:
  * - runtime bundle root: `${Environment.SERVERS_KOTLIN_DIR}/fwcd`
  * - process HOME: [Environment.HOME]
  * - XDG config/cache roots: `${Environment.HOME}/.config` and `${Environment.HOME}/.cache`
  *
- * This backend intentionally reuses [BaseStdioKotlinLspConnection] so only the
- * executable discovery and process command differ from the bundled javacs backend.
- * The actual runtime bundle is expected to be provisioned separately by the user or
- * a future installer step.
+ * This backend reuses [BaseStdioKotlinLspConnection], while executable discovery
+ * and process command construction differ from the bundled javacs backend.
  */
 class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
   private val manifestPathCandidates =
@@ -100,12 +98,9 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
           .start()
           .also {
             KslLogs.info(
-                "Started FWCD Kotlin language server using command={} (launcher={}, runtimeDir={}, xdgConfigHome={}, xdgCacheHome={})",
-                command.firstOrNull() ?: "<empty>",
+                "Started FWCD Kotlin language server (launcher={}, runtimeDir={})",
                 launcher.absolutePath,
                 serverHome.absolutePath,
-                xdgConfigHome.absolutePath,
-                xdgCacheHome.absolutePath,
             )
           }
     } catch (e: Exception) {
@@ -167,8 +162,7 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
     val fwcdVersion = detectFwcdVersion(jars) ?: "1.3.13"
 
     KslLogs.info(
-        "Starting FWCD Kotlin language server with direct java command: javaExec={}, appHome={}, jars={}, version={}",
-        javaExec,
+        "Starting FWCD Kotlin language server with direct java launcher: appHome={}, jars={}, version={}",
         appHome.absolutePath,
         jars.size,
         fwcdVersion,
@@ -190,7 +184,7 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
     if (sqliteNativeConfig != null) {
       command += "-Dorg.sqlite.lib.path=${sqliteNativeConfig.libPath}"
       command += "-Dorg.sqlite.lib.name=${sqliteNativeConfig.libName}"
-      KslLogs.info(
+      KslLogs.debug(
           "Prepared Android sqlite native library for FWCD: dir={}, name={}",
           sqliteNativeConfig.libPath,
           sqliteNativeConfig.libName,

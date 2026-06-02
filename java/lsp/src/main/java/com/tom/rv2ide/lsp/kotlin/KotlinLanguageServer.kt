@@ -91,7 +91,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
     processManager.setDiagnosticsCallback { diagnostics ->
       KslLogs.debug(
-          "KLS TRACE diagnostics.forward source=server file={} count={} summary={}",
+          "KLS diagnostics forwarded from server: file={} count={} summary={}",
           diagnostics.file,
           diagnostics.diagnostics.size,
           summarizeDiagnosticsForTrace(diagnostics.diagnostics),

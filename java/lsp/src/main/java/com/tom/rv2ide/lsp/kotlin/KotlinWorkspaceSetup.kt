@@ -320,27 +320,10 @@ class KotlinWorkspaceSetup(
         // Compute new classpath hash
         val currentClasspath = classpathProvider.getClasspathList()
         val currentHash = indexCache.computeClasspathHash(currentClasspath)
+
+        // Trigger reindexing (this will also manage the Index flag)
         val workspaceRoot = resolvedWorkspaceRootDir.toPath().toUri().toString()
-
-        if (backendId == KotlinLspBackendId.FWCD) {
-          KslLogs.info("FWCD backend detected during classpath reload; restarting backend to re-send initialize classpath")
-          processManager.shutdown()
-          processManager.startServer(classpathProvider)
-
-          val initParams = createInitParams(workspaceRoot)
-          logInitializeSummary(initParams)
-          KslLogs.info("Sending reinitialize request after classpath reload...")
-
-          processManager.sendRequest("initialize", initParams) { _ ->
-            KslLogs.info("FWCD backend reinitialized successfully after classpath reload")
-            processManager.sendNotification("initialized", JsonObject())
-            backendConfigurator.afterServerInitialized(processManager, classpathProvider)
-            triggerIndexing(processManager, workspaceRoot, currentHash)
-          }
-        } else {
-          // Trigger reindexing (this will also manage the Index flag)
-          triggerIndexing(processManager, workspaceRoot, currentHash)
-        }
+        triggerIndexing(processManager, workspaceRoot, currentHash)
 
         KslLogs.info("Classpath and index reloaded successfully")
       } catch (e: Exception) {
