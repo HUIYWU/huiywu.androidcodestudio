@@ -158,7 +158,6 @@ override fun getLibraryMap(): CompletableFuture<Map<String, DefaultLibrary>> {
 
   private fun logComposeForcedIncludeSummary(added: List<String>) {
   }
-
   private fun isForceIncludeInteresting(value: String?): Boolean {
     if (value.isNullOrBlank()) return false
     val normalized = value.lowercase()
@@ -168,6 +167,8 @@ override fun getLibraryMap(): CompletableFuture<Map<String, DefaultLibrary>> {
         normalized.contains("androidx.compose.material3") ||
         normalized.contains("androidx.activity") ||
         normalized.contains("androidx.lifecycle")
+  }
+
   private fun logComposeDependencySummary(
       compileDependencies: List<GraphItem>,
       libraries: Map<String, Library>,
@@ -177,7 +178,6 @@ override fun getLibraryMap(): CompletableFuture<Map<String, DefaultLibrary>> {
   private fun logComposeSeenSummary(seen: Map<String, DefaultLibrary>) {
   }
 
-  }
 
 
   private fun collectGraphKeys(item: GraphItem, result: MutableSet<String>) {
