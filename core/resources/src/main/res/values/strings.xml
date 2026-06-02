@@ -1058,6 +1058,8 @@ Allow this action?</string>
   <string name="git_repository_url_hint">Repository URL</string>
   <string name="git_credentials_optional">Credentials (Optional)</string>
   <string name="git_username_hint">Username</string>
+  <string name="password">Password</string>
+  <string name="remember_credentials">Remember credentials</string>
   <string name="git_user_configuration">Git User Configuration</string>
   <string name="name_label">Name:</string>
   <string name="default_user_name">User</string>
@@ -1070,6 +1072,8 @@ Allow this action?</string>
   <string name="not_saved">Not saved</string>
   <string name="clear_saved_credentials">Clear Saved Credentials</string>
   <string name="remote_operations">Remote Operations</string>
+  <string name="git_push">Push</string>
+  <string name="git_pull">Pull</string>
   <string name="action_refresh">Refresh</string>
   <string name="git_fetch">Fetch</string>
   <string name="git_no_remotes_configured_message">No remotes configured
@@ -1097,6 +1101,8 @@ Add a remote to push/pull changes</string>
   <string name="create_your_first_terminal_session">Create your first terminal session</string>
   <string name="initialize_terminal">Initialize Terminal</string>
   <string name="build_variant">Build Variant</string>
+  <string name="color">Color</string>
+  <string name="change">Change</string>
   <string name="appearance">Appearance</string>
   <string name="text_size">Text Size</string>
   <string name="hide_extra_keys_toolbar">Hide extra keys toolbar</string>

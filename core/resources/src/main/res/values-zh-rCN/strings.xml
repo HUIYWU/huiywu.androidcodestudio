@@ -607,6 +607,8 @@
   <string name="git_repository_url_hint">仓库 URL</string>
   <string name="git_credentials_optional">凭据（可选）</string>
   <string name="git_username_hint">用户名</string>
+  <string name="password">密码</string>
+  <string name="remember_credentials">记住凭据</string>
   <string name="git_user_configuration">Git 用户配置</string>
   <string name="name_label">名称：</string>
   <string name="default_user_name">用户</string>
@@ -619,6 +621,8 @@
   <string name="not_saved">未保存</string>
   <string name="clear_saved_credentials">清除已保存凭据</string>
   <string name="remote_operations">远程操作</string>
+  <string name="git_push">推送</string>
+  <string name="git_pull">拉取</string>
   <string name="action_refresh">刷新</string>
   <string name="git_fetch">获取</string>
   <string name="git_no_remotes_configured_message">尚未配置远程仓库
@@ -646,6 +650,8 @@
   <string name="create_your_first_terminal_session">创建你的第一个终端会话</string>
   <string name="initialize_terminal">初始化终端</string>
   <string name="build_variant">构建变体</string>
+  <string name="color">颜色</string>
+  <string name="change">更改</string>
   <string name="file_tree">文件树</string>
   <string name="current_branch_main">当前：main</string>
   <string name="new_branch">新建分支</string>
