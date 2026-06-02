@@ -880,7 +880,7 @@
   <string name="git_clone_option_shallow">Shallow clone (faster)</string>
   <string name="git_clone_option_single_branch">Clone single branch only</string>
   <string name="git_clone_option_submodules">Clone with submodules</string>
-  <string name="git_clone_option_no_tags">Don't fetch tags</string>
+  <string name="git_clone_option_no_tags">Don\'t fetch tags</string>
   <string name="git_clone_option_bare">Create bare repository</string>
   <string name="git_clone_invalid_url">Invalid repository URL</string>
 
