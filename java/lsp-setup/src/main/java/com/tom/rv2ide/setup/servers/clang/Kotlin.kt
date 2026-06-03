@@ -64,8 +64,7 @@ class Kotlin(private val context: Context) : ILanguageServerInstaller {
 
     return when (backendId) {
       "stub" -> true
-      "fwcd" -> hasLauncher
-      else -> hasLauncher && hasJar
+      else -> hasLauncher
     }
   }
   
@@ -189,9 +188,8 @@ class Kotlin(private val context: Context) : ILanguageServerInstaller {
 
   private fun activeBackendManifestId(): String =
       when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
-        LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> "fwcd"
         LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> "stub"
-        else -> "javacs"
+        else -> "fwcd"
       }
 
   private fun selectServerItem(manifest: Manifest, serverId: String): ServerItem? {
@@ -203,16 +201,10 @@ class Kotlin(private val context: Context) : ILanguageServerInstaller {
           it.backend?.equals(serverId, ignoreCase = true) == true &&
               it.language.equals("kotlin", ignoreCase = true)
         }
-        ?: manifest.servers.firstOrNull {
-          it.id.equals("kotlin", ignoreCase = true) && serverId.equals("javacs", ignoreCase = true)
-        }
         ?: manifest.servers.firstOrNull { it.language.equals("kotlin", ignoreCase = true) }
         ?: manifest.legacyServers.firstOrNull {
           it.id.equals(serverId, ignoreCase = true) ||
               it.backend?.equals(serverId, ignoreCase = true) == true
-        }
-        ?: manifest.legacyServers.firstOrNull {
-          it.id.equals("kotlin", ignoreCase = true) && serverId.equals("javacs", ignoreCase = true)
         }
         ?: manifest.legacyServers.firstOrNull()
   }

@@ -82,13 +82,10 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
           diagnostics.diagnostics.size,
           summarizeDiagnosticsForTrace(diagnostics.diagnostics),
       )
-      if (LspFeatures.isDiagnosticsEnabled() == true) {
-        _client?.publishDiagnostics(
-            diagnostics.copy(channel = DiagnosticResult.CHANNEL_SERVER)
-        )
-      }
+      _client?.publishDiagnostics(
+          diagnostics.copy(channel = DiagnosticResult.CHANNEL_SERVER)
+      )
 
-      // If disabled, just ignore the diagnostics
     }
   }
 
@@ -98,7 +95,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
   override fun connectClient(client: ILanguageClient?) {
     this._client = client
-    KslLogs.info("Connected language client: {}", client?.javaClass?.simpleName)
+    KslLogs.debug("Connected language client: {}", client?.javaClass?.simpleName)
   }
 
   override fun applySettings(settings: IServerSettings?) {
@@ -176,7 +173,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override suspend fun hover(params: DefinitionParams): MarkupContent {
-    return if (initialized && LspFeatures.isHoverEnabled() == true) {
+    return if (initialized) {
       requestHandler.hover(params)
     } else MarkupContent("", MarkupKind.PLAIN)
   }
@@ -228,8 +225,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override fun formatCode(params: FormatCodeParams?): CodeFormatResult {
-    KslLogs.info(
-        "formatCode called - initialized: {}, selectedFile: {}, params: {}",
+    KslLogs.debug("formatCode called - initialized: {}, selectedFile: {}, params: {}",
         initialized,
         selectedFile,
         params != null,
@@ -257,7 +253,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
       return CodeFormatResult(false, mutableListOf())
     }
 
-    KslLogs.info("Formatting file: {}", fileToFormat)
+    KslLogs.debug("Formatting file: {}", fileToFormat)
 
     try {
       // Ensure document is opened before formatting
@@ -319,7 +315,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
   @Subscribe(threadMode = ThreadMode.ASYNC)
   fun onFileSelected(event: DocumentSelectedEvent) {
-    KslLogs.info("=== FILE SELECTED EVENT: {}", event.selectedFile)
+    KslLogs.debug("=== FILE SELECTED EVENT: {}", event.selectedFile)
     selectedFile = event.selectedFile
     if (
         event.selectedFile.toString().endsWith(".kt") ||

@@ -567,14 +567,8 @@
 
   <string name="lsp_options_c_cpp_title">C &amp; C++ Language Server</string>
   <string name="lsp_options_c_cpp_summary">C and C++ language server providing intelligent development features such as code completion, error highlighting, and others</string>
-
-  <string name="acs_lsp_hover_title">Code Information on Hover</string>
-  <string name="acs_lsp_hover_summary">Show types, function signatures, and documentation when hovering over code</string>
-
-  <string name="acs_lsp_diagnostics_title">Code Diagnostics</string>
-  <string name="acs_lsp_diagnostics_summary">Show errors and warnings as you type</string>
-
   <string name="acs_lsp_kotlin_code_style_title">Code Format</string>
+
   <string name="acs_lsp_kotlin_code_style_summary">Preferred formatting style</string>
   <string name="acs_lsp_kotlin_code_style_google">Google</string>
   <string name="acs_lsp_kotlin_code_style_kotlinlang">Kotlin Official</string>

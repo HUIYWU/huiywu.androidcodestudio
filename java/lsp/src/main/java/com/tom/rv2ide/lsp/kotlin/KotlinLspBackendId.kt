@@ -20,7 +20,6 @@ package com.tom.rv2ide.lsp.kotlin
  * Identifiers for selectable Kotlin LSP backend implementations.
  */
 enum class KotlinLspBackendId {
-  JAVACS,
   FWCD,
   STUB,
 }

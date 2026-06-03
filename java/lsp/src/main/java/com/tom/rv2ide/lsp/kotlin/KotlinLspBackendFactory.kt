@@ -22,35 +22,21 @@ import com.tom.rv2ide.preferences.internal.LSPPreferences
 /**
  * Minimal factory for creating the active Kotlin LSP backend connection.
  *
- * The current default remains [KotlinServerProcessManager] (org.javacs.kt-based),
- * but the creation decision now lives behind a dedicated seam so future Kotlin
- * backends can be introduced without changing [KotlinLanguageServer].
- *
  * Available concrete backends currently include:
- * - [KotlinLspBackendId.JAVACS] for the bundled org.javacs.kt server
- * - [KotlinLspBackendId.FWCD] for a future fwcd/kotlin-language-server bundle
+ * - [KotlinLspBackendId.FWCD] for fwcd/kotlin-language-server
  * - [KotlinLspBackendId.STUB] for a no-op structural placeholder
  */
 object KotlinLspBackendFactory {
   private fun activeBackendId(): KotlinLspBackendId {
     return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
-      LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS -> KotlinLspBackendId.JAVACS
-      LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> KotlinLspBackendId.FWCD
       LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> KotlinLspBackendId.STUB
-      else -> KotlinLspBackendId.JAVACS
+      else -> KotlinLspBackendId.FWCD
     }
   }
 
   @Suppress("UNUSED_PARAMETER")
   fun createSpec(context: Context): KotlinLspBackendSpec {
     return when (activeBackendId()) {
-
-      KotlinLspBackendId.JAVACS ->
-          KotlinLspBackendSpec(
-              id = KotlinLspBackendId.JAVACS,
-              connection = KotlinServerProcessManager(),
-              configurator = JavacsKotlinLspBackendConfigurator,
-          )
       KotlinLspBackendId.FWCD ->
           KotlinLspBackendSpec(
               id = KotlinLspBackendId.FWCD,

@@ -818,12 +818,9 @@
   <string name="kotlin_lsp_backend_javacs">基于 Javac</string>
   <string name="kotlin_lsp_backend_fwcd">FWCD</string>
   <string name="kotlin_lsp_backend_stub">Stub</string>
-  <string name="kotlin_server_required">需要安装 Kotlin 语言服务器才能使用此功能</string>
-  <string name="acs_lsp_hover_title">悬停时显示代码信息</string>
-  <string name="acs_lsp_hover_summary">悬停在代码上时显示类型、函数签名和文档</string>
-  <string name="acs_lsp_diagnostics_title">代码诊断</string>
-  <string name="acs_lsp_diagnostics_summary">输入时显示错误和警告</string>
-  <string name="acs_lsp_kotlin_code_style_title">代码格式化</string>
+<string name="kotlin_server_required">需要安装 Kotlin 语言服务器才能使用此功能</string>
+ <string name="acs_lsp_kotlin_code_style_title">代码格式化</string>
+
   <string name="acs_lsp_kotlin_code_style_summary">首选的格式化风格</string>
   <string name="acs_lsp_kotlin_code_style_google">Google</string>
   <string name="acs_lsp_kotlin_code_style_kotlinlang">Kotlin 官方</string>

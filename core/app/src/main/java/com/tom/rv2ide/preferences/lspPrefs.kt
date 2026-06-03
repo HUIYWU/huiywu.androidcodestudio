@@ -23,8 +23,6 @@ import com.tom.rv2ide.lsp.kotlin.KotlinLspBackendId
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.preferences.internal.LSPPreferences
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_BACKEND
-import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_CURSOR_HOVER
-import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_DIAGNOSTICS
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_FORMAT_STYLE
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
@@ -62,8 +60,6 @@ private class KotlinCategory(
   init {
     addPreference(KotlinLSP())
     addPreference(KotlinBackend())
-    addPreference(KotlinHover())
-    addPreference(KotlinDiagnostics())
     addPreference(KotlinFormatStyle())
   }
 }
@@ -97,17 +93,12 @@ private class KotlinBackend(
   override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
     return arrayOf(
         PreferenceChoices.Entry(
-            "Javacs-base",
-            LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS,
-            LSPPreferences.KOTLIN_LSP_BACKEND_JAVACS,
-        ),
-        PreferenceChoices.Entry(
             "Fwcd",
             LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_FWCD,
             LSPPreferences.KOTLIN_LSP_BACKEND_FWCD,
         ),
         PreferenceChoices.Entry(
-            "Stub",
+            "Stub/NA",
             LSPPreferences.kotlinLspBackend == LSPPreferences.KOTLIN_LSP_BACKEND_STUB,
             LSPPreferences.KOTLIN_LSP_BACKEND_STUB,
         ),
@@ -132,64 +123,6 @@ private class KotlinBackend(
   }
 }
 
-
-@Parcelize
-private class KotlinHover(
-    override val key: String = ACS_KOTLIN_LSP_CURSOR_HOVER,
-    override val title: Int = string.acs_lsp_hover_title,
-    override val icon: Int? = drawable.ic_tooltip,
-) :
-    SwitchPreference(
-        setValue = LSPPreferences::cursorHover::set,
-        getValue = LSPPreferences::cursorHover::get,
-    ) {
-
-  @IgnoredOnParcel
-  override val summary: Int?
-    get() =
-        if (isActiveKotlinBackendInstalled()) {
-          string.acs_lsp_hover_summary
-        } else {
-          string.kotlin_server_required
-        }
-
-  override fun onCreatePreference(
-      context: android.content.Context
-  ): androidx.preference.Preference {
-    val pref = super.onCreatePreference(context)
-    pref.isEnabled = isActiveKotlinBackendInstalled()
-    return pref
-  }
-}
-
-@Parcelize
-private class KotlinDiagnostics(
-    override val key: String = ACS_KOTLIN_LSP_DIAGNOSTICS,
-    override val title: Int = string.acs_lsp_diagnostics_title,
-    override val icon: Int? = drawable.ic_diagnostics,
-) :
-    SwitchPreference(
-        setValue = LSPPreferences::codeDiagnostics::set,
-        getValue = LSPPreferences::codeDiagnostics::get,
-    ) {
-
-  @IgnoredOnParcel
-  override val summary: Int?
-    get() =
-        if (isActiveKotlinBackendInstalled()) {
-          string.acs_lsp_diagnostics_summary
-        } else {
-          string.kotlin_server_required
-        }
-
-  override fun onCreatePreference(
-      context: android.content.Context
-  ): androidx.preference.Preference {
-    val pref = super.onCreatePreference(context)
-    pref.isEnabled = isActiveKotlinBackendInstalled()
-    return pref
-  }
-}
 
 @Parcelize
 private class KotlinFormatStyle(
@@ -292,15 +225,13 @@ private fun getStatus(installed: Boolean): String {
 }
 private fun activeKotlinBackendId(): KotlinLspBackendId {
   return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
-    LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> KotlinLspBackendId.FWCD
     LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> KotlinLspBackendId.STUB
-    else -> KotlinLspBackendId.JAVACS
+    else -> KotlinLspBackendId.FWCD
   }
 }
 
 private fun activeKotlinBackendManifestId(): String =
     when (activeKotlinBackendId()) {
-      KotlinLspBackendId.JAVACS -> "javacs"
       KotlinLspBackendId.FWCD -> "fwcd"
       KotlinLspBackendId.STUB -> "stub"
     }
@@ -308,7 +239,6 @@ private fun activeKotlinBackendManifestId(): String =
 private fun isActiveKotlinBackendInstalled(): Boolean =
 
     when (activeKotlinBackendId()) {
-      KotlinLspBackendId.JAVACS -> isDirectoryInstalled(Environment.SERVERS_KOTLIN_DIR)
       KotlinLspBackendId.FWCD -> isDirectoryInstalled(File(Environment.SERVERS_KOTLIN_DIR, "fwcd"))
       KotlinLspBackendId.STUB -> true
     }

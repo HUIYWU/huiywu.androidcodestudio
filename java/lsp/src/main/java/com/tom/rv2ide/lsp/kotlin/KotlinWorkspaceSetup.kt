@@ -41,7 +41,7 @@ class KotlinWorkspaceSetup(
     private val context: Context,
     private val workspace: IWorkspace,
     private val backendConfigurator: KotlinLspBackendConfigurator,
-    private val backendId: KotlinLspBackendId = KotlinLspBackendId.JAVACS,
+    private val backendId: KotlinLspBackendId = KotlinLspBackendId.FWCD,
 ) {
 
   companion object {
@@ -458,26 +458,8 @@ class KotlinWorkspaceSetup(
           return moduleDir
         }
 
-        // IMPORTANT: Do NOT use the module dir directly as the KLS workspace root for the
-        // legacy javacs backend.
-        //
-        // That backend can enumerate <module>/build.gradle.kts into its source path and poison
-        // diagnostics for normal Kotlin sources. Keep the historical src-dir workaround there,
-        // but do not apply it to fwcd.
-        val srcDir = File(moduleDir, "src")
-        if (srcDir.exists() && srcDir.isDirectory) {
-          KslLogs.info(
-              "Using main Android module src dir as legacy KLS workspace root: {} (module={}, gradlePath={}, backend={})",
-              srcDir.absolutePath,
-              moduleDir.absolutePath,
-              mainModule.path,
-              backendId.name.lowercase(),
-          )
-          return srcDir
-        }
-
         KslLogs.info(
-            "Using main Android module as KLS workspace root: {} (gradlePath={}, backend={}, no src dir found)",
+            "Using main Android module as KLS workspace root: {} (gradlePath={}, backend={})",
             moduleDir.absolutePath,
             mainModule.path,
             backendId.name.lowercase(),

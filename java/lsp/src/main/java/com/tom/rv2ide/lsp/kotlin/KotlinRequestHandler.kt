@@ -62,11 +62,34 @@ class KotlinRequestHandler(
 
   suspend fun hover(params: DefinitionParams): MarkupContent =
       withContext(Dispatchers.IO) {
-        // Temporarily short-circuit Kotlin LSP hover.
-        // Current KLS hover requests repeatedly trigger dummy.virtual.kt expression-analysis crashes
-        // (NoTopLevelDescriptorProvider.shouldNotBeCalled), which starve diagnostics/completion.
-        // Stabilizing source diagnostics takes priority over hover until the server-side issue is isolated.
-        return@withContext MarkupContent("", MarkupKind.PLAIN)
+        val deferred = CompletableDeferred<MarkupContent>()
+
+        try {
+          documentManager.ensureDocumentOpen(params.file)
+
+          val uri = params.file.toUri().toString()
+          val lspParams = JsonObject().apply {
+            add("textDocument", JsonObject().apply { addProperty("uri", uri) })
+            add("position", JsonObject().apply {
+              addProperty("line", params.position.line)
+              addProperty("character", params.position.column)
+            })
+          }
+
+          processManager.sendRequest("textDocument/hover", lspParams) { result ->
+            try {
+              deferred.complete(convertToHoverMarkup(result))
+            } catch (e: Exception) {
+              KslLogs.debug("Failed to parse hover response: {}", e.message)
+              deferred.complete(MarkupContent("", MarkupKind.PLAIN))
+            }
+          }
+
+          withTimeoutOrNull(3000) { deferred.await() } ?: MarkupContent("", MarkupKind.PLAIN)
+        } catch (e: Exception) {
+          KslLogs.debug("Hover request failed: {}", e.message)
+          MarkupContent("", MarkupKind.PLAIN)
+        }
       }
 
   suspend fun complete(params: CompletionParams): CompletionResult = coroutineScope {
@@ -309,6 +332,53 @@ class KotlinRequestHandler(
           SignatureHelp(emptyList(), 0, 0)
         }
       }
+
+  private fun convertToHoverMarkup(result: JsonObject?): MarkupContent {
+    if (result == null || !result.has("contents")) {
+      return MarkupContent("", MarkupKind.PLAIN)
+    }
+
+    return try {
+      val contents = result.get("contents")
+      when {
+        contents == null || contents.isJsonNull -> MarkupContent("", MarkupKind.PLAIN)
+        contents.isJsonObject -> {
+          val obj = contents.asJsonObject
+          if (obj.has("value")) {
+            MarkupContent(
+                obj.get("value")?.asString ?: "",
+                if (obj.get("kind")?.asString == "markdown") MarkupKind.MARKDOWN else MarkupKind.PLAIN,
+            )
+          } else {
+            MarkupContent(obj.toString(), MarkupKind.PLAIN)
+          }
+        }
+        contents.isJsonPrimitive -> MarkupContent(contents.asString, MarkupKind.PLAIN)
+        contents.isJsonArray -> {
+          val text = contents.asJsonArray.joinToString("\n\n") { element ->
+            when {
+              element == null || element.isJsonNull -> ""
+              element.isJsonPrimitive -> element.asString
+              element.isJsonObject -> {
+                val obj = element.asJsonObject
+                when {
+                  obj.has("value") -> obj.get("value")?.asString ?: ""
+                  obj.has("language") && obj.has("value") -> "```" + (obj.get("language")?.asString ?: "") + "\n" + (obj.get("value")?.asString ?: "") + "\n```"
+                  else -> obj.toString()
+                }
+              }
+              else -> element.toString()
+            }
+          }.trim()
+          MarkupContent(text, MarkupKind.MARKDOWN)
+        }
+        else -> MarkupContent(contents.toString(), MarkupKind.PLAIN)
+      }
+    } catch (e: Exception) {
+      KslLogs.debug("Failed to convert hover payload: {}", e.message)
+      MarkupContent("", MarkupKind.PLAIN)
+    }
+  }
 
   private fun convertToSignatureHelp(result: JsonObject?): SignatureHelp {
     if (result == null) {

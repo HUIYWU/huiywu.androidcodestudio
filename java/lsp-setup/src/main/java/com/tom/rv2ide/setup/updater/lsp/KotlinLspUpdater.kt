@@ -141,23 +141,18 @@ class KotlinLspUpdater(private val context: Context) {
                 it.backend?.equals(backendId, ignoreCase = true) == true &&
                     it.language.equals("kotlin", ignoreCase = true)
             }
-            ?: manifest.servers.firstOrNull {
-                it.id.equals("kotlin", ignoreCase = true) && backendId == "javacs"
-            }
             ?: manifest.servers.firstOrNull { it.language.equals("kotlin", ignoreCase = true) }
             ?: manifest.legacyServers.firstOrNull {
                 it.id.equals(backendId, ignoreCase = true) ||
                     it.backend?.equals(backendId, ignoreCase = true) == true
             }
-            ?: manifest.legacyServers.firstOrNull { it.id.equals("kotlin", ignoreCase = true) && backendId == "javacs" }
             ?: manifest.legacyServers.firstOrNull()
     }
 
     private fun activeBackendManifestId(): String {
         return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
-            LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> "fwcd"
             LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> "stub"
-            else -> "javacs"
+            else -> "fwcd"
         }
     }
 
@@ -289,16 +284,16 @@ class KotlinLspUpdater(private val context: Context) {
         }
 
         return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
-            LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> File(Environment.SERVERS_KOTLIN_DIR, "fwcd")
             LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> File(Environment.SERVERS_KOTLIN_DIR, "stub")
-            else -> File(Environment.HOME, "acs/servers/kotlin")
+            else -> File(Environment.SERVERS_KOTLIN_DIR, "fwcd")
         }
     }
 
     /**
      * Extracts the contents of a ZIP file to the Kotlin LSP server directory.
      *
-     * The extraction target is `Environment.HOME/acs/servers/kotlin/`. The directory
+     * The extraction target follows the active Kotlin backend install root.
+
      * is created if it does not exist.
      *
      * @param zipFilePath The path to the ZIP file to extract.
@@ -353,20 +348,18 @@ class KotlinLspUpdater(private val context: Context) {
             e.printStackTrace()
         }
     }
+
     private fun kotlinVersionPropertyKey(): String {
         return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
-            LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> "KotlinLspVersion.fwcd"
             LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> "KotlinLspVersion.stub"
-            else -> "KotlinLspVersion.javacs"
+            else -> "KotlinLspVersion.fwcd"
         }
     }
 
-
     private fun kotlinBackendDisplayName(): String {
         return when (LSPPreferences.kotlinLspBackend.trim().lowercase()) {
-            LSPPreferences.KOTLIN_LSP_BACKEND_FWCD -> "Kotlin language server (fwcd)"
             LSPPreferences.KOTLIN_LSP_BACKEND_STUB -> "Kotlin language server (stub)"
-            else -> "Kotlin language server (javacs)"
+            else -> "Kotlin language server (fwcd)"
         }
     }
 

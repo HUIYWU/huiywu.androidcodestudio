@@ -32,8 +32,6 @@ import com.tom.rv2ide.managers.PreferenceManager
  */
 object LspFeatures {
 
-  private const val KOTLIN_HOVER_KEY = "acs_kotlin_lsp_hover_enabled"
-  private const val KOTLIN_DIAGNOSTICS_KEY = "acs_kotlin_lsp_diagnostics_enabled"
   private const val KOTLIN_CODE_FORMAT_STYLE_KEY = "acs_kotlin_code_format_style"
 
   private val preferenceManager: PreferenceManager
@@ -45,47 +43,9 @@ object LspFeatures {
     processManager = manager
   }
 
-  /**
-   * Checks if hover functionality is enabled.
-   *
-   * @return Boolean indicating hover enabled status, or null if not set
-   */
-  fun isHoverEnabled(): Boolean? {
-    return preferenceManager.getBoolean(KOTLIN_HOVER_KEY, true)
-  }
-
-  /**
-   * Checks if diagnostics functionality is enabled.
-   *
-   * @return Boolean indicating diagnostics enabled status, or null if not set
-   */
-  fun isDiagnosticsEnabled(): Boolean? {
-    // Keep this default aligned with LSPPreferences.codeDiagnostics. A false default silently drops
-    // KLS publishDiagnostics before the user ever touches the Kotlin diagnostics switch.
-    return preferenceManager.getBoolean(KOTLIN_DIAGNOSTICS_KEY, true)
-  }
-
   /** @return String of of the style */
   fun getCodeFormatStyle(): String? {
     return preferenceManager.getString(KOTLIN_CODE_FORMAT_STYLE_KEY, "google" /* default */)
-  }
-
-  /**
-   * Enables or disables diagnostics functionality.
-   *
-   * @param enabled Boolean flag to set diagnostics enabled status
-   */
-  fun setDiagnosticsEnabled(enabled: Boolean) {
-    preferenceManager.putBoolean(KOTLIN_DIAGNOSTICS_KEY, enabled)
-  }
-
-  /**
-   * Enables or disables hover functionality.
-   *
-   * @param enabled Boolean flag to set hover enabled status
-   */
-  fun setHoverEnabled(enabled: Boolean) {
-    preferenceManager.putBoolean(KOTLIN_HOVER_KEY, enabled)
   }
 
   /** @param style String to set code format style */
