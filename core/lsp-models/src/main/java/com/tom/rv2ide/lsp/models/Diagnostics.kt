@@ -113,7 +113,6 @@ data class DiagnosticResult(
   companion object {
     const val DEFAULT_CHANNEL = "default"
     const val CHANNEL_SERVER = "server"
-    const val CHANNEL_LOCAL_STRUCTURAL = "local_structural"
 
     @JvmField val NO_UPDATE = DiagnosticResult(Paths.get(""), emptyList())
   }

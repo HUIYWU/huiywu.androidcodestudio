@@ -17,8 +17,6 @@
 package com.tom.rv2ide.lsp.kotlin
 
 import android.content.Context
-import com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent
-import com.tom.rv2ide.eventbus.events.editor.DocumentOpenEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentSelectedEvent
 import com.tom.rv2ide.lsp.api.ILanguageClient
 import com.tom.rv2ide.lsp.api.ILanguageServer
@@ -28,12 +26,8 @@ import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.lsp.kotlin.providers.KotlinCodeFormatProvider
 import com.tom.rv2ide.lsp.models.*
 import com.tom.rv2ide.models.Range
-import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.projects.IWorkspace
-import com.tom.rv2ide.utils.VMUtils
-import io.github.rosemoe.sora.widget.CodeEditor
 import java.nio.file.Path
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.*
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -51,9 +45,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
     private val log = LoggerFactory.getLogger(KotlinLanguageServer::class.java)
   }
 
-  private val analyzeTimer = com.tom.rv2ide.lsp.java.utils.AnalyzeTimer { analyzeSelected() }
   private var selectedFile: java.nio.file.Path? = null
-  private val diagnosticProvider = KotlinDiagnosticProvider()
   private val backendSpec = KotlinLspBackendFactory.createSpec(context)
   private val processManager: KotlinLspConnection = backendSpec.connection
   private val backendConfigurator: KotlinLspBackendConfigurator = backendSpec.configurator
@@ -71,12 +63,6 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   private val quickFixHandler by lazy { KotlinImportQuickFix(documentManager, importAnalyzer) }
 
   private lateinit var formatProvider: KotlinCodeFormatProvider
-
-  private val diagnosticRenderer = KotlinDiagnosticRenderer()
-  private val activeEditors = mutableMapOf<Path, CodeEditor>()
-  // Track the last structural fallback we published so we only clear/replace what this local
-  // fallback owns, without interfering with server diagnostics for unrelated edits.
-  private val localFallbackDiagnostics = ConcurrentHashMap<Path, List<DiagnosticItem>>()
 
   private val completionScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -134,22 +120,11 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
     initialized = true
     documentManager.flushPendingOpens()
-    startOrRestartAnalyzeTimer()
 
     // Subscribe to editor events if not already
     if (!EventBus.getDefault().isRegistered(this)) {
       EventBus.getDefault().register(this)
     }
-  }
-
-  fun registerEditor(file: Path, editor: CodeEditor) {
-    activeEditors[file] = editor
-    KslLogs.info("Registered editor for: {}", file)
-  }
-
-  fun unregisterEditor(file: Path) {
-    activeEditors.remove(file)
-    KslLogs.info("Unregistered editor for: {}", file)
   }
 
   /** Invalidate cache and trigger reindexing Call this when dependencies change or project syncs */
@@ -181,24 +156,6 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
       }
     } else {
       CompletionResult(emptyList())
-    }
-  }
-
-  private suspend fun analyzeForMissingImports(file: Path, content: String): DiagnosticResult {
-    if (!(file.toString().endsWith(".kt") || file.toString().endsWith(".kts"))) {
-      return DiagnosticResult.NO_UPDATE
-    }
-
-    return try {
-      val importDiagnostics = importAnalyzer.analyzeMissingImports(file, content)
-      if (importDiagnostics.isNotEmpty()) {
-        DiagnosticResult(file, importDiagnostics)
-      } else {
-        DiagnosticResult.NO_UPDATE
-      }
-    } catch (e: Exception) {
-      KslLogs.error("Failed to analyze file for imports", e)
-      DiagnosticResult.NO_UPDATE
     }
   }
 
@@ -237,32 +194,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override suspend fun analyze(file: Path): DiagnosticResult {
-    if (!(file.toString().endsWith(".kt") || file.toString().endsWith(".kts"))) {
-      return DiagnosticResult.NO_UPDATE
-    }
-
-    return try {
-      // IDEEditor.analyze() is used as a local fallback entry (for example after builds). Read from
-      // FileManager first so unsaved editor text is analyzed instead of stale disk contents.
-      val content = FileManager.getDocumentContents(file)
-      val localDiagnostics = diagnosticProvider.analyze(file, content).diagnostics
-      val importDiagnostics = importAnalyzer.analyzeMissingImports(file, content)
-
-      val mergedDiagnostics =
-          buildList {
-            addAll(localDiagnostics)
-            addAll(importDiagnostics)
-          }
-
-      if (mergedDiagnostics.isNotEmpty()) {
-        DiagnosticResult(file, mergedDiagnostics)
-      } else {
-        DiagnosticResult.NO_UPDATE
-      }
-    } catch (e: Exception) {
-      KslLogs.error("Failed to analyze file", e)
-      DiagnosticResult.NO_UPDATE
-    }
+    return DiagnosticResult.NO_UPDATE
   }
 
   private fun findCompilerService(workspace: IWorkspace): KotlinCompilerService? {
@@ -371,13 +303,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
     processManager.shutdown()
     importAnalyzer.clearCache()
     initialized = false
-    analyzeTimer.cancel()
     KslLogs.info("Kotlin Language Server shutdown complete")
-  }
-
-  private fun startOrRestartAnalyzeTimer() {
-    if (VMUtils.isJvm()) return
-    if (!analyzeTimer.isStarted) analyzeTimer.start() else analyzeTimer.restart()
   }
   private fun summarizeDiagnosticsForTrace(diagnostics: List<DiagnosticItem>, limit: Int = 3): String {
     if (diagnostics.isEmpty()) return "[]"
@@ -389,109 +315,6 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
           val message = diagnostic.message.replace("\n", " ").take(80)
           "$code|$source|$message"
         }
-  }
-
-  private fun publishDiagnosticsToEditor(result: DiagnosticResult) {
-    if (result == DiagnosticResult.NO_UPDATE) return
-
-
-    try {
-      // Get the file content to convert positions
-      val content = result.file.toFile().readText()
-
-      // Convert to diagnostic regions
-      val diagnosticRegions =
-          result.diagnostics.map { diagnostic -> diagnostic.asDiagnosticRegion(content) }
-
-      // Publish to client
-      _client?.publishDiagnostics(result)
-
-      KslLogs.info("Published {} diagnostics for: {}", diagnosticRegions.size, result.file)
-    } catch (e: Exception) {
-      KslLogs.error("Failed to publish diagnostics", e)
-    }
-  }
-
-  private fun publishLocalStructuralFallback(file: Path) {
-    try {
-      val content = FileManager.getDocumentContents(file)
-      val structuralDiagnostics =
-          diagnosticProvider
-              .analyze(file, content)
-              .diagnostics
-              .filter { it.code.startsWith("STRUCTURAL_") }
-
-      val previousStructuralDiagnostics = localFallbackDiagnostics[file].orEmpty()
-      val hasStructuralChanges = structuralDiagnostics != previousStructuralDiagnostics
-      if (!hasStructuralChanges) {
-        return
-      }
-
-      localFallbackDiagnostics[file] = structuralDiagnostics
-
-      if (structuralDiagnostics.isNotEmpty()) {
-        KslLogs.debug(
-            "KLS TRACE diagnostics.forward source=local_structural file={} count={} summary={}",
-            file,
-            structuralDiagnostics.size,
-            summarizeDiagnosticsForTrace(structuralDiagnostics),
-        )
-        // This local fallback only covers obvious delimiter damage during live editing. Keep it
-        // isolated from server diagnostics instead of trying to merge uncertain snapshots.
-        publishDiagnosticsToEditor(
-            DiagnosticResult(
-                file,
-                structuralDiagnostics,
-                DiagnosticResult.CHANNEL_LOCAL_STRUCTURAL,
-            )
-        )
-      } else if (previousStructuralDiagnostics.isNotEmpty()) {
-        KslLogs.debug("KLS TRACE diagnostics.clear source=local_structural file={}", file)
-        _client?.publishDiagnostics(
-            DiagnosticResult(
-                file,
-                emptyList(),
-                DiagnosticResult.CHANNEL_LOCAL_STRUCTURAL,
-            )
-        )
-      }
-
-    } catch (e: Exception) {
-      KslLogs.warn("Failed to publish local structural fallback for {}", file, e)
-    }
-  }
-
-  private fun analyzeSelected() {
-    val file = selectedFile ?: return
-    CoroutineScope(Dispatchers.Default).launch {
-      // Keep the document opened in KLS, but avoid forcing an extra didSave here.
-      // DocumentChangeEvent already sends didChange + debounced didSave with the latest in-memory text.
-      documentManager.ensureDocumentOpen(file)
-      publishLocalStructuralFallback(file)
-    }
-  }
-
-  @Subscribe(threadMode = ThreadMode.ASYNC)
-  @Suppress("unused")
-  fun onContentChange(event: DocumentChangeEvent) {
-    if (
-        !(event.changedFile.toString().endsWith(".kt") ||
-            event.changedFile.toString().endsWith(".kts"))
-    )
-        return
-    startOrRestartAnalyzeTimer()
-  }
-
-  @Subscribe(threadMode = ThreadMode.ASYNC)
-  @Suppress("unused")
-  fun onFileOpened(event: DocumentOpenEvent) {
-    if (
-        !(event.openedFile.toString().endsWith(".kt") ||
-            event.openedFile.toString().endsWith(".kts"))
-    )
-        return
-    selectedFile = event.openedFile
-    startOrRestartAnalyzeTimer()
   }
 
   @Subscribe(threadMode = ThreadMode.ASYNC)

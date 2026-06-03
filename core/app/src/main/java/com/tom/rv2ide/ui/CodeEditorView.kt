@@ -30,7 +30,6 @@ import com.tom.rv2ide.lsp.IDELanguageClientImpl
 import com.tom.rv2ide.lsp.api.ILanguageServer
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.java.JavaLanguageServer
-import com.tom.rv2ide.lsp.kotlin.KotlinLanguageServer
 import com.tom.rv2ide.lsp.clang.ClangLanguageServer
 import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.xml.XMLLanguageServer
@@ -167,10 +166,10 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   private fun setupContentChangeListener() {
     binding.editor.subscribeEvent(io.github.rosemoe.sora.event.ContentChangeEvent::class.java) {
-        event: io.github.rosemoe.sora.event.ContentChangeEvent,
+        _: io.github.rosemoe.sora.event.ContentChangeEvent,
         _: Any? ->
       val editorFile = binding.editor.file
-      if (editorFile != null && editorFile.extension in setOf("kt", "c", "cpp", "cc", "cxx", "h", "hpp")) {
+      if (editorFile != null && editorFile.extension in setOf("c", "cpp", "cc", "cxx", "h", "hpp")) {
         startDiagnosticAnalysis(editorFile)
       }
     }
@@ -262,23 +261,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
           val editor = _binding?.editor ?: return@launch
           val languageServer = editor.languageServer
 
-          if (
-              languageServer is KotlinLanguageServer &&
-                  (file.extension == "kt")
-          ) {
-            try {
-              val result = languageServer.analyze(file.toPath())
-
-              if (result != DiagnosticResult.NO_UPDATE) {
-                withContext(Dispatchers.Main) {
-                  editor.updateEditorDiagnostics(result.diagnostics)
-                }
-              }
-            } catch (e: Exception) {
-              log.error("Failed to analyze file for diagnostics", e)
-            }
-          }
-          
           // Clang lsp
           if (
               languageServer is ClangLanguageServer &&
@@ -301,8 +283,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
               log.error("Failed to analyze file for diagnostics", e)
             }
           }
-          
-          
         }
   }
 
@@ -384,7 +364,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
     binding.editor.file = file
 
-    if (file.extension in setOf("kt", "c", "cpp", "cc", "cxx", "h", "hpp")) {
+    if (file.extension in setOf("c", "cpp", "cc", "cxx", "h", "hpp")) {
       binding.editor.initDiagnosticHandling()
       startDiagnosticAnalysis(file)
     }
