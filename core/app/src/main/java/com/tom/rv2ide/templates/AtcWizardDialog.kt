@@ -27,6 +27,7 @@ import com.tom.androidcodestudio.project.manager.builder.LanguageType
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.activities.IDEConfigurations
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.databinding.DialogAtcWizardBinding
 import com.tom.rv2ide.templates.android.Template
 import com.tom.rv2ide.templates.android.TemplateOptions
@@ -40,6 +41,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 
 class AtcWizardDialog : BottomSheetDialogFragment() {
 
