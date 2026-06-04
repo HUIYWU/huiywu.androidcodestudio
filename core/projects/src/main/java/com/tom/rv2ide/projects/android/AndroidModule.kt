@@ -204,17 +204,26 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
       addAll(getSelectedVariant()?.mainArtifact?.classJars ?: emptyList())
     }
   }
-
   override fun getCompileClasspaths(): Set<File> {
     val project = IProjectManager.getInstance().getWorkspace() ?: return emptySet()
     val result = mutableSetOf<File>()
     result.addAll(getModuleClasspaths())
 
-    collectLibraries(project, this.libraries, result)
+    collectLibraries(project, this.libraries, result, mutableSetOf())
     return result
   }
-private fun collectLibraries(root: IWorkspace, libraries: Set<String>, result: MutableSet<File>) {
+
+  private fun collectLibraries(
+    root: IWorkspace,
+    libraries: Set<String>,
+    result: MutableSet<File>,
+    visited: MutableSet<String>
+  ) {
     for (library in libraries) {
+      if (!visited.add(library)) {
+        continue
+      }
+
       val lib = this.libraryMap[library] ?: continue
       if (lib.type == PROJECT) {
         val module = root.findProject(lib.projectInfo!!.projectPath) ?: continue
@@ -234,9 +243,10 @@ private fun collectLibraries(root: IWorkspace, libraries: Set<String>, result: M
         }
       }
 
-      collectLibraries(root, lib.dependencies, result)
+      collectLibraries(root, lib.dependencies, result, visited)
     }
   }
+
   private fun preferredAndroidLibraryClasspathFiles(
     key: String,
     lib: DefaultLibrary,
@@ -301,23 +311,35 @@ private fun collectLibraries(root: IWorkspace, libraries: Set<String>, result: M
   override fun getCompileModuleProjects(): List<ModuleProject> {
     val root = IProjectManager.getInstance().getWorkspace() ?: return emptyList()
     val result = mutableListOf<ModuleProject>()
-
-    for (library in this.libraries) {
-      val lib = this.libraryMap[library] ?: continue
-      if (lib.type != PROJECT) {
-        continue
-      }
-
-      val module = root.findProject(lib.projectInfo!!.projectPath) ?: continue
-      if (module !is ModuleProject) {
-        continue
-      }
-
-      result.add(module)
-      result.addAll(module.getCompileModuleProjects())
-    }
-
+    collectCompileModuleProjects(root, this.libraries, result, mutableSetOf(), mutableSetOf())
     return result
+  }
+
+  private fun collectCompileModuleProjects(
+    root: IWorkspace,
+    libraries: Set<String>,
+    result: MutableList<ModuleProject>,
+    visitedLibraries: MutableSet<String>,
+    visitedProjects: MutableSet<String>
+  ) {
+    for (library in libraries) {
+      if (!visitedLibraries.add(library)) {
+        continue
+      }
+
+      val lib = this.libraryMap[library] ?: continue
+      if (lib.type == PROJECT) {
+        val projectPath = lib.projectInfo!!.projectPath
+        if (visitedProjects.add(projectPath)) {
+          val module = root.findProject(projectPath)
+          if (module is ModuleProject) {
+            result.add(module)
+          }
+        }
+      }
+
+      collectCompileModuleProjects(root, lib.dependencies, result, visitedLibraries, visitedProjects)
+    }
   }
 
   /**
@@ -331,21 +353,15 @@ private fun collectLibraries(root: IWorkspace, libraries: Set<String>, result: M
         Dispatchers.IO + CoroutineName("ResourceReader($path)")
       )
 
-      val resourceFlow = flow {
-        emit(getFrameworkResourceTable())
-        emit(getResourceTable())
-        emit(getDependencyResourceTables())
-        emit(getApiVersions())
-        emit(getWidgetTable())
-      }
+      val jobs = listOf(
+        resourceReaderScope.async { getFrameworkResourceTable() },
+        resourceReaderScope.async { getResourceTable() },
+        resourceReaderScope.async { getDependencyResourceTables() },
+        resourceReaderScope.async { getApiVersions() },
+        resourceReaderScope.async { getWidgetTable() },
+      )
 
-      val jobs = resourceFlow.map { result ->
-        resourceReaderScope.async {
-          result
-        }
-      }
-
-      jobs.toList().awaitAll()
+      jobs.awaitAll()
     }
   }
 
@@ -428,10 +444,13 @@ private fun collectLibraries(root: IWorkspace, libraries: Set<String>, result: M
 
   /** Get the resource tables for external dependencies (not local module project dependencies). */
   fun getDependencyResourceTables(): Set<IResourceTable> {
+    val dependencyLibraries = collectDependencyLibraries()
     return mutableSetOf<IResourceTable>().also {
       var deps: Int
-      it.addAll(libraryMap.values.filter { library ->
-        library.type == ANDROID_LIBRARY && library.androidLibraryData!!.resFolder.exists() && library.findPackageName() != UNKNOWN_PACKAGE
+      it.addAll(dependencyLibraries.filter { library ->
+        library.type == ANDROID_LIBRARY &&
+          library.androidLibraryData?.resFolder?.exists() == true &&
+          library.findPackageName() != UNKNOWN_PACKAGE
       }.also { libs -> deps = libs.size }.mapNotNull { library ->
         ResourceTableRegistry.getInstance().let { registry ->
           registry.isLoggingEnabled = false
@@ -445,6 +464,28 @@ private fun collectLibraries(root: IWorkspace, libraries: Set<String>, result: M
       })
 
       // log.info("Created {} resource tables for {} dependencies of module '{}'", it.size, deps, path)
+    }
+  }
+
+  private fun collectDependencyLibraries(): List<DefaultLibrary> {
+    val result = mutableListOf<DefaultLibrary>()
+    collectDependencyLibraries(this.libraries, result, mutableSetOf())
+    return result
+  }
+
+  private fun collectDependencyLibraries(
+    libraries: Set<String>,
+    result: MutableList<DefaultLibrary>,
+    visited: MutableSet<String>
+  ) {
+    for (library in libraries) {
+      if (!visited.add(library)) {
+        continue
+      }
+
+      val lib = this.libraryMap[library] ?: continue
+      result.add(lib)
+      collectDependencyLibraries(lib.dependencies, result, visited)
     }
   }
 

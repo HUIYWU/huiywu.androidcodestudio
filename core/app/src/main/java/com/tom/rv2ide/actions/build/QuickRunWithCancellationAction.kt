@@ -353,7 +353,7 @@ class QuickRunWithCancellationAction(context: Context, override val order: Int) 
   private fun ActionData.isBuildInProgress(): Boolean {
     val context = getActivity()
     val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE)
-    return context?.editorViewModel?.let { it.isInitializing || it.isBuildInProgress } == true ||
+    return context?.editorViewModel?.isBuildInProgress == true ||
         buildService?.isBuildInProgress == true
   }
 }
