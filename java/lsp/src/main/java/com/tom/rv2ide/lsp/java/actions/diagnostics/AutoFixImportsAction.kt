@@ -20,6 +20,7 @@ package com.tom.rv2ide.lsp.java.actions.diagnostics
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.requireContext
 import com.tom.rv2ide.actions.requirePath
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.java.R
 import com.tom.rv2ide.lsp.java.actions.BaseJavaCodeAction
 import com.tom.rv2ide.lsp.java.compiler.CompileTask

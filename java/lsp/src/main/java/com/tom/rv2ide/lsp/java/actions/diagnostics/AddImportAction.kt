@@ -23,6 +23,7 @@ import com.tom.rv2ide.actions.markInvisible
 import com.tom.rv2ide.actions.newDialogBuilder
 import com.tom.rv2ide.actions.requireFile
 import com.tom.rv2ide.actions.requirePath
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.javac.services.util.JavaDiagnosticUtils
 import com.tom.rv2ide.lsp.java.JavaCompilerProvider
 import com.tom.rv2ide.lsp.java.actions.BaseJavaCodeAction
