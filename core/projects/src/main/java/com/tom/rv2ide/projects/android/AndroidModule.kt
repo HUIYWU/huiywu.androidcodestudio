@@ -327,11 +327,21 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
     // multiplying memory pressure on top of project-level module parallelism.
     withStopWatch("Read resources for module : $path") {
       withContext(Dispatchers.IO + CoroutineName("ResourceReader($path)")) {
-        getFrameworkResourceTable()
-        getResourceTable()
-        getDependencyResourceTables()
-        getApiVersions()
-        getWidgetTable()
+        withStopWatch("Read resources/framework for module : $path") {
+          getFrameworkResourceTable()
+        }
+        withStopWatch("Read resources/module for module : $path") {
+          getResourceTable()
+        }
+        withStopWatch("Read resources/dependencies for module : $path") {
+          getDependencyResourceTables()
+        }
+        withStopWatch("Read resources/apiVersions for module : $path") {
+          getApiVersions()
+        }
+        withStopWatch("Read resources/widgetTable for module : $path") {
+          getWidgetTable()
+        }
       }
     }
   }
