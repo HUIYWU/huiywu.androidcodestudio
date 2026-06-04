@@ -64,6 +64,14 @@ class KotlinRequestHandler(
       withContext(Dispatchers.IO) {
         val deferred = CompletableDeferred<MarkupContent>()
 
+        // Hover is re-enabled. This path previously had to be hard-disabled after
+        // repeated server-side crashes during expression analysis leaked into normal
+        // editing sessions and hurt diagnostics/completion stability.
+        //
+        // Current direction: keep hover available, fail soft on bad responses, and
+        // continue narrowing the remaining server-side root cause instead of hiding
+        // the feature behind a permanent product switch.
+
         try {
           documentManager.ensureDocumentOpen(params.file)
 

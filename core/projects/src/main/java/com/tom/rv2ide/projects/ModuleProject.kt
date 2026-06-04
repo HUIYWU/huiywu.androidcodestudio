@@ -130,7 +130,7 @@ abstract class ModuleProject(
 
     this.compileClasspathClasses.clear()
 
-    val watch = StopWatch("Indexing classpaths")
+    val watch = StopWatch("Indexing classpaths for project: $path")
     val paths = getCompileClasspaths().filter { it.exists() }
 
     for (path in paths) {
@@ -157,7 +157,7 @@ abstract class ModuleProject(
 
     this.compileJavaSourceClasses.clear()
 
-    val watch = StopWatch("Indexing sources")
+    val watch = StopWatch("Indexing sources for project: $path")
     var count = 0
     getCompileSourceDirectories().forEach {
       val sourceDir = it.toPath()

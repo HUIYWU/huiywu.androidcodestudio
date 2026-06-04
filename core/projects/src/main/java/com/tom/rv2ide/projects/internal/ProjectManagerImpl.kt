@@ -117,16 +117,18 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
       val modulesFlow = flow {
         rootProject.getSubProjects().filterIsInstance<ModuleProject>().forEach { emit(it) }
       }
-
       val jobs =
           modulesFlow.map { module ->
             indexerScope.async {
+              log.info("Setup project: start indexing module {}", module.path)
               module.indexSourcesAndClasspaths()
               if (module is AndroidModule) {
                 module.readResources()
               }
+              log.info("Setup project: finished indexing module {}", module.path)
             }
           }
+
 
       // wait for the indexing to finish
       jobs.toList().awaitAll()

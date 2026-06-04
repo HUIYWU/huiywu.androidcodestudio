@@ -25,12 +25,10 @@ import com.tom.rv2ide.lsp.models.DiagnosticResult
  *
  * The goal of this interface is to decouple higher-level Kotlin editing logic
  * (document sync, requests, workspace setup, formatting, diagnostics wiring)
- * from the current concrete org.javacs.kt process implementation.
+ * from the concrete backend process implementation.
  *
- * This first extraction intentionally stays small and mirrors the existing
- * KotlinServerProcessManager surface so the current backend can be wrapped with
- * near-zero behavioral changes. Future Kotlin backends can implement the same
- * contract while keeping upper layers unchanged.
+ * The interface intentionally stays small so different Kotlin backends can share
+ * the same upper-layer integration with minimal behavioral drift.
  */
 interface KotlinLspConnection {
   fun setDiagnosticsCallback(callback: (DiagnosticResult) -> Unit)

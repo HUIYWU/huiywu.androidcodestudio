@@ -19,10 +19,9 @@ package com.tom.rv2ide.lsp.kotlin
 /**
  * Configurator for the fwcd/kotlin-language-server backend.
  *
- * Compared to the bundled org.javacs.kt backend, fwcd uses a different startup and
- * configuration surface. This configurator currently keeps backend-specific setup
- * minimal and avoids sending javacs-specific `workspace/didChangeConfiguration`
- * payloads unless fwcd explicitly requires them.
+ * fwcd has its own startup and configuration surface. This configurator keeps
+ * backend-specific setup minimal and avoids sending extra
+ * `workspace/didChangeConfiguration` payloads unless fwcd explicitly requires them.
  */
 object FwcdKotlinLspBackendConfigurator : KotlinLspBackendConfigurator {
   override fun beforeServerStart(

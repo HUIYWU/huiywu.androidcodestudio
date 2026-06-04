@@ -19,8 +19,8 @@ package com.tom.rv2ide.lsp.kotlin
 /**
  * Backend-specific hooks that customize otherwise generic Kotlin workspace setup.
  *
- * The initial scope is intentionally small: only the behaviors that are known to
- * be tightly coupled to the current org.javacs.kt backend are extracted.
+ * The initial scope is intentionally small: only the behaviors that remain
+ * backend-specific in the current Kotlin LSP integration are extracted here.
  */
 interface KotlinLspBackendConfigurator {
   fun beforeServerStart(
