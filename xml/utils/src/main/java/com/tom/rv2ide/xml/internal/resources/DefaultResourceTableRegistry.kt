@@ -112,7 +112,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     getServiceActions(platform)
     getCategories(platform)
     getFeatures(platform)
-    return super.forPlatformDir(platform)
+    return platformResourceTable(File(platform, "${SdkConstants.FD_DATA}/res"))
   }
 
   override fun getManifestAttrTable(platform: File): ResourceTable? {
