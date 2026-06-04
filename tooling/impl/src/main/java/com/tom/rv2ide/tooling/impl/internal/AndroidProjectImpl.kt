@@ -120,53 +120,9 @@ override fun getLibraryMap(): CompletableFuture<Map<String, DefaultLibrary>> {
         seen[dependency.key] ?: fillLibrary(dependency, libraries, seen)
       }
 
-      addImportantComposeLibraries(libraries, seen)
       logComposeSeenSummary(seen)
       seen
     }
-  }
-
-  private fun addImportantComposeLibraries(
-      libraries: Map<String, Library>,
-      seen: MutableMap<String, DefaultLibrary>,
-  ) {
-    val added = mutableListOf<String>()
-    libraries.forEach { (key, library) ->
-      if (seen.containsKey(key)) return@forEach
-      if (!shouldForceIncludeLibrary(key, library)) return@forEach
-
-      seen[key] = com.tom.rv2ide.tooling.api.util.AndroidModulePropertyCopier.copy(library)
-      added += "$key => ${describeLibrary(library)}"
-    }
-
-    logComposeForcedIncludeSummary(added)
-  }
-
-  private fun shouldForceIncludeLibrary(key: String, library: Library): Boolean {
-    val info = library.libraryInfo
-    val group = info?.group.orEmpty()
-    val name = info?.name.orEmpty()
-    val coordinates = listOfNotNull(info?.group, info?.name, info?.version).joinToString(":")
-    val candidate = listOf(key, group, name, coordinates, describeLibrary(library)).joinToString(" ")
-
-    if (!isForceIncludeInteresting(candidate)) {
-      return false
-    }
-
-    return library.androidLibraryData?.compileJarFiles?.isNotEmpty() == true || library.artifact != null
-  }
-
-  private fun logComposeForcedIncludeSummary(added: List<String>) {
-  }
-  private fun isForceIncludeInteresting(value: String?): Boolean {
-    if (value.isNullOrBlank()) return false
-    val normalized = value.lowercase()
-    return normalized.contains("androidx.compose.ui") ||
-        normalized.contains("androidx.compose.runtime") ||
-        normalized.contains("androidx.compose.foundation") ||
-        normalized.contains("androidx.compose.material3") ||
-        normalized.contains("androidx.activity") ||
-        normalized.contains("androidx.lifecycle")
   }
 
   private fun logComposeDependencySummary(

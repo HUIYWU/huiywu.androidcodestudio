@@ -249,7 +249,7 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
   ): Collection<File> {
     val artifact = lib.artifact
     val aarClassesJar = artifact?.takeIf {
-      shouldInspectComposeLibrary(key, lib) && it.isFile && it.extension.equals("aar", ignoreCase = true)
+      it.isFile && it.extension.equals("aar", ignoreCase = true)
     }?.let { extractClassesJarFromAar(it) }
 
     if (aarClassesJar != null) {
@@ -261,8 +261,6 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
 
     return compileJarFiles
   }
-
-
 
   private fun extractClassesJarFromAar(aarFile: File): File? {
     return try {
@@ -284,23 +282,6 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
       log.warn("Failed to extract classes.jar from AAR: {}", aarFile.absolutePath, error)
       null
     }
-  }
-
-  private fun shouldInspectComposeLibrary(key: String, lib: DefaultLibrary): Boolean {
-    val coordinates = describeLibraryCoordinates(lib)
-    val candidate = "$key $coordinates ${lib.artifact?.name.orEmpty()}"
-    val normalized = candidate.lowercase()
-    return normalized.contains("androidx.compose.ui") ||
-      normalized.contains("androidx.compose.runtime") ||
-      normalized.contains("androidx.compose.foundation") ||
-      normalized.contains("androidx.compose.material3") ||
-      normalized.contains("androidx.activity") ||
-      normalized.contains("androidx.lifecycle")
-  }
-
-  private fun describeLibraryCoordinates(lib: DefaultLibrary): String {
-    val info = lib.libraryInfo
-    return listOfNotNull(info?.group, info?.name, info?.version).joinToString(":")
   }
 
   override fun getCompileModuleProjects(): List<ModuleProject> {

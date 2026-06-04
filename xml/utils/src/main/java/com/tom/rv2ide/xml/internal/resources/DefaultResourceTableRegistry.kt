@@ -241,7 +241,12 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     }
 
     if (isLoggingEnabled) {
-      log.info("Creating resource table for {} resource directories", resDirs.size)
+      val dirSummary = resDirs.joinToString(", ") { it.absolutePath }
+      log.info(
+        "Creating resource table for {} resource directories: {}",
+        resDirs.size,
+        dirSummary,
+      )
     }
 
     val logger = BlameLogger(IDELogger)
