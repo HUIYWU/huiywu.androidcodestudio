@@ -75,6 +75,7 @@ import kotlin.system.exitProcess
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import com.tom.rv2ide.utils.StopWatch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -118,6 +119,9 @@ class IDEApplication : TermuxApplication() {
     }
     IdeLogConfig.setIdeDebugLogsEnabledProvider {
       DevOpsPreferences.ideDebugLogsEnabled
+    }
+    StopWatch.setDebugLoggingEnabledProvider {
+      IdeLogConfig.shouldLogDebug()
     }
 
     if (GeneralPreferences.snowfallOverlay && isSnowfallSeasonActive()) {

@@ -16,7 +16,6 @@
  */
 package com.tom.rv2ide.utils
 
-import com.tom.rv2ide.common.logging.IdeLogConfig
 import java.io.PrintStream
 import org.slf4j.LoggerFactory
 
@@ -37,18 +36,31 @@ constructor(
 
   companion object {
 
+    @Volatile
+    private var debugLoggingEnabledProvider: (() -> Boolean)? = null
+
+    @JvmStatic
+    fun setDebugLoggingEnabledProvider(provider: (() -> Boolean)?) {
+      debugLoggingEnabledProvider = provider
+    }
+
+    @JvmStatic
+    fun isDebugLoggingEnabled(): Boolean {
+      return debugLoggingEnabledProvider?.invoke() == true
+    }
+
     private val log = LoggerFactory.getLogger(StopWatch::class.java)
   }
 
   fun log() {
-    if (!IdeLogConfig.shouldLogDebug()) {
+    if (!isDebugLoggingEnabled()) {
       return
     }
     log.debug("{} completed in {}ms", label, System.currentTimeMillis() - start)
   }
 
   fun lap(message: String) {
-    if (!IdeLogConfig.shouldLogDebug()) {
+    if (!isDebugLoggingEnabled()) {
       lastLap = System.currentTimeMillis()
       return
     }
@@ -57,7 +69,7 @@ constructor(
   }
 
   fun lapFromLast(message: String) {
-    if (!IdeLogConfig.shouldLogDebug()) {
+    if (!isDebugLoggingEnabled()) {
       lastLap = System.currentTimeMillis()
       return
     }
