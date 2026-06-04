@@ -81,21 +81,25 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   }
 
   override var isLoggingEnabled: Boolean = true
-
   override fun forPackage(name: String, vararg resDirs: File): ResourceTable? {
 
     if (name == PCK_ANDROID) {
       return platformResourceTable(resDirs.iterator().next())
     }
 
-    return tables[name]
-        ?: createTable(*resDirs)?.also {
-          tables[name] = it
-          it.packages.firstOrNull()?.name = name
+    if (tables.containsKey(name)) {
+      return tables[name]
+    }
 
-          resDirs.forEach { resDir -> addFileReferences(it, name, resDir) }
-        }
+    val table = createTable(*resDirs) ?: return null
+    return tables.computeIfAbsent(name) {
+      table.also {
+        it.packages.firstOrNull()?.name = name
+        resDirs.forEach { resDir -> addFileReferences(it, name, resDir) }
+      }
+    }
   }
+
 
   override fun forPlatformDir(platform: File): IResourceTable? {
     getManifestAttrTable(platform)
@@ -108,11 +112,17 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   }
 
   override fun getManifestAttrTable(platform: File): ResourceTable? {
-    return manifestAttrs[platform.path]
-        ?: createManifestAttrTable(platform)?.also {
-          manifestAttrs[platform.path] = it
-          it.packages.firstOrNull()?.name = PCK_ANDROID
-        }
+    val key = platform.path
+    if (manifestAttrs.containsKey(key)) {
+      return manifestAttrs[key]
+    }
+
+    val table = createManifestAttrTable(platform) ?: return null
+    return manifestAttrs.computeIfAbsent(key) {
+      table.also {
+        it.packages.firstOrNull()?.name = PCK_ANDROID
+      }
+    }
   }
 
   override fun getActivityActions(platform: File): List<String> {
@@ -144,15 +154,14 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   }
 
   private fun getSingleLineEntry(platform: File, type: SingleLineValueEntryType): List<String> {
-    var entries = singleLineValueEntries[platform.path]
-    if (entries == null) {
-      entries = readSingleLineEntry(platform, type)
-      singleLineValueEntries[platform.path] = entries
+    val entries = singleLineValueEntries.computeIfAbsent(platform.path) {
+      ConcurrentHashMap<SingleLineValueEntryType, List<String>>()
     }
 
     return entries[type]
         ?: run {
-          readSingleLineEntriesTo(platform, type, entries)
+          val lines = readSingleLineEntry(platform, type)
+          entries.putIfAbsent(type, lines)
           entries[type] ?: emptyList()
         }
   }
@@ -160,10 +169,13 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   private fun readSingleLineEntry(
       platform: File,
       type: SingleLineValueEntryType,
-  ): ConcurrentHashMap<SingleLineValueEntryType, List<String>> {
-    val map = ConcurrentHashMap<SingleLineValueEntryType, List<String>>()
-    readSingleLineEntriesTo(platform, type, map)
-    return map
+  ): List<String> {
+    val file = File(platform, "${SdkConstants.FD_DATA}/${type.filename}")
+    if (!file.exists() || !file.canRead()) {
+      return emptyList()
+    }
+
+    return file.readLines()
   }
 
   private fun readSingleLineEntriesTo(
@@ -194,13 +206,18 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   }
 
   private fun platformResourceTable(dir: File): ResourceTable? {
-    return platformTables[dir.path]
-        ?: createTable(dir)?.also { table ->
-          platformTables[dir.path] = table
-          table.packages.firstOrNull()?.name = PCK_ANDROID
+    val key = dir.path
+    if (platformTables.containsKey(key)) {
+      return platformTables[key]
+    }
 
-          addFileReferences(table, PCK_ANDROID, dir)
-        }
+    val table = createTable(dir) ?: return null
+    return platformTables.computeIfAbsent(key) {
+      table.also {
+        it.packages.firstOrNull()?.name = PCK_ANDROID
+        addFileReferences(it, PCK_ANDROID, dir)
+      }
+    }
   }
 
   private fun createTable(vararg resDirs: File): ResourceTable? {

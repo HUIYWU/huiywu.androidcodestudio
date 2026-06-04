@@ -44,14 +44,13 @@ class DefaultApiVersionsRegistry : ApiVersionsRegistry {
   override var isLoggingEnabled: Boolean = true
 
   override fun forPlatformDir(platform: File): ApiVersions? {
-    var version = versions[platform.path]
-    if (version != null) {
-      return version
+    val key = platform.path
+    if (versions.containsKey(key)) {
+      return versions[key]
     }
 
-    version = readApiVersions(platform) ?: return null
-    versions[platform.path] = version
-    return version
+    val version = readApiVersions(platform) ?: return null
+    return versions.computeIfAbsent(key) { version }
   }
 
   private fun readApiVersions(platform: File): ApiVersions? {
