@@ -31,13 +31,17 @@ interface WidgetTableRegistry : XmlRegistry<WidgetTable> {
   companion object {
 
     private var sInstance: WidgetTableRegistry? = null
+    private val instanceLock = Any()
 
     /** Get the default instance of [WidgetTableRegistry]. */
     @JvmStatic
     fun getInstance(): WidgetTableRegistry {
-      val klass = WidgetTableRegistry::class.java
-      return sInstance
-          ?: ServiceLoader.load(klass, klass.classLoader).findFirstOrThrow().also { sInstance = it }
+      sInstance?.let { return it }
+      return synchronized(instanceLock) {
+        sInstance?.let { return@synchronized it }
+        val klass = WidgetTableRegistry::class.java
+        ServiceLoader.load(klass, klass.classLoader).findFirstOrThrow().also { sInstance = it }
+      }
     }
   }
 }

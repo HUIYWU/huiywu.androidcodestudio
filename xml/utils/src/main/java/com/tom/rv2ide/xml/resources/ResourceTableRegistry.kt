@@ -44,12 +44,16 @@ interface ResourceTableRegistry : XmlRegistry<IResourceTable> {
     @JvmStatic val COMPLETION_MANIFEST_ATTR_RES = Lookup.Key<IResourceTable>()
 
     private var sInstance: ResourceTableRegistry? = null
+    private val instanceLock = Any()
 
     @JvmStatic
     fun getInstance(): ResourceTableRegistry {
-      val klass = ResourceTableRegistry::class.java
-      return sInstance
-          ?: ServiceLoader.load(klass, klass.classLoader).findFirstOrThrow().also { sInstance = it }
+      sInstance?.let { return it }
+      return synchronized(instanceLock) {
+        sInstance?.let { return@synchronized it }
+        val klass = ResourceTableRegistry::class.java
+        ServiceLoader.load(klass, klass.classLoader).findFirstOrThrow().also { sInstance = it }
+      }
     }
   }
 

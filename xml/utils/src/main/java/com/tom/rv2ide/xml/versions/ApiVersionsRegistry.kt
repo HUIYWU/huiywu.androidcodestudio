@@ -35,13 +35,17 @@ interface ApiVersionsRegistry : XmlRegistry<ApiVersions> {
   companion object {
 
     private var sInstance: ApiVersionsRegistry? = null
+    private val instanceLock = Any()
 
     /** Get the default instance of [ApiVersionsRegistry]. */
     @JvmStatic
     fun getInstance(): ApiVersionsRegistry {
-      val klass = ApiVersionsRegistry::class.java
-      return sInstance
-          ?: ServiceLoader.load(klass, klass.classLoader).findFirstOrThrow().also { sInstance = it }
+      sInstance?.let { return it }
+      return synchronized(instanceLock) {
+        sInstance?.let { return@synchronized it }
+        val klass = ApiVersionsRegistry::class.java
+        ServiceLoader.load(klass, klass.classLoader).findFirstOrThrow().also { sInstance = it }
+      }
     }
   }
 }
