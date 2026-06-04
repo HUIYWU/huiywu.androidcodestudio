@@ -347,21 +347,16 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
    * the corresponding resource directories.
    */
   suspend fun readResources() {
-    // Read resources in parallel
+    // Read resources for this module. Keep the work in a single coroutine to avoid
+    // multiplying memory pressure on top of project-level module parallelism.
     withStopWatch("Read resources for module : $path") {
-      val resourceReaderScope = CoroutineScope(
-        Dispatchers.IO + CoroutineName("ResourceReader($path)")
-      )
-
-      val jobs = listOf(
-        resourceReaderScope.async { getFrameworkResourceTable() },
-        resourceReaderScope.async { getResourceTable() },
-        resourceReaderScope.async { getDependencyResourceTables() },
-        resourceReaderScope.async { getApiVersions() },
-        resourceReaderScope.async { getWidgetTable() },
-      )
-
-      jobs.awaitAll()
+      withContext(Dispatchers.IO + CoroutineName("ResourceReader($path)")) {
+        getFrameworkResourceTable()
+        getResourceTable()
+        getDependencyResourceTables()
+        getApiVersions()
+        getWidgetTable()
+      }
     }
   }
 

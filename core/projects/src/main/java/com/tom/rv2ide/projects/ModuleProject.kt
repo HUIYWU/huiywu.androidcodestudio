@@ -24,7 +24,7 @@ import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.javac.services.fs.CacheFSInfoSingleton
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.projects.android.AndroidModule
-import com.tom.rv2ide.projects.classpath.JarFsClasspathReader
+import com.tom.rv2ide.projects.classpath.ZipFileClasspathReader
 import com.tom.rv2ide.projects.util.BootClasspathProvider
 import com.tom.rv2ide.tooling.api.models.GradleTask
 import com.tom.rv2ide.utils.ClassTrie
@@ -139,7 +139,7 @@ abstract class ModuleProject(
       CacheFSInfoSingleton.cache(CacheFSInfoSingleton.getCanonicalFile(path.toPath()))
     }
 
-    val topLevelClasses = JarFsClasspathReader().listClasses(paths).filter { it.isTopLevel }
+    val topLevelClasses = ZipFileClasspathReader().listClasses(paths).filter { it.isTopLevel }
     topLevelClasses.forEach { this.compileClasspathClasses.append(it.name) }
 
     if (IdeLogConfig.shouldLogIde()) {
