@@ -24,7 +24,6 @@ import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
@@ -36,7 +35,6 @@ class KotlinRequestHandler(
 ) {
 
   companion object {
-    private val log = LoggerFactory.getLogger(KotlinRequestHandler::class.java)
     private const val COMPLETION_TIMEOUT = 10000L
     private const val DEBOUNCE_DELAY = 0L
     private const val HOVER_DEBOUNCE_MS = 350L

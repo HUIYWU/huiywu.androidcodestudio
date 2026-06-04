@@ -121,7 +121,7 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
               withContext(Dispatchers.Main) { displayTooltip(content) }
             }
           } catch (e: Exception) {
-            if (e !is CancellationException && IdeLogConfig.shouldLogIde()) {
+            if (e !is CancellationException && IdeLogConfig.shouldLogDebug()) {
               log.debug("Failed to fetch hover info", e)
             }
           }
@@ -294,7 +294,7 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
       try {
         tooltipContainer.removeView(view)
       } catch (e: Exception) {
-        if (IdeLogConfig.shouldLogIde()) {
+        if (IdeLogConfig.shouldLogDebug()) {
           log.debug("Error removing tooltip view", e)
         }
       }

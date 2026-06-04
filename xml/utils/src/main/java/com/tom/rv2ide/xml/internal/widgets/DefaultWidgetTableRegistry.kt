@@ -14,10 +14,10 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.xml.internal.widgets
 
 import com.google.auto.service.AutoService
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.xml.widgets.WidgetTable
 import com.tom.rv2ide.xml.widgets.WidgetTableRegistry
 import java.io.File
@@ -40,7 +40,7 @@ class DefaultWidgetTableRegistry : WidgetTableRegistry {
     private val log = LoggerFactory.getLogger(DefaultWidgetTableRegistry::class.java)
   }
 
-  override var isLoggingEnabled: Boolean = true
+  override var isLoggingEnabled: Boolean = IdeLogConfig.shouldLogDebug()
 
   override fun forPlatformDir(platform: File): WidgetTable? {
     val key = platform.path
@@ -93,3 +93,4 @@ class DefaultWidgetTableRegistry : WidgetTableRegistry {
     tableLocks.clear()
   }
 }
+

@@ -17,17 +17,23 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.dialogs.ProviderSwitchDialog
+import com.tom.rv2ide.artificial.dialogs.LocalLLMConfigDialog
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.managers.CodeCompletionManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.tom.rv2ide.artificial.dialogs.LocalLLMConfigDialog
+import org.slf4j.LoggerFactory
 
 class AIPreferencesFragment(
     private val aiAgent: AIAgentManager,
     private val agents: Agents,
     private val codeCompletionManager: CodeCompletionManager?
 ) : Fragment() {
+
+    companion object {
+        private val log = LoggerFactory.getLogger(AIPreferencesFragment::class.java)
+    }
 
     private lateinit var providerDropdown: AutoCompleteTextView
     private lateinit var modelDropdown: AutoCompleteTextView
@@ -128,17 +134,20 @@ class AIPreferencesFragment(
             "grok" to "xAI Grok",
             "localllm" to "Local LLM"
         )
-        
+
         val currentProviderId = agents.getProvider()
         val currentProviderName = providerMap[currentProviderId] ?: currentProviderId
         providerDropdown.setText(currentProviderName, false)
     }
-    
+
     private fun updateCurrentStatus() {
         val currentProvider = agents.getProvider()
         val currentModel = agents.getAgent()
         
-        android.util.Log.d("AIPreferences", "Current provider: $currentProvider, model: $currentModel")
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("Current provider: {}, model: {}", currentProvider, currentModel)
+        }
+
         
         val providerDisplayName = when(currentProvider) {
             "gemini" -> "Google Gemini"
@@ -201,7 +210,9 @@ class AIPreferencesFragment(
         codeCompletionToggle.isChecked = savedState
         
         codeCompletionToggle.setOnCheckedChangeListener { _, isChecked ->
-            android.util.Log.d("AIPreferences", "Toggle changed to: $isChecked")
+            if (IdeLogConfig.shouldLogDebug()) {
+                log.debug("Toggle changed to: {}", isChecked)
+            }
             
             isCompletionEnabled = isChecked
             
@@ -234,7 +245,9 @@ class AIPreferencesFragment(
                     .getBoolean("code_completion_enabled", true)
                 
                 if (savedState != isCompletionEnabled) {
-                    android.util.Log.d("AIPreferences", "State mismatch detected: saved=$savedState, current=$isCompletionEnabled")
+                    if (IdeLogConfig.shouldLogDebug()) {
+                        log.debug("State mismatch detected: saved={}, current={}", savedState, isCompletionEnabled)
+                    }
                     isCompletionEnabled = savedState
                     
                     if (codeCompletionToggle.isChecked != savedState) {
@@ -253,14 +266,20 @@ class AIPreferencesFragment(
     }
     
     private suspend fun applyCompletionStateChange(enabled: Boolean) {
-        android.util.Log.d("AIPreferences", "Applying completion state change: $enabled")
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("Applying completion state change: {}", enabled)
+        }
         
         if (enabled) {
             codeCompletionManager?.reattachToCurrentEditor()
-            android.util.Log.d("AIPreferences", "Re-enabled code completion")
+            if (IdeLogConfig.shouldLogDebug()) {
+                log.debug("Re-enabled code completion")
+            }
         } else {
             codeCompletionManager?.cleanup()
-            android.util.Log.d("AIPreferences", "Disabled code completion")
+            if (IdeLogConfig.shouldLogDebug()) {
+                log.debug("Disabled code completion")
+            }
         }
     }
 
@@ -268,22 +287,30 @@ class AIPreferencesFragment(
         val savedState = requireContext().getSharedPreferences("ai_preferences", Context.MODE_PRIVATE)
             .getBoolean("code_completion_enabled", true)
         
-        android.util.Log.d("AIPreferences", "Syncing toggle: saved=$savedState")
-        
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("Syncing toggle: saved={}", savedState)
+        }
+
         isCompletionEnabled = savedState
         codeCompletionToggle.isChecked = savedState
     }
 
     private fun handleProviderChange(providerId: String, providerName: String) {
-        android.util.Log.d("AIPreferences", "Switching to provider: $providerId")
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("Switching to provider: {}", providerId)
+        }
         
         val availableModels = agents.getModelsForProvider(providerId)
-        android.util.Log.d("AIPreferences", "Available models for $providerId: ${availableModels.joinToString()}")
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("Available models for {}: {}", providerId, availableModels.joinToString())
+        }
         
         if (availableModels.isNotEmpty()) {
             val defaultModel = availableModels[0]
             agents.setAgent(defaultModel)
-            android.util.Log.d("AIPreferences", "Set default model: $defaultModel")
+            if (IdeLogConfig.shouldLogDebug()) {
+                log.debug("Set default model: {}", defaultModel)
+            }
         }
         
         agents.setProvider(providerId)
@@ -298,7 +325,9 @@ class AIPreferencesFragment(
                 if (isCompletionEnabled) {
                     delay(500)
                     codeCompletionManager?.reattachToCurrentEditor()
-                    android.util.Log.d("AIPreferences", "Reattached completion after provider change")
+                    if (IdeLogConfig.shouldLogDebug()) {
+                        log.debug("Reattached completion after provider change")
+                    }
                 }
             }
             
@@ -309,7 +338,9 @@ class AIPreferencesFragment(
     }
 
     private fun handleModelChange(modelName: String) {
-        android.util.Log.d("AIPreferences", "Switching to model: $modelName")
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("Switching to model: {}", modelName)
+        }
         agents.setAgent(modelName)
         aiAgent.reinitializeWithSelectedModel()
         updateCurrentStatus()
@@ -318,7 +349,9 @@ class AIPreferencesFragment(
             if (isCompletionEnabled) {
                 delay(500)
                 codeCompletionManager?.reattachToCurrentEditor()
-                android.util.Log.d("AIPreferences", "Reattached completion after model change")
+                if (IdeLogConfig.shouldLogDebug()) {
+                    log.debug("Reattached completion after model change")
+                }
             }
         }
         

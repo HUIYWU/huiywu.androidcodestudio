@@ -18,6 +18,7 @@
 package com.tom.rv2ide.lsp.java.actions
 
 import android.content.Context
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
@@ -82,7 +83,9 @@ abstract class FieldBasedAction : BaseJavaCodeAction() {
       val fields = triple.third
       val fieldNames = fields.map { "${it.name}: ${it.type}" } // Get the names
 
-      log.debug("Found {} fields in class {}", fieldNames.size, type.simpleName)
+      if (IdeLogConfig.shouldLogDebug()) {
+        log.debug("Found {} fields in class {}", fieldNames.size, type.simpleName)
+      }
 
       return@get fieldNames
     }
@@ -132,7 +135,9 @@ abstract class FieldBasedAction : BaseJavaCodeAction() {
   @Suppress("UNCHECKED_CAST")
   override fun postExec(data: ActionData, result: Any) {
     if (result !is List<*>) {
-      log.error("Unable to find fields in the current class")
+      if (IdeLogConfig.shouldLogError()) {
+        log.error("Unable to find fields in the current class")
+      }
       return
     }
 

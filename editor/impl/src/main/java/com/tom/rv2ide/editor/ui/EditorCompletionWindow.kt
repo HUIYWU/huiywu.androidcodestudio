@@ -112,7 +112,7 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
 
   override fun select(pos: Int): Boolean {
     if (pos >= adapter!!.count) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogWarn()) {
         log.warn(
             "Rejecting completion select request because position is out of bounds: pos={}, count={}, currentSelection={}, itemsSize={}",
             pos,
@@ -125,7 +125,7 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
     }
     return try {
       val selectedItem = items.getOrNull(pos)
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogInfo()) {
         log.info(
             "Selecting completion item: pos={}, count={}, currentSelection={}, itemClass={}, item={}",
             pos,
@@ -153,7 +153,7 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
   override fun select() : Boolean {
     try {
       val selectedItem = items.getOrNull(currentSelection)
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogInfo()) {
         log.info(
             "Selecting current completion item: currentSelection={}, count={}, itemClass={}, item={}",
             currentSelection,
@@ -204,7 +204,7 @@ override fun requireCompletion() {
           null
         }
     if (previousChar != null && previousChar in COMPLETION_SUPPRESS_CHARS) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogDebug()) {
         log.debug(
             "EditorCompletionWindow.requireCompletion ignored after punctuation '{}' at line={}, column={}",
             previousChar,

@@ -44,12 +44,14 @@ class RemoveUnusedImportsAction : BaseJavaCodeAction() {
       val editor = data.requireEditor()
       val content = editor.text
       val output = RemoveUnusedImports.removeUnusedImports(content.toString())
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogDebug()) {
         watch.log()
       }
       output
     } catch (e: FormatterException) {
-      log.error("Failed to remove unused imports", e)
+      if (IdeLogConfig.shouldLogError()) {
+        log.error("Failed to remove unused imports", e)
+      }
       false
     }
   }

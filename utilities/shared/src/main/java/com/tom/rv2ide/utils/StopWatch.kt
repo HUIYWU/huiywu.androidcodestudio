@@ -14,9 +14,9 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.utils
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import java.io.PrintStream
 import org.slf4j.LoggerFactory
 
@@ -41,15 +41,26 @@ constructor(
   }
 
   fun log() {
+    if (!IdeLogConfig.shouldLogDebug()) {
+      return
+    }
     log.debug("{} completed in {}ms", label, System.currentTimeMillis() - start)
   }
 
   fun lap(message: String) {
+    if (!IdeLogConfig.shouldLogDebug()) {
+      lastLap = System.currentTimeMillis()
+      return
+    }
     log.debug("{} in {}ms", message, System.currentTimeMillis() - start)
     lastLap = System.currentTimeMillis()
   }
 
   fun lapFromLast(message: String) {
+    if (!IdeLogConfig.shouldLogDebug()) {
+      lastLap = System.currentTimeMillis()
+      return
+    }
     log.debug("{} in {}ms", message, System.currentTimeMillis() - lastLap)
     lastLap = System.currentTimeMillis()
   }
@@ -78,3 +89,4 @@ inline fun <R> withStopWatch(
     }
   }
 }
+

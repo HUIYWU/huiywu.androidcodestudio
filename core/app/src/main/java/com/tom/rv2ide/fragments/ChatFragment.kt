@@ -18,6 +18,7 @@ import android.content.SharedPreferences
 import com.tom.rv2ide.R
 import com.tom.rv2ide.adapters.FileModificationAdapter
 import com.tom.rv2ide.artificial.agents.AIAgentManager
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.managers.CodeCompletionManager
 import com.tom.rv2ide.handlers.AIRequestHandler
 import com.tom.rv2ide.utils.ProjectHelper.getProjectRoot
@@ -25,11 +26,16 @@ import com.tom.rv2ide.activities.editor.EditorHandlerActivity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
 import java.io.File
-
 class ChatFragment(
     private val aiAgent: AIAgentManager
 ) : Fragment() {
+
+    companion object {
+        private val log = LoggerFactory.getLogger(ChatFragment::class.java)
+    }
+
 
     private lateinit var promptInput: TextInputEditText
     private lateinit var executeBtn: MaterialButton
@@ -55,7 +61,9 @@ class ChatFragment(
     private val sharedPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         if (key == "code_completion_enabled") {
             val isEnabled = prefs.getBoolean(key, true)
-            android.util.Log.d("ChatFragment", "Completion preference changed: $isEnabled")
+            if (IdeLogConfig.shouldLogDebug()) {
+                log.debug("Completion preference changed: {}", isEnabled)
+            }
             
             lifecycleScope.launch {
                 handleCompletionStateChange(isEnabled)
@@ -173,7 +181,9 @@ class ChatFragment(
     }
     
     private suspend fun handleCompletionStateChange(enabled: Boolean) {
-        android.util.Log.d("ChatFragment", "handleCompletionStateChange: $enabled")
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("handleCompletionStateChange: {}", enabled)
+        }
         
         if (enabled) {
             delay(200)
@@ -181,11 +191,15 @@ class ChatFragment(
             val suggestionView = getCurrentSuggestionView()
             
             if (editor != null && suggestionView != null) {
-                android.util.Log.d("ChatFragment", "Re-enabling completion for current file")
+                if (IdeLogConfig.shouldLogDebug()) {
+                    log.debug("Re-enabling completion for current file")
+                }
                 setupCodeCompletionForCurrentFile()
             }
         } else {
-            android.util.Log.d("ChatFragment", "Disabling completion")
+            if (IdeLogConfig.shouldLogDebug()) {
+                log.debug("Disabling completion")
+            }
             codeCompletionManager.cleanup()
         }
     }
@@ -204,7 +218,9 @@ class ChatFragment(
                     .getBoolean("code_completion_enabled", true)
                 
                 if (currentState != lastKnownState) {
-                    android.util.Log.d("ChatFragment", "State change detected in monitor: $lastKnownState -> $currentState")
+                    if (IdeLogConfig.shouldLogDebug()) {
+                        log.debug("State change detected in monitor: {} -> {}", lastKnownState, currentState)
+                    }
                     lastKnownState = currentState
                     handleCompletionStateChange(currentState)
                 }
@@ -257,7 +273,9 @@ class ChatFragment(
                 val currentFile = getCurrentFile()
                 
                 if (currentFile != null && currentFile != lastMonitoredFile) {
-                    android.util.Log.d("ChatFragment", "File changed detected: ${currentFile.name}")
+                    if (IdeLogConfig.shouldLogDebug()) {
+                        log.debug("File changed detected: {}", currentFile.name)
+                    }
                     lastMonitoredFile = currentFile
                     setupCodeCompletionForCurrentFile()
                 }
@@ -272,7 +290,9 @@ class ChatFragment(
     
     private fun setupCodeCompletionForCurrentFile() {
         if (isSettingUpCompletion) {
-            android.util.Log.d("ChatFragment", "Already setting up, skipping")
+            if (IdeLogConfig.shouldLogDebug()) {
+                log.debug("Already setting up, skipping")
+            }
             return
         }
         
@@ -280,7 +300,9 @@ class ChatFragment(
         val isEnabled = prefs.getBoolean("code_completion_enabled", true)
         
         if (!isEnabled) {
-            android.util.Log.d("ChatFragment", "Code completion is disabled, skipping setup")
+            if (IdeLogConfig.shouldLogDebug()) {
+                log.debug("Code completion is disabled, skipping setup")
+            }
             return
         }
         
@@ -293,21 +315,29 @@ class ChatFragment(
             val suggestionView = getCurrentSuggestionView()
             
             if (editor != null && suggestionView != null) {
-                android.util.Log.d("ChatFragment", "Setting up code completion")
+                if (IdeLogConfig.shouldLogDebug()) {
+                    log.debug("Setting up code completion")
+                }
                 codeCompletionManager.setup(
                     editor,
                     suggestionView,
                     onReady = {
-                        android.util.Log.d("ChatFragment", "✦ Code completion ready!")
+                        if (IdeLogConfig.shouldLogDebug()) {
+                            log.debug("✦ Code completion ready!")
+                        }
                         isSettingUpCompletion = false
                     },
                     onError = { e ->
-                        android.util.Log.e("ChatFragment", "✗ Completion setup failed: ${e.message}", e)
+                        if (IdeLogConfig.shouldLogError()) {
+                            log.error("✗ Completion setup failed: {}", e.message, e)
+                        }
                         isSettingUpCompletion = false
                     }
                 )
             } else {
-                android.util.Log.w("ChatFragment", "Editor or SuggestionView is null, cannot setup")
+                if (IdeLogConfig.shouldLogWarn()) {
+                    log.warn("Editor or SuggestionView is null, cannot setup")
+                }
                 isSettingUpCompletion = false
             }
         }

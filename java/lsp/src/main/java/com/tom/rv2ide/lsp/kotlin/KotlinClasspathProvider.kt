@@ -26,7 +26,6 @@ import com.tom.rv2ide.projects.classpath.IClasspathReader
 import com.tom.rv2ide.projects.classpath.JarFsClasspathReader
 import java.io.File
 import java.util.zip.ZipFile
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
@@ -35,7 +34,6 @@ class KotlinClasspathProvider {
 
   private var compilerService: KotlinCompilerService? = null
   private val classpathReader: IClasspathReader = JarFsClasspathReader()
-  private val log = LoggerFactory.getLogger(KotlinClasspathProvider::class.java)
 
   private var cachedClasspathList: List<String>? = null
   private var cachedClasspath: String? = null

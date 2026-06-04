@@ -16,6 +16,7 @@
  */
 package com.tom.rv2ide.lsp.java.actions.generators
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import android.content.Context
 import com.blankj.utilcode.util.ThreadUtils
 import com.tom.rv2ide.actions.ActionData
@@ -154,7 +155,9 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
   @Suppress("UNCHECKED_CAST")
   override fun postExec(data: ActionData, result: Any) {
     if (result !is List<*> || result.isEmpty() || position < 0) {
-      log.warn("Unable to find any overridable method")
+      if (IdeLogConfig.shouldLogWarn()) {
+        log.warn("Unable to find any overridable method")
+      }
       flashError(data[Context::class.java]!!.getString(R.string.msg_no_overridable_methods))
       return
     }
@@ -185,7 +188,9 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
           .whenComplete { _, error,
             ->
             if (error != null) {
-              log.error("An error occurred overriding methods")
+              if (IdeLogConfig.shouldLogError()) {
+                log.error("An error occurred overriding methods")
+              }
 
               ThreadUtils.runOnUiThread {
                 flashError(

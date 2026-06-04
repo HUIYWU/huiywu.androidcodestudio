@@ -19,7 +19,6 @@ package com.tom.rv2ide.lsp.kotlin
 
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
-import org.slf4j.LoggerFactory
 
 /**
  * Manages automatic imports for Kotlin completions When a completion item requires an import, this
@@ -33,8 +32,6 @@ class KotlinImportManager(
 ) {
 
   companion object {
-    private val log = LoggerFactory.getLogger(KotlinImportManager::class.java)
-
     // Cache of class name to fully qualified name mappings
     private val importCache = ConcurrentHashMap<String, String>()
   }

@@ -22,33 +22,42 @@ import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.FrameLayout
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.databinding.ViewSuggestionBinding
+import org.slf4j.LoggerFactory
 
 class SuggestionView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
 ) : FrameLayout(context, attrs, defStyleAttr) {
-    
+
+    companion object {
+        private val log = LoggerFactory.getLogger(SuggestionView::class.java)
+    }
+
     private val binding: ViewSuggestionBinding
     private var onSuggestionClickListener: (() -> Unit)? = null
-    
+
     init {
         binding = ViewSuggestionBinding.inflate(LayoutInflater.from(context), this, true)
         
         visibility = View.GONE
         elevation = 12f
         translationZ = 12f
-        
         binding.root.setOnClickListener {
-            android.util.Log.d("SuggestionView", "CLICKED!!!")
+            if (IdeLogConfig.shouldLogDebug()) {
+                log.debug("CLICKED!!!")
+            }
             onSuggestionClickListener?.invoke()
         }
     }
-    
+
     fun showSuggestion(suggestion: String, editor: io.github.rosemoe.sora.widget.CodeEditor) {
-        android.util.Log.d("SuggestionView", "showSuggestion called with: $suggestion")
-        
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("showSuggestion called with: {}", suggestion)
+        }
+
         binding.suggestionText.text = suggestion
         
         val cursor = editor.cursor
@@ -87,26 +96,36 @@ class SuggestionView @JvmOverloads constructor(
             .setDuration(150)
             .setInterpolator(android.view.animation.DecelerateInterpolator())
             .withEndAction {
-                android.util.Log.d("SuggestionView", "Animation complete, view visible and clickable")
+                if (IdeLogConfig.shouldLogDebug()) {
+                    log.debug("Animation complete, view visible and clickable")
+                }
             }
             .start()
     }
-    
+
     fun hideSuggestion() {
-        android.util.Log.d("SuggestionView", "hideSuggestion called")
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("hideSuggestion called")
+        }
+
         animate()
             .alpha(0f)
             .setDuration(100)
             .setInterpolator(android.view.animation.AccelerateInterpolator())
             .withEndAction {
                 visibility = View.GONE
-                android.util.Log.d("SuggestionView", "View hidden")
+                if (IdeLogConfig.shouldLogDebug()) {
+                    log.debug("View hidden")
+                }
             }
             .start()
     }
-    
+
     fun setOnSuggestionClickListener(listener: () -> Unit) {
-        android.util.Log.d("SuggestionView", "setOnSuggestionClickListener called")
+        if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("setOnSuggestionClickListener called")
+        }
         onSuggestionClickListener = listener
     }
+
 }

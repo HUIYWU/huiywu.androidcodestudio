@@ -33,12 +33,12 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
   override fun process(task: JavacTaskImpl, processCompilationUnit: Consumer<CompilationUnitTree>) {
     val watch = StopWatch("Process compilation task")
     val trees = task.parse()
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       watch.lapFromLast("Parsed treees")
     }
 
     trees.forEach(processCompilationUnit::accept)
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       watch.lapFromLast("Processed trees")
     }
 
@@ -47,7 +47,7 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     //
     //    val analyzed = JavacTaskUtil.analyze(task, entered)
     task.analyze()
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       watch.lapFromLast("Analyzed all trees")
     }
   }

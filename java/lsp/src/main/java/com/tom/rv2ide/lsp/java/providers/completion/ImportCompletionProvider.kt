@@ -79,7 +79,7 @@ class ImportCompletionProvider(
       return CompletionResult.EMPTY
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogInfo()) {
       log.info("...complete import for path: {}", importPath)
     }
 

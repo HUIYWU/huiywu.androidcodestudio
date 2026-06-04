@@ -12,13 +12,11 @@ import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.IWorkspace
 import java.nio.file.Path
 import kotlinx.coroutines.*
-import org.slf4j.LoggerFactory
 
 class ClangLanguageServer(private val context: Context) : ILanguageServer {
 
   companion object {
     const val SERVER_ID = "clang"
-    private val log = LoggerFactory.getLogger(ClangLanguageServer::class.java)
   }
 
   private val processManager = ClangServerProcessManager(context)

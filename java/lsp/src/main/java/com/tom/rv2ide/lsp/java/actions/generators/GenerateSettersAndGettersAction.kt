@@ -16,6 +16,7 @@
  */
 package com.tom.rv2ide.lsp.java.actions.generators
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import android.content.Context
 import com.blankj.utilcode.util.ThreadUtils
 import com.github.javaparser.StaticJavaParser
@@ -73,7 +74,9 @@ class GenerateSettersAndGettersAction : FieldBasedAction() {
           .whenComplete { _, error,
             ->
             if (error != null) {
-              log.error("Unable to generate setters and getters", error)
+              if (IdeLogConfig.shouldLogError()) {
+                log.error("Unable to generate setters and getters", error)
+              }
               ThreadUtils.runOnUiThread {
                 flashError(
                     data[Context::class.java]!!.getString(
@@ -105,7 +108,9 @@ class GenerateSettersAndGettersAction : FieldBasedAction() {
 
       fields.removeIf { !names.contains("${it.name}: ${it.type}") }
 
-      log.debug("Creating setters/getters for fields: {}", fields.map { it.name })
+      if (IdeLogConfig.shouldLogDebug()) {
+        log.debug("Creating setters/getters for fields: {}", fields.map { it.name })
+      }
 
       generateForFields(data, task, type, fields.map { TreePath(typeFinder.path, it) })
     }

@@ -101,7 +101,7 @@ class ScopeCompletionProvider(
       }
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogInfo()) {
       log.info("...found  {} scope members", list.size)
     }
 

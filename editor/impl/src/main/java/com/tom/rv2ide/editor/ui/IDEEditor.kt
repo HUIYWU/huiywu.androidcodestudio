@@ -261,13 +261,13 @@ constructor(
       return
     }
     if (command == null) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogWarn()) {
         log.warn("Cannot execute command in editor. Command is null.")
       }
       return
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogInfo()) {
       log.info(String.format("Executing command '%s' for completion item.", command.title))
     }
     when (command.command) {
@@ -527,7 +527,7 @@ constructor(
     }
     file
         ?: run {
-          if (IdeLogConfig.shouldLogIde()) {
+          if (IdeLogConfig.shouldLogInfo()) {
             log.info("Cannot notify language server. File is null.")
           }
           return
@@ -1013,7 +1013,7 @@ constructor(
   private fun logError(err: Throwable?, action: String) {
     err ?: return
     if (CancelChecker.isCancelled(err)) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogWarn()) {
         log.warn("{} has been cancelled", action)
       }
     } else {

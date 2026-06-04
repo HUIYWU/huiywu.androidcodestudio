@@ -10,84 +10,101 @@
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
- *
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
 package com.tom.rv2ide.lsp.kotlin
 
-/**
- * Centralized LSP logging control Set ENABLE_LSP_LOGS to false to disable all LSP debug logs
- * * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
- */
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import org.slf4j.LoggerFactory
 
+/**
+ * Centralized KLS logging control.
+ *
+ * - info / warn / error follow the IDE log master switch
+ * - debug / trace additionally require the IDE debug log switch
+ *
+ * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
+ */
 object KslLogs {
-  private const val ENABLE_LSP_LOGS = true // Keep KLS lifecycle/JSON-RPC diagnostics visible for field debugging
-
   private val log = LoggerFactory.getLogger(KslLogs::class.java)
 
   fun error(message: String) {
-    if (ENABLE_LSP_LOGS) log.error(message)
+    if (IdeLogConfig.shouldLogError()) {
+      log.error(message)
+    }
   }
 
   fun error(message: String, throwable: Throwable) {
-    if (ENABLE_LSP_LOGS) log.error(message, throwable)
+    if (IdeLogConfig.shouldLogError()) {
+      log.error(message, throwable)
+    }
   }
 
   fun warn(message: String) {
-    if (ENABLE_LSP_LOGS) log.warn(message)
+    if (IdeLogConfig.shouldLogWarn()) {
+      log.warn(message)
+    }
   }
 
   fun warn(message: String, throwable: Throwable) {
-    if (ENABLE_LSP_LOGS) log.warn(message, throwable)
+    if (IdeLogConfig.shouldLogWarn()) {
+      log.warn(message, throwable)
+    }
   }
 
   fun info(message: String) {
-    if (ENABLE_LSP_LOGS) log.info(message)
+    if (IdeLogConfig.shouldLogInfo()) {
+      log.info(message)
+    }
   }
 
   fun debug(message: String) {
-    if (ENABLE_LSP_LOGS) log.debug(message)
+    if (IdeLogConfig.shouldLogDebug()) {
+      log.debug(message)
+    }
   }
 
   fun trace(message: String) {
-    if (ENABLE_LSP_LOGS) log.trace(message)
+    if (IdeLogConfig.shouldLogTrace()) {
+      log.trace(message)
+    }
   }
 
   // Simple formatted message methods that handle null values
   fun error(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogError()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.error(format, *safeArgs)
     }
   }
 
   fun warn(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogWarn()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.warn(format, *safeArgs)
     }
   }
 
   fun info(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogInfo()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.info(format, *safeArgs)
     }
   }
 
   fun debug(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogDebug()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.debug(format, *safeArgs)
     }
   }
 
   fun trace(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogTrace()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.trace(format, *safeArgs)
     }
   }
 }
+

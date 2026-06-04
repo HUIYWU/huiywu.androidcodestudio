@@ -81,7 +81,9 @@ class AutoFixImportsAction : BaseJavaCodeAction() {
 
   override fun postExec(data: ActionData, result: Any) {
     if (result !is Result) {
-      log.error("Invalid result returned from execAction: {}", result)
+      if (IdeLogConfig.shouldLogError()) {
+        log.error("Invalid result returned from execAction: {}", result)
+      }
       return
     }
 
@@ -134,7 +136,9 @@ class AutoFixImportsAction : BaseJavaCodeAction() {
     val client =
         data.getLanguageClient()
             ?: run {
-              log.warn("No language client found. Cannot perform edits.")
+              if (IdeLogConfig.shouldLogWarn()) {
+                log.warn("No language client found. Cannot perform edits.")
+              }
               return
             }
 
@@ -185,7 +189,9 @@ class AutoFixImportsAction : BaseJavaCodeAction() {
           try {
             docContents ?: diagnostic.source.getCharContent(true).also { docContents = it }
           } catch (e: Exception) {
-            log.error("Failed to get contents of file {}", file, e)
+            if (IdeLogConfig.shouldLogError()) {
+              log.error("Failed to get contents of file {}", file, e)
+            }
             continue
           }
 

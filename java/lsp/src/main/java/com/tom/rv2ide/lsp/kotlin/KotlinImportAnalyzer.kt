@@ -402,7 +402,7 @@ class KotlinImportAnalyzer {
         // Add common Android classes dynamically
         addCommonAndroidClasses()
 
-        log.info(
+        KslLogs.info(
             "Import cache updated with {} classes from {} packages",
             importCache.size,
             packageCache.size,
@@ -414,7 +414,7 @@ class KotlinImportAnalyzer {
           KslLogs.debug("Sample cached classes: {}", sampleClasses)
         }
       } catch (e: Exception) {
-        log.error("Failed to update import cache", e)
+        KslLogs.error("Failed to update import cache", e)
       }
     }
   }
@@ -480,7 +480,7 @@ class KotlinImportAnalyzer {
         }
       }
     } catch (e: Exception) {
-      log.debug("Failed to scan JAR: {}", jarFile.name)
+      KslLogs.debug("Failed to scan JAR: {}", jarFile.name)
     }
 
     return classNames

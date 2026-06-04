@@ -59,7 +59,7 @@ class JavaDiagnosticProvider {
 
     abortIfCancelled()
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       log.debug("Analyzing: {}", file)
     }
 
@@ -67,7 +67,7 @@ class JavaDiagnosticProvider {
     val analyzedAt = analyzeTimestamps[file]
 
     if (analyzedAt?.isAfter(modifiedAt) == true) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogDebug()) {
         log.debug("Using cached analyze results...")
       }
       return cachedDiagnostics
@@ -75,7 +75,7 @@ class JavaDiagnosticProvider {
 
     analyzingThread?.let { analyzingThread ->
       if (analyzing.get()) {
-        if (IdeLogConfig.shouldLogIde()) {
+        if (IdeLogConfig.shouldLogDebug()) {
           log.debug("Cancelling currently analyzing thread...")
         }
         ProgressManager.instance.cancel(analyzingThread)
@@ -113,11 +113,13 @@ class JavaDiagnosticProvider {
           // Do not use Collections.emptyList ()
           // The returned list is accessed and the list returned by Collections.emptyList()
           // throws exception when trying to access.
-          log.info("Using cached diagnostics")
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info("Using cached diagnostics")
+          }
           cachedDiagnostics
         } else DiagnosticResult(file, findDiagnostics(task, file).sortedBy { it.range })
     return result.also {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogDebug()) {
         log.debug("Analyze file completed. Found {} diagnostic items", result.diagnostics.size)
       }
     }
@@ -144,11 +146,13 @@ class JavaDiagnosticProvider {
                 compiler.compile(file).get { task -> doAnalyze(file, task) }
               } catch (err: Throwable) {
                 if (CancelChecker.isCancelled(err)) {
-                  if (IdeLogConfig.shouldLogIde()) {
-                    log.error("Analyze request cancelled")
+                  if (IdeLogConfig.shouldLogWarn()) {
+                    log.warn("Analyze request cancelled")
                   }
                 } else {
-                  log.warn("Unable to analyze file", err)
+                  if (IdeLogConfig.shouldLogWarn()) {
+                    log.warn("Unable to analyze file", err)
+                  }
                 }
                 DiagnosticResult.NO_UPDATE
               } finally {

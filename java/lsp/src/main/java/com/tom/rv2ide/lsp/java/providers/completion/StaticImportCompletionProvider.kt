@@ -114,7 +114,7 @@ class StaticImportCompletionProvider(
       list.add(method(task, value, !endsWithParen, matchLevel, partial))
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       log.debug("...found {} static imports", list.size)
     }
 

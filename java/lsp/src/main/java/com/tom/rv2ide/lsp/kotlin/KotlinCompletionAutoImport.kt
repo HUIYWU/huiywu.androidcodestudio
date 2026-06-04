@@ -18,17 +18,12 @@ package com.tom.rv2ide.lsp.kotlin
 
 import com.tom.rv2ide.lsp.models.CompletionItem
 import java.nio.file.Path
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
 
 class KotlinCompletionAutoImport(private val documentManager: KotlinDocumentManager) {
-
-  companion object {
-    private val log = LoggerFactory.getLogger(KotlinCompletionAutoImport::class.java)
-  }
 
   /**
    * Checks if completion needs import and applies it automatically Call this when user selects a
@@ -52,7 +47,7 @@ class KotlinCompletionAutoImport(private val documentManager: KotlinDocumentMana
 
       return true
     } catch (e: Exception) {
-      log.error("Failed to auto-import for completion", e)
+      KslLogs.error("Failed to auto-import for completion", e)
       return false
     }
   }
@@ -63,7 +58,7 @@ class KotlinCompletionAutoImport(private val documentManager: KotlinDocumentMana
 
       // Check if already imported
       if (content.contains(importStatement)) {
-        log.debug("Import already exists: {}", importStatement)
+        KslLogs.debug("Import already exists: {}", importStatement)
         return true
       }
 
@@ -79,10 +74,10 @@ class KotlinCompletionAutoImport(private val documentManager: KotlinDocumentMana
       documentManager.setDocumentVersion(uri, version)
       documentManager.notifyDocumentChange(file, newContent, version)
 
-      log.info("Auto-imported: {}", importStatement)
+      KslLogs.info("Auto-imported: {}", importStatement)
       return true
     } catch (e: Exception) {
-      log.error("Failed to add import", e)
+      KslLogs.error("Failed to add import", e)
       return false
     }
   }

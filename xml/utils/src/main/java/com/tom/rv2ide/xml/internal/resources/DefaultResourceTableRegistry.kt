@@ -33,6 +33,7 @@ import com.android.aaptcompiler.TableExtractor
 import com.android.aaptcompiler.TableExtractorOptions
 import com.android.aaptcompiler.extractPathData
 import com.google.auto.service.AutoService
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.aapt.logging.IDELogger
 import com.tom.rv2ide.layoutlib.resources.ResourceVisibility.PUBLIC
 import com.tom.rv2ide.xml.internal.resources.DefaultResourceTableRegistry.SingleLineValueEntryType.ACTIVITY_ACTIONS
@@ -83,8 +84,8 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
 
     private val log = LoggerFactory.getLogger(DefaultResourceTableRegistry::class.java)
   }
+  override var isLoggingEnabled: Boolean = IdeLogConfig.shouldLogDebug()
 
-  override var isLoggingEnabled: Boolean = true
   override fun forPackage(name: String, vararg resDirs: File): ResourceTable? {
 
     if (name == PCK_ANDROID) {

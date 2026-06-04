@@ -75,8 +75,8 @@ object TSJavaParser : IJavaParser<TSParseResult> {
       if (result != null) {
         if (result.fileModified == file.lastModified) {
           // cache hit and cache modified == file modified
-          if (IdeLogConfig.shouldLogIde()) {
-            log.info("Using cached parse tree")
+          if (IdeLogConfig.shouldLogDebug()) {
+            log.debug("Using cached parse tree")
           }
           return result
         }
@@ -92,7 +92,7 @@ object TSJavaParser : IJavaParser<TSParseResult> {
       parser.requestCancellationAndWait()
     }
     val parseTree = parser.parseString(content)
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       watch.log()
     }
 

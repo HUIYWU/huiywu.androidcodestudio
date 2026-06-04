@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.lsp.java.actions.generators
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import android.content.Context
 import com.blankj.utilcode.util.ThreadUtils
 import com.github.javaparser.StaticJavaParser
@@ -72,7 +73,9 @@ class GenerateConstructorAction : FieldBasedAction() {
       CompletableFuture.runAsync { generateConstructor(data, selected) }
           .whenComplete { _, error ->
             if (error != null) {
-              log.error("Unable to generate constructor for the selected fields", error)
+              if (IdeLogConfig.shouldLogError()) {
+                log.error("Unable to generate constructor for the selected fields", error)
+              }
               flashError(string.msg_cannot_generate_constructor)
             }
           }
@@ -97,7 +100,9 @@ class GenerateConstructorAction : FieldBasedAction() {
 
       fields.removeIf { !selected.contains("${it.name}: ${it.type}") }
 
-      log.debug("Creating toString() method with fields: {}", fields.map { it.name })
+      if (IdeLogConfig.shouldLogDebug()) {
+        log.debug("Creating toString() method with fields: {}", fields.map { it.name })
+      }
 
       generateForFields(data, task, type, fields.map { TreePath(typeFinder.path, it) })
     }
@@ -116,10 +121,12 @@ class GenerateConstructorAction : FieldBasedAction() {
     val varNames = paths.map { it.leaf as VariableTree }.map { it.name.toString() }
 
     if (paths.isEmpty() || trees.findConstructor(sym, varTypes) != null) {
-      log.warn(
-          "A constructor with same parameter types is already available in class {}",
-          type.simpleName,
-      )
+      if (IdeLogConfig.shouldLogWarn()) {
+        log.warn(
+            "A constructor with same parameter types is already available in class {}",
+            type.simpleName,
+        )
+      }
       flashError(data[Context::class.java]!!.getString(string.msg_constructor_available))
       return
     }
@@ -133,7 +140,9 @@ class GenerateConstructorAction : FieldBasedAction() {
     }
 
     stopWatch.lap("Constructor generated")
-    log.info("Inserting constructor into editor...")
+    if (IdeLogConfig.shouldLogInfo()) {
+      log.info("Inserting constructor into editor...")
+    }
 
     val insertAt = EditHelper.insertAfter(task.task, task.root(), paths.last().leaf)
     val indent = EditHelper.indent(task.task, task.root(), paths.last().leaf)

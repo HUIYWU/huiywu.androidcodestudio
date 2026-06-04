@@ -75,7 +75,7 @@ class ClassNamesCompletionProvider(
     abortIfCancelled()
     abortCompletionIfCancelled()
     val topLevelTypes = compiler.publicTopLevelTypes()
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogInfo()) {
       log.info(
           "class-name completion partial='{}' topLevelTypes={} hasString={} hasInteger={} hasDouble={}",
           partial,
@@ -119,7 +119,7 @@ class ClassNamesCompletionProvider(
       }
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       log.debug("...found {} class names", list.size)
     }
 

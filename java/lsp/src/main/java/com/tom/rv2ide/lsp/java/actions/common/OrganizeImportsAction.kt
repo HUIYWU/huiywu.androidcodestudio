@@ -49,12 +49,14 @@ class OrganizeImportsAction : BaseJavaCodeAction() {
       val server = data[JavaLanguageServer::class.java]
       val settings = server!!.settings as JavaServerSettings
       val output = ImportOrderer.reorderImports(content.toString(), settings.style)
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogDebug()) {
         watch.log()
       }
       output
     } catch (e: FormatterException) {
-      log.error("Failed to reorder imports", e)
+      if (IdeLogConfig.shouldLogError()) {
+        log.error("Failed to reorder imports", e)
+      }
       false
     }
   }

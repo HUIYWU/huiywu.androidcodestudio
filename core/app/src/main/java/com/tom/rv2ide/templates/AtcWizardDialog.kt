@@ -460,10 +460,16 @@ class TemplateAdapter(
     private val onTemplateClick: (Template) -> Unit,
 ) : RecyclerView.Adapter<TemplateVH>() {
 
+  companion object {
+    private val log = LoggerFactory.getLogger(TemplateAdapter::class.java)
+  }
+
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TemplateVH {
     val displayMetrics = ctx.resources.displayMetrics
     val screenWidthDp = displayMetrics.widthPixels / displayMetrics.density
-    android.util.Log.d("TemplateAdapter", "Screen Width DP: $screenWidthDp")
+    if (IdeLogConfig.shouldLogDebug()) {
+      log.debug("Screen Width DP: {}", screenWidthDp)
+    }
     
     val card =
         MaterialCardView(ctx).apply {
@@ -493,12 +499,16 @@ class TemplateAdapter(
           scaleType = ImageView.ScaleType.CENTER_CROP
           
           if (screenWidthDp >= 600) {
-            android.util.Log.d("TemplateAdapter", "Using small size for large screen")
+            if (IdeLogConfig.shouldLogDebug()) {
+              log.debug("Using small size for large screen")
+            }
             layoutParams = LinearLayout.LayoutParams(100.dp, 100.dp).apply {
               gravity = android.view.Gravity.CENTER
             }
           } else {
-            android.util.Log.d("TemplateAdapter", "Using normal size")
+            if (IdeLogConfig.shouldLogDebug()) {
+              log.debug("Using normal size")
+            }
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 160.dp)
           }
         }

@@ -17,8 +17,6 @@
 
 package com.tom.rv2ide.lsp.kotlin
 
-import org.slf4j.LoggerFactory
-
 /**
  * Transforms snippet placeholders with actual parameter names and parameter position comments
  * Example: "Toast.makeText(${1:p0}, ${2:p1}, ${3:p2})" -> "Toast.makeText(context = @param 1
@@ -29,8 +27,6 @@ import org.slf4j.LoggerFactory
 class SnippetTransformer {
 
   companion object {
-    private val log = LoggerFactory.getLogger(SnippetTransformer::class.java)
-
     // Regex to match snippet placeholders like ${1:p0}, ${2:p1}, etc.
     private val SNIPPET_PLACEHOLDER_REGEX = """\$\{(\d+):([^}]+)\}""".toRegex()
   }

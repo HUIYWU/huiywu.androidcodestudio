@@ -59,7 +59,7 @@ class MemberReferenceCompletionProvider(
   ): CompletionResult {
     val trees = Trees.instance(task.task)
     val select = path.leaf as MemberReferenceTree
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogInfo()) {
       log.info("...complete methods of {}", select.qualifierExpression)
     }
 

@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.lsp.java.edits
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.lsp.java.utils.EditHelper
 import io.github.rosemoe.sora.widget.CodeEditor
@@ -51,7 +52,9 @@ class MultipleClassImportEditHandler(
       try {
         edits.addAll(EditHelper.addImportIfNeeded(compiler, file, imported, className))
       } catch (err: Throwable) {
-        log.error("Unable to compute edits to perform import for class: {}", className)
+        if (IdeLogConfig.shouldLogError()) {
+          log.error("Unable to compute edits to perform import for class: {}", className)
+        }
       }
     }
     com.tom.rv2ide.lsp.util.RewriteHelper.performEdits(edits, editor)

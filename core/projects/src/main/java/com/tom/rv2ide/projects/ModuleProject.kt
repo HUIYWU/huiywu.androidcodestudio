@@ -142,7 +142,7 @@ abstract class ModuleProject(
     val topLevelClasses = ZipFileClasspathReader().listClasses(paths).filter { it.isTopLevel }
     topLevelClasses.forEach { this.compileClasspathClasses.append(it.name) }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       watch.log()
       log.debug("Found {} classpaths.", topLevelClasses.size)
     }
@@ -172,7 +172,7 @@ abstract class ModuleProject(
           }
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       watch.log()
       log.debug("Found {} source files.", count)
     }

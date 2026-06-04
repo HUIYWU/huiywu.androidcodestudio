@@ -16,6 +16,7 @@
  */
 package com.tom.rv2ide.lsp.java.actions.generators
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import android.content.Context
 import com.blankj.utilcode.util.ThreadUtils
 import com.github.javaparser.StaticJavaParser
@@ -69,7 +70,9 @@ class GenerateToStringMethodAction : FieldBasedAction() {
       CompletableFuture.runAsync { generateToString(data, selected) }
           .whenComplete { _, error ->
             if (error != null) {
-              log.error("Unable to generate toString() implementation", error)
+              if (IdeLogConfig.shouldLogError()) {
+                log.error("Unable to generate toString() implementation", error)
+              }
               ThreadUtils.runOnUiThread {
                 flashError(
                     data[Context::class.java]!!.getString(R.string.msg_cannot_generate_toString)
@@ -99,7 +102,9 @@ class GenerateToStringMethodAction : FieldBasedAction() {
 
       fields.removeIf { !selected.contains("${it.name}: ${it.type}") }
 
-      log.debug("Creating toString() method with fields: {}", fields.map { it.name })
+      if (IdeLogConfig.shouldLogDebug()) {
+        log.debug("Creating toString() method with fields: {}", fields.map { it.name })
+      }
 
       generateForFields(data, task, type, fields.map { TreePath(typeFinder.path, it) })
     }
@@ -115,7 +120,9 @@ class GenerateToStringMethodAction : FieldBasedAction() {
       ThreadUtils.runOnUiThread {
         flashError(data[Context::class.java]!!.getString(string.msg_toString_overridden))
       }
-      log.warn("toString() method has already been overridden in class {}", type.simpleName)
+      if (IdeLogConfig.shouldLogWarn()) {
+        log.warn("toString() method has already been overridden in class {}", type.simpleName)
+      }
       return
     }
 

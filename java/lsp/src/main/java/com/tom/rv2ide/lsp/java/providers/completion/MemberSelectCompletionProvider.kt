@@ -68,7 +68,7 @@ class MemberSelectCompletionProvider(
               return CompletionResult.EMPTY
             }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogInfo()) {
       log.info("...complete members of {}", select.expression)
     }
 
@@ -154,7 +154,7 @@ class MemberSelectCompletionProvider(
     val methods = mutableMapOf<String, MutableList<ExecutableElement>>()
     val matchLevels = mutableMapOf<String, MatchLevel>()
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       log.debug(
           "DeclaredType {} with members {} in scope: {}",
           typeElement,
@@ -190,7 +190,7 @@ class MemberSelectCompletionProvider(
       }
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       log.debug("Found {} members along with {} methods", list.size, methods.size)
     }
 

@@ -26,7 +26,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
@@ -65,7 +64,6 @@ class ClangDocumentManager(
   )
 
   companion object {
-    private val log = LoggerFactory.getLogger(ClangDocumentManager::class.java)
     private const val DID_CHANGE_DEBOUNCE_MS = 300L
   }
 
@@ -101,6 +99,7 @@ class ClangDocumentManager(
               ClangLogs.error("Failed to read file: {}", file, e)
               return
             }
+
     if (!isServerInitialized()) {
       pendingOpenDocuments[uri] =
           PendingOpenDocument(

@@ -16,6 +16,7 @@
  */
 package com.tom.rv2ide.lsp.java.actions.diagnostics
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
@@ -81,7 +82,9 @@ class FieldToBlockAction : BaseJavaCodeAction() {
 
   override fun postExec(data: ActionData, result: Any) {
     if (result !is ConvertFieldToBlock) {
-      log.warn("Unable to convert field to block")
+      if (IdeLogConfig.shouldLogWarn()) {
+        log.warn("Unable to convert field to block")
+      }
       return
     }
 

@@ -359,7 +359,7 @@ abstract class BaseEditorActivity :
           if (currentHash != lastHash && currentContent.isNotEmpty()) {
             editorContentHashes[editor] = currentHash
             pendingSaveFiles[file] = true
-            if (IdeLogConfig.shouldLogIde()) {
+            if (IdeLogConfig.shouldLogDebug()) {
               log.debug("Content changed, marked for auto-save: ${file.absolutePath}")
             }
           }

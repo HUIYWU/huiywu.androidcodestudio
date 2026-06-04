@@ -19,17 +19,12 @@ package com.tom.rv2ide.lsp.clang
 import com.google.gson.JsonObject
 import com.tom.rv2ide.lsp.models.*
 import java.nio.file.Paths
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
 
 class ClangNotificationHandler(private val documentManager: ClangDocumentManager? = null) {
-
-  companion object {
-    private val log = LoggerFactory.getLogger(ClangNotificationHandler::class.java)
-  }
 
   private var diagnosticsCallback: ((DiagnosticResult) -> Unit)? = null
 

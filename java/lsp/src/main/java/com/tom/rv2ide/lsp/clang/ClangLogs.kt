@@ -16,6 +16,7 @@
  */
 package com.tom.rv2ide.lsp.clang
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import org.slf4j.LoggerFactory
 
 /*
@@ -23,68 +24,66 @@ import org.slf4j.LoggerFactory
  */
 
 object ClangLogs {
-  private const val ENABLE_LSP_LOGS = true
-
   private val log = LoggerFactory.getLogger(ClangLogs::class.java)
 
   fun error(message: String) {
-    if (ENABLE_LSP_LOGS) log.error(message)
+    if (IdeLogConfig.shouldLogError()) log.error(message)
   }
 
   fun error(message: String, throwable: Throwable) {
-    if (ENABLE_LSP_LOGS) log.error(message, throwable)
+    if (IdeLogConfig.shouldLogError()) log.error(message, throwable)
   }
 
   fun warn(message: String) {
-    if (ENABLE_LSP_LOGS) log.warn(message)
+    if (IdeLogConfig.shouldLogWarn()) log.warn(message)
   }
 
   fun warn(message: String, throwable: Throwable) {
-    if (ENABLE_LSP_LOGS) log.warn(message, throwable)
+    if (IdeLogConfig.shouldLogWarn()) log.warn(message, throwable)
   }
 
   fun info(message: String) {
-    if (ENABLE_LSP_LOGS) log.info(message)
+    if (IdeLogConfig.shouldLogInfo()) log.info(message)
   }
 
   fun debug(message: String) {
-    if (ENABLE_LSP_LOGS) log.debug(message)
+    if (IdeLogConfig.shouldLogDebug()) log.debug(message)
   }
 
   fun trace(message: String) {
-    if (ENABLE_LSP_LOGS) log.trace(message)
+    if (IdeLogConfig.shouldLogTrace()) log.trace(message)
   }
 
   fun error(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogError()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.error(format, *safeArgs)
     }
   }
 
   fun warn(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogWarn()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.warn(format, *safeArgs)
     }
   }
 
   fun info(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogInfo()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.info(format, *safeArgs)
     }
   }
 
   fun debug(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogDebug()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.debug(format, *safeArgs)
     }
   }
 
   fun trace(format: String, vararg args: Any?) {
-    if (ENABLE_LSP_LOGS) {
+    if (IdeLogConfig.shouldLogTrace()) {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.trace(format, *safeArgs)
     }

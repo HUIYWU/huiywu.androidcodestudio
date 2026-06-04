@@ -16,6 +16,7 @@
  */
 package com.tom.rv2ide.lsp.java.actions.generators
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
@@ -76,7 +77,9 @@ class GenerateMissingConstructorAction : BaseJavaCodeAction() {
 
   override fun postExec(data: ActionData, result: Any) {
     if (result !is GenerateRecordConstructor) {
-      log.warn("Unable to generate constructor")
+      if (IdeLogConfig.shouldLogWarn()) {
+        log.warn("Unable to generate constructor")
+      }
       return
     }
 

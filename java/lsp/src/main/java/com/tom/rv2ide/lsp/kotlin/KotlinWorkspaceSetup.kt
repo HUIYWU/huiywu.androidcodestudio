@@ -31,12 +31,10 @@ import java.io.File
 import java.nio.file.*
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
-
 class KotlinWorkspaceSetup(
     private val context: Context,
     private val workspace: IWorkspace,
@@ -44,9 +42,6 @@ class KotlinWorkspaceSetup(
     private val backendId: KotlinLspBackendId = KotlinLspBackendId.FWCD,
 ) {
 
-  companion object {
-    private val log = LoggerFactory.getLogger(KotlinWorkspaceSetup::class.java)
-  }
 
   private var compilerService: KotlinCompilerService? = null
   private val classpathProvider = KotlinClasspathProvider()

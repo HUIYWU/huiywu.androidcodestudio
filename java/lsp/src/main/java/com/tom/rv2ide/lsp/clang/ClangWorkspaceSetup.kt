@@ -22,7 +22,6 @@ import com.google.gson.JsonObject
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.utils.Environment
 import java.io.File
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
@@ -31,7 +30,6 @@ import org.slf4j.LoggerFactory
 class ClangWorkspaceSetup(private val context: Context, private val workspace: IWorkspace) {
 
   companion object {
-    private val log = LoggerFactory.getLogger(ClangWorkspaceSetup::class.java)
     private val CPP_EXTENSIONS = setOf("cpp", "cc", "cxx", "c++")
     private val C_EXTENSIONS = setOf("c")
     private val SOURCE_EXTENSIONS = CPP_EXTENSIONS + C_EXTENSIONS

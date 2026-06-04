@@ -72,7 +72,7 @@ class JavaCompilerImpl(context: Context?) : ReusableJavaCompiler(context) {
                 compilerConfig.completionInfo?.cursor?.index ?: -1,
             )
 
-            if (IdeLogConfig.shouldLogIde()) {
+            if (IdeLogConfig.shouldLogDebug()) {
               watch.log()
             }
 

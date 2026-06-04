@@ -72,7 +72,7 @@ class SwitchConstantCompletionProvider(
       return completeIdentifier(task, exprPath, partial, endsWithParen)
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogInfo()) {
       log.info("...complete constants of type {}", type)
     }
 

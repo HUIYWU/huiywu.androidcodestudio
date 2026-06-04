@@ -122,7 +122,7 @@ class CompletionTooltipManager(private val context: Context, private val editor:
               withContext(Dispatchers.Main) { displayTooltip(hoverResult.value, anchorY) }
             }
           } catch (e: Exception) {
-            if (e !is CancellationException && IdeLogConfig.shouldLogIde()) {
+            if (e !is CancellationException && IdeLogConfig.shouldLogDebug()) {
               log.debug("Failed to fetch hover info", e)
             }
           }
@@ -195,7 +195,7 @@ class CompletionTooltipManager(private val context: Context, private val editor:
       try {
         windowManager.removeView(view)
       } catch (e: Exception) {
-        if (IdeLogConfig.shouldLogIde()) {
+        if (IdeLogConfig.shouldLogDebug()) {
           log.debug("Error removing tooltip view", e)
         }
       }

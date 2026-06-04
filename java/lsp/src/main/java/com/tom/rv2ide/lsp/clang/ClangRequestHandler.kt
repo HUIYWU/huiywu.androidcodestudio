@@ -26,7 +26,6 @@ import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
@@ -36,11 +35,10 @@ class ClangRequestHandler(
     private val processManager: ClangServerProcessManager,
     private val documentManager: ClangDocumentManager,
 ) {
-  companion object {
-    private val log = LoggerFactory.getLogger(ClangRequestHandler::class.java)
-    private const val COMPLETION_TIMEOUT = 10000L
-    private const val DEBOUNCE_DELAY = 100L
-  }
+    companion object {
+        private const val COMPLETION_TIMEOUT = 10000L
+        private const val DEBOUNCE_DELAY = 100L
+    }
 
   private val completionConverter = ClangCompletionConverter()
   private val lastCompletionRequest = AtomicLong(0)

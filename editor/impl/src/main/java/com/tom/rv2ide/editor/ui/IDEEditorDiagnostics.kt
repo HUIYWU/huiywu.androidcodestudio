@@ -23,7 +23,7 @@ private class DiagnosticHandler {
       val line = diagnostic.range.start.line
       diagnosticsByLine.getOrPut(line) { mutableListOf() }.add(diagnostic)
     }
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogInfo()) {
       log.info("Updated diagnostics for {} lines", diagnosticsByLine.size)
     }
   }
@@ -58,7 +58,7 @@ private fun IDEEditor.getDiagnosticHandler(): DiagnosticHandler {
 fun IDEEditor.initDiagnosticHandling() {
   // Just create the handler
   getDiagnosticHandler()
-  if (IdeLogConfig.shouldLogIde()) {
+  if (IdeLogConfig.shouldLogInfo()) {
     log.info("Diagnostic handling initialized for editor")
   }
 }
@@ -85,7 +85,7 @@ fun IDEEditor.applyImportFixAtCursor(): Boolean {
 
   val diagnostic = getDiagnosticHandler().getDiagnosticAt(line, column)
   if (diagnostic?.code != "missing_import") {
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogDebug()) {
       log.debug("No import fix available at cursor position")
     }
     return false
@@ -98,7 +98,7 @@ fun IDEEditor.applyImportFixAtCursor(): Boolean {
 
     return when {
       options.isEmpty() -> {
-        if (IdeLogConfig.shouldLogIde()) {
+        if (IdeLogConfig.shouldLogDebug()) {
           log.debug("No import options available")
         }
         false
@@ -107,7 +107,7 @@ fun IDEEditor.applyImportFixAtCursor(): Boolean {
         // Single option - apply directly
         languageServer.handleDiagnosticClick(file.toPath(), range).also { success ->
           if (success) {
-            if (IdeLogConfig.shouldLogIde()) {
+            if (IdeLogConfig.shouldLogInfo()) {
               log.info("Auto-imported: {}", options[0])
             }
           }
@@ -137,7 +137,7 @@ private fun IDEEditor.showImportSelectionDialog(
       .setItems(options.toTypedArray()) { dialog, which ->
         try {
           languageServer.handleDiagnosticClick(filePath, range)
-          if (IdeLogConfig.shouldLogIde()) {
+          if (IdeLogConfig.shouldLogInfo()) {
             log.info("User selected import: {}", options[which])
           }
         } catch (e: Exception) {

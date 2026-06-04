@@ -87,35 +87,35 @@ private constructor(
 
     // The changes must be of same length
     if (deltaPrefix != deltaColumn) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogInfo()) {
         log.info("...unequal change in prefix and column")
       }
       return false
     }
 
     if (position.line == -1 || position.column == -1) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogInfo()) {
         log.info("...invalid cached completion position")
       }
       return false
     }
 
     if (position.line != params.position.line || position.column > params.position.column) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogInfo()) {
         log.info("...cursor line changed")
       }
       return false
     }
 
     if (!DocumentUtils.isSameFile(file, params.file)) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogInfo()) {
         log.info("...no cache available for current file")
       }
       return false
     }
 
     if (!partial.startsWith(prefix) || partial.endsWith(".")) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogInfo()) {
         log.info("...incompatible partial identifier")
       }
       return false

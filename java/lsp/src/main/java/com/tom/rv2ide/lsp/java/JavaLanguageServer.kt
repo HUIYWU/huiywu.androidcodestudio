@@ -171,7 +171,7 @@ class JavaLanguageServer : ILanguageServer {
     }
 
     if (diagnosticProvider!!.isAnalyzing()) {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogWarn()) {
         log.warn("Cancelling source code analysis due to completion request")
       }
       diagnosticProvider.cancel()

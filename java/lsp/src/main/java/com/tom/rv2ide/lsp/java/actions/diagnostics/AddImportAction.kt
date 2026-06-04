@@ -160,7 +160,9 @@ class AddImportAction : BaseJavaCodeAction() {
 
     when (actions.size) {
       0 -> {
-        log.warn("No rewrites found. Cannot perform action")
+        if (IdeLogConfig.shouldLogWarn()) {
+          log.warn("No rewrites found. Cannot perform action")
+        }
       }
 
       1 -> {

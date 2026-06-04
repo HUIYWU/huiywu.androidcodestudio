@@ -114,7 +114,10 @@ class IDEApplication : TermuxApplication() {
     super.onCreate()
 
     IdeLogConfig.setIdeLogsEnabledProvider {
-      GeneralPreferences.ideLogsEnabled && DevOpsPreferences.ideDebugLogsEnabled
+      GeneralPreferences.ideLogsEnabled
+    }
+    IdeLogConfig.setIdeDebugLogsEnabledProvider {
+      DevOpsPreferences.ideDebugLogsEnabled
     }
 
     if (GeneralPreferences.snowfallOverlay && isSnowfallSeasonActive()) {

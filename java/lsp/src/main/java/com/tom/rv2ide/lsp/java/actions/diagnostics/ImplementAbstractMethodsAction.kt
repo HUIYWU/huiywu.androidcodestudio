@@ -16,6 +16,7 @@
  */
 package com.tom.rv2ide.lsp.java.actions.diagnostics
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
@@ -83,7 +84,9 @@ class ImplementAbstractMethodsAction : BaseJavaCodeAction() {
 
   override fun postExec(data: ActionData, result: Any) {
     if (result !is ImplementAbstractMethods) {
-      log.warn("Unable to perform action. Invalid result from execAction(..)")
+      if (IdeLogConfig.shouldLogWarn()) {
+        log.warn("Unable to perform action. Invalid result from execAction(..)")
+      }
       return
     }
 

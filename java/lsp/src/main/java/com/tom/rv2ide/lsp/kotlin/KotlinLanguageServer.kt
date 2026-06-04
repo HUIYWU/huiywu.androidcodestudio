@@ -32,7 +32,6 @@ import kotlinx.coroutines.*
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
@@ -42,7 +41,6 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
   companion object {
     const val SERVER_ID = "kotlin"
-    private val log = LoggerFactory.getLogger(KotlinLanguageServer::class.java)
   }
 
   private var selectedFile: java.nio.file.Path? = null

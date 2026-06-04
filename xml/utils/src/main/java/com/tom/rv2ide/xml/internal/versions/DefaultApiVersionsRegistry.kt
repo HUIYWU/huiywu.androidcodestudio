@@ -14,11 +14,11 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.xml.internal.versions
 
 import androidx.annotation.VisibleForTesting
 import com.google.auto.service.AutoService
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.xml.versions.ApiVersion
 import com.tom.rv2ide.xml.versions.ApiVersions
 import com.tom.rv2ide.xml.versions.ApiVersionsRegistry
@@ -42,7 +42,7 @@ class DefaultApiVersionsRegistry : ApiVersionsRegistry {
     private val log = LoggerFactory.getLogger(DefaultApiVersionsRegistry::class.java)
   }
 
-  override var isLoggingEnabled: Boolean = true
+  override var isLoggingEnabled: Boolean = IdeLogConfig.shouldLogDebug()
 
   override fun forPlatformDir(platform: File): ApiVersions? {
     val key = platform.path
@@ -118,6 +118,7 @@ class DefaultApiVersionsRegistry : ApiVersionsRegistry {
         apiVersion: ApiVersion,
     ) {
       if (apiVersion.isSinceInception()) {
+
         return
       }
 

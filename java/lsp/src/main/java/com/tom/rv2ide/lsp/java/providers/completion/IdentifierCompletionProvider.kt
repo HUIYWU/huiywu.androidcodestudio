@@ -62,7 +62,7 @@ class IdentifierCompletionProvider(
         StaticImportCompletionProvider(file, cursor, compiler, settings, path.compilationUnit)
             .complete(task, path, partial, endsWithParen)
     list.addAll(staticImports.items)
-    if (IdeLogConfig.shouldLogIde()) {
+    if (IdeLogConfig.shouldLogInfo()) {
       log.info(
           "identifier completion partial='{}' preClassItems={} trimToMax={} maxItems={} allLower={} startsUpper={}"
           ,

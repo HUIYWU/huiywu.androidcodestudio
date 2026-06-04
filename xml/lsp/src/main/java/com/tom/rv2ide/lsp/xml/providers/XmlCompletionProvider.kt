@@ -90,7 +90,7 @@ class XmlCompletionProvider(settings: IServerSettings) :
               "Complete at ${params.file.name}:${params.position.line}:${params.position.column}"
           )
       doComplete(params).also {
-        if (IdeLogConfig.shouldLogIde()) {
+        if (IdeLogConfig.shouldLogDebug()) {
           watch.log()
         }
       }

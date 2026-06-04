@@ -24,16 +24,12 @@ import com.tom.rv2ide.lsp.models.CompletionItemKind
 import com.tom.rv2ide.lsp.models.InsertTextFormat
 import com.tom.rv2ide.lsp.models.MatchLevel
 import com.tom.rv2ide.lsp.models.SnippetDescription
-import org.slf4j.LoggerFactory
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
 class ClangCompletionConverter {
 
-  companion object {
-    private val log = LoggerFactory.getLogger(ClangCompletionConverter::class.java)
-  }
 
   fun convert(jsonItems: JsonArray, prefix: String = ""): List<CompletionItem> {
     return jsonItems.mapNotNull { element ->
@@ -77,7 +73,7 @@ class ClangCompletionConverter {
                         snippet = null,
                         allowCommandExecution = false,
                     )
-                log.info(
+                ClangLogs.info(
                     "ClangCompletionConverter: assigned snippetDescription for snippet item: label='{}', insertText='{}', prefix='{}', selectedLength={}, deleteSelected={}",
                     label,
                     insertText,

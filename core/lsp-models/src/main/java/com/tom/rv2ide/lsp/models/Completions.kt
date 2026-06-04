@@ -215,7 +215,7 @@ open class CompletionItem(
   }
   override fun performCompletion(editor: CodeEditor, text: Content, position: CharPosition) {
     try {
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogInfo()) {
         log.info(
             "CompletionItem.performCompletion(position): label='{}', insertText='{}', format={}, line={}, column={}, index={}, kind={}, command={}, additionalTextEditsCount={}, additionalEditHandler={}, editorClass={}",
             ideLabel,
@@ -255,7 +255,7 @@ open class CompletionItem(
   override fun performCompletion(editor: CodeEditor, text: Content, line: Int, column: Int) {
     try {
       val index = if (line == 0 && column == 0) 0 else text.getCharIndex(line, column)
-      if (IdeLogConfig.shouldLogIde()) {
+      if (IdeLogConfig.shouldLogInfo()) {
         log.info(
             "CompletionItem.performCompletion(line,column): label='{}', insertText='{}', format={}, line={}, column={}, index={}, kind={}, command={}, additionalTextEditsCount={}, additionalEditHandler={}, editorClass={}",
             ideLabel,
