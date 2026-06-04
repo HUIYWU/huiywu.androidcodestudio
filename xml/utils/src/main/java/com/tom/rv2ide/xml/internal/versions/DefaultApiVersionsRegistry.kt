@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory
 class DefaultApiVersionsRegistry : ApiVersionsRegistry {
 
   private val versions = ConcurrentHashMap<String, ApiVersions>()
+  private val versionLocks = ConcurrentHashMap<String, Any>()
 
   companion object {
     private val log = LoggerFactory.getLogger(DefaultApiVersionsRegistry::class.java)
@@ -45,12 +46,15 @@ class DefaultApiVersionsRegistry : ApiVersionsRegistry {
 
   override fun forPlatformDir(platform: File): ApiVersions? {
     val key = platform.path
-    if (versions.containsKey(key)) {
-      return versions[key]
-    }
+    versions[key]?.let { return it }
 
-    val version = readApiVersions(platform) ?: return null
-    return versions.computeIfAbsent(key) { version }
+    val lock = versionLocks.computeIfAbsent(key) { Any() }
+    synchronized(lock) {
+      versions[key]?.let { return it }
+      val version = readApiVersions(platform) ?: return null
+      versions[key] = version
+      return version
+    }
   }
 
   private fun readApiVersions(platform: File): ApiVersions? {
@@ -74,6 +78,7 @@ class DefaultApiVersionsRegistry : ApiVersionsRegistry {
 
   override fun clear() {
     versions.clear()
+    versionLocks.clear()
   }
 
   private class ApiVersionsParserInternal(private val currentApiVersions: DefaultApiVersions) :

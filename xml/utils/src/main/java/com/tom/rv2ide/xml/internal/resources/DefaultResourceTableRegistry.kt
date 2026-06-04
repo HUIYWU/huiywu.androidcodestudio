@@ -70,10 +70,14 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   }
 
   private val tables = ConcurrentHashMap<String, ResourceTable>()
+  private val tableLocks = ConcurrentHashMap<String, Any>()
   private val platformTables = ConcurrentHashMap<String, ResourceTable>()
+  private val platformTableLocks = ConcurrentHashMap<String, Any>()
   private val manifestAttrs = ConcurrentHashMap<String, ResourceTable>()
+  private val manifestAttrLocks = ConcurrentHashMap<String, Any>()
   private val singleLineValueEntries =
       ConcurrentHashMap<String, ConcurrentHashMap<SingleLineValueEntryType, List<String>>>()
+  private val singleLineEntryLocks = ConcurrentHashMap<String, Any>()
 
   companion object {
 
@@ -87,16 +91,16 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       return platformResourceTable(resDirs.iterator().next())
     }
 
-    if (tables.containsKey(name)) {
-      return tables[name]
-    }
+    tables[name]?.let { return it }
 
-    val table = createTable(*resDirs) ?: return null
-    return tables.computeIfAbsent(name) {
-      table.also {
-        it.packages.firstOrNull()?.name = name
-        resDirs.forEach { resDir -> addFileReferences(it, name, resDir) }
-      }
+    val lock = tableLocks.computeIfAbsent(name) { Any() }
+    synchronized(lock) {
+      tables[name]?.let { return it }
+      val table = createTable(*resDirs) ?: return null
+      table.packages.firstOrNull()?.name = name
+      resDirs.forEach { resDir -> addFileReferences(table, name, resDir) }
+      tables[name] = table
+      return table
     }
   }
 
@@ -113,15 +117,15 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
 
   override fun getManifestAttrTable(platform: File): ResourceTable? {
     val key = platform.path
-    if (manifestAttrs.containsKey(key)) {
-      return manifestAttrs[key]
-    }
+    manifestAttrs[key]?.let { return it }
 
-    val table = createManifestAttrTable(platform) ?: return null
-    return manifestAttrs.computeIfAbsent(key) {
-      table.also {
-        it.packages.firstOrNull()?.name = PCK_ANDROID
-      }
+    val lock = manifestAttrLocks.computeIfAbsent(key) { Any() }
+    synchronized(lock) {
+      manifestAttrs[key]?.let { return it }
+      val table = createManifestAttrTable(platform) ?: return null
+      table.packages.firstOrNull()?.name = PCK_ANDROID
+      manifestAttrs[key] = table
+      return table
     }
   }
 
@@ -151,6 +155,13 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
 
   override fun clear() {
     tables.clear()
+    tableLocks.clear()
+    platformTables.clear()
+    platformTableLocks.clear()
+    manifestAttrs.clear()
+    manifestAttrLocks.clear()
+    singleLineValueEntries.clear()
+    singleLineEntryLocks.clear()
   }
 
   private fun getSingleLineEntry(platform: File, type: SingleLineValueEntryType): List<String> {
@@ -158,12 +169,16 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       ConcurrentHashMap<SingleLineValueEntryType, List<String>>()
     }
 
-    return entries[type]
-        ?: run {
-          val lines = readSingleLineEntry(platform, type)
-          entries.putIfAbsent(type, lines)
-          entries[type] ?: emptyList()
-        }
+    entries[type]?.let { return it }
+
+    val lockKey = "${platform.path}#${type.name}"
+    val lock = singleLineEntryLocks.computeIfAbsent(lockKey) { Any() }
+    synchronized(lock) {
+      entries[type]?.let { return it }
+      val lines = readSingleLineEntry(platform, type)
+      entries[type] = lines
+      return lines
+    }
   }
 
   private fun readSingleLineEntry(
@@ -207,16 +222,16 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
 
   private fun platformResourceTable(dir: File): ResourceTable? {
     val key = dir.path
-    if (platformTables.containsKey(key)) {
-      return platformTables[key]
-    }
+    platformTables[key]?.let { return it }
 
-    val table = createTable(dir) ?: return null
-    return platformTables.computeIfAbsent(key) {
-      table.also {
-        it.packages.firstOrNull()?.name = PCK_ANDROID
-        addFileReferences(it, PCK_ANDROID, dir)
-      }
+    val lock = platformTableLocks.computeIfAbsent(key) { Any() }
+    synchronized(lock) {
+      platformTables[key]?.let { return it }
+      val table = createTable(dir) ?: return null
+      table.packages.firstOrNull()?.name = PCK_ANDROID
+      addFileReferences(table, PCK_ANDROID, dir)
+      platformTables[key] = table
+      return table
     }
   }
 

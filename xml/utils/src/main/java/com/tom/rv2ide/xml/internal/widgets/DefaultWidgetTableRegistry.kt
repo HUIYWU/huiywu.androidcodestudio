@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory
 class DefaultWidgetTableRegistry : WidgetTableRegistry {
 
   private val tables = ConcurrentHashMap<String, WidgetTable>()
+  private val tableLocks = ConcurrentHashMap<String, Any>()
 
   companion object {
 
@@ -42,14 +43,16 @@ class DefaultWidgetTableRegistry : WidgetTableRegistry {
   override var isLoggingEnabled: Boolean = true
 
   override fun forPlatformDir(platform: File): WidgetTable? {
-    var table = tables[platform.path]
-    if (table != null) {
+    val key = platform.path
+    tables[key]?.let { return it }
+
+    val lock = tableLocks.computeIfAbsent(key) { Any() }
+    synchronized(lock) {
+      tables[key]?.let { return it }
+      val table = createTable(platform) ?: return null
+      tables[key] = table
       return table
     }
-
-    table = createTable(platform) ?: return null
-    tables[platform.path] = table
-    return table
   }
 
   private fun createTable(platformDir: File): WidgetTable? {
@@ -74,5 +77,6 @@ class DefaultWidgetTableRegistry : WidgetTableRegistry {
 
   override fun clear() {
     tables.clear()
+    tableLocks.clear()
   }
 }
