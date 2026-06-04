@@ -222,14 +222,27 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
 
   private fun platformResourceTable(dir: File): ResourceTable? {
     val key = dir.path
-    platformTables[key]?.let { return it }
+    platformTables[key]?.let {
+      if (isLoggingEnabled) {
+        log.debug("Reusing cached platform resource table (fast path): {}", key)
+      }
+      return it
+    }
 
     val lock = platformTableLocks.computeIfAbsent(key) { Any() }
     synchronized(lock) {
-      platformTables[key]?.let { return it }
+      platformTables[key]?.let {
+        if (isLoggingEnabled) {
+          log.debug("Reusing cached platform resource table (locked path): {}", key)
+        }
+        return it
+      }
       val table = createTable(dir) ?: return null
       table.packages.firstOrNull()?.name = PCK_ANDROID
       addFileReferences(table, PCK_ANDROID, dir)
+      if (isLoggingEnabled) {
+        log.debug("Created platform resource table: {}", key)
+      }
       platformTables[key] = table
       return table
     }

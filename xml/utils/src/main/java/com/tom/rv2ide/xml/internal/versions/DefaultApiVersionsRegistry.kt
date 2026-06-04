@@ -46,12 +46,25 @@ class DefaultApiVersionsRegistry : ApiVersionsRegistry {
 
   override fun forPlatformDir(platform: File): ApiVersions? {
     val key = platform.path
-    versions[key]?.let { return it }
+    versions[key]?.let {
+      if (isLoggingEnabled) {
+        log.debug("Reusing cached API versions table for platform dir (fast path): {}", key)
+      }
+      return it
+    }
 
     val lock = versionLocks.computeIfAbsent(key) { Any() }
     synchronized(lock) {
-      versions[key]?.let { return it }
+      versions[key]?.let {
+        if (isLoggingEnabled) {
+          log.debug("Reusing cached API versions table for platform dir (locked path): {}", key)
+        }
+        return it
+      }
       val version = readApiVersions(platform) ?: return null
+      if (isLoggingEnabled) {
+        log.debug("Created API versions table for platform dir: {}", key)
+      }
       versions[key] = version
       return version
     }

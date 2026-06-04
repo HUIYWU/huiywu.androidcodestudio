@@ -44,12 +44,25 @@ class DefaultWidgetTableRegistry : WidgetTableRegistry {
 
   override fun forPlatformDir(platform: File): WidgetTable? {
     val key = platform.path
-    tables[key]?.let { return it }
+    tables[key]?.let {
+      if (isLoggingEnabled) {
+        log.debug("Reusing cached widget table for platform dir (fast path): {}", key)
+      }
+      return it
+    }
 
     val lock = tableLocks.computeIfAbsent(key) { Any() }
     synchronized(lock) {
-      tables[key]?.let { return it }
+      tables[key]?.let {
+        if (isLoggingEnabled) {
+          log.debug("Reusing cached widget table for platform dir (locked path): {}", key)
+        }
+        return it
+      }
       val table = createTable(platform) ?: return null
+      if (isLoggingEnabled) {
+        log.debug("Created widget table for platform dir: {}", key)
+      }
       tables[key] = table
       return table
     }
