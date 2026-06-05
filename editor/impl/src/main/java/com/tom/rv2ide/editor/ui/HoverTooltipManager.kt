@@ -278,93 +278,54 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
   ): CharSequence {
     val builder = android.text.SpannableStringBuilder(text)
 
+    val darkTheme = isDarkTheme()
     val keywordColor =
-        readableColor(
-            com.google.android.material.color.MaterialColors.getColor(
-                context,
-                R.attr.colorPrimary,
-                0xFF4FC3F7.toInt(),
-            ),
+        readableAccentColor(
+            if (darkTheme) 0xFF82B1FF.toInt() else 0xFF0D47A1.toInt(),
             backgroundColor,
             defaultTextColor,
-            if (isDarkTheme()) 0xFF81D4FA.toInt() else 0xFF1565C0.toInt(),
         )
     val typeColor =
-        readableColor(
-            com.google.android.material.color.MaterialColors.getColor(
-                context,
-                R.attr.colorTertiary,
-                0xFFFFB74D.toInt(),
-            ),
+        readableAccentColor(
+            if (darkTheme) 0xFFFFCC80.toInt() else 0xFFE65100.toInt(),
             backgroundColor,
             defaultTextColor,
-            if (isDarkTheme()) 0xFFFFCC80.toInt() else 0xFFEF6C00.toInt(),
         )
     val stringColor =
-        readableColor(
-            com.google.android.material.color.MaterialColors.getColor(
-                context,
-                R.attr.colorSecondary,
-                0xFFA5D6A7.toInt(),
-            ),
+        readableAccentColor(
+            if (darkTheme) 0xFFA5D6A7.toInt() else 0xFF1B5E20.toInt(),
             backgroundColor,
             defaultTextColor,
-            if (isDarkTheme()) 0xFFA5D6A7.toInt() else 0xFF2E7D32.toInt(),
         )
     val commentColor =
-        readableColor(
-            com.google.android.material.color.MaterialColors.getColor(
-                context,
-                R.attr.colorOnSurfaceVariant,
-                0xFFBDBDBD.toInt(),
-            ),
+        readableMutedColor(
+            if (darkTheme) 0xFFB0BEC5.toInt() else 0xFF546E7A.toInt(),
             backgroundColor,
             defaultTextColor,
-            0xFFBDBDBD.toInt(),
         )
     val functionColor =
-        readableColor(
-            com.google.android.material.color.MaterialColors.getColor(
-                context,
-                R.attr.colorPrimary,
-                0xFF64B5F6.toInt(),
-            ),
+        readableAccentColor(
+            if (darkTheme) 0xFF80CBC4.toInt() else 0xFF00695C.toInt(),
             backgroundColor,
             defaultTextColor,
-            if (isDarkTheme()) 0xFF64B5F6.toInt() else 0xFF0D47A1.toInt(),
         )
     val annotationColor =
-        readableColor(
-            com.google.android.material.color.MaterialColors.getColor(
-                context,
-                R.attr.colorTertiary,
-                0xFFCE93D8.toInt(),
-            ),
+        readableAccentColor(
+            if (darkTheme) 0xFFE1BEE7.toInt() else 0xFF6A1B9A.toInt(),
             backgroundColor,
             defaultTextColor,
-            if (isDarkTheme()) 0xFFCE93D8.toInt() else 0xFF6A1B9A.toInt(),
         )
     val numberColor =
-        readableColor(
-            com.google.android.material.color.MaterialColors.getColor(
-                context,
-                R.attr.colorSecondary,
-                0xFFFFAB91.toInt(),
-            ),
+        readableAccentColor(
+            if (darkTheme) 0xFFFFAB91.toInt() else 0xFFBF360C.toInt(),
             backgroundColor,
             defaultTextColor,
-            if (isDarkTheme()) 0xFFFFAB91.toInt() else 0xFFD84315.toInt(),
         )
     val symbolColor =
-        readableColor(
-            com.google.android.material.color.MaterialColors.getColor(
-                context,
-                R.attr.colorOnSurfaceVariant,
-                0xFF90A4AE.toInt(),
-            ),
+        readableMutedColor(
+            if (darkTheme) 0xFFCFD8DC.toInt() else 0xFF455A64.toInt(),
             backgroundColor,
             defaultTextColor,
-            if (isDarkTheme()) 0xFFB0BEC5.toInt() else 0xFF546E7A.toInt(),
         )
 
     val occupied = BooleanArray(text.length)
@@ -483,6 +444,25 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
     )
   }
 
+  private fun readableMutedColor(candidate: Int, background: Int, defaultTextColor: Int): Int {
+    return if (contrastRatio(candidate, background) >= MIN_HOVER_TEXT_CONTRAST) {
+      candidate
+    } else {
+      defaultTextColor
+    }
+  }
+
+  private fun readableAccentColor(candidate: Int, background: Int, defaultTextColor: Int): Int {
+    if (contrastRatio(candidate, background) >= MIN_HOVER_TEXT_CONTRAST) {
+      return candidate
+    }
+    val boosted = shiftColorForContrast(candidate, background)
+    if (contrastRatio(boosted, background) >= MIN_HOVER_TEXT_CONTRAST) {
+      return boosted
+    }
+    return defaultTextColor
+  }
+
   private fun readableColor(candidate: Int, background: Int, defaultTextColor: Int, fallback: Int): Int {
     if (contrastRatio(candidate, background) >= MIN_HOVER_TEXT_CONTRAST) {
       return candidate
@@ -491,6 +471,22 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
       return fallback
     }
     return defaultTextColor
+  }
+
+  private fun shiftColorForContrast(color: Int, background: Int): Int {
+    val lighten = !isDarkTheme()
+    val factor = if (lighten) 0.18f else -0.18f
+    return shiftTowards(color, factor)
+  }
+
+  private fun shiftTowards(color: Int, factor: Float): Int {
+    val clamped = factor.coerceIn(-1f, 1f)
+    fun channel(value: Int): Int {
+      val target = if (clamped >= 0f) 255 else 0
+      val amount = kotlin.math.abs(clamped)
+      return (value + ((target - value) * amount)).toInt().coerceIn(0, 255)
+    }
+    return Color.argb(255, channel(Color.red(color)), channel(Color.green(color)), channel(Color.blue(color)))
   }
 
   private fun contrastRatio(foreground: Int, background: Int): Double {

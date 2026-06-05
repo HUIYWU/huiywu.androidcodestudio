@@ -15,7 +15,6 @@
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
 package com.tom.rv2ide.editor.ui
-
 import android.content.Intent
 import android.net.Uri
 import com.tom.rv2ide.common.logging.IdeLogConfig
@@ -31,6 +30,7 @@ import kotlin.math.min
 import org.slf4j.LoggerFactory
 
 
+
 /**
  * Completion window for the editor.
  *
@@ -40,6 +40,7 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
 
   private var listView: ListView? = null
   private val items: MutableList<CompletionItem> = mutableListOf()
+  @Volatile private var latestPublisherGeneration: Long = -1
 
   companion object {
 
@@ -184,7 +185,8 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
     }
     super.cancelCompletion()
   }
-override fun requireCompletion() {
+
+  override fun requireCompletion() {
     if (cancelShowUp || !isEnabled || !editor.isAttachedToWindow) {
       return
     }
@@ -227,11 +229,26 @@ override fun requireCompletion() {
     requestTime = System.nanoTime()
     currentSelection = -1
 
-
     publisher =
         IDECompletionPublisher(
             editor.handler,
             {
+              val currentPublisher = publisher as? IDECompletionPublisher ?: return@IDECompletionPublisher
+              if (
+                  currentPublisher.generation != latestPublisherGeneration ||
+                      currentPublisher.isCancelled()
+              ) {
+                if (IdeLogConfig.shouldLogDebug()) {
+                  log.debug(
+                      "Dropping stale completion UI update: generation={}, latestGeneration={}, cancelled={}",
+                      currentPublisher.generation,
+                      latestPublisherGeneration,
+                      currentPublisher.isCancelled(),
+                  )
+                }
+                return@IDECompletionPublisher
+              }
+
               val items = publisher.items
 
               this.items.apply {
@@ -266,6 +283,7 @@ override fun requireCompletion() {
         )
 
     publisher.setUpdateThreshold(1)
+    latestPublisherGeneration = (publisher as IDECompletionPublisher).generation
 
     completionThread = CompletionThread(requestTime, publisher)
     completionThread.name = "CompletionThread-$requestTime"
@@ -275,3 +293,4 @@ override fun requireCompletion() {
     completionThread.start()
   }
 }
+

@@ -61,13 +61,21 @@ class KotlinCompletionConverter {
   fun setJavaCompilerBridge(bridge: KotlinJavaCompilerBridge) {
     this.javaCompilerBridge = bridge
   }
-
   suspend fun convertWithClasspathEnhancement(
       itemsArray: JsonArray,
       fileContent: String,
       prefix: String,
   ): List<CompletionItem> = withContext(cpuDispatcher) {
       KslLogs.debug("Converting {} items with classpath enhancement", itemsArray.size())
+
+      if (itemsArray.size() >= 50) {
+          KslLogs.debug(
+              "Using large-candidate fast path for completion conversion: items={}, prefix='{}'",
+              itemsArray.size(),
+              prefix,
+          )
+          return@withContext convertFast(itemsArray, fileContent, prefix)
+      }
   
       // Process BOTH in parallel
       val lspItemsDeferred = async { convertFast(itemsArray, fileContent, prefix) }
@@ -94,6 +102,7 @@ class KotlinCompletionConverter {
       )
       allItems
   }
+
 
   /** Get completion items from classpath (Java compiler) */
   private fun getClasspathCompletions(prefix: String, fileContent: String): List<CompletionItem> {

@@ -14,12 +14,12 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.editor.ui
 
 import android.os.Handler
 import io.github.rosemoe.sora.lang.completion.CompletionItem
 import io.github.rosemoe.sora.lang.completion.CompletionPublisher
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * [CompletionPublisher] implementation for AndroidIDE.
@@ -29,12 +29,28 @@ import io.github.rosemoe.sora.lang.completion.CompletionPublisher
 class IDECompletionPublisher(handler: Handler, callback: Runnable, languageInterruptionLevel: Int) :
     CompletionPublisher(handler, callback, languageInterruptionLevel) {
 
+  companion object {
+    private val generationCounter = AtomicLong()
+  }
+
+  val generation: Long = generationCounter.incrementAndGet()
+
+  @Volatile private var cancelled = false
+
   init {
     setUpdateThreshold(1)
   }
+
+  override fun cancel() {
+    cancelled = true
+    super.cancel()
+  }
+
+  fun isCancelled(): Boolean = cancelled
 
   /** Adds the given [completion items][items] to the completion list. */
   fun <CompletionItemT : CompletionItem> addLSPItems(items: Collection<CompletionItemT>) {
     super.addItems(items)
   }
 }
+

@@ -49,6 +49,7 @@ class KotlinRequestHandler(
 
   // Debouncing for rapid typing
   private val lastCompletionRequest = AtomicLong(0)
+  private val completionRequestSeq = AtomicLong(0)
   private val lastHoverRequest = AtomicLong(0)
   private var activeCompletionJob: Job? = null
   private var javaCompilerBridge: KotlinJavaCompilerBridge? = null
@@ -102,28 +103,33 @@ class KotlinRequestHandler(
       if (params.position.line < 0 || params.position.column < 0) {
           return@coroutineScope CompletionResult(emptyList())
       }
-  
+
       activeCompletionJob?.cancel()
-  
+
       val requestTimestamp = System.currentTimeMillis()
+      val requestId = completionRequestSeq.incrementAndGet()
       lastCompletionRequest.set(requestTimestamp)
-  
+
       delay(50L) // Reduced from 100L
-  
-      if (lastCompletionRequest.get() != requestTimestamp) {
+
+      if (lastCompletionRequest.get() != requestTimestamp || completionRequestSeq.get() != requestId) {
           return@coroutineScope CompletionResult(emptyList())
       }
-  
+
       return@coroutineScope try {
           val deferred = CompletableDeferred<CompletionResult>()
-  
+
           val fileContent = params.content?.toString() ?: ""
           val prefix = extractPrefix(fileContent, params.position)
-  
+
           val uri = params.file.toUri().toString()
           val currentTime = System.currentTimeMillis()
           val lastSync = lastSyncTime[uri] ?: 0L
-  
+
+          if (completionRequestSeq.get() != requestId) {
+              return@coroutineScope CompletionResult(emptyList())
+          }
+
           // Keep KLS in sync before requesting completion. The previous fire-and-forget sync could let
           // textDocument/completion race ahead of didOpen/didChange, producing stale suggestions.
           if (!documentManager.isDocumentOpen(uri)) {
@@ -136,7 +142,11 @@ class KotlinRequestHandler(
               documentManager.notifyDocumentChange(params.file, fileContent, newVersion)
               lastSyncTime[uri] = currentTime
           }
-  
+
+          if (completionRequestSeq.get() != requestId) {
+              return@coroutineScope CompletionResult(emptyList())
+          }
+
           val lspParams = JsonObject().apply {
               add("textDocument", JsonObject().apply { addProperty("uri", uri) })
               add("position", JsonObject().apply {
@@ -145,15 +155,20 @@ class KotlinRequestHandler(
               })
               add("context", createCompletionContext(params))
           }
-  
+
           processManager.sendRequest("textDocument/completion", lspParams) { result ->
               launch {
                   try {
+                      if (completionRequestSeq.get() != requestId) {
+                          deferred.complete(CompletionResult(emptyList()))
+                          return@launch
+                      }
+
                       if (result == null) {
                           deferred.complete(CompletionResult(emptyList()))
                           return@launch
                       }
-  
+
                       val itemsArray = when {
                           result.has("items") -> result.getAsJsonArray("items")
                           result.isJsonArray -> result.asJsonArray
@@ -162,9 +177,19 @@ class KotlinRequestHandler(
                               return@launch
                           }
                       }
-  
+
+                      if (completionRequestSeq.get() != requestId) {
+                          deferred.complete(CompletionResult(emptyList()))
+                          return@launch
+                      }
+
                       val items = completionConverter.convertWithClasspathEnhancement(itemsArray, fileContent, prefix)
-  
+
+                      if (completionRequestSeq.get() != requestId) {
+                          deferred.complete(CompletionResult(emptyList()))
+                          return@launch
+                      }
+
                       deferred.complete(CompletionResult(items))
                   } catch (e: Exception) {
                       KslLogs.error("Error processing completion", e)
@@ -172,7 +197,7 @@ class KotlinRequestHandler(
                   }
               }
           }
-  
+
           withTimeoutOrNull(COMPLETION_TIMEOUT) { deferred.await() } ?: CompletionResult(emptyList())
       } catch (e: Exception) {
           KslLogs.error("Error during completion", e)
