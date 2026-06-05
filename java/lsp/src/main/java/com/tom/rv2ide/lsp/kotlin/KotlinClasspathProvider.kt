@@ -23,7 +23,7 @@ import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.projects.classpath.ClassInfo
 import com.tom.rv2ide.projects.classpath.IClasspathReader
-import com.tom.rv2ide.projects.classpath.JarFsClasspathReader
+import com.tom.rv2ide.projects.classpath.ZipFileClasspathReader
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -33,7 +33,7 @@ import java.util.zip.ZipFile
 class KotlinClasspathProvider {
 
   private var compilerService: KotlinCompilerService? = null
-  private val classpathReader: IClasspathReader = JarFsClasspathReader()
+  private val classpathReader: IClasspathReader = ZipFileClasspathReader()
 
   private var cachedClasspathList: List<String>? = null
   private var cachedClasspath: String? = null

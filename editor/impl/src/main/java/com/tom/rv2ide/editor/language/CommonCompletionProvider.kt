@@ -30,6 +30,8 @@ import io.github.rosemoe.sora.text.CharPosition
 import io.github.rosemoe.sora.text.ContentReference
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
+import kotlin.math.max
+import kotlin.math.min
 import org.slf4j.LoggerFactory
 
 /**
@@ -67,9 +69,34 @@ internal class CommonCompletionProvider(
         try {
           setupLookupForCompletion(file)
           val prefix = CompletionHelper.computePrefix(content, position, prefixMatcher)
+          val contentLength = content.length()
+          val safeLine = max(0, position.line)
+          val lineText = if (safeLine < content.lineCount) content.getLine(safeLine) else ""
+          val safeColumn = min(max(0, position.column), lineText.length)
+          val safeIndex = min(max(0, position.index), contentLength)
+
+          if (
+              safeLine != position.line ||
+                  safeColumn != position.column ||
+                  safeIndex != position.index
+          ) {
+            log.debug(
+                "Normalized completion position for file={}: line {}->{} column {}->{} index {}->{} contentLength={} lineLength={}",
+                file,
+                position.line,
+                safeLine,
+                position.column,
+                safeColumn,
+                position.index,
+                safeIndex,
+                contentLength,
+                lineText.length,
+            )
+          }
+
           val params =
               CompletionParams(
-                  Position(position.line, position.column, position.index),
+                  Position(safeLine, safeColumn, safeIndex),
                   file,
                   cancelChecker,
               )

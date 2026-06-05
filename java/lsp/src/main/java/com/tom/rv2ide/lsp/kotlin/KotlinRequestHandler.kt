@@ -110,9 +110,22 @@ class KotlinRequestHandler(
       val requestId = completionRequestSeq.incrementAndGet()
       lastCompletionRequest.set(requestTimestamp)
 
+      val initialContent = params.content?.toString() ?: ""
+      val initialPrefix = extractPrefix(initialContent, params.position)
+      KslLogs.debug(
+          "completion request start requestId={} file={} line={} column={} prefix='{}' contentLength={}",
+          requestId,
+          params.file,
+          params.position.line,
+          params.position.column,
+          initialPrefix,
+          initialContent.length,
+      )
+
       delay(50L) // Reduced from 100L
 
       if (lastCompletionRequest.get() != requestTimestamp || completionRequestSeq.get() != requestId) {
+          KslLogs.debug("completion stale drop before sync requestId={}", requestId)
           return@coroutineScope CompletionResult(emptyList())
       }
 
@@ -127,6 +140,7 @@ class KotlinRequestHandler(
           val lastSync = lastSyncTime[uri] ?: 0L
 
           if (completionRequestSeq.get() != requestId) {
+              KslLogs.debug("completion stale drop before document sync requestId={}", requestId)
               return@coroutineScope CompletionResult(emptyList())
           }
 
@@ -144,6 +158,7 @@ class KotlinRequestHandler(
           }
 
           if (completionRequestSeq.get() != requestId) {
+              KslLogs.debug("completion stale drop after document sync requestId={}", requestId)
               return@coroutineScope CompletionResult(emptyList())
           }
 
@@ -160,11 +175,13 @@ class KotlinRequestHandler(
               launch {
                   try {
                       if (completionRequestSeq.get() != requestId) {
+                          KslLogs.debug("completion stale drop before response processing requestId={}", requestId)
                           deferred.complete(CompletionResult(emptyList()))
                           return@launch
                       }
 
                       if (result == null) {
+                          KslLogs.debug("completion result null requestId={}", requestId)
                           deferred.complete(CompletionResult(emptyList()))
                           return@launch
                       }
@@ -173,12 +190,14 @@ class KotlinRequestHandler(
                           result.has("items") -> result.getAsJsonArray("items")
                           result.isJsonArray -> result.asJsonArray
                           else -> {
+                              KslLogs.debug("completion result shape unsupported requestId={}", requestId)
                               deferred.complete(CompletionResult(emptyList()))
                               return@launch
                           }
                       }
 
                       if (completionRequestSeq.get() != requestId) {
+                          KslLogs.debug("completion stale drop before convert requestId={} lspItemCount={}", requestId, itemsArray.size())
                           deferred.complete(CompletionResult(emptyList()))
                           return@launch
                       }
@@ -186,21 +205,32 @@ class KotlinRequestHandler(
                       val items = completionConverter.convertWithClasspathEnhancement(itemsArray, fileContent, prefix)
 
                       if (completionRequestSeq.get() != requestId) {
+                          KslLogs.debug("completion stale drop after convert requestId={} convertedItemCount={}", requestId, items.size)
                           deferred.complete(CompletionResult(emptyList()))
                           return@launch
                       }
 
+                      KslLogs.debug(
+                          "completion completed requestId={} lspItemCount={} convertedItemCount={} prefix='{}'",
+                          requestId,
+                          itemsArray.size(),
+                          items.size,
+                          prefix,
+                      )
                       deferred.complete(CompletionResult(items))
                   } catch (e: Exception) {
-                      KslLogs.error("Error processing completion", e)
+                      KslLogs.error("Error processing completion requestId={}", requestId, e)
                       deferred.complete(CompletionResult(emptyList()))
                   }
               }
           }
 
-          withTimeoutOrNull(COMPLETION_TIMEOUT) { deferred.await() } ?: CompletionResult(emptyList())
+          withTimeoutOrNull(COMPLETION_TIMEOUT) { deferred.await() } ?: run {
+              KslLogs.debug("completion timed out requestId={}", requestId)
+              CompletionResult(emptyList())
+          }
       } catch (e: Exception) {
-          KslLogs.error("Error during completion", e)
+          KslLogs.error("Error during completion requestId={}", requestId, e)
           CompletionResult(emptyList())
       }
   }
