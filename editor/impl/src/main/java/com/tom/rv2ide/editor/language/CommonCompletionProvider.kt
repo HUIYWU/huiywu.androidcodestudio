@@ -69,7 +69,7 @@ internal class CommonCompletionProvider(
         try {
           setupLookupForCompletion(file)
           val prefix = CompletionHelper.computePrefix(content, position, prefixMatcher)
-          val contentLength = content.length()
+          val contentLength = content.length
           val safeLine = max(0, position.line)
           val lineText = if (safeLine < content.lineCount) content.getLine(safeLine) else ""
           val safeColumn = min(max(0, position.column), lineText.length)
