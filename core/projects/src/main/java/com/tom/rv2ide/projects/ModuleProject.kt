@@ -57,6 +57,7 @@ abstract class ModuleProject(
   companion object {
 
     private val log = LoggerFactory.getLogger(ModuleProject::class.java)
+    private const val CLASSPATH_READER_MARKER = "ACS_MARKER_MODULEPROJECT_ZIP_READER_V1"
 
     @JvmStatic val COMPLETION_MODULE_KEY = Lookup.Key<ModuleProject>()
   }
