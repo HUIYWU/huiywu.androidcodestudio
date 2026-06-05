@@ -150,6 +150,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     
     // Wrap the editor in a FrameLayout so we can overlay the suggestion view
     val editorContainer = FrameLayout(context).apply {
+      id = R.id.editor_overlay_container
       layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
       addView(binding.root)
       _suggestionView?.let { addView(it) }
