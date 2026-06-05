@@ -9,6 +9,7 @@ import android.widget.FrameLayout
 import androidx.appcompat.widget.LinearLayoutCompat
 import androidx.core.view.isVisible
 import com.blankj.utilcode.util.SizeUtils
+import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.editor.BaseEditorActivity
 import com.tom.rv2ide.app.BaseApplication
 import com.tom.rv2ide.editor.api.IEditor
