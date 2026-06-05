@@ -128,6 +128,10 @@ abstract class ModuleProject(
   @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
   fun indexClasspaths() {
 
+    if (IdeLogConfig.shouldLogIde()) {
+      log.info("{} path={} reader=ZipFileClasspathReader", CLASSPATH_READER_MARKER, path)
+    }
+
     this.compileClasspathClasses.clear()
 
     val watch = StopWatch("Indexing classpaths for project: $path")

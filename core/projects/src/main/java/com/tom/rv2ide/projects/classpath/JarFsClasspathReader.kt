@@ -29,11 +29,18 @@ import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.pathString
+import org.slf4j.LoggerFactory
 
 /** @author Akash Yadav */
 class JarFsClasspathReader : IClasspathReader {
 
+  companion object {
+    private val log = LoggerFactory.getLogger(JarFsClasspathReader::class.java)
+    private const val MARKER = "ACS_MARKER_JARFS_READER_V1"
+  }
+
   override fun listClasses(files: Collection<File>): ImmutableSet<ClassInfo> {
+    log.info("{} files={}", MARKER, files.size)
     val builder = ImmutableSet.builder<ClassInfo>()
     for (path in files.map(File::toPath)) {
       if (!Files.exists(path)) {

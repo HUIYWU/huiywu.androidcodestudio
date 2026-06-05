@@ -40,6 +40,7 @@ public class BootClasspathProvider {
 
   private static final Map<String, ClassTrie> bootClasspathClasses = new ConcurrentHashMap<>();
   private static final Logger LOG = LoggerFactory.getLogger(BootClasspathProvider.class);
+  private static final String MARKER = "ACS_MARKER_BOOTCLASSPATH_JARFS_V1";
 
   /**
    * Updates the boot classpath cache. If a classpath is already indexed, it is skipped.
@@ -63,6 +64,7 @@ public class BootClasspathProvider {
       if (IdeLogConfig.shouldLogIde()) {
         LOG.debug("Indexing boot classpath: {}", classpath);
       }
+      LOG.info("{} path={} reader=JarFsClasspathReader", MARKER, classpath);
       final var classes =
           new JarFsClasspathReader().listClasses(Collections.singleton(new File(classpath)));
       final var trie = new ClassTrie();

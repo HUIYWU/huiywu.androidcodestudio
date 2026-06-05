@@ -18,6 +18,7 @@
 package com.tom.rv2ide.projects.classpath
 
 import com.google.common.collect.ImmutableSet
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -28,7 +29,13 @@ import java.util.zip.ZipFile
  */
 class ZipFileClasspathReader : IClasspathReader {
 
+  companion object {
+    private val log = LoggerFactory.getLogger(ZipFileClasspathReader::class.java)
+    private const val MARKER = "ACS_MARKER_ZIP_READER_V1"
+  }
+
   override fun listClasses(files: Collection<File>): ImmutableSet<ClassInfo> {
+    log.info("{} files={}", MARKER, files.size)
     val classes = ImmutableSet.builder<ClassInfo>()
     files.forEach {
       if (!it.exists()) {

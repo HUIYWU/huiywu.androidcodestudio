@@ -34,6 +34,7 @@ class KotlinClasspathProvider {
 
   private var compilerService: KotlinCompilerService? = null
   private val classpathReader: IClasspathReader = ZipFileClasspathReader()
+  private val classpathReaderMarker = "ACS_MARKER_KOTLIN_CLASSPATH_PROVIDER_ZIP_V1"
 
   private var cachedClasspathList: List<String>? = null
   private var cachedClasspath: String? = null
@@ -761,6 +762,7 @@ class KotlinClasspathProvider {
   /** Lists all classes available in the current classpath. */
   fun listClassesInClasspath(): Set<ClassInfo> {
     val classpathFiles = getClasspathList().map { File(it) }.filter { it.exists() }
+    KslLogs.info("{} files={}", classpathReaderMarker, classpathFiles.size)
     return try {
       classpathReader.listClasses(classpathFiles).toSet()
     } catch (e: Exception) {
