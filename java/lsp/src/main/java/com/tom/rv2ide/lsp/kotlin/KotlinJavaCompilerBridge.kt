@@ -14,13 +14,13 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.lsp.kotlin
 
 import com.tom.rv2ide.lsp.java.JavaCompilerProvider
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.android.AndroidModule
+import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
 /*
@@ -31,9 +31,12 @@ class KotlinJavaCompilerBridge(private val workspace: IWorkspace) {
 
   companion object {
     private val log = LoggerFactory.getLogger(KotlinJavaCompilerBridge::class.java)
+    private const val MAX_PREFIX_CACHE_SIZE = 64
   }
 
   private var javaCompiler: JavaCompilerService? = null
+  @Volatile private var allClassesCache: List<String>? = null
+  private val prefixCache = ConcurrentHashMap<String, List<ClassInfo>>()
 
   init {
     initializeCompiler()
@@ -62,8 +65,13 @@ class KotlinJavaCompilerBridge(private val workspace: IWorkspace) {
    * dependencies, and project classes
    */
   fun getAllAvailableClasses(): List<String> {
+    allClassesCache?.let { cached ->
+      return cached
+    }
     return try {
-      javaCompiler?.publicTopLevelTypes()?.toList() ?: emptyList()
+      val classes = javaCompiler?.publicTopLevelTypes()?.toList() ?: emptyList()
+      allClassesCache = classes
+      classes
     } catch (e: Exception) {
       KslLogs.error("Failed to get available classes", e)
       emptyList()
@@ -74,8 +82,13 @@ class KotlinJavaCompilerBridge(private val workspace: IWorkspace) {
   fun findClassesByPrefix(prefix: String): List<ClassInfo> {
     if (prefix.isEmpty()) return emptyList()
 
+    prefixCache[prefix]?.let { cached ->
+      return cached
+    }
+
     val allClasses = getAllAvailableClasses()
-    return allClasses
+    val matches = allClasses
+        .asSequence()
         .filter { className ->
           val simpleName = className.substringAfterLast('.')
           simpleName.startsWith(prefix, ignoreCase = false)
@@ -87,6 +100,18 @@ class KotlinJavaCompilerBridge(private val workspace: IWorkspace) {
               packageName = className.substringBeforeLast('.', ""),
           )
         }
+        .toList()
+
+    if (prefixCache.size >= MAX_PREFIX_CACHE_SIZE) {
+      prefixCache.clear()
+    }
+    prefixCache[prefix] = matches
+    return matches
+  }
+
+  fun invalidateCaches() {
+    allClassesCache = null
+    prefixCache.clear()
   }
 
   data class ClassInfo(
@@ -95,3 +120,4 @@ class KotlinJavaCompilerBridge(private val workspace: IWorkspace) {
       val packageName: String,
   )
 }
+

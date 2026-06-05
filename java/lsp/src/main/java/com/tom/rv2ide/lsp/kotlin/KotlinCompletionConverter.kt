@@ -73,7 +73,7 @@ class KotlinCompletionConverter {
       val lspItemsDeferred = async { convertFast(itemsArray, fileContent, prefix) }
       
       val classpathItemsDeferred = async {
-          if (prefix.length >= 2 && javaCompilerBridge != null) {
+          if (prefix.length >= 2 && javaCompilerBridge != null && itemsArray.size() < 50) {
               getClasspathCompletions(prefix, fileContent)
           } else {
               emptyList()
@@ -84,8 +84,14 @@ class KotlinCompletionConverter {
       val classpathItems = classpathItemsDeferred.await()
   
       val allItems = (lspItems + classpathItems).distinctBy { "${it.ideLabel}:${it.detail}" }
-  
-      KslLogs.debug("Total items after classpath enhancement: {}", allItems.size)
+
+      KslLogs.debug(
+          "Total items after classpath enhancement: {} (lspItems={}, classpathItems={}, prefix='{}')",
+          allItems.size,
+          lspItems.size,
+          classpathItems.size,
+          prefix,
+      )
       allItems
   }
 
