@@ -37,9 +37,16 @@ class JarFsClasspathReader : IClasspathReader {
   companion object {
     private val log = LoggerFactory.getLogger(JarFsClasspathReader::class.java)
     private const val MARKER = "ACS_MARKER_JARFS_READER_V1"
+    private const val TRACE_MARKER = "ACS_MARKER_JARFS_TRACE_V1"
   }
 
   override fun listClasses(files: Collection<File>): ImmutableSet<ClassInfo> {
+    val samplePaths = files.take(3).joinToString(separator = " | ") { it.absolutePath }
+    val stackPreview = Throwable().stackTrace
+        .drop(1)
+        .take(8)
+        .joinToString(separator = " <- ") { "${it.className}.${it.methodName}:${it.lineNumber}" }
+    log.error("{} files={} samplePaths={} stack={}", TRACE_MARKER, files.size, samplePaths, stackPreview)
     log.info("{} files={}", MARKER, files.size)
     val builder = ImmutableSet.builder<ClassInfo>()
     for (path in files.map(File::toPath)) {

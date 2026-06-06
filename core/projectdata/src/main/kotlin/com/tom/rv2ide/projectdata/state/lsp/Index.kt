@@ -36,11 +36,21 @@ object Index {
   val isProjectIndexing: StateFlow<Boolean>
     get() = _isProjectIndexing
 
+  private val _progressMessage = MutableStateFlow("Initializing or syncing project...")
+  val progressMessage: StateFlow<String>
+    get() = _progressMessage
+
   /*
    * @function Update indexing state
    */
   fun setIsIndexing(isIndexing: Boolean) {
     _isProjectIndexing.value = isIndexing
+  }
+
+  fun setProgressMessage(message: String) {
+    if (message.isNotBlank()) {
+      _progressMessage.value = message
+    }
   }
 
   /*

@@ -96,7 +96,6 @@ import com.tom.rv2ide.preferences.internal.BuildPreferences
 import com.tom.rv2ide.projectdata.state.lsp.Index
 import com.tom.rv2ide.indexing.views.IndexingBanner
 import com.tom.rv2ide.projectdata.state.Initialization
-import com.tom.rv2ide.projectdata.logs.LogStream
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.tasks.cancelIfActive
 import com.tom.rv2ide.ui.CodeEditorView
@@ -127,7 +126,6 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -746,31 +744,55 @@ override fun onApplySystemBarInsets(insets: Insets) {
     }
 
     if (BuildPreferences.isKtIndexingNotificationEnabled) {
-      // Use IndexingBanner to show progress
+      // Show Kotlin banner for high-level init/build/sync-triggered indexing sessions.
+      // Normal editing should not start a banner session on its own, but once a high-level
+      // phase starts, keep the banner visible until Kotlin indexing actually finishes.
       val indexingBanner = IndexingBanner(this)
-      
+      var kotlinBannerSessionActive = false
+
+      fun updateKotlinBanner() {
+        val highLevelPhaseActive = editorViewModel.isInitializing || editorViewModel.isBuildInProgress
+
+        if (highLevelPhaseActive) {
+          kotlinBannerSessionActive = true
+        }
+
+        if (!kotlinBannerSessionActive) {
+          indexingBanner.hide()
+          return
+        }
+
+        indexingBanner.updateTitle("Kotlin project")
+        indexingBanner.updateMessage(Index.progressMessage.value)
+
+        val shouldKeepShowing = highLevelPhaseActive || Index.isIndexing()
+        if (shouldKeepShowing) {
+          indexingBanner.show()
+        } else {
+          indexingBanner.hide()
+          kotlinBannerSessionActive = false
+        }
+      }
+
+      editorViewModel._isInitializing.observe(this) { updateKotlinBanner() }
+      editorViewModel._isBuildInProgress.observe(this) { updateKotlinBanner() }
+
       lifecycleScope.launch {
-        LogStream.outputFlow.collect { logMessage ->
-          if (Index.isIndexing() && !Initialization.isProjectInitializing.value) {
-            indexingBanner.updateMessage(logMessage)
+        Index.progressMessage.collect {
+          if (kotlinBannerSessionActive) {
+            indexingBanner.updateMessage(it)
+            updateKotlinBanner()
           }
         }
       }
-      
+
       lifecycleScope.launch {
-        combine(
-          Initialization.isProjectInitializing,
-          Index.isProjectIndexing
-        ) { isInitializing, isIndexing ->
-          !isInitializing && isIndexing
-        }.collect { shouldShowIndexing ->
-          if (shouldShowIndexing) {
-            indexingBanner.show()
-          } else {
-            indexingBanner.hide()
-          }
+        Index.isProjectIndexing.collect {
+          updateKotlinBanner()
         }
       }
+
+      updateKotlinBanner()
     }
     
     

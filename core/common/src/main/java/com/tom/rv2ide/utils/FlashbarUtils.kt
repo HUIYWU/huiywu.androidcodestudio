@@ -66,13 +66,17 @@ fun <R> flashProgress(
   return withActivity { flashProgress(configure, action) }
 }
 
-/** Dismisses the currently showing flashbar if any */
+/** Dismisses the currently showing flashbar if any. */
 fun dismissFlashbar() {
-  withActivity { dismissFlashbar() }
+  ILogger.ROOT.warn(
+      "dismissFlashbar() called, but no global flashbar instance is tracked; skipping to avoid recursion crash."
+  )
 }
 
 private fun <T> withActivity(action: Activity.() -> T?): T? {
-  return ActivityUtils.getTopActivity()?.let { it.action() }
+  return ActivityUtils.getTopActivity()?.let { activity ->
+    activity.action()
+  }
       ?: run {
         ILogger.ROOT.warn("Cannot show flashbar message. Cannot get top activity.")
         null

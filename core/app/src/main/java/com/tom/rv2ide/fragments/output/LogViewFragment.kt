@@ -21,6 +21,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import androidx.core.view.isVisible
 import com.blankj.utilcode.util.ThreadUtils
 import com.tom.rv2ide.R
 import com.tom.rv2ide.databinding.FragmentLogBinding
@@ -35,7 +36,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.math.min
-import org.slf4j.LoggerFactory
 
 /**
  * Fragment to show logs.
@@ -48,8 +48,6 @@ abstract class LogViewFragment :
 
   companion object {
 
-    private val log = LoggerFactory.getLogger(LogViewFragment::class.java)
-
     /** The maximum number of characters to append to the editor in case of huge log texts. */
     const val MAX_CHUNK_SIZE = 10000
 
@@ -59,25 +57,25 @@ abstract class LogViewFragment :
      * frequent. In this case, the logs are cached and appended in chunks of [MAX_CHUNK_SIZE]
      * characters in size.
      */
-    const val LOG_FREQUENCY = 50L
+    const val LOG_FREQUENCY = 120L
 
     /**
      * The time duration, in milliseconds we wait before appending the logs. This must be greater
      * than [LOG_FREQUENCY].
      */
-    const val LOG_DELAY = 100L
+    const val LOG_DELAY = 250L
 
     /**
      * Trim the logs when the number of lines reaches this value. Only [MAX_LINE_COUNT] number of
      * lines are kept in the logs.
      */
-    const val TRIM_ON_LINE_COUNT = 5000
+    const val TRIM_ON_LINE_COUNT = 2000
 
     /**
      * The maximum number of lines that are shown in the log view. This value must be less than
      * [TRIM_ON_LINE_COUNT] by a difference of [LOG_FREQUENCY] or preferably, more.
      */
-    const val MAX_LINE_COUNT = TRIM_ON_LINE_COUNT - 300
+    const val MAX_LINE_COUNT = 1600
 
     /** Keep auto-follow lightweight and avoid selection invalidation on every append. */
     const val FOLLOW_TAIL_THROTTLE_MS = 120L
@@ -102,6 +100,17 @@ abstract class LogViewFragment :
             }
 
             cacheLineTrack.clear()
+
+            if (cache.isEmpty()) {
+              trimLinesAtStart()
+              return
+            }
+
+            if (!shouldRenderLogsNow()) {
+              logHandler.removeCallbacks(this)
+              logHandler.postDelayed(this, LOG_DELAY)
+              return
+            }
 
             if (cache.length < MAX_CHUNK_SIZE) {
               append(cache)
@@ -145,7 +154,8 @@ abstract class LogViewFragment :
     }
 
     if (
-        isTrimming.get() ||
+        !shouldRenderLogsNow() ||
+            isTrimming.get() ||
             cache.isNotEmpty() ||
             System.currentTimeMillis() - lastLog <= LOG_FREQUENCY
     ) {
@@ -173,6 +183,10 @@ abstract class LogViewFragment :
     trimLinesAtStart()
   }
 
+  private fun shouldRenderLogsNow(): Boolean {
+    return isAdded && _binding?.editor != null
+  }
+
   private fun append(chars: CharSequence?) {
     chars?.let { appended ->
       ThreadUtils.runOnUiThread {
@@ -198,21 +212,19 @@ abstract class LogViewFragment :
   }
 
   private fun trimLinesAtStart() {
-    if (isTrimming.get()) {
+    if (!isTrimming.compareAndSet(false, true)) {
       // trimming is already in progress
       return
     }
 
     ThreadUtils.runOnUiThread {
-      val editor = _binding?.editor ?: return@runOnUiThread
-      val content = editor.text
-      if (content.lineCount <= TRIM_ON_LINE_COUNT) {
-        isTrimming.set(false)
-        return@runOnUiThread
-      }
-
-      isTrimming.set(true)
       try {
+        val editor = _binding?.editor ?: return@runOnUiThread
+        val content = editor.text
+        if (content.lineCount <= TRIM_ON_LINE_COUNT) {
+          return@runOnUiThread
+        }
+
         val wasNearBottom = isNearBottom(editor)
         val startLine = (content.lineCount - MAX_LINE_COUNT).coerceAtLeast(0)
         val startIndex = content.getCharIndex(startLine, 0)
@@ -223,7 +235,6 @@ abstract class LogViewFragment :
           } finally {
             content.endBatchEdit()
           }
-          log.debug("Trimmed log text to last {} lines", MAX_LINE_COUNT)
         }
         if (wasNearBottom) {
           followTailIfNeeded(editor, content, force = true)
@@ -255,7 +266,6 @@ abstract class LogViewFragment :
 
   abstract fun isSimpleFormattingEnabled(): Boolean
 
-
   protected open fun logLine(level: Level, tag: String, message: String) {
     val line = LogLine.obtain(level, tag, message)
     appendLog(line)
@@ -278,13 +288,21 @@ abstract class LogViewFragment :
     editor.setColorScheme(SchemeAndroidIDE.newInstance(requireContext()))
     editor.cursorAnimator =
         object : CursorAnimator {
-          override fun markStartPos() {}
+          override fun markStartPos() {
+            // no-op
+          }
 
-          override fun markEndPos() {}
+          override fun markEndPos() {
+            // no-op
+          }
 
-          override fun start() {}
+          override fun start() {
+            // no-op
+          }
 
-          override fun cancel() {}
+          override fun cancel() {
+            // no-op
+          }
 
           override fun isRunning(): Boolean {
             return false
@@ -306,6 +324,21 @@ abstract class LogViewFragment :
             return 0f
           }
         }
+
+    editor.setText("")
+    emptyStateViewModel.isEmpty.observe(viewLifecycleOwner) {
+      emptyStateBinding?.root?.displayedChild = if (it) 0 else 1
+    }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    cacheLock.withLock {
+      if (cache.isNotEmpty()) {
+        logHandler.removeCallbacks(logRunnable)
+        logHandler.post(logRunnable)
+      }
+    }
   }
 
   override fun onDestroyView() {
@@ -314,11 +347,12 @@ abstract class LogViewFragment :
     super.onDestroyView()
   }
 
-  override fun getContent(): String {
-    return this._binding?.editor?.text?.toString() ?: ""
+  override fun clearOutput() {
+    _binding?.editor?.setText("")
+    emptyStateViewModel.isEmpty.value = true
   }
 
-  override fun clearOutput() {
-    _binding?.editor?.setText("")?.also { emptyStateViewModel.isEmpty.value = true }
+  override fun getContent(): String {
+    return _binding?.editor?.text?.toString() ?: ""
   }
 }

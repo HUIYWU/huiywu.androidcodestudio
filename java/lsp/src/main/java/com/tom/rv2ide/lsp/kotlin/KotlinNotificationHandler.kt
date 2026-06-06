@@ -169,7 +169,7 @@ class KotlinNotificationHandler {
   private fun handleLogMessage(params: JsonObject?) {
     val message = params?.get("message")?.asString
     val messageType = params?.get("type")?.asInt
-    
+
     // Track indexing state based on log messages
     message?.let { originalMsg ->
       val msg = originalMsg.replace("async2    ", "")
@@ -184,10 +184,9 @@ class KotlinNotificationHandler {
             KslLogs.info("Indexing started - setting Index flag to true")
             Index.setIsIndexing(true)
           }
-          // Always emit to LogStream so UI can display it
           LogStream.emitLineBlocking(msg)
         }
-        
+
         // Only treat these as completion when they contain "complete" or similar final messages
         msg.contains("Loaded symbol index from cache in", ignoreCase = true) ||
         msg.contains("symbol index complete", ignoreCase = true) ||
@@ -197,14 +196,13 @@ class KotlinNotificationHandler {
           LogStream.emitLineBlocking(msg)
           Index.setIsIndexing(false)
         }
-        
         // "Updated symbol index" is just progress, NOT completion - keep emitting but don't stop
         msg.contains("Updated symbol index in", ignoreCase = true) -> {
-          // This is progress, not completion - just emit the message
-          LogStream.emitLineBlocking(msg)
-          Index.setIsIndexing(false)
+          if (shouldEmitKlsProgressToLogStream(msg)) {
+            LogStream.emitLineBlocking(msg)
+          }
         }
-        
+
         // Indexing failed/error messages
         msg.contains("Error while updating symbol index", ignoreCase = true) ||
         msg.contains("Failed to build symbol index", ignoreCase = true) -> {
@@ -212,21 +210,79 @@ class KotlinNotificationHandler {
           LogStream.emitLineBlocking(msg)
           Index.setIsIndexing(false)
         }
-        
+
         // Emit any other symbol-related messages while indexing
         msg.contains("symbol", ignoreCase = true) -> {
-          // Always emit symbol-related messages, regardless of indexing state
-          LogStream.emitLineBlocking(msg)
+          if (shouldEmitKlsProgressToLogStream(msg)) {
+            LogStream.emitLineBlocking(msg)
+          }
         }
       }
     }
-    
+
     when (messageType) {
       1 -> KslLogs.error("KLS: {}", message)
       2 -> KslLogs.warn("KLS: {}", message)
-      3 -> KslLogs.info("KLS: {}", message)
-      4 -> KslLogs.debug("KLS: {}", message)
+      3 -> {
+        if (shouldThrottleKlsInfo(message)) {
+          KslLogs.infoThrottled(normalizeKlsThrottleKey(message), 1500L, "KLS: {}", message)
+        } else {
+          KslLogs.info("KLS: {}", message)
+        }
+      }
+      4 -> {
+        if (shouldThrottleKlsDebug(message)) {
+          KslLogs.debugThrottled(normalizeKlsThrottleKey(message), 1500L, "KLS: {}", message)
+        } else {
+          KslLogs.debug("KLS: {}", message)
+        }
+      }
       else -> KslLogs.trace("KLS: {}", message)
+    }
+  }
+
+  private fun shouldEmitKlsProgressToLogStream(message: String): Boolean {
+    return !shouldThrottleKlsInfo(message)
+  }
+
+  private fun shouldThrottleKlsInfo(message: String?): Boolean {
+    val msg = message ?: return false
+    return msg.contains("Updating symbol index", ignoreCase = true) ||
+        msg.contains("Updated symbol index in", ignoreCase = true) ||
+        msg.contains("PERF SourcePath.doCompile", ignoreCase = true) ||
+        msg.contains("Watching for build changes", ignoreCase = true) ||
+        msg.contains("Added generated source", ignoreCase = true) ||
+        msg.contains("Added ", ignoreCase = true) && msg.contains("generated source paths", ignoreCase = true) ||
+        msg.contains("Compiler/provider classpath diff", ignoreCase = true) ||
+        msg.contains("Provider-only interesting paths", ignoreCase = true) ||
+        msg.contains("Compiler-only interesting paths", ignoreCase = true)
+  }
+
+  private fun shouldThrottleKlsDebug(message: String?): Boolean {
+    val msg = message ?: return false
+    return msg.contains("Received diagnostics notification", ignoreCase = true) ||
+        msg.contains("Unhandled notification", ignoreCase = true) ||
+        msg.contains("diagnostics.recv", ignoreCase = true) ||
+        msg.contains("diagnostics.clear", ignoreCase = true)
+  }
+
+  private fun normalizeKlsThrottleKey(message: String?): String {
+    val msg = message ?: return "kls:null"
+    return when {
+      msg.contains("Updating symbol index", ignoreCase = true) -> "kls:update-symbol-index"
+      msg.contains("Updated symbol index in", ignoreCase = true) -> "kls:updated-symbol-index"
+      msg.contains("PERF SourcePath.doCompile", ignoreCase = true) -> "kls:source-compile-perf"
+      msg.contains("Watching for build changes", ignoreCase = true) -> "kls:watch-build-changes"
+      msg.contains("Added generated source", ignoreCase = true) -> "kls:added-generated-source"
+      msg.contains("generated source paths", ignoreCase = true) -> "kls:generated-source-paths"
+      msg.contains("Compiler/provider classpath diff", ignoreCase = true) -> "kls:classpath-diff"
+      msg.contains("Provider-only interesting paths", ignoreCase = true) -> "kls:provider-only-paths"
+      msg.contains("Compiler-only interesting paths", ignoreCase = true) -> "kls:compiler-only-paths"
+      msg.contains("Received diagnostics notification", ignoreCase = true) -> "kls:diagnostics-notification"
+      msg.contains("Unhandled notification", ignoreCase = true) -> "kls:unhandled-notification"
+      msg.contains("diagnostics.recv", ignoreCase = true) -> "kls:diagnostics-recv"
+      msg.contains("diagnostics.clear", ignoreCase = true) -> "kls:diagnostics-clear"
+      else -> "kls:${msg.take(80)}"
     }
   }
 }

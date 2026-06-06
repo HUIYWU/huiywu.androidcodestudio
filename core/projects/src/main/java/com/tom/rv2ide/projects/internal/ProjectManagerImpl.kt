@@ -21,6 +21,7 @@ import androidx.annotation.RestrictTo
 import com.android.builder.model.v2.models.ProjectSyncIssues
 import com.google.auto.service.AutoService
 import com.google.common.collect.ImmutableList
+import com.tom.rv2ide.projects.util.RuntimeProbe
 import com.tom.rv2ide.eventbus.events.EventReceiver
 import com.tom.rv2ide.eventbus.events.editor.DocumentSaveEvent
 import com.tom.rv2ide.eventbus.events.file.FileCreationEvent
@@ -111,6 +112,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
         rootProject.getProjectSyncIssues().syncIssues.size,
         rootProject.getProjectSyncIssues().syncIssues,
     )
+    RuntimeProbe.mark("ProjectManager.setupProject:modules=${rootProject.getSubProjects().filterIsInstance<ModuleProject>().size}")
 
     withStopWatch("Setup project") {
       val indexingDispatcher = Dispatchers.Default.limitedParallelism(4)

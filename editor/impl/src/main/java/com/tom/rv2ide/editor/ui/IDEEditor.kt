@@ -134,25 +134,8 @@ constructor(
         languageClient.getDiagnosticAt(file, cursor.leftLine, cursor.leftColumn)
     )
 
-    // Simple hover tooltip: request hover from server and show as a transient flashbar
-    val server = languageServer ?: return@Runnable
-    val f = file ?: return@Runnable
-    val pos = cursorLSPPosition
-    editorScope.launch(Dispatchers.Default) {
-      val content =
-          safeGet("hover request") {
-            val params = DefinitionParams(f.toPath(), pos, JobCancelChecker())
-            server.hover(params)
-          }
-      content ?: return@launch
-      val text = content.value
-      if (text.isNullOrBlank()) return@launch
-      withContext(Dispatchers.Main) {
-        // Show brief tooltip using Flashbar
-        com.tom.rv2ide.utils.dismissFlashbar()
-        (context as? android.app.Activity)?.flashInfo(text)
-      }
-    }
+    // Hover tooltip UI is handled by HoverTooltipManager.
+    // Do not issue a duplicate hover request here or render hover content via Flashbar.
   }
 
   /**

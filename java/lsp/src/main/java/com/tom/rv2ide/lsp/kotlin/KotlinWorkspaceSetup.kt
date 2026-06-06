@@ -63,6 +63,7 @@ class KotlinWorkspaceSetup(
         workspace.getProjectDir().absolutePath,
     )
     Index.setIsIndexing(true)
+    Index.setProgressMessage("Setting up Kotlin workspace...")
     LogStream.emitLineBlocking("Setting up workspace...")
 
 
@@ -301,6 +302,7 @@ class KotlinWorkspaceSetup(
     withContext(Dispatchers.IO) {
       try {
         Index.setIsIndexing(true)  // Set flag when reload starts
+        Index.setProgressMessage("Refreshing classpath and reindexing Kotlin symbols...")
         KslLogs.info("=== RELOADING CLASSPATH AND INDEX ===")
 
         // Invalidate classpath cache
@@ -332,6 +334,7 @@ class KotlinWorkspaceSetup(
   private fun restoreCachedIndex(processManager: KotlinLspConnection) {
     KslLogs.info("Restoring index from cache...")
     Index.setIsIndexing(true)  // Set indexing flag when starting cache restoration
+    Index.setProgressMessage("Restoring cached Kotlin index...")
 
     val cachedSymbols = indexCache.loadCache()
     if (cachedSymbols != null && cachedSymbols.size() > 0) {
@@ -341,6 +344,7 @@ class KotlinWorkspaceSetup(
       logDidChangeConfigurationSummary("restoreCachedIndex", configParams)
       processManager.sendNotification("workspace/didChangeConfiguration", configParams)
       KslLogs.info("Cache restored with {} symbols - indexing skipped", cachedSymbols.size())
+      Index.setProgressMessage("Restored cached index: ${cachedSymbols.size()} symbols")
       Index.setIsIndexing(false)  // Reset flag after cache restoration
     } else {
       // Cache load failed, trigger fresh indexing
@@ -358,6 +362,7 @@ class KotlinWorkspaceSetup(
   ) {
     KslLogs.info("Triggering classpath indexing...")
     Index.setIsIndexing(true)  // Set indexing flag when starting
+    Index.setProgressMessage("Indexing Kotlin symbols...")
 
     val configParams = createFwcdRuntimeConfig(indexingEnabled = true)
 
@@ -378,6 +383,7 @@ class KotlinWorkspaceSetup(
             }
         val symbolCount = symbols.size()
         KslLogs.info("Indexing complete, found {} symbols", symbolCount)
+        Index.setProgressMessage("Indexed ${symbolCount} symbols")
 
         // Save to cache
         if (symbolCount > 0) {
@@ -419,7 +425,6 @@ class KotlinWorkspaceSetup(
       if (mainModule != null) {
         compilerService = KotlinCompilerProvider.get(mainModule)
         KslLogs.info("Initialized compiler service for: {}", mainModule.path)
-        Index.setIsIndexing(true)
         LogStream.emitLineBlocking("Initialized compiler service for: ${mainModule.path}")
       } else {
         KslLogs.warn("No Android module found, using default compiler")

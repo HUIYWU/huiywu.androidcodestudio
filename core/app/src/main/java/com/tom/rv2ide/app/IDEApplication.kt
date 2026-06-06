@@ -38,6 +38,8 @@ import com.termux.app.TermuxApplication
 import com.termux.shared.reflection.ReflectionUtils
 import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.activities.CrashHandlerActivity
+import com.tom.rv2ide.projects.util.AnrWatchdog
+import com.tom.rv2ide.projects.util.RuntimeProbe
 import com.tom.rv2ide.activities.editor.IDELogcatReader
 import com.tom.rv2ide.buildinfo.BuildInfo
 import com.tom.rv2ide.common.logging.IdeLogConfig
@@ -84,6 +86,7 @@ import org.slf4j.LoggerFactory
 class IDEApplication : TermuxApplication() {
 
   private var uncaughtExceptionHandler: UncaughtExceptionHandler? = null
+  private var anrWatchdog: AnrWatchdog? = null
   private var ideLogcatReader: IDELogcatReader? = null
   private var memoryManager: MemoryManager? = null
   private var chartCleanupTask: ChartMemoryCleanupTask? = null
@@ -109,6 +112,8 @@ class IDEApplication : TermuxApplication() {
   @OptIn(DelicateCoroutinesApi::class)
   override fun onCreate() {
     instance = this
+    RuntimeProbe.init(this)
+    RuntimeProbe.mark("IDEApplication.onCreate:start")
     uncaughtExceptionHandler = Thread.getDefaultUncaughtExceptionHandler()
     Thread.setDefaultUncaughtExceptionHandler { thread, th -> handleCrash(thread, th) }
 
@@ -137,10 +142,13 @@ class IDEApplication : TermuxApplication() {
       if (DevOpsPreferences.dumpLogs) {
         startLogcatReader()
       }
-      // initializeMemoryProfiler()
-    }
+    // initializeMemoryProfiler()
+      }
 
-    EventBus.builder()
+      anrWatchdog = AnrWatchdog().also { it.start() }
+      log.info("ACS_RUNTIME_PROBE_WATCHDOG_STARTED dumpDir={}", RuntimeProbe.getDumpDirPath())
+
+      EventBus.builder()
         .addIndex(AppEventsIndex())
         .addIndex(EditorEventsIndex())
         .addIndex(LspApiEventsIndex())
@@ -287,8 +295,10 @@ class IDEApplication : TermuxApplication() {
       log.error("Failed to extract logger-runtime.aar", e)
     }
   }
-
   private fun handleCrash(thread: Thread, th: Throwable) {
+    RuntimeProbe.mark("uncaught:${thread.name}:${th::class.java.simpleName}")
+    RuntimeProbe.dump("uncaught thread=${thread.name}", th)
+
     // writeException(th)
 
     try {

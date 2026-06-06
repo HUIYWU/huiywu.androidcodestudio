@@ -16,6 +16,7 @@
 package com.tom.rv2ide.lsp.kotlin
 
 import com.tom.rv2ide.common.logging.IdeLogConfig
+import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
 /**
@@ -28,6 +29,7 @@ import org.slf4j.LoggerFactory
  */
 object KslLogs {
   private val log = LoggerFactory.getLogger(KslLogs::class.java)
+  private val throttledLogTimes = ConcurrentHashMap<String, Long>()
 
   fun error(message: String) {
     if (IdeLogConfig.shouldLogError()) {
@@ -105,6 +107,42 @@ object KslLogs {
       val safeArgs = args.map { it ?: "null" }.toTypedArray()
       log.trace(format, *safeArgs)
     }
+  }
+
+  fun infoThrottled(key: String, intervalMs: Long, message: String) {
+    if (IdeLogConfig.shouldLogInfo() && shouldLogNow(key, intervalMs)) {
+      log.info(message)
+    }
+  }
+
+  fun infoThrottled(key: String, intervalMs: Long, format: String, vararg args: Any?) {
+    if (IdeLogConfig.shouldLogInfo() && shouldLogNow(key, intervalMs)) {
+      val safeArgs = args.map { it ?: "null" }.toTypedArray()
+      log.info(format, *safeArgs)
+    }
+  }
+
+  fun debugThrottled(key: String, intervalMs: Long, message: String) {
+    if (IdeLogConfig.shouldLogDebug() && shouldLogNow(key, intervalMs)) {
+      log.debug(message)
+    }
+  }
+
+  fun debugThrottled(key: String, intervalMs: Long, format: String, vararg args: Any?) {
+    if (IdeLogConfig.shouldLogDebug() && shouldLogNow(key, intervalMs)) {
+      val safeArgs = args.map { it ?: "null" }.toTypedArray()
+      log.debug(format, *safeArgs)
+    }
+  }
+
+  private fun shouldLogNow(key: String, intervalMs: Long): Boolean {
+    val now = System.currentTimeMillis()
+    val last = throttledLogTimes[key]
+    if (last != null && now - last < intervalMs) {
+      return false
+    }
+    throttledLogTimes[key] = now
+    return true
   }
 }
 

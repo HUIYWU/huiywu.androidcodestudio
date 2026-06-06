@@ -18,6 +18,7 @@
 package com.tom.rv2ide.lsp.kotlin
 
 import com.tom.rv2ide.lsp.kotlin.compiler.KotlinCompilerService
+import com.tom.rv2ide.projects.util.RuntimeProbe
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
@@ -762,6 +763,7 @@ class KotlinClasspathProvider {
   /** Lists all classes available in the current classpath. */
   fun listClassesInClasspath(): Set<ClassInfo> {
     val classpathFiles = getClasspathList().map { File(it) }.filter { it.exists() }
+    RuntimeProbe.mark("KotlinClasspathProvider.listClassesInClasspath files=${classpathFiles.size}")
     KslLogs.info("{} files={}", classpathReaderMarker, classpathFiles.size)
     return try {
       classpathReader.listClasses(classpathFiles).toSet()

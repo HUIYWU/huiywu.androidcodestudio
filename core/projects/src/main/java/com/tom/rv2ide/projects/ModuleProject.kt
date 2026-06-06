@@ -26,6 +26,7 @@ import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.projects.classpath.ZipFileClasspathReader
 import com.tom.rv2ide.projects.util.BootClasspathProvider
+import com.tom.rv2ide.projects.util.RuntimeProbe
 import com.tom.rv2ide.tooling.api.models.GradleTask
 import com.tom.rv2ide.utils.ClassTrie
 import com.tom.rv2ide.utils.DocumentUtils
@@ -122,6 +123,7 @@ abstract class ModuleProject(
   @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
   fun indexSourcesAndClasspaths() {
     log.info("Indexing sources and classpaths for project: {}", path)
+    RuntimeProbe.mark("ModuleProject.indexSourcesAndClasspaths path=$path")
     indexSources()
     indexClasspaths()
   }
@@ -129,6 +131,7 @@ abstract class ModuleProject(
   @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
   fun indexClasspaths() {
 
+    RuntimeProbe.mark("ModuleProject.indexClasspaths path=$path")
     if (IdeLogConfig.shouldLogIde()) {
       log.info("{} path={} reader=ZipFileClasspathReader", CLASSPATH_READER_MARKER, path)
     }

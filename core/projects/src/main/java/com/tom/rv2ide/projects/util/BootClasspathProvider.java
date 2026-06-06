@@ -18,7 +18,7 @@
 package com.tom.rv2ide.projects.util;
 
 import com.tom.rv2ide.common.logging.IdeLogConfig;
-import com.tom.rv2ide.projects.classpath.JarFsClasspathReader;
+import com.tom.rv2ide.projects.classpath.ZipFileClasspathReader;
 import com.tom.rv2ide.utils.ClassTrie;
 import com.tom.rv2ide.utils.StopWatch;
 import java.io.File;
@@ -40,7 +40,7 @@ public class BootClasspathProvider {
 
   private static final Map<String, ClassTrie> bootClasspathClasses = new ConcurrentHashMap<>();
   private static final Logger LOG = LoggerFactory.getLogger(BootClasspathProvider.class);
-  private static final String MARKER = "ACS_MARKER_BOOTCLASSPATH_JARFS_V1";
+  private static final String MARKER = "ACS_MARKER_BOOTCLASSPATH_ZIP_V1";
 
   /**
    * Updates the boot classpath cache. If a classpath is already indexed, it is skipped.
@@ -64,9 +64,9 @@ public class BootClasspathProvider {
       if (IdeLogConfig.shouldLogIde()) {
         LOG.debug("Indexing boot classpath: {}", classpath);
       }
-      LOG.info("{} path={} reader=JarFsClasspathReader", MARKER, classpath);
+      LOG.info("{} path={} reader=ZipFileClasspathReader", MARKER, classpath);
       final var classes =
-          new JarFsClasspathReader().listClasses(Collections.singleton(new File(classpath)));
+          new ZipFileClasspathReader().listClasses(Collections.singleton(new File(classpath)));
       final var trie = new ClassTrie();
       for (final var info : classes) {
         if (!info.isTopLevel()) {
@@ -128,12 +128,8 @@ public class BootClasspathProvider {
     return result;
   }
 
-  /**
-   * Returns all the {@link ClassTrie} entries.
-   *
-   * @return All {@link ClassTrie} entries.
-   */
-  public static Collection<ClassTrie> getAllEntries() {
+  public static synchronized Collection<ClassTrie> getAllEntries() {
     return bootClasspathClasses.values();
   }
 }
+
