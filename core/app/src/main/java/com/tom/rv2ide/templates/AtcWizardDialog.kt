@@ -9,6 +9,7 @@ import android.os.Environment as AndroidEnvironment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -18,6 +19,7 @@ import androidx.databinding.DataBindingUtil
 import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.card.MaterialCardView
@@ -66,6 +68,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     setupInputs(ctx)
     setupTemplatesGrid(ctx)
     setupButtons(ctx)
+    setPageInteractive(binding.pageTemplates, true)
+    setPageInteractive(binding.pageOptions, false)
 
     dialog.setContentView(binding.root)
     return dialog
@@ -169,6 +173,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
   private fun setupButtons(ctx: Context) {
     binding.backButton.setOnClickListener {
       binding.root.post {
+        hideKeyboardAndClearFocus()
+        setPageInteractive(binding.pageOptions, false)
+        setPageInteractive(binding.pageTemplates, true)
         SheetTransitions.slide(
             binding.wizardContainer,
             binding.pageOptions,
@@ -235,6 +242,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private fun proceedToOptionsPage(ctx: Context) {
     binding.root.post {
+      val shouldKeepExpanded = isBottomSheetExpanded()
       val templateName = "My${selectedTemplate?.displayName?.replace(" ", "")}" ?: "MyProject"
       val packageSuffix =
           "my${selectedTemplate?.displayName?.replace(" ", ".")?.lowercase()}" ?: "myproject"
@@ -248,6 +256,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       binding.ndkVersionButton.visibility = if (isNative) View.VISIBLE else View.GONE
       binding.ndkVersionButton.text = "NDK: ${Options.OPT_SELECTED_NDK_VERSION ?: "Auto"}"
 
+      setPageInteractive(binding.pageTemplates, false)
+      setPageInteractive(binding.pageOptions, true)
       SheetTransitions.slide(
           binding.wizardContainer,
           binding.pageTemplates,
@@ -257,6 +267,44 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       )
       binding.backButton.visibility = View.VISIBLE
       binding.createButton.visibility = View.VISIBLE
+      if (shouldKeepExpanded) {
+        expandBottomSheet()
+      }
+    }
+  }
+
+  private fun isBottomSheetExpanded(): Boolean {
+    val behavior = bottomSheetBehavior() ?: return false
+    return behavior.state == BottomSheetBehavior.STATE_EXPANDED
+  }
+
+  private fun expandBottomSheet() {
+    binding.root.post {
+      bottomSheetBehavior()?.state = BottomSheetBehavior.STATE_EXPANDED
+    }
+  }
+
+  private fun bottomSheetBehavior(): BottomSheetBehavior<View>? {
+    val bottomSheetDialog = dialog as? BottomSheetDialog ?: return null
+    val bottomSheet =
+        bottomSheetDialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+            ?: return null
+    return BottomSheetBehavior.from(bottomSheet)
+  }
+
+  private fun hideKeyboardAndClearFocus() {
+    val focused = dialog?.currentFocus ?: binding.root.findFocus()
+    focused?.clearFocus()
+    val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+    imm?.hideSoftInputFromWindow((focused ?: binding.root).windowToken, 0)
+  }
+
+  private fun setPageInteractive(view: View, enabled: Boolean) {
+    view.isEnabled = enabled
+    if (view is ViewGroup) {
+      for (index in 0 until view.childCount) {
+        setPageInteractive(view.getChildAt(index), enabled)
+      }
     }
   }
 

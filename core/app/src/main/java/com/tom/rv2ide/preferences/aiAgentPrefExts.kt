@@ -127,7 +127,7 @@ private class GrokApiKey(
 
     val editText = android.widget.EditText(context)
     editText.setText(prefManager.getString("ai_agent_grok_api_key", ""))
-    editText.hint = context.getString(R.string.ai_agent_grok_api_key_hint)
+    editText.hint = "sk-***"
 
     val dialog =
         com.google.android.material.dialog
@@ -153,7 +153,7 @@ private class GrokApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_grok_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "" else apiKey
+    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -182,7 +182,7 @@ private class GeminiApiKey(
 
     val editText = android.widget.EditText(context)
     editText.setText(prefManager.getString("ai_agent_gemini_api_key", ""))
-    editText.hint = context.getString(R.string.ai_agent_gemini_api_key_hint)
+    editText.hint = "sk-***"
 
     val dialog =
         com.google.android.material.dialog
@@ -208,7 +208,7 @@ private class GeminiApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_gemini_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "" else apiKey
+    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -237,7 +237,7 @@ private class DeepseekApiKey(
 
     val editText = android.widget.EditText(context)
     editText.setText(prefManager.getString("ai_agent_deepseek_api_key", ""))
-    editText.hint = context.getString(R.string.ai_agent_deepseek_api_key_hint)
+    editText.hint = "sk-***"
 
     val dialog =
         com.google.android.material.dialog
@@ -263,7 +263,7 @@ private class DeepseekApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_deepseek_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "" else apiKey
+    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -292,7 +292,7 @@ private class OpenAIApiKey(
 
     val editText = android.widget.EditText(context)
     editText.setText(prefManager.getString("ai_agent_openai_api_key", ""))
-    editText.hint = context.getString(R.string.ai_agent_openai_api_key_hint)
+    editText.hint = "sk-***"
 
     val dialog =
         com.google.android.material.dialog
@@ -318,7 +318,7 @@ private class OpenAIApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_openai_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "" else apiKey
+    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -347,7 +347,7 @@ private class AnthropicApiKey(
 
     val editText = android.widget.EditText(context)
     editText.setText(prefManager.getString("ai_agent_anthropic_api_key", ""))
-    editText.hint = context.getString(R.string.ai_agent_anthropic_api_key_hint)
+    editText.hint = "sk-***"
 
     val dialog =
         com.google.android.material.dialog
@@ -373,7 +373,7 @@ private class AnthropicApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "" else apiKey
+    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
