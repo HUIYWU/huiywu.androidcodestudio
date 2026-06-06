@@ -72,6 +72,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     setPageInteractive(binding.pageOptions, false)
 
     dialog.setContentView(binding.root)
+    dialog.setOnShowListener { configureBottomSheetForFullExpansion(dialog) }
     return dialog
   }
 
@@ -185,6 +186,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         )
         binding.backButton.visibility = View.GONE
         binding.createButton.visibility = View.GONE
+        binding.actionsContainer.visibility = View.GONE
       }
     }
 
@@ -267,10 +269,24 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       )
       binding.backButton.visibility = View.VISIBLE
       binding.createButton.visibility = View.VISIBLE
+      binding.actionsContainer.visibility = View.VISIBLE
       if (shouldKeepExpanded) {
         expandBottomSheet()
       }
     }
+  }
+
+  private fun configureBottomSheetForFullExpansion(dialog: BottomSheetDialog) {
+    val bottomSheet =
+        dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) ?: return
+    bottomSheet.layoutParams =
+        bottomSheet.layoutParams.apply {
+          height = ViewGroup.LayoutParams.MATCH_PARENT
+        }
+    val behavior = BottomSheetBehavior.from(bottomSheet)
+    behavior.isFitToContents = false
+    behavior.expandedOffset = 0
+    behavior.skipCollapsed = false
   }
 
   private fun isBottomSheetExpanded(): Boolean {
@@ -280,7 +296,11 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private fun expandBottomSheet() {
     binding.root.post {
-      bottomSheetBehavior()?.state = BottomSheetBehavior.STATE_EXPANDED
+      bottomSheetBehavior()?.apply {
+        isFitToContents = false
+        expandedOffset = 0
+        state = BottomSheetBehavior.STATE_EXPANDED
+      }
     }
   }
 

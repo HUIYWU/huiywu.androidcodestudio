@@ -343,10 +343,10 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   private synchronized void reparseOrRecompile(CompilationRequest request) {
-    final PartialReparseDecision decision =
-        partialReparseDecider.decide(
-            request, needsRecompilation(request), incrementalState.isChangeValidForReparse());
-    logPartialReparseDecision(request, decision);
+    final PartialReparseEligibility eligibility =
+        PartialReparseEligibility.from(request, needsRecompilation(request), incrementalState);
+    final PartialReparseDecision decision = partialReparseDecider.decide(eligibility);
+    logPartialReparseDecision(eligibility, decision);
 
     switch (decision.action) {
       case DRY_RUN_PARTIAL_REPARSE:
@@ -362,28 +362,24 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   private void logPartialReparseDecision(
-      @NonNull final CompilationRequest request, @NonNull final PartialReparseDecision decision) {
+      @NonNull final PartialReparseEligibility eligibility,
+      @NonNull final PartialReparseDecision decision) {
     if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogIde()) {
       return;
     }
 
-    final PartialReparseRequest partialRequest = request.partialRequest;
-    final int sourcesCount = request.sources == null ? -1 : request.sources.size();
-    final long cursor = partialRequest == null ? -1 : partialRequest.cursor;
-    final int contentsLength =
-        partialRequest == null || partialRequest.contents == null
-            ? -1
-            : partialRequest.contents.length();
     LOG.info(
-        "Partial reparse decision: action={} reason={} sources={} hasPartialRequest={} cursor={} contentsLength={} changeDelta={} newCursorPosition={}",
+        "Partial reparse decision: action={} reason={} needsRecompilation={} changeValid={} sources={} hasPartialRequest={} cursor={} contentsLength={} changeDelta={} newCursorPosition={}",
         decision.action,
         decision.reason,
-        sourcesCount,
-        partialRequest != null,
-        cursor,
-        contentsLength,
-        this.incrementalState.getChangeDelta(),
-        this.incrementalState.getNewCursorPosition());
+        eligibility.needsRecompilation,
+        eligibility.changeValidForReparse,
+        eligibility.sourceCount,
+        eligibility.hasPartialRequest,
+        eligibility.cursor,
+        eligibility.contentsLength,
+        eligibility.changeDelta,
+        eligibility.newCursorPosition);
   }
 
   private void dryRunPartialReparseThenFullRecompile(@NonNull final CompilationRequest request) {
@@ -398,13 +394,22 @@ public class JavaCompilerService implements CompilerProvider {
 
   private void tryPartialReparseWithFallback(@NonNull final CompilationRequest request) {
     try {
-      tryReparse(request);
+      final PartialReparseAttemptResult result = tryReparse(request);
+      if (result.isSuccess()) {
+        return;
+      }
+      if (JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING) {
+        LOG.warn(
+            "Partial reparse did not produce a reusable result. status={} reason={}. Falling back to full recompile",
+            result.status,
+            result.reason);
+      }
     } catch (Throwable err) {
       if (JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING) {
         LOG.warn("Partial reparse failed. Falling back to full recompile", err);
       }
-      recompile(request);
     }
+    recompile(request);
   }
 
   private boolean needsRecompilation(final CompilationRequest request) {
@@ -412,7 +417,7 @@ public class JavaCompilerService implements CompilerProvider {
         || this.cachedCompile.closed;
   }
 
-  private void tryReparse(@NonNull final CompilationRequest request) {
+  private PartialReparseAttemptResult tryReparse(@NonNull final CompilationRequest request) {
 
     // Satisfy lint
     final PartialReparseRequest partialRequest = request.partialRequest;
@@ -424,16 +429,14 @@ public class JavaCompilerService implements CompilerProvider {
     final List<Pair<Range, TreePath>> positions = this.cachedCompile.methodPositions.get(path);
     if (positions == null) {
       LOG.warn("Cannot perform reparse. No method positions found.");
-      recompile(request);
-      return;
+      return PartialReparseAttemptResult.notApplicable("method positions not found");
     }
 
     final Pair<Range, TreePath> currentMethod =
         binarySearchCurrentMethod(positions, partialRequest.cursor);
     if (currentMethod == null) {
       LOG.warn("Cannot perform reparse. Unable to find current method");
-      recompile(request);
-      return;
+      return PartialReparseAttemptResult.notApplicable("current method not found");
     } else {
       if (IdeLogConfig.shouldLogIde()) {
         watch.lapFromLast("Found method at cursor position");
@@ -462,8 +465,7 @@ public class JavaCompilerService implements CompilerProvider {
           this.incrementalState.getChangeDelta(),
           partialRequest.contents.length()
       );
-      recompile(request);
-      return;
+      return PartialReparseAttemptResult.failed("invalid method body range after applying change delta");
     }
 
     if (IdeLogConfig.shouldLogIde()) {
@@ -476,8 +478,7 @@ public class JavaCompilerService implements CompilerProvider {
         reparser.reparseMethod(info, currentMethod.second, newBody, partialRequest.contents);
     if (!reparsed) {
       LOG.error("Failed to reparse");
-      recompile(request);
-      return;
+      return PartialReparseAttemptResult.failed("PartialReparser.reparseMethod returned false");
     }
 
     if (IdeLogConfig.shouldLogIde()) {
@@ -487,6 +488,7 @@ public class JavaCompilerService implements CompilerProvider {
     updateModificationCache(request);
     cachedCompile.updatePositions(info.cu, true);
     this.incrementalState.markReparseSucceeded();
+    return PartialReparseAttemptResult.success("method body reparsed");
   }
 
   @Nullable

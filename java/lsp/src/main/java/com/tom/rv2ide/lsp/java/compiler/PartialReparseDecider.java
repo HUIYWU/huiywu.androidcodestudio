@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.lsp.java.compiler;
 
+import androidx.annotation.NonNull;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
 
 /**
@@ -25,33 +26,33 @@ import com.tom.rv2ide.lsp.java.models.CompilationRequest;
  */
 public final class PartialReparseDecider {
 
-  public PartialReparseDecision decide(
-      CompilationRequest request, boolean needsRecompilation, boolean isChangeValidForReparse) {
+  public PartialReparseDecision decide(@NonNull PartialReparseEligibility eligibility) {
+    final CompilationRequest request = eligibility.request;
     if (request == null) {
       return PartialReparseDecision.fullRecompile("request is null");
     }
 
-    if (needsRecompilation) {
+    if (eligibility.needsRecompilation) {
       return PartialReparseDecision.fullRecompile("cached compile is missing or closed");
     }
 
-    if (request.partialRequest == null) {
+    if (!eligibility.hasPartialRequest) {
       return PartialReparseDecision.fullRecompile("no partial request");
     }
 
-    if (request.sources == null || request.sources.size() != 1) {
+    if (eligibility.sourceCount != 1) {
       return PartialReparseDecision.fullRecompile("partial reparse requires exactly one source");
     }
 
-    if (request.partialRequest.cursor < 0) {
+    if (eligibility.cursor < 0) {
       return PartialReparseDecision.fullRecompile("invalid partial reparse cursor");
     }
 
-    if (request.partialRequest.contents == null) {
+    if (eligibility.contentsLength < 0) {
       return PartialReparseDecision.fullRecompile("partial reparse contents is null");
     }
 
-    if (!isChangeValidForReparse) {
+    if (!eligibility.changeValidForReparse) {
       return PartialReparseDecision.fullRecompile("document change is not valid for partial reparse");
     }
 
