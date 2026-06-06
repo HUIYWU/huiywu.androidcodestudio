@@ -85,6 +85,7 @@ class CompletionListAdapter : EditorCompletionAdapter() {
     binding.completionLabel.text = label
     binding.completionType.text = type
     binding.completionDetail.text = desc
+    binding.completionDetail.visibility = if (desc.isEmpty()) View.GONE else View.VISIBLE
     binding.completionIconText.setTypeface(
         customOrJBMono(EditorPreferences.useCustomFont),
         Typeface.BOLD,
