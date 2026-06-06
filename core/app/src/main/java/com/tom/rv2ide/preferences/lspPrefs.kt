@@ -72,7 +72,7 @@ private class KotlinLspEnabled(
     override val key: String = ACS_KOTLIN_LSP_ENABLED,
     override val title: Int = string.kotlin_lsp_enabled_title,
     override val summary: Int? = string.kotlin_lsp_enabled_summary,
-    override val icon: Int? = drawable.ic_server,
+    override val icon: Int? = drawable.ic_flick,
 ) :
     SwitchPreference(
         setValue = LSPPreferences::kotlinLspEnabled::set,

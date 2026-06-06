@@ -18,12 +18,24 @@
 package com.tom.rv2ide.fragments
 
 import android.os.Bundle
+import android.view.View
 import androidx.preference.PreferenceFragmentCompat
+import com.google.android.material.color.MaterialColors
 import com.tom.rv2ide.R.xml
 
 abstract class BasePreferenceFragment : PreferenceFragmentCompat() {
 
   override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
     setPreferencesFromResource(xml.ide_prefs, rootKey)
+  }
+
+  override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+    super.onViewCreated(view, savedInstanceState)
+
+    val surfaceColor =
+        MaterialColors.getColor(view, com.google.android.material.R.attr.colorSurface)
+    view.setBackgroundColor(surfaceColor)
+    listView.setBackgroundColor(surfaceColor)
+    listView.itemAnimator = null
   }
 }

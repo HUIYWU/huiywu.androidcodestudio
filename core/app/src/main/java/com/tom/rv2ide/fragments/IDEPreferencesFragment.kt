@@ -40,17 +40,17 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     
-    enterTransition = MaterialSharedAxis(MaterialSharedAxis.Z, true).apply {
-        duration = 600
+    enterTransition = MaterialSharedAxis(MaterialSharedAxis.X, true).apply {
+        duration = 320
     }
-    returnTransition = MaterialSharedAxis(MaterialSharedAxis.Z, false).apply {
-        duration = 600
+    returnTransition = MaterialSharedAxis(MaterialSharedAxis.X, false).apply {
+        duration = 320
     }
-    exitTransition = MaterialSharedAxis(MaterialSharedAxis.Z, true).apply {
-        duration = 600
+    exitTransition = MaterialSharedAxis(MaterialSharedAxis.X, true).apply {
+        duration = 320
     }
-    reenterTransition = MaterialSharedAxis(MaterialSharedAxis.Z, false).apply {
-        duration = 600
+    reenterTransition = MaterialSharedAxis(MaterialSharedAxis.X, false).apply {
+        duration = 320
     }
   }
 
