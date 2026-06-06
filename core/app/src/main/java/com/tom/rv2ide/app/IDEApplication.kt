@@ -145,8 +145,10 @@ class IDEApplication : TermuxApplication() {
     // initializeMemoryProfiler()
       }
 
-      anrWatchdog = AnrWatchdog().also { it.start() }
-      log.info("ACS_RUNTIME_PROBE_WATCHDOG_STARTED dumpDir={}", RuntimeProbe.getDumpDirPath())
+      if (RuntimeProbe.ENABLED) {
+        anrWatchdog = AnrWatchdog().also { it.start() }
+        log.info("ACS_RUNTIME_PROBE_WATCHDOG_STARTED dumpDir={}", RuntimeProbe.getDumpDirPath())
+      }
 
       EventBus.builder()
         .addIndex(AppEventsIndex())

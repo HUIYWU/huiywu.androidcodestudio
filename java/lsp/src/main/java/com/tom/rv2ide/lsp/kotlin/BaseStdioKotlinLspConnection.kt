@@ -67,7 +67,7 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
 
   override fun startServer(classpathProvider: KotlinClasspathProvider) {
     if (process?.isAlive == true) {
-      KslLogs.debug("{} already running", logPrefix())
+      KslLogs.debugThrottled("kls:already-running", 3000L, "{} already running", logPrefix())
       return
     }
 
@@ -105,7 +105,7 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
           add("params", params)
         }
 
-    KslLogs.debug("Sending request ID {}: {}", id, method)
+    KslLogs.debugThrottled("kls:request:$method", 1500L, "Sending request: {}", method)
     sendMessage(payload)
   }
 
@@ -117,7 +117,7 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
           add("params", params)
         }
 
-    KslLogs.debug("Sending notification: {}", method)
+    KslLogs.debugThrottled("kls:notification:$method", 1500L, "Sending notification: {}", method)
     sendMessage(payload)
   }
 
@@ -129,7 +129,7 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
           add("params", params)
         }
 
-    KslLogs.debug("Sending notification: {}", method)
+    KslLogs.debugThrottled("kls:notification-throw:$method", 1500L, "Sending notification: {}", method)
     sendMessageOrThrow(payload)
   }
 
@@ -209,7 +209,13 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
               try {
                 var line: String?
                 while (errorReader.readLine().also { line = it } != null) {
-                  KslLogs.warn("{} stderr: {}", logPrefix(), line)
+                  val stderrLine = line ?: continue
+                  if (stderrLine.isBlank()) continue
+                  KslLogs.warn(
+                      "{} stderr: {}",
+                      logPrefix(),
+                      stderrLine.take(500),
+                  )
                 }
               } catch (e: Exception) {
                 KslLogs.error("Error in error reader thread", e)

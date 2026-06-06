@@ -13,6 +13,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.slf4j.LoggerFactory
 
 object RuntimeProbe {
+  const val ENABLED: Boolean = false
+
   private val log = LoggerFactory.getLogger(RuntimeProbe::class.java)
   private val formatter = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US)
   private val counter = AtomicInteger(0)
@@ -23,6 +25,7 @@ object RuntimeProbe {
   @Volatile private var lastStateAt: Long = 0L
 
   fun init(context: Context) {
+    if (!ENABLED) return
     appContext = context.applicationContext
     val dir = File(context.filesDir, "diagnostics/runtime_dumps")
     dir.mkdirs()
@@ -34,6 +37,7 @@ object RuntimeProbe {
   fun getDumpDirPath(): String = dumpDir?.absolutePath ?: "<uninitialized>"
 
   fun mark(state: String) {
+    if (!ENABLED) return
     lastState = state
     lastStateAt = System.currentTimeMillis()
     persistState(state)
@@ -41,6 +45,7 @@ object RuntimeProbe {
   }
 
   fun dump(reason: String, throwable: Throwable? = null): File? {
+    if (!ENABLED) return null
     val context = appContext ?: return null
     val dir = dumpDir ?: File(context.filesDir, "diagnostics/runtime_dumps").also {
       it.mkdirs()
@@ -84,6 +89,7 @@ object RuntimeProbe {
   }
 
   private fun persistState(state: String) {
+    if (!ENABLED) return
     val context = appContext ?: return
     try {
       val dir = dumpDir ?: File(context.filesDir, "diagnostics/runtime_dumps").also {
@@ -106,6 +112,7 @@ class AnrWatchdog(
   @Volatile private var tick = 0
 
   override fun run() {
+    if (!RuntimeProbe.ENABLED) return
     while (!isInterrupted) {
       val before = tick
       tickHandler.post { tick++ }

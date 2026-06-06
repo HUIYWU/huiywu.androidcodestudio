@@ -57,14 +57,16 @@ class KotlinWorkspaceSetup(
   fun setup(processManager: KotlinLspConnection) {
     val workspaceRootDir = resolvedWorkspaceRootDir
     val workspaceRoot = workspaceRootDir.toPath().toUri().toString()
-    KslLogs.info(
+    KslLogs.infoThrottled(
+        "kls:workspace-setup-root",
+        5000L,
         "Setting up workspace with root: {} (projectRoot={})",
         workspaceRoot,
         workspace.getProjectDir().absolutePath,
     )
     Index.setIsIndexing(true)
-    Index.setProgressMessage("Setting up Kotlin workspace...")
-    LogStream.emitLineBlocking("Setting up workspace...")
+    Index.setProgressMessage("Starting Kotlin language server...")
+    LogStream.emitLineBlocking("Starting Kotlin language server...")
 
 
     LspFeatures.setProcessManager(processManager)
@@ -77,8 +79,8 @@ class KotlinWorkspaceSetup(
     val currentHash = indexCache.computeClasspathHash(currentClasspath)
     val cacheValid = indexCache.isCacheValid(currentHash)
 
-    KslLogs.info("Cache status: {}", if (cacheValid) "VALID" else "INVALID/MISSING")
-    KslLogs.info(indexCache.getCacheStats())
+    KslLogs.infoThrottled("kls:cache-status", 5000L, "Cache status: {}", if (cacheValid) "VALID" else "INVALID/MISSING")
+    KslLogs.debugThrottled("kls:cache-stats", 5000L, "{}", indexCache.getCacheStats())
 
     backendConfigurator.beforeServerStart(processManager, classpathProvider)
     processManager.startServer(classpathProvider)
@@ -86,10 +88,10 @@ class KotlinWorkspaceSetup(
     val initParams = createInitParams(workspaceRoot)
     logInitializeSummary(initParams)
 
-    KslLogs.info("Sending initialize request...")
+    KslLogs.debugThrottled("kls:init-request", 5000L, "Sending initialize request...")
 
     processManager.sendRequest("initialize", initParams) { result ->
-      KslLogs.info("Server initialized successfully")
+      KslLogs.infoThrottled("kls:init-success", 5000L, "Server initialized successfully")
       processManager.sendNotification("initialized", JsonObject())
 
       backendConfigurator.afterServerInitialized(processManager, classpathProvider)
@@ -239,7 +241,12 @@ class KotlinWorkspaceSetup(
                         StandardWatchEventKinds.ENTRY_DELETE,
                     )
             watchKeys[key] = generatedDir
-            KslLogs.info("Watching for build changes: {}", generatedDir.absolutePath)
+          KslLogs.infoThrottled(
+              "kls:watch-build-changes",
+              3000L,
+              "Watching for build changes: {}",
+              generatedDir.absolutePath,
+          )
           }
         } catch (e: Exception) {
           KslLogs.warn("Failed to watch directory: {}", buildDir.absolutePath, e)
@@ -274,10 +281,14 @@ class KotlinWorkspaceSetup(
                     // Double check no new changes came in during delay
                     val checkKey = buildWatcher?.poll(100, TimeUnit.MILLISECONDS)
                     if (checkKey == null) {
-                      // No new changes, safe to reload
-                      KslLogs.info("Build changes detected, reloading classpath and index...")
-                      reloadClasspathAndIndex(processManager)
-                      lastReloadTime = System.currentTimeMillis()
+              // No new changes, safe to reload
+              KslLogs.infoThrottled(
+                  "kls:build-reload",
+                  2000L,
+                  "Build changes detected, reloading classpath and index...",
+              )
+              reloadClasspathAndIndex(processManager)
+              lastReloadTime = System.currentTimeMillis()
                     } else {
                       // New changes came in, reset timer
                       checkKey.reset()
@@ -303,7 +314,7 @@ class KotlinWorkspaceSetup(
       try {
         Index.setIsIndexing(true)  // Set flag when reload starts
         Index.setProgressMessage("Refreshing classpath and reindexing Kotlin symbols...")
-        KslLogs.info("=== RELOADING CLASSPATH AND INDEX ===")
+        KslLogs.infoThrottled("kls:reload-start", 3000L, "=== RELOADING CLASSPATH AND INDEX ===")
 
         // Invalidate classpath cache
         classpathProvider.invalidateCache()
@@ -322,7 +333,7 @@ class KotlinWorkspaceSetup(
         val workspaceRoot = resolvedWorkspaceRootDir.toPath().toUri().toString()
         triggerIndexing(processManager, workspaceRoot, currentHash)
 
-        KslLogs.info("Classpath and index reloaded successfully")
+        KslLogs.infoThrottled("kls:reload-success", 3000L, "Classpath and index reloaded successfully")
       } catch (e: Exception) {
         KslLogs.error("Failed to reload classpath and index", e)
         Index.setIsIndexing(false)  // Reset flag on error
@@ -332,7 +343,7 @@ class KotlinWorkspaceSetup(
 
 
   private fun restoreCachedIndex(processManager: KotlinLspConnection) {
-    KslLogs.info("Restoring index from cache...")
+    KslLogs.infoThrottled("kls:restore-cache-start", 5000L, "Restoring index from cache...")
     Index.setIsIndexing(true)  // Set indexing flag when starting cache restoration
     Index.setProgressMessage("Restoring cached Kotlin index...")
 
@@ -343,7 +354,12 @@ class KotlinWorkspaceSetup(
 
       logDidChangeConfigurationSummary("restoreCachedIndex", configParams)
       processManager.sendNotification("workspace/didChangeConfiguration", configParams)
-      KslLogs.info("Cache restored with {} symbols - indexing skipped", cachedSymbols.size())
+      KslLogs.infoThrottled(
+          "kls:restore-cache-success",
+          5000L,
+          "Cache restored with {} symbols - indexing skipped",
+          cachedSymbols.size(),
+      )
       Index.setProgressMessage("Restored cached index: ${cachedSymbols.size()} symbols")
       Index.setIsIndexing(false)  // Reset flag after cache restoration
     } else {
@@ -360,7 +376,7 @@ class KotlinWorkspaceSetup(
       workspaceRoot: String,
       classpathHash: String,
   ) {
-    KslLogs.info("Triggering classpath indexing...")
+    KslLogs.infoThrottled("kls:trigger-indexing", 3000L, "Triggering classpath indexing...")
     Index.setIsIndexing(true)  // Set indexing flag when starting
     Index.setProgressMessage("Indexing Kotlin symbols...")
 
@@ -382,7 +398,7 @@ class KotlinWorkspaceSetup(
               else -> JsonArray()
             }
         val symbolCount = symbols.size()
-        KslLogs.info("Indexing complete, found {} symbols", symbolCount)
+        KslLogs.infoThrottled("kls:indexing-complete", 3000L, "Indexing complete, found {} symbols", symbolCount)
         Index.setProgressMessage("Indexed ${symbolCount} symbols")
 
         // Save to cache
@@ -497,7 +513,7 @@ class KotlinWorkspaceSetup(
   }
 
   private fun createInitParams(workspaceRoot: String): JsonObject {
-    KslLogs.info("=== CREATING INIT PARAMS ===")
+    KslLogs.debugThrottled("kls:init-params-create", 5000L, "=== CREATING INIT PARAMS ===")
     val workspaceRootPath = try {
       File(java.net.URI(workspaceRoot)).absolutePath
     } catch (_: Exception) {
@@ -644,10 +660,10 @@ class KotlinWorkspaceSetup(
 
           add("initializationOptions", initOptions)
 
-          KslLogs.info("Configured KLS with {} classpath entries", effectiveClassPaths.size)
+          KslLogs.debugThrottled("kls:configured-classpath-count", 5000L, "Configured KLS with {} classpath entries", effectiveClassPaths.size)
         }
 
-    KslLogs.info("Full init params created with script support and formatting")
+    KslLogs.debugThrottled("kls:init-params-created", 5000L, "Full init params created with script support and formatting")
     return params
   }
 }

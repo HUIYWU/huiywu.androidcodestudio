@@ -194,6 +194,9 @@ class KotlinNotificationHandler {
         msg.contains("indexing complete", ignoreCase = true) -> {
           KslLogs.info("Indexing completed - setting Index flag to false")
           LogStream.emitLineBlocking(msg)
+          extractSymbolCount(msg)?.let { count ->
+            Index.setProgressMessage("Indexed $count symbols")
+          }
           Index.setIsIndexing(false)
         }
         // "Updated symbol index" is just progress, NOT completion - keep emitting but don't stop
@@ -283,6 +286,16 @@ class KotlinNotificationHandler {
       msg.contains("diagnostics.recv", ignoreCase = true) -> "kls:diagnostics-recv"
       msg.contains("diagnostics.clear", ignoreCase = true) -> "kls:diagnostics-clear"
       else -> "kls:${msg.take(80)}"
+    }
+  }
+
+  private fun extractSymbolCount(message: String): Int? {
+    val patterns = listOf(
+        Regex("""(\d+)\s+symbols?""", RegexOption.IGNORE_CASE),
+        Regex("""found\s+(\d+)""", RegexOption.IGNORE_CASE),
+    )
+    return patterns.firstNotNullOfOrNull { pattern ->
+      pattern.find(message)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }
   }
 }

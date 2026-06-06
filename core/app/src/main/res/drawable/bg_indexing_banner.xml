@@ -18,8 +18,8 @@
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     
-    <!-- Background color using Material theme attribute -->
-    <solid android:color="?attr/colorOnPrimary" />
+    <!-- Background color follows the active Material theme/accent. -->
+    <solid android:color="?attr/colorPrimaryContainer" />
     
     <!-- Bottom corners rounded (40dp radius) -->
     <corners

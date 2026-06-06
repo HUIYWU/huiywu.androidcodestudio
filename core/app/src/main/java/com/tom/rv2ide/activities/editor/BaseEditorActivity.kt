@@ -744,17 +744,18 @@ override fun onApplySystemBarInsets(insets: Insets) {
     }
 
     if (BuildPreferences.isKtIndexingNotificationEnabled) {
-      // Show Kotlin banner for high-level init/build/sync-triggered indexing sessions.
-      // Normal editing should not start a banner session on its own, but once a high-level
-      // phase starts, keep the banner visible until Kotlin indexing actually finishes.
+      // Kotlin banner is intentionally scoped to the initial KLS startup/indexing pass only.
+      // Project sync, builds, classpath reloads, cache restore and normal edit-time progress should not
+      // start or update a visible banner session.
       val indexingBanner = IndexingBanner(this)
       var kotlinBannerSessionActive = false
 
       fun updateKotlinBanner() {
-        val highLevelPhaseActive = editorViewModel.isInitializing || editorViewModel.isBuildInProgress
+        val initialKlsIndexing = editorViewModel.isInitializing && Index.isIndexing()
 
-        if (highLevelPhaseActive) {
+        if (!kotlinBannerSessionActive && initialKlsIndexing) {
           kotlinBannerSessionActive = true
+          indexingBanner.updateTitle("Kotlin")
         }
 
         if (!kotlinBannerSessionActive) {
@@ -762,11 +763,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
           return
         }
 
-        indexingBanner.updateTitle("Kotlin project")
         indexingBanner.updateMessage(Index.progressMessage.value)
 
-        val shouldKeepShowing = highLevelPhaseActive || Index.isIndexing()
-        if (shouldKeepShowing) {
+        if (Index.isIndexing()) {
           indexingBanner.show()
         } else {
           indexingBanner.hide()
@@ -775,14 +774,13 @@ override fun onApplySystemBarInsets(insets: Insets) {
       }
 
       editorViewModel._isInitializing.observe(this) { updateKotlinBanner() }
-      editorViewModel._isBuildInProgress.observe(this) { updateKotlinBanner() }
 
       lifecycleScope.launch {
         Index.progressMessage.collect {
           if (kotlinBannerSessionActive) {
             indexingBanner.updateMessage(it)
-            updateKotlinBanner()
           }
+          updateKotlinBanner()
         }
       }
 
