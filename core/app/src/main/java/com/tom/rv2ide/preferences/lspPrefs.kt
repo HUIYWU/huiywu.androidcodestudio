@@ -23,6 +23,7 @@ import com.tom.rv2ide.lsp.kotlin.KotlinLspBackendId
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.preferences.internal.LSPPreferences
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_BACKEND
+import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_ENABLED
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_FORMAT_STYLE
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
@@ -59,10 +60,25 @@ private class KotlinCategory(
 
   init {
     addPreference(KotlinLSP())
+    addPreference(KotlinLspEnabled())
     addPreference(KotlinBackend())
     addPreference(KotlinFormatStyle())
+    addPreference(KotlinIndexingNotification())
   }
 }
+
+@Parcelize
+private class KotlinLspEnabled(
+    override val key: String = ACS_KOTLIN_LSP_ENABLED,
+    override val title: Int = string.kotlin_lsp_enabled_title,
+    override val summary: Int? = string.kotlin_lsp_enabled_summary,
+    override val icon: Int? = drawable.ic_server,
+) :
+    SwitchPreference(
+        setValue = LSPPreferences::kotlinLspEnabled::set,
+        getValue = LSPPreferences::kotlinLspEnabled::get,
+    )
+
 @Parcelize
 private class KotlinLSP(
     override val key: String = "lsp_kotlin_server",

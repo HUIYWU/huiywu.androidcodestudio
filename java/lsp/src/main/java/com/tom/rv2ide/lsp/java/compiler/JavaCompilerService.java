@@ -32,7 +32,6 @@ import com.tom.rv2ide.lsp.java.parser.ParseTask;
 import com.tom.rv2ide.lsp.java.parser.Parser;
 import com.tom.rv2ide.lsp.java.utils.Extractors;
 import com.tom.rv2ide.lsp.java.visitors.FindTypeDeclarations;
-import com.tom.rv2ide.models.Position;
 import com.tom.rv2ide.models.Range;
 import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.projects.ModuleProject;
@@ -92,10 +91,8 @@ public class JavaCompilerService implements CompilerProvider {
       BootClasspathProvider.getTopLevelClasses(
           Collections.singleton(Environment.ANDROID_JAR.getAbsolutePath()));
   private CompileBatch cachedCompile;
-  private int changeDelta = 0;
-
-  private Position lastReparsePosition = Position.NONE;
-  private Position newCursorPosition = Position.NONE;
+  private final PartialReparseDecider partialReparseDecider = new PartialReparseDecider();
+  private final JavaIncrementalState incrementalState = new JavaIncrementalState();
 
   // The module project must not be null
   // It is marked as nullable just for some special cases like tests
@@ -346,28 +343,73 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   private synchronized void reparseOrRecompile(CompilationRequest request) {
-//    if (needsRecompilation(request)) {
-//      LOG.warn("Cannot reparse. Recompilation is required");
+    final PartialReparseDecision decision =
+        partialReparseDecider.decide(
+            request, needsRecompilation(request), incrementalState.isChangeValidForReparse());
+    logPartialReparseDecision(request, decision);
+
+    switch (decision.action) {
+      case DRY_RUN_PARTIAL_REPARSE:
+        dryRunPartialReparseThenFullRecompile(request);
+        return;
+      case TRY_PARTIAL_REPARSE:
+        tryPartialReparseWithFallback(request);
+        return;
+      case FULL_RECOMPILE:
+      default:
+        recompile(request);
+    }
+  }
+
+  private void logPartialReparseDecision(
+      @NonNull final CompilationRequest request, @NonNull final PartialReparseDecision decision) {
+    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogIde()) {
+      return;
+    }
+
+    final PartialReparseRequest partialRequest = request.partialRequest;
+    final int sourcesCount = request.sources == null ? -1 : request.sources.size();
+    final long cursor = partialRequest == null ? -1 : partialRequest.cursor;
+    final int contentsLength =
+        partialRequest == null || partialRequest.contents == null
+            ? -1
+            : partialRequest.contents.length();
+    LOG.info(
+        "Partial reparse decision: action={} reason={} sources={} hasPartialRequest={} cursor={} contentsLength={} changeDelta={} newCursorPosition={}",
+        decision.action,
+        decision.reason,
+        sourcesCount,
+        partialRequest != null,
+        cursor,
+        contentsLength,
+        this.incrementalState.getChangeDelta(),
+        this.incrementalState.getNewCursorPosition());
+  }
+
+  private void dryRunPartialReparseThenFullRecompile(@NonNull final CompilationRequest request) {
+    // Keep the user-visible result on the stable full-recompile path. This branch is only a
+    // controlled entry point for future isolated experiments; running tryReparse here would mutate
+    // cached javac AST/Context state and could contaminate the full-compile fallback.
+    if (JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING && IdeLogConfig.shouldLogIde()) {
+      LOG.info("Partial reparse dry-run requested; using full recompile until isolated dry-run is available");
+    }
     recompile(request);
-//    } else {
-//      LOG.debug("Trying to perform a reparse...");
-//      tryReparse(request);
-//    }
+  }
+
+  private void tryPartialReparseWithFallback(@NonNull final CompilationRequest request) {
+    try {
+      tryReparse(request);
+    } catch (Throwable err) {
+      if (JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING) {
+        LOG.warn("Partial reparse failed. Falling back to full recompile", err);
+      }
+      recompile(request);
+    }
   }
 
   private boolean needsRecompilation(final CompilationRequest request) {
     return this.cachedCompile == null
         || this.cachedCompile.closed;
-//        || request.partialRequest == null
-//        || request.partialRequest.cursor < 0
-//        || !isChangeValidForReparse()
-//        || request.sources.size() != 1; // Cannot perform a reparse if there are multiple files
-  }
-
-  private boolean isChangeValidForReparse() {
-    return this.lastReparsePosition == Position.NONE
-        || (this.newCursorPosition != Position.NONE
-        && this.lastReparsePosition.getLine() == this.newCursorPosition.getLine());
   }
 
   private void tryReparse(@NonNull final CompilationRequest request) {
@@ -410,13 +452,14 @@ public class JavaCompilerService implements CompilerProvider {
     final SourcePositions sourcePositions = Trees.instance(cachedCompile.task).getSourcePositions();
     final int start = (int) sourcePositions.getStartPosition(info.cu, methodTree.getBody());
     final int end =
-        (int) sourcePositions.getEndPosition(info.cu, methodTree.getBody()) + this.changeDelta;
+        (int) sourcePositions.getEndPosition(info.cu, methodTree.getBody())
+            + this.incrementalState.getChangeDelta();
 
     if (start < 0 || end < 0 || start > end || end >= partialRequest.contents.length()) {
       LOG.warn(
           "Cannot reparse. Invalid change delta. end: {} changeDelta: {} content.length: {}",
           end,
-          this.changeDelta,
+          this.incrementalState.getChangeDelta(),
           partialRequest.contents.length()
       );
       recompile(request);
@@ -443,8 +486,7 @@ public class JavaCompilerService implements CompilerProvider {
     }
     updateModificationCache(request);
     cachedCompile.updatePositions(info.cu, true);
-    this.changeDelta = 0;
-    this.lastReparsePosition = this.newCursorPosition;
+    this.incrementalState.markReparseSucceeded();
   }
 
   @Nullable
@@ -473,7 +515,7 @@ public class JavaCompilerService implements CompilerProvider {
   private synchronized void recompile(CompilationRequest request) {
     close();
     this.cachedCompile = performCompilation(request);
-    this.changeDelta = 0;
+    this.incrementalState.resetAfterFullRecompile();
     updateModificationCache(request);
   }
 
@@ -594,8 +636,7 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   public void onDocumentChange(@NonNull DocumentChangeEvent event) {
-    this.changeDelta += event.getChangeDelta();
-    this.newCursorPosition = event.getChangeRange().getEnd();
+    this.incrementalState.onDocumentChange(event);
   }
 
   public JavaCompilerService copy() {
@@ -603,9 +644,7 @@ public class JavaCompilerService implements CompilerProvider {
         new JavaCompilerService(
             this.module, this.fileManager, this.bootClasspathClasses, this.classPathClasses);
     compiler.cachedCompile = null;
-    compiler.newCursorPosition = Position.NONE;
-    compiler.lastReparsePosition = Position.NONE;
-    compiler.changeDelta = 0;
+    compiler.incrementalState.resetForCopy();
     compiler.compiler = new ReusableCompiler();
     compiler.diagnostics.clear();
     compiler.cachedModified.clear();

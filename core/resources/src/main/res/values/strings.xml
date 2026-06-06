@@ -558,6 +558,8 @@
   
   <string name="lsp_options_kotlin_title">Kotlin Language Server</string>
   <string name="lsp_options_kotlin_summary">Kotlin language server offering intelligent coding features including code completion, error highlighting, and more</string>
+  <string name="kotlin_lsp_enabled_title">Enable Kotlin language server</string>
+  <string name="kotlin_lsp_enabled_summary">Enable KLS for Kotlin completion, diagnostics, hover, formatting, and symbol indexing. Disable it to avoid starting KLS for Kotlin files.</string>
   <string name="kotlin_lsp_backend_title">Kotlin LSP Backend</string>
   <string name="kotlin_lsp_backend_summary">Select which Kotlin language server backend is active</string>
   <string name="kotlin_lsp_backend_javacs">Javac-based</string>

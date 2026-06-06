@@ -96,7 +96,7 @@ private class DependenciesUpdater(
     )
 
 @Parcelize
-private class KotlinIndexingNotification(
+class KotlinIndexingNotification(
     override val key: String = KT_INDEXING_NOTIFICATION,
     override val title: Int = R.string.idepref_kotlin_indexing_notif_title,
     override val summary: Int? = R.string.idepref_kotlin_indexing_notif_summary,
@@ -117,7 +117,6 @@ private class GradleOptions(
   init {
     addPreference(EnableBuildOutput())
     addPreference(DependenciesUpdater())
-    addPreference(KotlinIndexingNotification())
     addPreference(GradleCommands())
     addPreference(GradleDistrubution())
     addPreference(GradleJDKVersionPreference())

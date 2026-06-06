@@ -24,6 +24,7 @@ import com.tom.rv2ide.lsp.api.IServerSettings
 import com.tom.rv2ide.lsp.kotlin.compiler.KotlinCompilerService
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.lsp.kotlin.providers.KotlinCodeFormatProvider
+import com.tom.rv2ide.preferences.internal.LSPPreferences
 import com.tom.rv2ide.lsp.models.*
 import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.IWorkspace
@@ -54,6 +55,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
   private var _client: ILanguageClient? = null
   private var initialized = false
+  private var disabledByPreference = false
   private var workspaceSetup: KotlinWorkspaceSetup? = null
 
   private val importAnalyzer = KotlinImportAnalyzer()
@@ -69,21 +71,26 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   private lateinit var javaCompilerBridge: KotlinJavaCompilerBridge
 
   init {
-    if (!org.greenrobot.eventbus.EventBus.getDefault().isRegistered(eventHandler)) {
-      org.greenrobot.eventbus.EventBus.getDefault().register(eventHandler)
-    }
+    if (!LSPPreferences.kotlinLspEnabled) {
+      disabledByPreference = true
+      KslLogs.info("Kotlin language server is disabled by preference")
+    } else {
+      if (!org.greenrobot.eventbus.EventBus.getDefault().isRegistered(eventHandler)) {
+        org.greenrobot.eventbus.EventBus.getDefault().register(eventHandler)
+      }
 
-    processManager.setDiagnosticsCallback { diagnostics ->
-      KslLogs.debug(
-          "KLS diagnostics forwarded from server: file={} count={} summary={}",
-          diagnostics.file,
-          diagnostics.diagnostics.size,
-          summarizeDiagnosticsForTrace(diagnostics.diagnostics),
-      )
-      _client?.publishDiagnostics(
-          diagnostics.copy(channel = DiagnosticResult.CHANNEL_SERVER)
-      )
+      processManager.setDiagnosticsCallback { diagnostics ->
+        KslLogs.debug(
+            "KLS diagnostics forwarded from server: file={} count={} summary={}",
+            diagnostics.file,
+            diagnostics.diagnostics.size,
+            summarizeDiagnosticsForTrace(diagnostics.diagnostics),
+        )
+        _client?.publishDiagnostics(
+            diagnostics.copy(channel = DiagnosticResult.CHANNEL_SERVER)
+        )
 
+      }
     }
   }
 
@@ -101,6 +108,13 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override fun setupWorkspace(workspace: IWorkspace) {
+    if (!LSPPreferences.kotlinLspEnabled) {
+      disabledByPreference = true
+      initialized = false
+      KslLogs.info("Skipping Kotlin language server setup because KLS is disabled by preference")
+      return
+    }
+
     formatProvider = KotlinCodeFormatProvider(processManager)
     workspaceSetup = KotlinWorkspaceSetup(context, workspace, backendConfigurator, backendSpec.id)
     workspaceSetup?.setup(processManager)
@@ -141,6 +155,10 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override fun complete(params: CompletionParams?): CompletionResult {
+    if (disabledByPreference || !LSPPreferences.kotlinLspEnabled) {
+      return CompletionResult(emptyList())
+    }
+
     return if (initialized && params != null) {
       // Use async instead of blocking
       runBlocking {
@@ -155,7 +173,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override suspend fun findReferences(params: ReferenceParams): ReferenceResult {
-    return if (initialized) {
+    return if (initialized && !disabledByPreference && LSPPreferences.kotlinLspEnabled) {
       requestHandler.findReferences(params)
     } else {
       ReferenceResult(emptyList())
@@ -163,7 +181,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override suspend fun findDefinition(params: DefinitionParams): DefinitionResult {
-    return if (initialized) {
+    return if (initialized && !disabledByPreference && LSPPreferences.kotlinLspEnabled) {
       requestHandler.findDefinition(params)
     } else {
       DefinitionResult(emptyList())
@@ -171,7 +189,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override suspend fun hover(params: DefinitionParams): MarkupContent {
-    return if (initialized) {
+    return if (initialized && !disabledByPreference && LSPPreferences.kotlinLspEnabled) {
       requestHandler.hover(params)
     } else MarkupContent("", MarkupKind.PLAIN)
   }
@@ -181,7 +199,7 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override suspend fun signatureHelp(params: SignatureHelpParams): SignatureHelp {
-    return if (initialized) {
+    return if (initialized && !disabledByPreference && LSPPreferences.kotlinLspEnabled) {
       requestHandler.signatureHelp(params)
     } else {
       SignatureHelp(emptyList(), 0, 0)
@@ -234,8 +252,8 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
       return CodeFormatResult(false, mutableListOf())
     }
 
-    if (!initialized) {
-      KslLogs.warn("Server not initialized")
+    if (!initialized || disabledByPreference || !LSPPreferences.kotlinLspEnabled) {
+      KslLogs.warn("Server not initialized or Kotlin language server is disabled")
       return CodeFormatResult(false, mutableListOf())
     }
 
@@ -294,7 +312,9 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
     } catch (e: Exception) {
       KslLogs.warn("Error unregistering from EventBus", e)
     }
-    processManager.shutdown()
+    if (!disabledByPreference) {
+      processManager.shutdown()
+    }
     importAnalyzer.clearCache()
     initialized = false
     KslLogs.info("Kotlin Language Server shutdown complete")
@@ -313,6 +333,10 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
 
   @Subscribe(threadMode = ThreadMode.ASYNC)
   fun onFileSelected(event: DocumentSelectedEvent) {
+    if (disabledByPreference || !LSPPreferences.kotlinLspEnabled) {
+      return
+    }
+
     KslLogs.debug("=== FILE SELECTED EVENT: {}", event.selectedFile)
     selectedFile = event.selectedFile
     if (

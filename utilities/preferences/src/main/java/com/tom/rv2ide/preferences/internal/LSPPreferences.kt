@@ -24,6 +24,7 @@ package com.tom.rv2ide.preferences.internal
 object LSPPreferences {
   const val ACS_KOTLIN_LSP_FORMAT_STYLE = "acs_kotlin_lsp_format_style"
   const val ACS_KOTLIN_LSP_BACKEND = "acs_kotlin_lsp_backend"
+  const val ACS_KOTLIN_LSP_ENABLED = "acs_kotlin_lsp_enabled"
 
   const val KOTLIN_LSP_BACKEND_FWCD = "fwcd"
   const val KOTLIN_LSP_BACKEND_STUB = "stub"
@@ -34,6 +35,12 @@ object LSPPreferences {
     get() = prefManager.getString(ACS_KOTLIN_LSP_FORMAT_STYLE, "google")
     set(value) {
       prefManager.putString(ACS_KOTLIN_LSP_FORMAT_STYLE, value)
+    }
+
+  var kotlinLspEnabled: Boolean
+    get() = prefManager.getBoolean(ACS_KOTLIN_LSP_ENABLED, true)
+    set(value) {
+      prefManager.putBoolean(ACS_KOTLIN_LSP_ENABLED, value)
     }
 
   var kotlinLspBackend: String

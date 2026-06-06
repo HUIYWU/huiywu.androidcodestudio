@@ -21,6 +21,8 @@ import android.view.View
 import android.widget.Toast
 import androidx.core.graphics.Insets
 import androidx.fragment.app.Fragment
+import androidx.preference.Preference
+import androidx.preference.PreferenceFragmentCompat
 import com.tom.rv2ide.R
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.databinding.ActivityPreferencesBinding
@@ -35,7 +37,7 @@ import java.io.File
 import android.app.Activity
 import android.content.Intent
 
-class PreferencesActivity : EdgeToEdgeIDEActivity() {
+class PreferencesActivity : EdgeToEdgeIDEActivity(), PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
 
   private var _binding: ActivityPreferencesBinding? = null
   private val binding: ActivityPreferencesBinding
@@ -141,7 +143,7 @@ class PreferencesActivity : EdgeToEdgeIDEActivity() {
         toolbar.paddingBottom,
     )
 
-    val fragmentContainer: View = binding.fragmentContainerParent
+    val fragmentContainer: View = binding.fragmentContainer
     fragmentContainer.setPadding(
         fragmentContainer.paddingLeft + insets.left,
         fragmentContainer.paddingTop,
@@ -156,7 +158,30 @@ class PreferencesActivity : EdgeToEdgeIDEActivity() {
   }
 
   private fun loadFragment(fragment: Fragment) {
-    super.loadFragment(fragment, binding.fragmentContainer.id)
+    supportFragmentManager.beginTransaction()
+        .setReorderingAllowed(true)
+        .replace(binding.fragmentContainer.id, fragment)
+        .commit()
+  }
+
+  override fun onPreferenceStartFragment(
+      caller: PreferenceFragmentCompat,
+      pref: Preference,
+  ): Boolean {
+    val fragment =
+        supportFragmentManager.fragmentFactory.instantiate(classLoader, checkNotNull(pref.fragment))
+            .apply {
+              arguments = pref.extras
+              setTargetFragment(caller, 0)
+            }
+
+    supportFragmentManager.beginTransaction()
+        .setReorderingAllowed(true)
+        .replace(binding.fragmentContainer.id, fragment)
+        .addToBackStack(pref.key)
+        .commit()
+
+    return true
   }
 
   override fun onDestroy() {

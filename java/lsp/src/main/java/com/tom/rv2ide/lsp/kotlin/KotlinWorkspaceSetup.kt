@@ -64,10 +64,22 @@ class KotlinWorkspaceSetup(
         workspaceRoot,
         workspace.getProjectDir().absolutePath,
     )
-    Index.setKotlinStartupSession(true)
-    Index.setIsIndexing(true)
-    Index.setProgressMessage("Starting Kotlin language server...")
-    LogStream.emitLineBlocking("Starting Kotlin language server...")
+    val hasKotlinSources = hasKotlinSourceFiles(workspaceRootDir)
+    if (hasKotlinSources) {
+      Index.setKotlinStartupSession(true)
+      Index.setIsIndexing(true)
+      Index.setProgressMessage("Starting Kotlin language server...")
+      LogStream.emitLineBlocking("Starting Kotlin language server...")
+    } else {
+      Index.setKotlinStartupSession(false)
+      Index.setIsIndexing(false)
+      KslLogs.infoThrottled(
+          "kls:no-kotlin-sources",
+          5000L,
+          "No Kotlin source files found under {}; startup banner and symbol warm-up will be skipped",
+          workspaceRootDir.absolutePath,
+      )
+    }
 
 
     LspFeatures.setProcessManager(processManager)
@@ -98,9 +110,9 @@ class KotlinWorkspaceSetup(
       backendConfigurator.afterServerInitialized(processManager, classpathProvider)
 
       if (cacheValid) {
-        restoreCachedIndex(processManager)
+        restoreCachedIndex(processManager, hasKotlinSources)
       } else {
-        triggerIndexing(processManager, workspaceRoot, currentHash)
+        triggerIndexing(processManager, workspaceRoot, currentHash, hasKotlinSources)
       }
     }
   }
@@ -348,7 +360,18 @@ class KotlinWorkspaceSetup(
   }
 
 
-  private fun restoreCachedIndex(processManager: KotlinLspConnection) {
+  private fun sendFwcdRuntimeConfig(processManager: KotlinLspConnection, source: String) {
+    val configParams = createFwcdRuntimeConfig()
+    logDidChangeConfigurationSummary(source, configParams)
+    processManager.sendNotification("workspace/didChangeConfiguration", configParams)
+  }
+
+  private fun restoreCachedIndex(processManager: KotlinLspConnection, showStartupBanner: Boolean) {
+    if (!showStartupBanner) {
+      sendFwcdRuntimeConfig(processManager, "restoreCachedIndex:noKotlinSources")
+      return
+    }
+
     KslLogs.infoThrottled("kls:restore-cache-start", 5000L, "Restoring cached workspace-symbol snapshot...")
     Index.setIsIndexing(true)  // Set indexing flag when starting cache restoration
     Index.setProgressMessage("Restoring cached Kotlin symbols...")
@@ -375,7 +398,7 @@ class KotlinWorkspaceSetup(
       // Index flag will be managed by triggerIndexing
       val currentClasspath = classpathProvider.getClasspathList()
       val currentHash = indexCache.computeClasspathHash(currentClasspath)
-      triggerIndexing(processManager, resolvedWorkspaceRootDir.toPath().toUri().toString(), currentHash)
+      triggerIndexing(processManager, resolvedWorkspaceRootDir.toPath().toUri().toString(), currentHash, showStartupBanner)
     }
   }
 
@@ -383,8 +406,14 @@ class KotlinWorkspaceSetup(
       processManager: KotlinLspConnection,
       workspaceRoot: String,
       classpathHash: String,
+      showStartupBanner: Boolean = true,
   ) {
     KslLogs.infoThrottled("kls:trigger-indexing", 3000L, "Triggering classpath indexing...")
+    if (!showStartupBanner) {
+      sendFwcdRuntimeConfig(processManager, "triggerIndexing:noKotlinSources")
+      return
+    }
+
     Index.setIsIndexing(true)  // Set indexing flag when starting
     Index.setProgressMessage("Indexing Kotlin symbols...")
 
@@ -439,6 +468,28 @@ class KotlinWorkspaceSetup(
 
   // Add method to get cache instance for manual operations
   fun getIndexCache(): KotlinIndexCache = indexCache
+
+  private fun hasKotlinSourceFiles(root: File): Boolean {
+    if (!root.exists() || !root.isDirectory) return false
+
+    return try {
+      root.walkTopDown()
+          .onEnter { dir -> !shouldSkipKotlinSourceScanDir(dir) }
+          .any { file -> file.isFile && (file.extension == "kt" || file.extension == "kts") }
+    } catch (e: Exception) {
+      KslLogs.warn("Failed to scan Kotlin source files under {}", root.absolutePath, e)
+      true
+    }
+  }
+
+  private fun shouldSkipKotlinSourceScanDir(dir: File): Boolean {
+    val name = dir.name
+    return name == ".git" ||
+        name == ".gradle" ||
+        name == ".idea" ||
+        name == "build" ||
+        name == ".acside"
+  }
 
   // Add method to manually trigger reload
   fun manualReloadClasspath(processManager: KotlinLspConnection) {
