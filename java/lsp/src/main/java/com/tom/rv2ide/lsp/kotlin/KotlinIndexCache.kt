@@ -26,6 +26,13 @@ import java.security.MessageDigest
 import org.slf4j.LoggerFactory
 
 /*
+ * ACS-side snapshot cache for `workspace/symbol` results.
+ *
+ * This is not fwcd's server-side SymbolIndex cache and does not restore server indexing state.
+ * It is only used as a startup optimization / progress hint. Server-side indexing must remain
+ * enabled for completion, standard-library symbols, diagnostics and Android/Compose classpath
+ * scenarios.
+ *
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
 

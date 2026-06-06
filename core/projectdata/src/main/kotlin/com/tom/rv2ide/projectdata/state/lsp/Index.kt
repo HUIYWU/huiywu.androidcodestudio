@@ -29,6 +29,14 @@ import kotlinx.coroutines.flow.StateFlow
 object Index {
 
   /*
+   * Startup-scoped Kotlin banner session. This is intentionally separate from generic
+   * indexing state so build/sync/reload indexing does not show the Kotlin startup banner.
+   */
+  private val _isKotlinStartupSession = MutableStateFlow(false)
+  val isKotlinStartupSession: StateFlow<Boolean>
+    get() = _isKotlinStartupSession
+
+  /*
    * @variable Project indexing?
    * Observable via StateFlow for reactive updates across Activities/Fragments
    */
@@ -46,6 +54,12 @@ object Index {
   fun setIsIndexing(isIndexing: Boolean) {
     _isProjectIndexing.value = isIndexing
   }
+
+  fun setKotlinStartupSession(active: Boolean) {
+    _isKotlinStartupSession.value = active
+  }
+
+  fun isKotlinStartupSessionActive(): Boolean = _isKotlinStartupSession.value
 
   fun setProgressMessage(message: String) {
     if (message.isNotBlank()) {

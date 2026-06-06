@@ -751,9 +751,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
       var kotlinBannerSessionActive = false
 
       fun updateKotlinBanner() {
-        val initialKlsIndexing = editorViewModel.isInitializing && Index.isIndexing()
+        val initialKlsStartup = Index.isKotlinStartupSessionActive()
 
-        if (!kotlinBannerSessionActive && initialKlsIndexing) {
+        if (!kotlinBannerSessionActive && initialKlsStartup) {
           kotlinBannerSessionActive = true
           indexingBanner.updateTitle("Kotlin")
         }
@@ -770,6 +770,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
         } else {
           indexingBanner.hide()
           kotlinBannerSessionActive = false
+          Index.setKotlinStartupSession(false)
         }
       }
 
@@ -780,6 +781,12 @@ override fun onApplySystemBarInsets(insets: Insets) {
           if (kotlinBannerSessionActive) {
             indexingBanner.updateMessage(it)
           }
+          updateKotlinBanner()
+        }
+      }
+
+      lifecycleScope.launch {
+        Index.isKotlinStartupSession.collect {
           updateKotlinBanner()
         }
       }

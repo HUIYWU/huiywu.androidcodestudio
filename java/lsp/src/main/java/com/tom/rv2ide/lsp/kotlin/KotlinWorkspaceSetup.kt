@@ -64,6 +64,7 @@ class KotlinWorkspaceSetup(
         workspaceRoot,
         workspace.getProjectDir().absolutePath,
     )
+    Index.setKotlinStartupSession(true)
     Index.setIsIndexing(true)
     Index.setProgressMessage("Starting Kotlin language server...")
     LogStream.emitLineBlocking("Starting Kotlin language server...")
@@ -172,7 +173,7 @@ class KotlinWorkspaceSetup(
     )
   }
 
-  private fun createFwcdRuntimeConfig(indexingEnabled: Boolean): JsonObject {
+  private fun createFwcdRuntimeConfig(): JsonObject {
     return JsonObject().apply {
       add(
           "settings",
@@ -196,9 +197,14 @@ class KotlinWorkspaceSetup(
                         )
                       },
                   )
+                  // ACS keeps fwcd indexing enabled even when restoring the local workspace-symbol
+                  // cache. The local cache is only a startup optimization/UI hint and must not be
+                  // treated as a request to disable the server-side symbol index, because completion,
+                  // standard-library symbols, diagnostics and Android/Compose classpath scenarios rely
+                  // on fwcd maintaining its own index.
                   add(
                       "indexing",
-                      JsonObject().apply { addProperty("enabled", indexingEnabled) },
+                      JsonObject().apply { addProperty("enabled", true) },
                   )
                 },
             )
@@ -343,21 +349,23 @@ class KotlinWorkspaceSetup(
 
 
   private fun restoreCachedIndex(processManager: KotlinLspConnection) {
-    KslLogs.infoThrottled("kls:restore-cache-start", 5000L, "Restoring index from cache...")
+    KslLogs.infoThrottled("kls:restore-cache-start", 5000L, "Restoring cached workspace-symbol snapshot...")
     Index.setIsIndexing(true)  // Set indexing flag when starting cache restoration
-    Index.setProgressMessage("Restoring cached Kotlin index...")
+    Index.setProgressMessage("Restoring cached Kotlin symbols...")
 
     val cachedSymbols = indexCache.loadCache()
     if (cachedSymbols != null && cachedSymbols.size() > 0) {
-      // Send cached configuration
-      val configParams = createFwcdRuntimeConfig(indexingEnabled = false)
+      // This does not restore fwcd's internal SymbolIndex. It only reuses ACS' last
+      // workspace/symbol snapshot for progress/UI purposes. Server-side indexing intentionally
+      // remains enabled so completion, standard-library symbols and diagnostics stay correct.
+      val configParams = createFwcdRuntimeConfig()
 
       logDidChangeConfigurationSummary("restoreCachedIndex", configParams)
       processManager.sendNotification("workspace/didChangeConfiguration", configParams)
       KslLogs.infoThrottled(
           "kls:restore-cache-success",
           5000L,
-          "Cache restored with {} symbols - indexing skipped",
+          "Cache restored with {} symbols",
           cachedSymbols.size(),
       )
       Index.setProgressMessage("Restored cached index: ${cachedSymbols.size()} symbols")
@@ -380,7 +388,7 @@ class KotlinWorkspaceSetup(
     Index.setIsIndexing(true)  // Set indexing flag when starting
     Index.setProgressMessage("Indexing Kotlin symbols...")
 
-    val configParams = createFwcdRuntimeConfig(indexingEnabled = true)
+    val configParams = createFwcdRuntimeConfig()
 
     logDidChangeConfigurationSummary("triggerIndexing", configParams)
     processManager.sendNotification("workspace/didChangeConfiguration", configParams)
@@ -398,16 +406,18 @@ class KotlinWorkspaceSetup(
               else -> JsonArray()
             }
         val symbolCount = symbols.size()
-        KslLogs.infoThrottled("kls:indexing-complete", 3000L, "Indexing complete, found {} symbols", symbolCount)
+        KslLogs.infoThrottled("kls:indexing-complete", 3000L, "Indexing warm-up complete, found {} symbols", symbolCount)
         Index.setProgressMessage("Indexed ${symbolCount} symbols")
 
         // Save to cache
         if (symbolCount > 0) {
           indexCache.saveCache(symbols, classpathHash)
         }
-      } finally {
-        // Always reset the flag when indexing completes (success or failure)
-        Index.setIsIndexing(false)
+      } catch (e: Exception) {
+        KslLogs.warn("Failed to warm up Kotlin symbols", e)
+        if (!Index.isKotlinStartupSessionActive()) {
+          Index.setIsIndexing(false)
+        }
       }
     }
   }
@@ -624,6 +634,10 @@ class KotlinWorkspaceSetup(
               JsonObject().apply {
                 addProperty("storagePath", workspace.getProjectDir().resolve(".acside").absolutePath)
 
+                // Compatibility hints for KLS variants. Current fwcd primarily relies on
+                // initializationOptions.classpath/usePredefinedClasspath/disableDependencyResolution
+                // plus runtime settings.kotlin.indexing.enabled=true; these hints must not be
+                // interpreted by ACS as permission to disable server-side indexing.
                 addProperty("indexing", "auto")
                 addProperty("externalSources", "auto")
 

@@ -187,17 +187,38 @@ class KotlinNotificationHandler {
           LogStream.emitLineBlocking(msg)
         }
 
-        // Only treat these as completion when they contain "complete" or similar final messages
-        msg.contains("Loaded symbol index from cache in", ignoreCase = true) ||
-        msg.contains("symbol index complete", ignoreCase = true) ||
-        msg.contains("updated full symbol", ignoreCase = true) ||
-        msg.contains("indexing complete", ignoreCase = true) -> {
-          KslLogs.info("Indexing completed - setting Index flag to false")
+        // Only the real full-symbol-index completion closes the startup banner.
+        // Earlier warm-up workspace/symbol responses and generic "indexing complete" messages can happen
+        // before KLS finishes its own full index, so do not use them as completion signals here.
+        msg.contains("updated full symbol", ignoreCase = true) -> {
+          KslLogs.info("Full symbol index completed - setting Index flag to false")
           LogStream.emitLineBlocking(msg)
           extractSymbolCount(msg)?.let { count ->
             Index.setProgressMessage("Indexed $count symbols")
           }
           Index.setIsIndexing(false)
+        }
+
+        // Cache load is a valid completion only when it is part of the current Kotlin startup banner session.
+        msg.contains("Loaded symbol index from cache in", ignoreCase = true) -> {
+          KslLogs.info("Symbol index loaded from cache - setting Index flag to false")
+          LogStream.emitLineBlocking(msg)
+          extractSymbolCount(msg)?.let { count ->
+            Index.setProgressMessage("Indexed $count symbols")
+          }
+          if (Index.isKotlinStartupSessionActive()) {
+            Index.setIsIndexing(false)
+          }
+        }
+
+        msg.contains("symbol index complete", ignoreCase = true) ||
+        msg.contains("indexing complete", ignoreCase = true) -> {
+          KslLogs.debugThrottled(
+              "kls:generic-indexing-complete",
+              1500L,
+              "KLS generic indexing completion ignored for startup banner: {}",
+              msg,
+          )
         }
         // "Updated symbol index" is just progress, NOT completion - keep emitting but don't stop
         msg.contains("Updated symbol index in", ignoreCase = true) -> {
