@@ -66,7 +66,6 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
     val kotlinLanguageServerOpts =
         buildKotlinLanguageServerOpts(serverHome, classpathProvider, sqliteNativeConfig)
     val androidClasspath = classpathProvider.getClasspath()
-    val fwcdVersion = detectFwcdVersion(serverHome) ?: "1.3.13"
     val command = buildLauncherCommand(launcher)
 
     return try {
@@ -89,7 +88,6 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
               put("KOTLIN_LSP_CLASSPATH", androidClasspath)
               put("CLASSPATH", androidClasspath)
               put("KOTLIN_LANGUAGE_SERVER_OPTS", kotlinLanguageServerOpts)
-              put("KOTLIN_LANGUAGE_SERVER_VERSION", fwcdVersion)
               put("KOTLIN_LANGUAGE_SERVER_SKIP_CLASSPATH_RESOLUTION", "true")
               put("KOTLIN_LANGUAGE_SERVER_PREDEFINED_CLASSPATH", androidClasspath)
               if (sqliteNativeConfig != null) {
@@ -266,10 +264,6 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
     val directCandidates =
         manifestCandidates +
             listOf(
-                File(serverHome, "bin/kotlin-language-server-android"),
-                File(serverHome, "bin/kotlin-language-server-android.sh"),
-                File(serverHome, "server/bin/kotlin-language-server-android"),
-                File(serverHome, "server/bin/kotlin-language-server-android.sh"),
                 File(serverHome, "bin/kotlin-language-server"),
                 File(serverHome, "bin/kotlin-language-server.sh"),
                 File(serverHome, "kotlin-language-server"),
