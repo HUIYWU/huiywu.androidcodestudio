@@ -160,14 +160,9 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
             "-XX:+TieredCompilation",
             "-XX:TieredStopAtLevel=1",
             "-Djava.awt.headless=true",
-            "-DkotlinLanguageServer.version=$fwcdVersion",
-            "-DkotlinLanguageServer.skipClasspathResolution=true",
-            "-DkotlinLanguageServer.predefinedClasspath=$androidClasspath",
         )
 
     if (sqliteNativeConfig != null) {
-      opts += "-Dorg.sqlite.lib.path=${sqliteNativeConfig.libPath}"
-      opts += "-Dorg.sqlite.lib.name=${sqliteNativeConfig.libName}"
       KslLogs.debug(
           "Prepared Android sqlite native library for FWCD: dir={}, name={}",
           sqliteNativeConfig.libPath,
