@@ -74,6 +74,9 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
             directory(serverHome)
             environment().apply {
               put("HOME", Environment.HOME.absolutePath)
+              put("TMPDIR", xdgCacheHome.absolutePath)
+              put("TMP", xdgCacheHome.absolutePath)
+              put("TEMP", xdgCacheHome.absolutePath)
 
               val javaHome = Environment.JAVA_HOME?.absolutePath ?: Environment.PREFIX.absolutePath
               put("JAVA_HOME", javaHome)
@@ -93,6 +96,8 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
               if (sqliteNativeConfig != null) {
                 put("KOTLIN_LANGUAGE_SERVER_SQLITE_LIB_PATH", sqliteNativeConfig.libPath)
                 put("KOTLIN_LANGUAGE_SERVER_SQLITE_LIB_NAME", sqliteNativeConfig.libName)
+                put("ORG_SQLITE_LIB_PATH", sqliteNativeConfig.libPath)
+                put("ORG_SQLITE_LIB_NAME", sqliteNativeConfig.libName)
               }
 
               val sdkPath = classpathProvider.getAndroidSdkPath()
@@ -164,9 +169,11 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
 
     if (sqliteNativeConfig != null) {
       KslLogs.debug(
-          "Prepared Android sqlite native library for FWCD: dir={}, name={}",
+          "Prepared Android sqlite native library for FWCD: dir={}, name={}, fileExists={}, fileSize={}",
           sqliteNativeConfig.libPath,
           sqliteNativeConfig.libName,
+          File(sqliteNativeConfig.libPath, sqliteNativeConfig.libName).exists(),
+          File(sqliteNativeConfig.libPath, sqliteNativeConfig.libName).length(),
       )
     } else {
       KslLogs.warn("Android sqlite native override not prepared; FWCD will use bundled sqlite-jdbc defaults")
