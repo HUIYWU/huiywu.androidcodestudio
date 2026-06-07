@@ -64,7 +64,7 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
     val sqliteNativeConfig = prepareSqliteNativeConfig(serverHome)
 
     val kotlinLanguageServerOpts =
-        buildKotlinLanguageServerOpts(serverHome, classpathProvider, sqliteNativeConfig)
+        buildKotlinLanguageServerOpts(serverHome, classpathProvider, sqliteNativeConfig, xdgCacheHome)
     val androidClasspath = classpathProvider.getClasspath()
     val command = buildLauncherCommand(launcher)
 
@@ -90,14 +90,22 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
 
               put("KOTLIN_LSP_CLASSPATH", androidClasspath)
               put("CLASSPATH", androidClasspath)
+              // Important: keep the launcher shell patch minimal. The official start script remains
+              // responsible for eval/set/main-class ordering; AndroidCodeStudio should only inject JVM
+              // properties and predefined classpath hints here.
               put("KOTLIN_LANGUAGE_SERVER_OPTS", kotlinLanguageServerOpts)
+              // Important: on Android the official launcher may not reliably propagate all JVM opts
+              // through KOTLIN_LANGUAGE_SERVER_OPTS alone. _JAVA_OPTIONS / JAVA_TOOL_OPTIONS are the
+              // stable fallback that finally made sqlite-jdbc honor tmpdir/lib overrides.
+              put("_JAVA_OPTIONS", kotlinLanguageServerOpts)
+              put("JAVA_TOOL_OPTIONS", kotlinLanguageServerOpts)
               put("KOTLIN_LANGUAGE_SERVER_SKIP_CLASSPATH_RESOLUTION", "true")
               put("KOTLIN_LANGUAGE_SERVER_PREDEFINED_CLASSPATH", androidClasspath)
               if (sqliteNativeConfig != null) {
+                // Keep these env vars for the patched launcher to translate into -Dorg.sqlite.* when needed.
+                // The actual runtime success signal on Android is still JVM pickup via _JAVA_OPTIONS / JAVA_TOOL_OPTIONS.
                 put("KOTLIN_LANGUAGE_SERVER_SQLITE_LIB_PATH", sqliteNativeConfig.libPath)
                 put("KOTLIN_LANGUAGE_SERVER_SQLITE_LIB_NAME", sqliteNativeConfig.libName)
-                put("ORG_SQLITE_LIB_PATH", sqliteNativeConfig.libPath)
-                put("ORG_SQLITE_LIB_NAME", sqliteNativeConfig.libName)
               }
 
               val sdkPath = classpathProvider.getAndroidSdkPath()
@@ -154,6 +162,7 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
       serverHome: File,
       classpathProvider: KotlinClasspathProvider,
       sqliteNativeConfig: SqliteNativeConfig?,
+      xdgCacheHome: File,
   ): String {
     val androidClasspath = classpathProvider.getClasspath()
     val fwcdVersion = detectFwcdVersion(serverHome) ?: "1.3.13"
@@ -165,9 +174,19 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
             "-XX:+TieredCompilation",
             "-XX:TieredStopAtLevel=1",
             "-Djava.awt.headless=true",
+            // Important: sqlite-jdbc 3.41.2.1 on Android did not reliably stop extracting/loading
+            // the wrong Linux/glibc native just by changing temp-related env vars. Keeping both
+            // java.io.tmpdir and org.sqlite.tmpdir in JVM opts is part of the final working setup.
+            "-Djava.io.tmpdir=${xdgCacheHome.absolutePath}",
+            "-Dorg.sqlite.tmpdir=${xdgCacheHome.absolutePath}",
         )
 
     if (sqliteNativeConfig != null) {
+      // Important: these two -Dorg.sqlite.* flags are still required even though the final Android
+      // success path is enforced through _JAVA_OPTIONS / JAVA_TOOL_OPTIONS. Do not remove them unless
+      // launcher + sqlite behavior is re-verified on device.
+      opts += "-Dorg.sqlite.lib.path=${sqliteNativeConfig.libPath}"
+      opts += "-Dorg.sqlite.lib.name=${sqliteNativeConfig.libName}"
       KslLogs.debug(
           "Prepared Android sqlite native library for FWCD: dir={}, name={}, fileExists={}, fileSize={}",
           sqliteNativeConfig.libPath,
