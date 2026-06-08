@@ -492,9 +492,16 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
         48,
       )
 
-      contentInitialized = true
-      onContentInitialized?.invoke()
-      onContentInitialized = null
+      binding.editor.post {
+        binding.editor.post {
+          if (_binding == null) {
+            return@post
+          }
+          contentInitialized = true
+          onContentInitialized?.invoke()
+          onContentInitialized = null
+        }
+      }
     }
   }
 
