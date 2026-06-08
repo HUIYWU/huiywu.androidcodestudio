@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.appcompat.widget.LinearLayoutCompat
 import androidx.core.view.isVisible
@@ -95,16 +94,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     get() = ensureSuggestionView()
 
   private var analysisJob: Job? = null
-  private var contentInitialized = false
-  private var onContentInitialized: (() -> Unit)? = null
-
-  fun doOnContentInitialized(action: () -> Unit) {
-    if (contentInitialized) {
-      action()
-    } else {
-      onContentInitialized = action
-    }
-  }
 
   /** Get the file of this editor. */
   val file: File?
@@ -493,52 +482,11 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
         48,
       )
 
-      runWhenEditorIsAboutToDraw(file) {
-        contentInitialized = true
-        onContentInitialized?.invoke()
-        onContentInitialized = null
-      }
+      // Display is updated synchronously by EditorHandlerActivity, following upstream AndroidIDE behavior.
     }
   }
 
-  private fun runWhenEditorIsAboutToDraw(file: File, action: () -> Unit) {
-    val editor = binding.editor
-    if (!editor.isAttachedToWindow) {
-      editor.post {
-        if (_binding != null) {
-          runWhenEditorIsAboutToDraw(file, action)
-        }
-      }
-      return
-    }
-
-    val observer = editor.viewTreeObserver
-    if (!observer.isAlive) {
-      editor.post {
-        if (_binding != null) {
-          runWhenEditorIsAboutToDraw(file, action)
-        }
-      }
-      return
-    }
-
-    observer.addOnPreDrawListener(
-      object : ViewTreeObserver.OnPreDrawListener {
-        override fun onPreDraw(): Boolean {
-          if (editor.viewTreeObserver.isAlive) {
-            editor.viewTreeObserver.removeOnPreDrawListener(this)
-          }
-          if (_binding != null) {
-            measureOpenStage(file, "contentReady.onPreDraw") {
-              action()
-            }
-          }
-          return true
-        }
-      }
-    )
-    editor.invalidate()
-  }
+  // Editor display is updated synchronously by EditorHandlerActivity.
 
   private fun postRead(file: File) {
     measureOpenStage(file, "postRead.setupLanguage") {

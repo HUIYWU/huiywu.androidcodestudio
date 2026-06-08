@@ -1356,6 +1356,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
           viewContainer.displayedChild = 1
         } else {
           tabs.visibility = View.VISIBLE
+          viewContainer.displayedChild = 0
 
           // Add auto-save initialization to all open editors
           files.forEachIndexed { index, _ ->

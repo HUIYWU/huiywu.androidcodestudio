@@ -93,12 +93,12 @@ class FileTreeActionHandler : BaseEventHandler() {
   }
 
   private fun openFileWhileDrawerCloses(context: EditorHandlerActivity, file: File) {
-    context.openFile(file)
-
     val drawer = context.binding.root
     if (drawer.isDrawerOpen(GravityCompat.START)) {
       drawer.closeDrawer(GravityCompat.START)
     }
+
+    context.openFile(file)
   }
 
   @Subscribe(threadMode = MAIN)
