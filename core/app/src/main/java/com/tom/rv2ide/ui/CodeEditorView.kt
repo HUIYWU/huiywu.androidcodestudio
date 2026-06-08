@@ -448,6 +448,10 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     measureOpenStage(file, "initializeContent") {
       val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
 
+      measureOpenStage(file, "configureEditorTextAppearanceBeforeSetText") {
+        configureEditorTextAppearance()
+      }
+
       measureOpenStage(file, "setText") {
         ideEditor.setText(content, args)
       }
@@ -545,10 +549,14 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     return ILanguageServerRegistry.getDefault().getServer(serverID)
   }
 
-  private fun configureEditorIfNeeded() {
+  private fun configureEditorTextAppearance() {
     onCustomFontPrefChanged()
     onFontSizePrefChanged()
     onFontLigaturesPrefChanged()
+  }
+
+  private fun configureEditorIfNeeded() {
+    configureEditorTextAppearance()
     onPrintingFlagsPrefChanged()
     onInputTypePrefChanged()
     onWordwrapPrefChanged()
