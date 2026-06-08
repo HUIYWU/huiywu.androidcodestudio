@@ -301,20 +301,23 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   override fun openFileAndSelect(file: File, selection: Range?) {
     measureOpenFileStage(file, "openFileAndSelect.total") {
+      val alreadyOpened = findIndexOfEditorByFile(file) != -1
       measureOpenFileStage(file, "openFileAndSelect.openFile") {
         openFile(file, selection)
       }
 
-      measureOpenFileStage(file, "openFileAndSelect.applySelectionPost") {
-        getEditorForFile(file)?.editor?.also { editor ->
-          editor.postInLifecycle {
-            if (selection == null) {
-              editor.setSelection(0, 0)
-              return@postInLifecycle
-            }
+      if (alreadyOpened) {
+        measureOpenFileStage(file, "openFileAndSelect.applySelectionPost") {
+          getEditorForFile(file)?.editor?.also { editor ->
+            editor.postInLifecycle {
+              if (selection == null) {
+                editor.setSelection(0, 0)
+                return@postInLifecycle
+              }
 
-            editor.validateRange(selection)
-            editor.setSelection(selection)
+              editor.validateRange(selection)
+              editor.setSelection(selection)
+            }
           }
         }
       }
@@ -382,15 +385,16 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           measureOpenFileStage(file, "openFileAndGetIndex.addEditorView") {
               content.editorContainer.addView(editor)
           }
-          measureOpenFileStage(file, "openFileAndGetIndex.addTab") {
-              content.tabs.addTab(content.tabs.newTab())
-          }
 
           measureOpenFileStage(file, "openFileAndGetIndex.addFileViewModel") {
               editorViewModel.addFile(file)
           }
           measureOpenFileStage(file, "openFileAndGetIndex.setCurrentFile") {
               editorViewModel.setCurrentFile(position, file)
+          }
+
+          measureOpenFileStage(file, "openFileAndGetIndex.addTab") {
+              content.tabs.addTab(content.tabs.newTab())
           }
 
           measureOpenFileStage(file, "openFileAndGetIndex.updateTabs") {
