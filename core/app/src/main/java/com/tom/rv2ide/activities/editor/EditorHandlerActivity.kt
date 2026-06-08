@@ -386,23 +386,22 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
               content.editorContainer.addView(editor)
           }
 
-          measureOpenFileStage(file, "openFileAndGetIndex.addFileViewModel") {
-              editorViewModel.addFile(file)
-          }
-          measureOpenFileStage(file, "openFileAndGetIndex.setCurrentFile") {
-              editorViewModel.setCurrentFile(position, file)
-          }
-
-          measureOpenFileStage(file, "openFileAndGetIndex.addTab") {
-              content.tabs.addTab(content.tabs.newTab())
-          }
-
-          measureOpenFileStage(file, "openFileAndGetIndex.updateTabs") {
-              updateTabs()
-          }
-
-          measureOpenFileStage(file, "openFileAndGetIndex.onFileLoaded") {
-              onFileLoaded(editor, file)
+          editor.doOnContentInitialized {
+              measureOpenFileStage(file, "openFileAndGetIndex.addFileViewModel.ready") {
+                  editorViewModel.addFile(file)
+              }
+              measureOpenFileStage(file, "openFileAndGetIndex.setCurrentFile.ready") {
+                  editorViewModel.setCurrentFile(position, file)
+              }
+              measureOpenFileStage(file, "openFileAndGetIndex.addTab.ready") {
+                  content.tabs.addTab(content.tabs.newTab())
+              }
+              measureOpenFileStage(file, "openFileAndGetIndex.updateTabs.ready") {
+                  updateTabs()
+              }
+              measureOpenFileStage(file, "openFileAndGetIndex.onFileLoaded.ready") {
+                  onFileLoaded(editor, file)
+              }
           }
 
           return@measureOpenFileStage position

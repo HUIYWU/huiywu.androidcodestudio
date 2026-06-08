@@ -94,6 +94,16 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     get() = ensureSuggestionView()
 
   private var analysisJob: Job? = null
+  private var contentInitialized = false
+  private var onContentInitialized: (() -> Unit)? = null
+
+  fun doOnContentInitialized(action: () -> Unit) {
+    if (contentInitialized) {
+      action()
+    } else {
+      onContentInitialized = action
+    }
+  }
 
   /** Get the file of this editor. */
   val file: File?
@@ -481,6 +491,10 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
         },
         48,
       )
+
+      contentInitialized = true
+      onContentInitialized?.invoke()
+      onContentInitialized = null
     }
   }
 
