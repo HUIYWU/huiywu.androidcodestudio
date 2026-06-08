@@ -33,6 +33,7 @@ internal class JavaCodeConfigurations(
   init {
     addPreference(GoogleCodeStyle())
     addPreference(JavaDiagnosticsEnabled())
+    addPreference(JavaIncrementalReparseEnabled())
   }
 }
 
@@ -59,4 +60,16 @@ private class JavaDiagnosticsEnabled(
     SwitchPreference(
         getValue = JavaPreferences::isJavaDiagnosticsEnabled::get,
         setValue = JavaPreferences::isJavaDiagnosticsEnabled::set,
+    )
+
+@Parcelize
+private class JavaIncrementalReparseEnabled(
+    override val key: String = JavaPreferences.JAVA_INCREMENTAL_REPARSE_ENABLED,
+    override val title: Int = R.string.idepref_java_incrementalReparseEnabled_title,
+    override val summary: Int? = R.string.idepref_java_incrementalReparseEnabled_summary,
+    override val icon: Int? = drawable.ic_compilation_error,
+) :
+    SwitchPreference(
+        getValue = JavaPreferences::isJavaIncrementalReparseEnabled::get,
+        setValue = JavaPreferences::isJavaIncrementalReparseEnabled::set,
     )

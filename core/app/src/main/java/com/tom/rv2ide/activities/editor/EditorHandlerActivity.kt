@@ -29,6 +29,7 @@ import androidx.collection.MutableIntObjectMap
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.GravityCompat
 import com.blankj.utilcode.util.ImageUtils
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.R.string
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_TOOLBAR
@@ -76,8 +77,24 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   protected val isOpenedFilesSaved = AtomicBoolean(false)
 
+  private inline fun <R> measureOpenFileStage(file: File?, stage: String, action: () -> R): R {
+    if (!IdeLogConfig.shouldLogDebug()) {
+      return action()
+    }
+
+    val startNs = System.nanoTime()
+    return try {
+      action()
+    } finally {
+      val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
+      log.debug("Open file entry stage '{}' for '{}' took {} ms", stage, file?.absolutePath, elapsedMs)
+    }
+  }
+
   override fun doOpenFile(file: File, selection: Range?) {
-    openFileAndSelect(file, selection)
+    measureOpenFileStage(file, "doOpenFile") {
+      openFileAndSelect(file, selection)
+    }
   }
 
   override fun doCloseAll(runAfter: () -> Unit) {
@@ -278,73 +295,109 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   }
 
   override fun openFileAndSelect(file: File, selection: Range?) {
-    openFile(file, selection)
+    measureOpenFileStage(file, "openFileAndSelect.total") {
+      measureOpenFileStage(file, "openFileAndSelect.openFile") {
+        openFile(file, selection)
+      }
 
-    getEditorForFile(file)?.editor?.also { editor ->
-      editor.postInLifecycle {
-        if (selection == null) {
-          editor.setSelection(0, 0)
-          return@postInLifecycle
+      measureOpenFileStage(file, "openFileAndSelect.applySelectionPost") {
+        getEditorForFile(file)?.editor?.also { editor ->
+          editor.postInLifecycle {
+            if (selection == null) {
+              editor.setSelection(0, 0)
+              return@postInLifecycle
+            }
+
+            editor.validateRange(selection)
+            editor.setSelection(selection)
+          }
         }
-
-        editor.validateRange(selection)
-        editor.setSelection(selection)
       }
     }
   }
 
   override fun openFile(file: File, selection: Range?): CodeEditorView? {
-    val range = selection ?: Range.NONE
-    if (ImageUtils.isImage(file)) {
-      openImage(this, file)
-      return null
-    }
+    return measureOpenFileStage(file, "openFile.total") {
+      val range = selection ?: Range.NONE
+      if (ImageUtils.isImage(file)) {
+        openImage(this, file)
+        return@measureOpenFileStage null
+      }
 
-    val index = openFileAndGetIndex(file, range)
-    val tab = content.tabs.getTabAt(index)
-    if (tab != null && index >= 0 && !tab.isSelected) {
-      tab.select()
-    }
+      val index = measureOpenFileStage(file, "openFile.openFileAndGetIndex") {
+        openFileAndGetIndex(file, range)
+      }
+      measureOpenFileStage(file, "openFile.selectTab") {
+        val tab = content.tabs.getTabAt(index)
+        if (tab != null && index >= 0 && !tab.isSelected) {
+          tab.select()
+        }
+      }
 
-    editorViewModel.startDrawerOpened = false
-    editorViewModel.displayedFileIndex = index
+      measureOpenFileStage(file, "openFile.updateViewModel") {
+        editorViewModel.startDrawerOpened = false
+        editorViewModel.displayedFileIndex = index
+      }
 
-    return try {
-      getEditorAtIndex(index)
-    } catch (th: Throwable) {
-      log.error("Unable to get editor fragment at opened file index {}", index, th)
-      null
+      return@measureOpenFileStage try {
+        measureOpenFileStage(file, "openFile.getEditorAtIndex") {
+          getEditorAtIndex(index)
+        }
+      } catch (th: Throwable) {
+        log.error("Unable to get editor fragment at opened file index {}", index, th)
+        null
+      }
     }
   }
 
   override fun openFileAndGetIndex(file: File, selection: Range?): Int {
-      val openedFileIndex = findIndexOfEditorByFile(file)
-      if (openedFileIndex != -1) {
-          return openedFileIndex
+      return measureOpenFileStage(file, "openFileAndGetIndex.total") {
+          val openedFileIndex = measureOpenFileStage(file, "openFileAndGetIndex.findExisting") {
+              findIndexOfEditorByFile(file)
+          }
+          if (openedFileIndex != -1) {
+              return@measureOpenFileStage openedFileIndex
+          }
+
+          if (!file.exists()) {
+              return@measureOpenFileStage -1
+          }
+
+          val position = editorViewModel.getOpenedFileCount()
+
+          log.info("Opening file at index {} file:{}", position, file)
+
+          val editor = measureOpenFileStage(file, "openFileAndGetIndex.createCodeEditorView") {
+              CodeEditorView(this, file, selection!!)
+          }
+          measureOpenFileStage(file, "openFileAndGetIndex.setLayoutParams") {
+              editor.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+          }
+
+          measureOpenFileStage(file, "openFileAndGetIndex.addEditorView") {
+              content.editorContainer.addView(editor)
+          }
+          measureOpenFileStage(file, "openFileAndGetIndex.addTab") {
+              content.tabs.addTab(content.tabs.newTab())
+          }
+
+          measureOpenFileStage(file, "openFileAndGetIndex.addFileViewModel") {
+              editorViewModel.addFile(file)
+          }
+          measureOpenFileStage(file, "openFileAndGetIndex.setCurrentFile") {
+              editorViewModel.setCurrentFile(position, file)
+          }
+
+          measureOpenFileStage(file, "openFileAndGetIndex.updateTabs") {
+              updateTabs()
+          }
+
+          measureOpenFileStage(file, "openFileAndGetIndex.onFileLoaded") {
+              onFileLoaded(editor, file)
+          }
+
+          return@measureOpenFileStage position
       }
-  
-      if (!file.exists()) {
-          return -1
-      }
-  
-      val position = editorViewModel.getOpenedFileCount()
-  
-      log.info("Opening file at index {} file:{}", position, file)
-  
-      val editor = CodeEditorView(this, file, selection!!)
-      editor.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
-  
-      content.editorContainer.addView(editor)
-      content.tabs.addTab(content.tabs.newTab())
-  
-      editorViewModel.addFile(file)
-      editorViewModel.setCurrentFile(position, file)
-  
-      updateTabs()
-  
-      onFileLoaded(editor, file)
-  
-      return position
   }
 
   override fun getEditorForFile(file: File): CodeEditorView? {

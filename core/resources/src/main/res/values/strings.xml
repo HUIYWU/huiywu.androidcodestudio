@@ -863,6 +863,8 @@
   <string name="msg_app_launch_failed">Launch failed. Install the application first.</string>
   <string name="idepref_java_diagnosticEnabled_title">Diagnostics enabled</string>
   <string name="idepref_java_diagnosticsEnabled_summary">(EXPERIMENTAL) Whether the Java source files should be analyzed for errors or not.</string>
+  <string name="idepref_java_incrementalReparseEnabled_title">Enable Java incremental parsing</string>
+  <string name="idepref_java_incrementalReparseEnabled_summary">(Experimental) Enables Java method-body incremental parsing for language services. Full recompilation remains the fallback when a change is not eligible.</string>
   <string name="title_reload_color_schemes">Reload color schemes</string>
   <string name="msg_dir_picker_failed">Failed to start directory picker : %1$s</string>
   <string name="msg_tooling_server_unavailable">Tooling API server is unavailable. Check build output and IDE logs for errors.</string>

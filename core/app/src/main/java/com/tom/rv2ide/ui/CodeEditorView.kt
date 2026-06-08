@@ -26,6 +26,7 @@ import com.tom.rv2ide.editor.ui.initHoverTooltips
 import com.tom.rv2ide.editor.ui.updateEditorDiagnostics
 import com.tom.rv2ide.editor.utils.ContentReadWrite.readContent
 import com.tom.rv2ide.editor.utils.ContentReadWrite.writeTo
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.eventbus.events.preferences.PreferenceChangeEvent
 import com.tom.rv2ide.lsp.IDELanguageClientImpl
 import com.tom.rv2ide.lsp.api.ILanguageServer
@@ -73,6 +74,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   private var _binding: LayoutCodeEditorBinding? = null
   private var _searchLayout: EditorSearchLayout? = null
   private var _suggestionView: SuggestionView? = null
+  private var _editorContainer: FrameLayout? = null
   private val prefManager: PreferenceManager
     get() = BaseApplication.getBaseInstance().prefManager
     
@@ -86,10 +88,10 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     get() = checkNotNull(_binding) { "Binding has been destroyed" }
 
   private val searchLayout: EditorSearchLayout
-    get() = checkNotNull(_searchLayout) { "Search layout has been destroyed" }
+    get() = ensureSearchLayout()
 
   val suggestionView: SuggestionView?
-    get() = _suggestionView
+    get() = ensureSuggestionView()
 
   private var analysisJob: Job? = null
 
@@ -113,58 +115,83 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     private val log = LoggerFactory.getLogger(CodeEditorView::class.java)
   }
 
-  init {
-    _binding = LayoutCodeEditorBinding.inflate(LayoutInflater.from(context))
-
-    binding.editor.apply {
-      isHighlightCurrentBlock = true
-      props.autoCompletionOnComposing = true
-      dividerWidth = SizeUtils.dp2px(2f).toFloat()
-      colorScheme = SchemeAndroidIDE.newInstance(context)
-      lineSeparator = LineSeparator.LF
-    }
-
-    _searchLayout = EditorSearchLayout(context, binding.editor).apply {
+  private fun ensureSearchLayout(): EditorSearchLayout {
+    _binding ?: error("Binding has been destroyed")
+    return _searchLayout ?: EditorSearchLayout(context, binding.editor).apply {
       setOnSearchVisibilityChangeListener { isVisible ->
         val activity = context as? BaseEditorActivity ?: return@setOnSearchVisibilityChangeListener
         activity.onEditorSearchVisibilityChanged(isVisible)
       }
+    }.also { layout ->
+      _searchLayout = layout
+      addView(layout, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     }
+  }
 
-    // Create SuggestionView programmatically
-    _suggestionView = SuggestionView(context).apply {
+  private fun ensureSuggestionView(): SuggestionView? {
+    val container = _editorContainer ?: return null
+    return _suggestionView ?: SuggestionView(context).apply {
       layoutParams = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.WRAP_CONTENT,
         FrameLayout.LayoutParams.WRAP_CONTENT
       ).apply {
-        // Position it at the top-left of the editor with some margin
         val margin = SizeUtils.dp2px(8f)
         setMargins(margin, margin, margin, margin)
       }
       elevation = SizeUtils.dp2px(8f).toFloat()
-      visibility = GONE // Hidden by default
+      visibility = GONE
+    }.also { view ->
+      _suggestionView = view
+      container.addView(view)
     }
+  }
 
-    orientation = VERTICAL
+  init {
+    measureOpenStage(file, "constructor.total") {
+      measureOpenStage(file, "constructor.inflateBinding") {
+        _binding = LayoutCodeEditorBinding.inflate(LayoutInflater.from(context))
+      }
 
-    removeAllViews()
-    
-    // Wrap the editor in a FrameLayout so we can overlay the suggestion view
-    val editorContainer = FrameLayout(context).apply {
-      id = R.id.editor_overlay_container
-      layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
-      addView(binding.root)
-      _suggestionView?.let { addView(it) }
+      measureOpenStage(file, "constructor.configureEditorBase") {
+        binding.editor.apply {
+          isHighlightCurrentBlock = true
+          props.autoCompletionOnComposing = true
+          dividerWidth = SizeUtils.dp2px(2f).toFloat()
+          colorScheme = SchemeAndroidIDE.newInstance(context)
+          lineSeparator = LineSeparator.LF
+        }
+      }
+
+      orientation = VERTICAL
+
+      removeAllViews()
+
+      // Wrap the editor in a FrameLayout so we can attach optional overlays lazily.
+      val editorContainer = measureOpenStage(file, "constructor.createEditorContainer") {
+        FrameLayout(context).apply {
+          id = R.id.editor_overlay_container
+          layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+          addView(binding.root)
+        }
+      }
+      _editorContainer = editorContainer
+
+      measureOpenStage(file, "constructor.addViews") {
+        addView(editorContainer)
+      }
+
+      measureOpenStage(file, "constructor.applyLargeFileOptimizationsBeforeRead") {
+        applyLargeFileOptimizationsBeforeRead(file)
+      }
+      measureOpenStage(file, "constructor.startReadFileAndApplySelection") {
+        readFileAndApplySelection(file, selection)
+      }
+
+      // Setup content change listener after initialization
+      measureOpenStage(file, "constructor.setupContentChangeListener") {
+        setupContentChangeListener()
+      }
     }
-    
-    addView(editorContainer)
-    addView(searchLayout, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-
-    applyLargeFileOptimizationsBeforeRead(file)
-    readFileAndApplySelection(file, selection)
-
-    // Setup content change listener after initialization
-    setupContentChangeListener()
   }
 
   private fun setupContentChangeListener() {
@@ -201,12 +228,14 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   /** Begins search mode and shows the [search layout][EditorSearchLayout]. */
   fun beginSearch() {
-    if (_binding == null || _searchLayout == null) {
-      log.warn("Editor layout is null content=$binding, searchLayout=$searchLayout")
+    if (_binding == null) {
+      log.warn("Editor layout is null; cannot begin search")
       return
     }
 
-    searchLayout.beginSearchMode()
+    measureOpenStage(file, "beginSearch.ensureSearchLayout") {
+      searchLayout
+    }.beginSearchMode()
   }
 
   /** Mark this files as saved. Even if it not saved. */
@@ -305,6 +334,20 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     }
   }
 
+  private inline fun <R> measureOpenStage(file: File?, stage: String, action: () -> R): R {
+    if (!IdeLogConfig.shouldLogDebug()) {
+      return action()
+    }
+
+    val startNs = System.nanoTime()
+    return try {
+      action()
+    } finally {
+      val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
+      log.debug("Open file stage '{}' for '{}' took {} ms", stage, file?.absolutePath, elapsedMs)
+    }
+  }
+
   private inline fun <R : Any?> withEditingDisabled(action: () -> R): R {
     return try {
       _binding?.editor?.isEditable = false
@@ -330,8 +373,10 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
       withEditingDisabled {
         val content =
             withContext(readWriteContext) {
-              selection.validate()
-              file.readContent(this@CodeEditorView::updateReadWriteProgress)
+              measureOpenStage(file, "readContent") {
+                selection.validate()
+                file.readContent(this@CodeEditorView::updateReadWriteProgress)
+              }
             }
 
         initializeContent(content, file, selection)
@@ -343,39 +388,73 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   private fun initializeContent(content: Content, file: File, selection: Range) {
     val ideEditor = binding.editor
     ideEditor.postInLifecycle {
-      val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
+      measureOpenStage(file, "initializeContent") {
+        val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
 
-      ideEditor.setText(content, args)
+        measureOpenStage(file, "setText") {
+          ideEditor.setText(content, args)
+        }
 
-      markUnmodified()
-      postRead(file)
+        measureOpenStage(file, "markUnmodified") {
+          markUnmodified()
+        }
+        measureOpenStage(file, "postRead") {
+          postRead(file)
+        }
 
-      ideEditor.validateRange(selection)
-      ideEditor.setSelection(selection)
+        measureOpenStage(file, "validateRange") {
+          ideEditor.validateRange(selection)
+        }
+        measureOpenStage(file, "setSelection") {
+          ideEditor.setSelection(selection)
+        }
 
-      configureEditorIfNeeded()
+        measureOpenStage(file, "configureEditorIfNeeded") {
+          configureEditorIfNeeded()
+        }
+      }
     }
   }
 
   private fun postRead(file: File) {
-    binding.editor.setupLanguage(file)
-    binding.editor.setLanguageServer(createLanguageServer(file))
+    measureOpenStage(file, "postRead.setupLanguage") {
+      binding.editor.setupLanguage(file)
+    }
+    measureOpenStage(file, "postRead.setLanguageServer") {
+      binding.editor.setLanguageServer(createLanguageServer(file))
+    }
 
     if (IDELanguageClientImpl.isInitialized()) {
-      binding.editor.setLanguageClient(IDELanguageClientImpl.getInstance())
+      measureOpenStage(file, "postRead.setLanguageClient") {
+        binding.editor.setLanguageClient(IDELanguageClientImpl.getInstance())
+      }
     }
 
-    binding.editor.file = file
+    measureOpenStage(file, "postRead.setFile.dispatchOpen") {
+      binding.editor.file = file
+    }
 
     if (file.extension in setOf("c", "cpp", "cc", "cxx", "h", "hpp")) {
-      binding.editor.initDiagnosticHandling()
-      startDiagnosticAnalysis(file)
+      measureOpenStage(file, "postRead.initDiagnosticHandling") {
+        binding.editor.initDiagnosticHandling()
+      }
+      measureOpenStage(file, "postRead.startDiagnosticAnalysis") {
+        startDiagnosticAnalysis(file)
+      }
     }
-    binding.editor.initCompletionTooltips()
-    binding.editor.initHoverTooltips()
+    measureOpenStage(file, "postRead.initCompletionTooltips") {
+      binding.editor.initCompletionTooltips()
+    }
+    measureOpenStage(file, "postRead.initHoverTooltips") {
+      binding.editor.initHoverTooltips()
+    }
 
-    (context as? BaseEditorActivity?)?.refreshSymbolInput()
-    (context as? Activity?)?.invalidateOptionsMenu()
+    measureOpenStage(file, "postRead.refreshSymbolInput") {
+      (context as? BaseEditorActivity?)?.refreshSymbolInput()
+    }
+    measureOpenStage(file, "postRead.invalidateOptionsMenu") {
+      (context as? Activity?)?.invalidateOptionsMenu()
+    }
   }
 
   private fun createLanguageServer(file: File): ILanguageServer? {

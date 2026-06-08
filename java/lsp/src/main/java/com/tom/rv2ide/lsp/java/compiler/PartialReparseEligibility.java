@@ -22,6 +22,7 @@ import androidx.annotation.Nullable;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
 import com.tom.rv2ide.lsp.java.models.PartialReparseRequest;
 import com.tom.rv2ide.models.Position;
+import com.tom.rv2ide.models.Range;
 
 /**
  * Immutable snapshot of the inputs used to decide whether a Java compilation request may use
@@ -36,32 +37,38 @@ public final class PartialReparseEligibility {
   @Nullable public final CompilationRequest request;
   public final boolean needsRecompilation;
   public final boolean changeValidForReparse;
+  public final boolean changeDeltaWithinLimit;
   public final int sourceCount;
   public final boolean hasPartialRequest;
   public final long cursor;
   public final int contentsLength;
   public final int changeDelta;
   @Nullable public final Position newCursorPosition;
+  @Nullable public final Range latestChangeRange;
 
   private PartialReparseEligibility(
       @Nullable CompilationRequest request,
       boolean needsRecompilation,
       boolean changeValidForReparse,
+      boolean changeDeltaWithinLimit,
       int sourceCount,
       boolean hasPartialRequest,
       long cursor,
       int contentsLength,
       int changeDelta,
-      @Nullable Position newCursorPosition) {
+      @Nullable Position newCursorPosition,
+      @Nullable Range latestChangeRange) {
     this.request = request;
     this.needsRecompilation = needsRecompilation;
     this.changeValidForReparse = changeValidForReparse;
+    this.changeDeltaWithinLimit = changeDeltaWithinLimit;
     this.sourceCount = sourceCount;
     this.hasPartialRequest = hasPartialRequest;
     this.cursor = cursor;
     this.contentsLength = contentsLength;
     this.changeDelta = changeDelta;
     this.newCursorPosition = newCursorPosition;
+    this.latestChangeRange = latestChangeRange;
   }
 
   public static PartialReparseEligibility from(
@@ -76,16 +83,21 @@ public final class PartialReparseEligibility {
         partialRequest == null || partialRequest.contents == null
             ? -1
             : partialRequest.contents.length();
+    final int changeDelta = incrementalState.getChangeDelta();
+    final boolean changeDeltaWithinLimit =
+        Math.abs((long) changeDelta) <= JavaLspFeatureFlags.MAX_PARTIAL_REPARSE_CHANGE_DELTA;
 
     return new PartialReparseEligibility(
         request,
         needsRecompilation,
         incrementalState.isChangeValidForReparse(),
+        changeDeltaWithinLimit,
         sourceCount,
         partialRequest != null,
         cursor,
         contentsLength,
-        incrementalState.getChangeDelta(),
-        incrementalState.getNewCursorPosition());
+        changeDelta,
+        incrementalState.getNewCursorPosition(),
+        incrementalState.getLatestChangeRange());
   }
 }

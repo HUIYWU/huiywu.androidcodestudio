@@ -14,17 +14,17 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.lsp.java.compiler;
 
 import androidx.annotation.NonNull;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
+import com.tom.rv2ide.preferences.internal.JavaPreferences;
 
 /**
  * Conservative router for partial reparse. This class intentionally rejects most requests unless
  * the incremental path is explicitly enabled by feature flags.
  */
-public final class PartialReparseDecider {
+public class PartialReparseDecider {
 
   public PartialReparseDecision decide(@NonNull PartialReparseEligibility eligibility) {
     final CompilationRequest request = eligibility.request;
@@ -56,15 +56,39 @@ public final class PartialReparseDecider {
       return PartialReparseDecision.fullRecompile("document change is not valid for partial reparse");
     }
 
-    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE
-        && !JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_DRY_RUN) {
-      return PartialReparseDecision.fullRecompile("partial reparse disabled");
+    if (eligibility.latestChangeRange == null) {
+      return PartialReparseDecision.fullRecompile("latest document change range is unknown");
     }
 
-    if (JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_DRY_RUN) {
+    if (!eligibility.changeDeltaWithinLimit) {
+      return PartialReparseDecision.fullRecompile("document change delta is too large for partial reparse");
+    }
+
+    if (!isPartialReparseEnabledByUser()) {
+      return PartialReparseDecision.fullRecompile("partial reparse disabled in Java editor preferences");
+    }
+
+    if (!isPartialReparseFeatureEnabled() && !isPartialReparseDryRunEnabled()) {
+      return PartialReparseDecision.fullRecompile("partial reparse disabled by feature flags");
+    }
+
+    if (isPartialReparseDryRunEnabled()) {
       return PartialReparseDecision.dryRun("partial reparse dry-run enabled");
     }
 
     return PartialReparseDecision.tryPartial("eligible for partial reparse");
   }
+
+  protected boolean isPartialReparseEnabledByUser() {
+    return JavaPreferences.INSTANCE.isJavaIncrementalReparseEnabled();
+  }
+
+  protected boolean isPartialReparseFeatureEnabled() {
+    return JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE;
+  }
+
+  protected boolean isPartialReparseDryRunEnabled() {
+    return JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_DRY_RUN;
+  }
 }
+

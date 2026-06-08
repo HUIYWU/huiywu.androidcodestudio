@@ -18,8 +18,10 @@
 package com.tom.rv2ide.lsp.java.compiler;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent;
 import com.tom.rv2ide.models.Position;
+import com.tom.rv2ide.models.Range;
 
 /**
  * Tracks editor deltas used by the Java LSP partial reparse experiment.
@@ -33,9 +35,11 @@ public final class JavaIncrementalState {
   private int changeDelta = 0;
   private Position lastReparsePosition = Position.NONE;
   private Position newCursorPosition = Position.NONE;
+  @Nullable private Range latestChangeRange;
 
   public void onDocumentChange(@NonNull DocumentChangeEvent event) {
     this.changeDelta += event.getChangeDelta();
+    this.latestChangeRange = event.getChangeRange();
     this.newCursorPosition = event.getChangeRange().getEnd();
   }
 
@@ -45,6 +49,11 @@ public final class JavaIncrementalState {
 
   public Position getNewCursorPosition() {
     return newCursorPosition;
+  }
+
+  @Nullable
+  public Range getLatestChangeRange() {
+    return latestChangeRange;
   }
 
   public boolean isChangeValidForReparse() {
@@ -66,5 +75,6 @@ public final class JavaIncrementalState {
     this.changeDelta = 0;
     this.lastReparsePosition = Position.NONE;
     this.newCursorPosition = Position.NONE;
+    this.latestChangeRange = null;
   }
 }

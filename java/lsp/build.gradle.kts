@@ -39,8 +39,9 @@ kapt {
     arg("eventBusIndex", "${BuildConfig.packageName}.events.LspJavaEventsIndex")
   }
 }
-
 dependencies {
+  testImplementation(libs.tests.junit)
+
   kapt(projects.annotation.processors)
   kapt(libs.google.auto.service)
 

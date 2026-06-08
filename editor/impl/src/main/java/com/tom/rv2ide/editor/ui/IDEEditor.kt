@@ -860,17 +860,48 @@ constructor(
     }
 
     val file = this.file ?: return
+    fileVersion = 0
 
-    this.fileVersion = 0
+    val debugTiming = IdeLogConfig.shouldLogDebug()
+    val totalStartNs = if (debugTiming) System.nanoTime() else 0L
 
     // Large documents are already held by the editor widget. Forcing another eager String copy into
     // the open event can briefly double memory usage and make big-file opening noticeably worse.
     // Keep the open event payload minimal for such files and let downstream readers obtain content
     // from the active document cache instead of the event body.
+    val openTextStartNs = if (debugTiming) System.nanoTime() else 0L
     val openText = if (text.length > LARGE_DOCUMENT_EVENT_TEXT_THRESHOLD) "" else text.toString()
+    if (debugTiming) {
+      val elapsedMs = (System.nanoTime() - openTextStartNs) / 1_000_000.0
+      log.debug(
+        "Open file stage '{}' for '{}' took {} ms (length={}, payloadLength={})",
+        "dispatchDocumentOpenEvent.openText",
+        file.absolutePath,
+        elapsedMs,
+        text.length,
+        openText.length,
+      )
+    }
     val openEvent = DocumentOpenEvent(file.toPath(), openText, fileVersion)
 
+    val dispatchStartNs = if (debugTiming) System.nanoTime() else 0L
     eventDispatcher.dispatch(openEvent)
+    if (debugTiming) {
+      val dispatchElapsedMs = (System.nanoTime() - dispatchStartNs) / 1_000_000.0
+      val totalElapsedMs = (System.nanoTime() - totalStartNs) / 1_000_000.0
+      log.debug(
+        "Open file stage '{}' for '{}' took {} ms",
+        "dispatchDocumentOpenEvent.dispatch",
+        file.absolutePath,
+        dispatchElapsedMs,
+      )
+      log.debug(
+        "Open file stage '{}' for '{}' took {} ms",
+        "dispatchDocumentOpenEvent.total",
+        file.absolutePath,
+        totalElapsedMs,
+      )
+    }
   }
 
   protected open fun dispatchDocumentChangeEvent(event: ContentChangeEvent) {

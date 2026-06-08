@@ -37,5 +37,13 @@ public final class JavaLspFeatureFlags {
   /** Emit decision/fallback logs for partial reparse routing. */
   public static final boolean ENABLE_PARTIAL_REPARSE_LOGGING = true;
 
+  /**
+   * Conservative maximum absolute text delta allowed for partial reparse attempts.
+   *
+   * <p>Large edits are more likely to cross method/class/import boundaries. Keep them on the stable
+   * full-recompile path until a stronger structural diff guard exists.
+   */
+  public static final int MAX_PARTIAL_REPARSE_CHANGE_DELTA = 500;
+
   private JavaLspFeatureFlags() {}
 }
