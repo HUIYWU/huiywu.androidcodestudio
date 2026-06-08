@@ -521,6 +521,10 @@ abstract class BaseEditorActivity :
       return
     }
 
+    if (editor.file == null) {
+      return
+    }
+
     // Initialize content hash for change detection
     try {
       val currentContent = editor.editor?.text?.toString() ?: ""
