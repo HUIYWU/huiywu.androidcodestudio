@@ -366,7 +366,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   private fun updateReadWriteProgress(progress: Int) {
     val binding = this.binding
     runOnUiThread {
-      if (binding.rwProgress.isVisible && (progress < 0 || progress >= 100)) {
+      if (progress < 0 || progress >= 100) {
         binding.rwProgress.isVisible = false
         return@runOnUiThread
       }
@@ -417,14 +417,23 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   private fun readFileAndApplySelection(file: File, selection: Range) {
     codeEditorScope.launch(Dispatchers.Main.immediate) {
-      updateReadWriteProgress(0)
+      val shouldShowReadProgress = file.length() > LargeFileOptimizationHelper.LARGE_FILE_THRESHOLD
+      if (shouldShowReadProgress) {
+        updateReadWriteProgress(0)
+      }
 
       withEditingDisabled {
         val content =
             withContext(readWriteContext) {
               measureOpenStage(file, "readContent") {
                 selection.validate()
-                file.readContent(this@CodeEditorView::updateReadWriteProgress)
+                val progressConsumer: (Int) -> Unit =
+                    if (shouldShowReadProgress) {
+                      this@CodeEditorView::updateReadWriteProgress
+                    } else {
+                      {}
+                    }
+                file.readContent(progressConsumer)
               }
             }
 
