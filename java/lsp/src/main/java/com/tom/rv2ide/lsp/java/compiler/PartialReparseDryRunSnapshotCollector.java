@@ -139,11 +139,11 @@ public final class PartialReparseDryRunSnapshotCollector {
 
   @NonNull
   private static String toRangeKey(@NonNull Range range) {
-    return toPositionKey(range.start) + "-" + toPositionKey(range.end);
+    return toPositionKey(range.getStart()) + "-" + toPositionKey(range.getEnd());
   }
 
   @NonNull
   private static String toPositionKey(@NonNull Position position) {
-    return position.line + ":" + position.column + ":" + position.index;
+    return position.getLine() + ":" + position.getColumn() + ":" + position.getIndex();
   }
 }
