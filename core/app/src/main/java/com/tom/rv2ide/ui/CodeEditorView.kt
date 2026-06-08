@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.appcompat.widget.LinearLayoutCompat
 import androidx.core.view.isVisible
@@ -492,17 +493,51 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
         48,
       )
 
-      binding.editor.post {
-        binding.editor.post {
-          if (_binding == null) {
-            return@post
-          }
-          contentInitialized = true
-          onContentInitialized?.invoke()
-          onContentInitialized = null
-        }
+      runWhenEditorIsAboutToDraw(file) {
+        contentInitialized = true
+        onContentInitialized?.invoke()
+        onContentInitialized = null
       }
     }
+  }
+
+  private fun runWhenEditorIsAboutToDraw(file: File, action: () -> Unit) {
+    val editor = binding.editor
+    if (!editor.isAttachedToWindow) {
+      editor.post {
+        if (_binding != null) {
+          runWhenEditorIsAboutToDraw(file, action)
+        }
+      }
+      return
+    }
+
+    val observer = editor.viewTreeObserver
+    if (!observer.isAlive) {
+      editor.post {
+        if (_binding != null) {
+          runWhenEditorIsAboutToDraw(file, action)
+        }
+      }
+      return
+    }
+
+    observer.addOnPreDrawListener(
+      object : ViewTreeObserver.OnPreDrawListener {
+        override fun onPreDraw(): Boolean {
+          if (editor.viewTreeObserver.isAlive) {
+            editor.viewTreeObserver.removeOnPreDrawListener(this)
+          }
+          if (_binding != null) {
+            measureOpenStage(file, "contentReady.onPreDraw") {
+              action()
+            }
+          }
+          return true
+        }
+      }
+    )
+    editor.invalidate()
   }
 
   private fun postRead(file: File) {

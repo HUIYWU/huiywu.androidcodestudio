@@ -344,7 +344,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
       measureOpenFileStage(file, "openFile.updateViewModel") {
         editorViewModel.startDrawerOpened = false
-        editorViewModel.displayedFileIndex = index
       }
 
       return@measureOpenFileStage try {
