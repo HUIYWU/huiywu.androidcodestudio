@@ -111,6 +111,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   override fun preDestroy() {
     super.preDestroy()
+    CodeEditorView.clearPrewarmedEditorBinding()
     TSLanguageRegistry.instance.destroy()
     editorViewModel.removeAllFiles()
   }
@@ -118,6 +119,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   override fun onCreate(savedInstanceState: Bundle?) {
     mBuildEventListener.setActivity(this)
     super.onCreate(savedInstanceState)
+    CodeEditorView.prewarmEditorBinding(this)
 
     editorViewModel._displayedFile.observe(this) {
       this.content.editorContainer.displayedChild = it

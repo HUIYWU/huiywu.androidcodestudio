@@ -113,6 +113,51 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   companion object {
     private val log = LoggerFactory.getLogger(CodeEditorView::class.java)
+    private var prewarmedBinding: LayoutCodeEditorBinding? = null
+
+    fun prewarmEditorBinding(context: Context) {
+      if (prewarmedBinding != null) {
+        return
+      }
+
+      val appView = (context as? Activity)?.window?.decorView
+      val prewarmAction = Runnable {
+        if (prewarmedBinding != null) {
+          return@Runnable
+        }
+        val startNs = if (IdeLogConfig.shouldLogDebug()) System.nanoTime() else 0L
+        runCatching {
+          prewarmedBinding = LayoutCodeEditorBinding.inflate(LayoutInflater.from(context))
+        }.onFailure { error ->
+          log.warn("Failed to prewarm code editor binding", error)
+        }
+        if (IdeLogConfig.shouldLogDebug()) {
+          val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
+          log.debug("Prewarm editor binding took {} ms", elapsedMs)
+        }
+      }
+
+      appView?.postDelayed(prewarmAction, 350) ?: prewarmAction.run()
+    }
+
+    fun clearPrewarmedEditorBinding() {
+      prewarmedBinding?.editor?.runCatching { release() }
+      prewarmedBinding = null
+    }
+  }
+
+  private fun obtainBinding(context: Context): LayoutCodeEditorBinding {
+    val warmed = prewarmedBinding
+    if (warmed != null) {
+      prewarmedBinding = null
+      prewarmEditorBinding(context)
+      if (IdeLogConfig.shouldLogDebug()) {
+        log.debug("Using prewarmed editor binding")
+      }
+      return warmed
+    }
+
+    return LayoutCodeEditorBinding.inflate(LayoutInflater.from(context))
   }
 
   private fun ensureSearchLayout(): EditorSearchLayout {
@@ -149,7 +194,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   init {
     measureOpenStage(file, "constructor.total") {
       measureOpenStage(file, "constructor.inflateBinding") {
-        _binding = LayoutCodeEditorBinding.inflate(LayoutInflater.from(context))
+        _binding = obtainBinding(context)
       }
 
       measureOpenStage(file, "constructor.configureEditorBase") {
