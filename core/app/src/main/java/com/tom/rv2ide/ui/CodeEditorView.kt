@@ -436,40 +436,38 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   private fun initializeContent(content: Content, file: File, selection: Range) {
     val ideEditor = binding.editor
-    ideEditor.postInLifecycle {
-      measureOpenStage(file, "initializeContent") {
-        val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
+    measureOpenStage(file, "initializeContent") {
+      val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
 
-        measureOpenStage(file, "setText") {
-          ideEditor.setText(content, args)
-        }
-
-        measureOpenStage(file, "markUnmodified") {
-          markUnmodified()
-        }
-        measureOpenStage(file, "postRead") {
-          postRead(file)
-        }
-
-        measureOpenStage(file, "validateRange") {
-          ideEditor.validateRange(selection)
-        }
-        measureOpenStage(file, "setSelection") {
-          ideEditor.setSelection(selection)
-        }
-
-        ideEditor.postDelayed(
-          {
-            if (_binding == null) {
-              return@postDelayed
-            }
-            measureOpenStage(file, "configureEditorIfNeeded.deferred") {
-              configureEditorIfNeeded()
-            }
-          },
-          48,
-        )
+      measureOpenStage(file, "setText") {
+        ideEditor.setText(content, args)
       }
+
+      measureOpenStage(file, "markUnmodified") {
+        markUnmodified()
+      }
+      measureOpenStage(file, "postRead") {
+        postRead(file)
+      }
+
+      measureOpenStage(file, "validateRange") {
+        ideEditor.validateRange(selection)
+      }
+      measureOpenStage(file, "setSelection") {
+        ideEditor.setSelection(selection)
+      }
+
+      ideEditor.postDelayed(
+        {
+          if (_binding == null) {
+            return@postDelayed
+          }
+          measureOpenStage(file, "configureEditorIfNeeded.deferred") {
+            configureEditorIfNeeded()
+          }
+        },
+        48,
+      )
     }
   }
 

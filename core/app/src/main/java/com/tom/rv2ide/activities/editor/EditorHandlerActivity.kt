@@ -119,6 +119,9 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   override fun onCreate(savedInstanceState: Bundle?) {
     mBuildEventListener.setActivity(this)
     super.onCreate(savedInstanceState)
+    content.realContainer.layoutTransition = null
+    content.editorContainer.layoutTransition = null
+    content.viewContainer.layoutTransition = null
     CodeEditorView.prewarmEditorBinding(this)
 
     editorViewModel._displayedFile.observe(this) {
