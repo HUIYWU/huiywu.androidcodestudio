@@ -358,6 +358,10 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   }
 
   private fun applyLargeFileOptimizationsBeforeRead(file: File) {
+    if (file.length() <= LargeFileOptimizationHelper.LARGE_FILE_THRESHOLD) {
+      return
+    }
+
     val largeFileHelper = LargeFileOptimizationHelper(context, binding.editor)
     if (largeFileHelper.shouldApplyOptimizations(file)) {
       // Apply editor props before file content is read and assigned. This keeps expensive Sora
@@ -409,9 +413,17 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
           ideEditor.setSelection(selection)
         }
 
-        measureOpenStage(file, "configureEditorIfNeeded") {
-          configureEditorIfNeeded()
-        }
+        ideEditor.postDelayed(
+          {
+            if (_binding == null) {
+              return@postDelayed
+            }
+            measureOpenStage(file, "configureEditorIfNeeded.deferred") {
+              configureEditorIfNeeded()
+            }
+          },
+          48,
+        )
       }
     }
   }
@@ -442,19 +454,27 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
         startDiagnosticAnalysis(file)
       }
     }
-    measureOpenStage(file, "postRead.initCompletionTooltips") {
-      binding.editor.initCompletionTooltips()
-    }
-    measureOpenStage(file, "postRead.initHoverTooltips") {
-      binding.editor.initHoverTooltips()
-    }
+    binding.editor.postDelayed(
+      {
+        if (_binding == null) {
+          return@postDelayed
+        }
+        measureOpenStage(file, "postRead.initCompletionTooltips.deferred") {
+          binding.editor.initCompletionTooltips()
+        }
+        measureOpenStage(file, "postRead.initHoverTooltips.deferred") {
+          binding.editor.initHoverTooltips()
+        }
 
-    measureOpenStage(file, "postRead.refreshSymbolInput") {
-      (context as? BaseEditorActivity?)?.refreshSymbolInput()
-    }
-    measureOpenStage(file, "postRead.invalidateOptionsMenu") {
-      (context as? Activity?)?.invalidateOptionsMenu()
-    }
+        measureOpenStage(file, "postRead.refreshSymbolInput.deferred") {
+          (context as? BaseEditorActivity?)?.refreshSymbolInput()
+        }
+        measureOpenStage(file, "postRead.invalidateOptionsMenu.deferred") {
+          (context as? Activity?)?.invalidateOptionsMenu()
+        }
+      },
+      48,
+    )
   }
 
   private fun createLanguageServer(file: File): ILanguageServer? {

@@ -39,6 +39,7 @@ class KotlinDocumentManager(
 
 
   companion object {
+    private const val INITIAL_DID_SAVE_DELAY_MS = 1000L
     private val log = LoggerFactory.getLogger(KotlinDocumentManager::class.java)
   }
   private val openedDocuments = ConcurrentHashMap.newKeySet<String>()
@@ -147,7 +148,9 @@ class KotlinDocumentManager(
       openedDocuments.add(uri)
       pendingOpenDocuments.remove(uri)
 
-      // Some servers require an explicit open-before-lint; trigger an initial lint after open.
+      // Keep the initial open path responsive. The follow-up didSave is only a bootstrap lint
+      // trigger for servers that need an explicit save after open, so it can be delayed until
+      // after the editor has rendered its first frames.
       android.os
           .Handler(android.os.Looper.getMainLooper())
           .postDelayed(
@@ -155,7 +158,7 @@ class KotlinDocumentManager(
                 KslLogs.info("Sending didSave notification for: {}", uri)
                 notifyDocumentSave(file, reason = "afterOpenBootstrap")
               },
-              120,
+              INITIAL_DID_SAVE_DELAY_MS,
           )
       true
     } catch (e: Exception) {

@@ -674,57 +674,105 @@ constructor(
     callback(lang)
   }
 
+  private inline fun <R> measureEditorInitStage(stage: String, action: () -> R): R {
+    if (!IdeLogConfig.shouldLogDebug()) {
+      return action()
+    }
+
+    val startNs = System.nanoTime()
+    return try {
+      action()
+    } finally {
+      val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
+      log.debug("Editor init stage '{}' took {} ms", stage, elapsedMs)
+    }
+  }
+
   /** Initialize the editor. */
   protected open fun initEditor() {
 
-    lineNumberMarginLeft = SizeUtils.dp2px(2f).toFloat()
+    measureEditorInitStage("lineNumberMargin") {
+      lineNumberMarginLeft = SizeUtils.dp2px(2f).toFloat()
+    }
 
-    _actionsMenu = EditorActionsMenu(this).also { it.init() }
+    measureEditorInitStage("markUnmodified") {
+      markUnmodified()
+    }
 
-    markUnmodified()
+    measureEditorInitStage("createSearcher") {
+      searcher = IDEEditorSearcher(this)
+    }
+    measureEditorInitStage("createColorScheme") {
+      colorScheme = SchemeAndroidIDE.newInstance(context)
+    }
+    measureEditorInitStage("createInputTypeFlags") {
+      inputType = createInputTypeFlags()
+    }
+    measureEditorInitStage("applyBackground") {
+      val backgroundColor = getSystemBackgroundColor()
+      setBackgroundColor(backgroundColor)
+    }
 
-    searcher = IDEEditorSearcher(this)
-    colorScheme = SchemeAndroidIDE.newInstance(context)
-    inputType = createInputTypeFlags()
-    val backgroundColor = getSystemBackgroundColor()
-    setBackgroundColor(backgroundColor)
-    
-    val window = EditorCompletionWindow(this)
-    window.setAdapter(CompletionListAdapter())
-    replaceComponent(EditorAutoCompletion::class.java, window)
+    measureEditorInitStage("subscribeContentChange") {
+      subscribeEvent(ContentChangeEvent::class.java) { event, _ ->
+        if (isReleased) {
+          return@subscribeEvent
+        }
 
-    getComponent(EditorTextActionWindow::class.java).isEnabled = false
+        markModified()
+        file ?: return@subscribeEvent
 
-    subscribeEvent(ContentChangeEvent::class.java) { event, _ ->
-      if (isReleased) {
-        return@subscribeEvent
-      }
-
-      markModified()
-      file ?: return@subscribeEvent
-
-      editorScope.launch {
-        dispatchDocumentChangeEvent(event)
-        checkForSignatureHelp(event)
+        editorScope.launch {
+          dispatchDocumentChangeEvent(event)
+          checkForSignatureHelp(event)
+        }
       }
     }
 
-    subscribeEvent(SelectionChangeEvent::class.java) { _, _ ->
-      if (isReleased) {
-        return@subscribeEvent
-      }
+    measureEditorInitStage("subscribeSelectionChange") {
+      subscribeEvent(SelectionChangeEvent::class.java) { _, _ ->
+        if (isReleased) {
+          return@subscribeEvent
+        }
 
-      if (_diagnosticWindow?.isShowing == true) {
-        _diagnosticWindow?.dismiss()
-      }
+        if (_diagnosticWindow?.isShowing == true) {
+          _diagnosticWindow?.dismiss()
+        }
 
-      selectionChangeRunner?.also {
-        selectionChangeHandler.removeCallbacks(it)
-        selectionChangeHandler.postDelayed(it, SELECTION_CHANGE_DELAY)
+        selectionChangeRunner?.also {
+          selectionChangeHandler.removeCallbacks(it)
+          selectionChangeHandler.postDelayed(it, SELECTION_CHANGE_DELAY)
+        }
       }
     }
 
-    EventBus.getDefault().register(this)
+    measureEditorInitStage("eventBusRegister") {
+      EventBus.getDefault().register(this)
+    }
+
+    // These components are not required to render the first editor frame. Defer them to keep
+    // layout inflation/open-file hot path responsive.
+    postDelayed(
+      {
+        if (isReleased) {
+          return@postDelayed
+        }
+        measureEditorInitStage("deferredActionsMenu") {
+          if (_actionsMenu == null) {
+            _actionsMenu = EditorActionsMenu(this).also { it.init() }
+          }
+        }
+        measureEditorInitStage("deferredCompletionWindow") {
+          val window = EditorCompletionWindow(this)
+          window.setAdapter(CompletionListAdapter())
+          replaceComponent(EditorAutoCompletion::class.java, window)
+        }
+        measureEditorInitStage("deferredDisableTextActionWindow") {
+          getComponent(EditorTextActionWindow::class.java).isEnabled = false
+        }
+      },
+      96,
+    )
   }
 
   private fun isSystemInDarkMode(): Boolean {
