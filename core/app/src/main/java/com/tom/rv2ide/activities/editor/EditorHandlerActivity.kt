@@ -125,6 +125,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     CodeEditorView.prewarmEditorBinding(this)
 
     editorViewModel._displayedFile.observe(this) {
+      this.content.viewContainer.displayedChild = if (it >= 0) 0 else 1
       this.content.editorContainer.displayedChild = it
     }
     editorViewModel._startDrawerOpened.observe(this) { opened ->

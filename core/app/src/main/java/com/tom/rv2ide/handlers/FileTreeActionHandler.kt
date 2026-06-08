@@ -18,9 +18,7 @@
 package com.tom.rv2ide.handlers
 
 import android.content.Context
-import android.view.View
 import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_FILE_TREE
 import com.tom.rv2ide.actions.ActionMenu
@@ -91,25 +89,16 @@ class FileTreeActionHandler : BaseEventHandler() {
       return
     }
 
-    openFileAfterDrawerSettled(context, event.file)
+    openFileWhileDrawerCloses(context, event.file)
   }
 
-  private fun openFileAfterDrawerSettled(context: EditorHandlerActivity, file: File) {
-    val drawer = context.binding.root
-    if (!drawer.isDrawerOpen(GravityCompat.START)) {
-      context.openFile(file)
-      return
-    }
+  private fun openFileWhileDrawerCloses(context: EditorHandlerActivity, file: File) {
+    context.openFile(file)
 
-    val listener =
-        object : DrawerLayout.SimpleDrawerListener() {
-          override fun onDrawerClosed(drawerView: View) {
-            drawer.removeDrawerListener(this)
-            context.openFile(file)
-          }
-        }
-    drawer.addDrawerListener(listener)
-    drawer.closeDrawer(GravityCompat.START)
+    val drawer = context.binding.root
+    if (drawer.isDrawerOpen(GravityCompat.START)) {
+      drawer.closeDrawer(GravityCompat.START)
+    }
   }
 
   @Subscribe(threadMode = MAIN)
