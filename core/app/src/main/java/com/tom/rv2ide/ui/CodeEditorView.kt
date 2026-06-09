@@ -562,6 +562,11 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
         if (_binding == null) {
           return@postDelayed
         }
+        FileOpenTrace.mark(file, "CodeEditorView.postFirstDrawFeatures.deferred.start")
+        measureOpenStage(file, "postRead.configurePostFirstDrawFeatures.deferred") {
+          configureEditorPostFirstDrawFeatures()
+        }
+        FileOpenTrace.mark(file, "CodeEditorView.postFirstDrawFeatures.deferred.done")
         measureOpenStage(file, "postRead.initCompletionTooltips.deferred") {
           binding.editor.initCompletionTooltips()
         }
@@ -616,6 +621,9 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     onUseIcuPrefChanged()
     onDeleteEmptyLinesPrefChanged()
     onDeleteTabsPrefChanged()
+  }
+
+  private fun configureEditorPostFirstDrawFeatures() {
     onStickyScrollEnabeldPrefChanged()
     onPinLineNumbersPrefChanged()
   }
