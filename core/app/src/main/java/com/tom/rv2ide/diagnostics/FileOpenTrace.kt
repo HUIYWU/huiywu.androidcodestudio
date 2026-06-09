@@ -1,6 +1,6 @@
 package com.tom.rv2ide.diagnostics
 
-import android.os.Choreographer
+import android.view.Choreographer
 import android.os.Looper
 import android.util.Log
 import java.io.File
