@@ -39,8 +39,13 @@ import io.github.rosemoe.sora.widget.EditorRenderer
  *
  * @author Akash Yadav
  */
-class TracingEditorRenderer(private val enabled: Boolean = BuildConfig.DEBUG, editor: CodeEditor) :
-    EditorRenderer(editor) {
+class TracingEditorRenderer(
+    private val enabled: Boolean = BuildConfig.DEBUG,
+    private val ownerEditor: CodeEditor,
+) : EditorRenderer(ownerEditor) {
+
+  private var lastFileKey: String? = null
+  private var skippedInitialMeasureCacheForFile = false
 
   override fun draw(canvas: Canvas) = trace("draw") { super.draw(canvas) }
 
@@ -383,13 +388,47 @@ class TracingEditorRenderer(private val enabled: Boolean = BuildConfig.DEBUG, ed
       endLine: Int,
       timestamp: Long,
       useCachedContent: Boolean,
-  ) =
-      trace("buildMeasureCacheForLines") {
-        super.buildMeasureCacheForLines(startLine, endLine, timestamp, useCachedContent)
-      }
+  ) {
+    if (shouldSkipInitialMeasureCache()) {
+      Log.i(
+          "IDEEditorRenderer",
+          "section=buildMeasureCacheForLines skipped=true startLine=$startLine endLine=$endLine",
+      )
+      return
+    }
+    trace("buildMeasureCacheForLines") {
+      super.buildMeasureCacheForLines(startLine, endLine, timestamp, useCachedContent)
+    }
+  }
 
-  override fun buildMeasureCacheForLines(startLine: Int, endLine: Int) =
-      trace("buildMeasureCacheForLines") { super.buildMeasureCacheForLines(startLine, endLine) }
+  override fun buildMeasureCacheForLines(startLine: Int, endLine: Int) {
+    if (shouldSkipInitialMeasureCache()) {
+      Log.i(
+          "IDEEditorRenderer",
+          "section=buildMeasureCacheForLines skipped=true startLine=$startLine endLine=$endLine",
+      )
+      return
+    }
+    trace("buildMeasureCacheForLines") { super.buildMeasureCacheForLines(startLine, endLine) }
+  }
+
+  private fun shouldSkipInitialMeasureCache(): Boolean {
+    val ideEditor = ownerEditor as? IDEEditor ?: return false
+    val fileKey = ideEditor._file?.absolutePath ?: return false
+    if (fileKey != lastFileKey) {
+      lastFileKey = fileKey
+      skippedInitialMeasureCacheForFile = false
+    }
+    if (skippedInitialMeasureCacheForFile) {
+      return false
+    }
+    val styles = ideEditor.getStyles() ?: return false
+    if (styles.spans == null) {
+      return false
+    }
+    skippedInitialMeasureCacheForFile = true
+    return true
+  }
 
   override fun measureText(text: ContentLine?, line: Int, index: Int, count: Int) =
       trace("measureText") {

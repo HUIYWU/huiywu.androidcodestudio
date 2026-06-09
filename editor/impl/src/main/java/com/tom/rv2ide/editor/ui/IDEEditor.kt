@@ -212,7 +212,7 @@ constructor(
   }
 
   override fun onCreateRenderer(): EditorRenderer {
-    return TracingEditorRenderer(enabled = true, editor = this)
+    return TracingEditorRenderer(enabled = true, ownerEditor = this)
   }
 
   private var drawTraceCount = 0
