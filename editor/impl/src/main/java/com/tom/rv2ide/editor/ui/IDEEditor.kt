@@ -18,13 +18,11 @@
 package com.tom.rv2ide.editor.ui
 
 import android.content.Context
-import android.graphics.Canvas
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
-import android.util.Log
 import android.view.inputmethod.EditorInfo
 import androidx.annotation.StringRes
 import com.blankj.utilcode.util.FileUtils
@@ -81,7 +79,6 @@ import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.lang.Language
 import io.github.rosemoe.sora.widget.CodeEditor
-import io.github.rosemoe.sora.widget.EditorRenderer
 import io.github.rosemoe.sora.widget.EditorSearcher
 import io.github.rosemoe.sora.widget.IDEEditorSearcher
 import io.github.rosemoe.sora.widget.component.EditorAutoCompletion
@@ -211,71 +208,6 @@ constructor(
     }
   }
 
-  override fun onCreateRenderer(): EditorRenderer {
-    return TracingEditorRenderer(enabled = true, ownerEditor = this)
-  }
-
-  private var drawTraceCount = 0
-  private var lastLanguageApplyNs = 0L
-  private var lastLanguageApplyLabel = "none"
-
-  override fun onDraw(canvas: Canvas) {
-    val startNs = System.nanoTime()
-    try {
-      super.onDraw(canvas)
-    } finally {
-      val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
-      val count = ++drawTraceCount
-      if (count <= 8 || elapsedMs >= 8.0) {
-        val fileName = _file?.name ?: "<unset>"
-        val cost = String.format(java.util.Locale.US, "%.3f", elapsedMs)
-        val lineCount = text?.lineCount ?: -1
-        val languageName = getEditorLanguage()::class.java.simpleName
-        val currentStyles = getStyles()
-        val stylesReady = currentStyles != null
-        val spansReady = currentStyles?.spans != null
-        val sinceLanguageMs =
-            if (lastLanguageApplyNs > 0L) {
-              String.format(
-                  java.util.Locale.US,
-                  "%.3f",
-                  (startNs - lastLanguageApplyNs) / 1_000_000.0,
-              )
-            } else {
-              "na"
-            }
-        val message = buildString {
-          append("file=").append(fileName)
-          append(" draw#").append(count)
-          append(" cost=").append(cost).append("ms")
-          append(" size=").append(width).append('x').append(height)
-          append(" firstLine=").append(firstVisibleLine)
-          append(" lastLine=").append(lastVisibleLine)
-          append(" wordwrap=").append(isWordwrap)
-          append(" sticky=").append(props.stickyScroll)
-          append(" lineNumber=").append(isLineNumberEnabled())
-          append(" blockLine=").append(isBlockLineEnabled())
-          append(" hwCanvas=").append(canvas.isHardwareAccelerated)
-          append(" hwAllowed=").append(isHardwareAcceleratedDrawAllowed())
-          append(" language=").append(languageName)
-          append(" stylesReady=").append(stylesReady)
-          append(" spansReady=").append(spansReady)
-          append(" sinceLanguageMs=").append(sinceLanguageMs)
-          append(" languageMark=").append(lastLanguageApplyLabel)
-          append(" lineCount=").append(lineCount)
-        }
-        Log.i("IDEEditorDraw", message)
-      }
-    }
-  }
-
-  private fun markLanguageApply(label: String) {
-    lastLanguageApplyNs = System.nanoTime()
-    lastLanguageApplyLabel = label
-    val fileName = _file?.name ?: "<unset>"
-    Log.i("IDEEditorLang", "file=$fileName mark=$label language=${getEditorLanguage()::class.java.simpleName}")
-  }
-
   /** Set the file for this editor. */
   fun setFile(file: File?) {
     if (isReleased) {
@@ -283,9 +215,6 @@ constructor(
     }
 
     this._file = file
-    drawTraceCount = 0
-    lastLanguageApplyNs = 0L
-    lastLanguageApplyLabel = "none"
     file?.also { dispatchDocumentOpenEvent() }
   }
 
@@ -646,7 +575,6 @@ constructor(
     createLanguage(file) { language ->
       val extension = file.extension
       if (language is TreeSitterLanguage) {
-        markLanguageApply("treeSitter.created.$extension")
         IDEColorSchemeProvider.readSchemeAsync(
             context = context,
             coroutineScope = editorScope,
@@ -655,10 +583,7 @@ constructor(
           applyTreeSitterLang(language, extension, scheme)
         }
       } else {
-        val languageLabel = language?.javaClass?.simpleName ?: "null"
-        markLanguageApply("language.beforeSet.$languageLabel")
         setEditorLanguage(language)
-        markLanguageApply("language.afterSet.${getEditorLanguage()::class.java.simpleName}")
       }
     }
   }
@@ -693,9 +618,7 @@ constructor(
 
     if (finalScheme is IDEColorScheme) {
 
-      markLanguageApply("treeSitter.beforeSetupWith.$type")
       language.setupWith(finalScheme)
-      markLanguageApply("treeSitter.afterSetupWith.$type")
 
       if (finalScheme.getLanguageScheme(type) == null) {
         log.warn("Color scheme does not support file type '{}'", type)
@@ -707,11 +630,8 @@ constructor(
       finalScheme.apply(context)
     }
 
-    markLanguageApply("treeSitter.beforeColorScheme.$type")
     colorScheme = finalScheme!!
-    markLanguageApply("treeSitter.beforeSetLanguage.$type")
     setEditorLanguage(language)
-    markLanguageApply("treeSitter.afterSetLanguage.$type")
   }
 
   private inline fun createLanguage(file: File, crossinline callback: (Language?) -> Unit) {
@@ -787,12 +707,6 @@ constructor(
     }
     measureEditorInitStage("createInputTypeFlags") {
       inputType = createInputTypeFlags()
-    }
-    measureEditorInitStage("disableRenderNodeTextCache") {
-      // Keep syntax highlighting immediate, but avoid Sora's synchronous RenderNode text-cache
-      // recording on the first styles/spans-ready frame. The view is still hardware accelerated;
-      // this only forces text rows to be drawn directly on Canvas for verification/optimization.
-      setHardwareAcceleratedDrawAllowed(false)
     }
     measureEditorInitStage("applyBackground") {
       val backgroundColor = getSystemBackgroundColor()

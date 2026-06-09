@@ -22,7 +22,6 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.RenderNode
 import android.os.Build
-import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.collection.MutableIntList
 import com.tom.rv2ide.editor.BuildConfig
@@ -41,11 +40,8 @@ import io.github.rosemoe.sora.widget.EditorRenderer
  */
 class TracingEditorRenderer(
     private val enabled: Boolean = BuildConfig.DEBUG,
-    private val ownerEditor: CodeEditor,
-) : EditorRenderer(ownerEditor) {
-
-  private var lastFileKey: String? = null
-  private var skippedInitialMeasureCacheForFile = false
+    editor: CodeEditor,
+) : EditorRenderer(editor) {
 
   override fun draw(canvas: Canvas) = trace("draw") { super.draw(canvas) }
 
@@ -388,47 +384,13 @@ class TracingEditorRenderer(
       endLine: Int,
       timestamp: Long,
       useCachedContent: Boolean,
-  ) {
-    if (shouldSkipInitialMeasureCache()) {
-      Log.i(
-          "IDEEditorRenderer",
-          "section=buildMeasureCacheForLines skipped=true startLine=$startLine endLine=$endLine",
-      )
-      return
-    }
-    trace("buildMeasureCacheForLines") {
-      super.buildMeasureCacheForLines(startLine, endLine, timestamp, useCachedContent)
-    }
-  }
+  ) =
+      trace("buildMeasureCacheForLines") {
+        super.buildMeasureCacheForLines(startLine, endLine, timestamp, useCachedContent)
+      }
 
-  override fun buildMeasureCacheForLines(startLine: Int, endLine: Int) {
-    if (shouldSkipInitialMeasureCache()) {
-      Log.i(
-          "IDEEditorRenderer",
-          "section=buildMeasureCacheForLines skipped=true startLine=$startLine endLine=$endLine",
-      )
-      return
-    }
-    trace("buildMeasureCacheForLines") { super.buildMeasureCacheForLines(startLine, endLine) }
-  }
-
-  private fun shouldSkipInitialMeasureCache(): Boolean {
-    val ideEditor = ownerEditor as? IDEEditor ?: return false
-    val fileKey = ideEditor._file?.absolutePath ?: return false
-    if (fileKey != lastFileKey) {
-      lastFileKey = fileKey
-      skippedInitialMeasureCacheForFile = false
-    }
-    if (skippedInitialMeasureCacheForFile) {
-      return false
-    }
-    val styles = ideEditor.getStyles() ?: return false
-    if (styles.spans == null) {
-      return false
-    }
-    skippedInitialMeasureCacheForFile = true
-    return true
-  }
+  override fun buildMeasureCacheForLines(startLine: Int, endLine: Int) =
+      trace("buildMeasureCacheForLines") { super.buildMeasureCacheForLines(startLine, endLine) }
 
   override fun measureText(text: ContentLine?, line: Int, index: Int, count: Int) =
       trace("measureText") {
@@ -439,15 +401,6 @@ class TracingEditorRenderer(
     if (!enabled) {
       return action()
     }
-    val startNs = System.nanoTime()
-    return try {
-      androidx.tracing.trace(section, action)
-    } finally {
-      val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
-      if (elapsedMs >= 1.0) {
-        val cost = String.format(java.util.Locale.US, "%.3f", elapsedMs)
-        Log.i("IDEEditorRenderer", "section=$section cost=${cost}ms")
-      }
-    }
+    return androidx.tracing.trace(section, action)
   }
 }

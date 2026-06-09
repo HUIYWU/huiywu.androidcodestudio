@@ -16,7 +16,6 @@ import com.tom.rv2ide.editor.api.IEditor
 import com.tom.rv2ide.editor.databinding.LayoutCodeEditorBinding
 import com.tom.rv2ide.editor.ui.EditorSearchLayout
 import com.tom.rv2ide.editor.ui.IDEEditor
-import com.tom.rv2ide.diagnostics.FileOpenTrace
 import com.tom.rv2ide.editor.ui.IDEEditor.Companion.createInputTypeFlags
 import com.tom.rv2ide.editor.ui.cleanupCompletionTooltips
 import com.tom.rv2ide.editor.ui.cleanupHoverTooltips
@@ -115,15 +114,12 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     if (contentReady) {
       return
     }
-    FileOpenTrace.mark(file, "CodeEditorView.contentReady.mark")
     contentReady = true
     val callbacks = contentReadyCallbacks.toList()
     contentReadyCallbacks.clear()
     if (Looper.myLooper() == Looper.getMainLooper()) {
-      FileOpenTrace.mark(file, "CodeEditorView.contentReady.callbacks.runDirect.count=${callbacks.size}")
       callbacks.forEach { it() }
     } else {
-      FileOpenTrace.mark(file, "CodeEditorView.contentReady.callbacks.post.count=${callbacks.size}")
       callbacks.forEach { post(it) }
     }
   }
@@ -218,41 +214,27 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   }
 
   init {
-    measureOpenStage(file, "constructor.total") {
-      measureOpenStage(file, "constructor.inflateBinding") {
-        _binding = obtainBinding(context)
-      }
+    _binding = obtainBinding(context)
 
-      measureOpenStage(file, "constructor.configureEditorBase") {
-        binding.editor.apply {
-          isHighlightCurrentBlock = true
-          props.autoCompletionOnComposing = true
-          dividerWidth = SizeUtils.dp2px(2f).toFloat()
-          colorScheme = SchemeAndroidIDE.newInstance(context)
-          lineSeparator = LineSeparator.LF
-        }
-      }
-
-      orientation = VERTICAL
-
-      removeAllViews()
-
-      measureOpenStage(file, "constructor.addViews") {
-        addView(binding.root, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-      }
-
-      measureOpenStage(file, "constructor.applyLargeFileOptimizationsBeforeRead") {
-        applyLargeFileOptimizationsBeforeRead(file)
-      }
-      measureOpenStage(file, "constructor.startReadFileAndApplySelection") {
-        readFileAndApplySelection(file, selection)
-      }
-
-      // Setup content change listener after initialization
-      measureOpenStage(file, "constructor.setupContentChangeListener") {
-        setupContentChangeListener()
-      }
+    binding.editor.apply {
+      isHighlightCurrentBlock = true
+      props.autoCompletionOnComposing = true
+      dividerWidth = SizeUtils.dp2px(2f).toFloat()
+      colorScheme = SchemeAndroidIDE.newInstance(context)
+      lineSeparator = LineSeparator.LF
     }
+
+    orientation = VERTICAL
+
+    removeAllViews()
+
+    addView(binding.root, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+
+    applyLargeFileOptimizationsBeforeRead(file)
+    readFileAndApplySelection(file, selection)
+
+    // Setup content change listener after initialization
+    setupContentChangeListener()
   }
 
   private fun setupContentChangeListener() {
@@ -294,9 +276,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
       return
     }
 
-    measureOpenStage(file, "beginSearch.ensureSearchLayout") {
-      searchLayout
-    }.beginSearchMode()
+    searchLayout.beginSearchMode()
   }
 
   /** Mark this files as saved. Even if it not saved. */
@@ -395,20 +375,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     }
   }
 
-  private inline fun <R> measureOpenStage(file: File?, stage: String, action: () -> R): R {
-    if (!IdeLogConfig.shouldLogDebug()) {
-      return action()
-    }
-
-    val startNs = System.nanoTime()
-    return try {
-      action()
-    } finally {
-      val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
-      log.debug("Open file stage '{}' for '{}' took {} ms", stage, file?.absolutePath, elapsedMs)
-    }
-  }
-
   private inline fun <R : Any?> withEditingDisabled(action: () -> R): R {
     return try {
       _binding?.editor?.isEditable = false
@@ -432,99 +398,61 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   }
 
   private fun readFileAndApplySelection(file: File, selection: Range) {
-    FileOpenTrace.mark(file, "CodeEditorView.readFileAndApplySelection.enter")
     val shouldShowReadProgress = file.length() > LargeFileOptimizationHelper.LARGE_FILE_THRESHOLD
 
     codeEditorScope.launch(Dispatchers.Main.immediate) {
-      FileOpenTrace.mark(file, "CodeEditorView.readCoroutine.main.start")
       if (shouldShowReadProgress) {
         updateReadWriteProgress(0)
       }
 
       withEditingDisabled {
-        FileOpenTrace.mark(file, "CodeEditorView.readContent.start")
         val content =
             withContext(readWriteContext) {
-              measureOpenStage(file, "readContent") {
-                selection.validate()
-                val progressConsumer: ((Int) -> Unit)? =
-                    if (shouldShowReadProgress) this@CodeEditorView::updateReadWriteProgress else null
-                file.readContent(progressConsumer)
-              }
+              selection.validate()
+              val progressConsumer: ((Int) -> Unit)? =
+                  if (shouldShowReadProgress) this@CodeEditorView::updateReadWriteProgress else null
+              file.readContent(progressConsumer)
             }
-        FileOpenTrace.mark(file, "CodeEditorView.readContent.done")
 
         initializeContent(content, file, selection)
-        FileOpenTrace.mark(file, "CodeEditorView.initializeContent.returned")
         _binding?.rwProgress?.isVisible = false
       }
     }
   }
 
   private fun initializeContent(content: Content, file: File, selection: Range) {
-    FileOpenTrace.mark(file, "CodeEditorView.initializeContent.enter.attached=${binding.editor.isAttachedToWindow}")
     val ideEditor = binding.editor
     val initializeAction: () -> Unit = {
-      FileOpenTrace.mark(file, "CodeEditorView.initializeAction.start")
-      measureOpenStage(file, "initializeContent") {
-        val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
+      val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
 
-        measureOpenStage(file, "configureEditorTextAppearanceBeforeSetText") {
-          FileOpenTrace.mark(file, "CodeEditorView.configureTextAppearance.start")
-          configureEditorTextAppearance()
-          FileOpenTrace.mark(file, "CodeEditorView.configureTextAppearance.done")
-        }
+      configureEditorTextAppearance()
 
-        measureOpenStage(file, "setText") {
-          FileOpenTrace.mark(file, "CodeEditorView.setText.start")
-          ideEditor.setText(content, args)
-          FileOpenTrace.mark(file, "CodeEditorView.setText.done")
-        }
+      ideEditor.setText(content, args)
 
-        measureOpenStage(file, "markUnmodified") {
-          markUnmodified()
-        }
-        measureOpenStage(file, "postRead") {
-          FileOpenTrace.mark(file, "CodeEditorView.postRead.start")
-          postRead(file)
-          FileOpenTrace.mark(file, "CodeEditorView.postRead.done")
-        }
+      markUnmodified()
+      postRead(file)
 
-        measureOpenStage(file, "validateRange") {
-          ideEditor.validateRange(selection)
-        }
-        measureOpenStage(file, "setSelection") {
-          FileOpenTrace.mark(file, "CodeEditorView.setSelection.start")
-          ideEditor.setSelection(selection)
-          FileOpenTrace.mark(file, "CodeEditorView.setSelection.done")
-        }
+      ideEditor.validateRange(selection)
+      ideEditor.setSelection(selection)
 
-        markContentReady()
+      markContentReady()
 
-        ideEditor.postDelayed(
-          {
-            if (_binding == null) {
-              return@postDelayed
-            }
-            FileOpenTrace.mark(file, "CodeEditorView.configureEditorIfNeeded.deferred.start")
-            measureOpenStage(file, "configureEditorIfNeeded.deferred") {
-              configureEditorIfNeeded()
-            }
-            FileOpenTrace.mark(file, "CodeEditorView.configureEditorIfNeeded.deferred.done")
-          },
-          48,
-        )
+      ideEditor.postDelayed(
+        {
+          if (_binding == null) {
+            return@postDelayed
+          }
+          configureEditorIfNeeded()
+        },
+        48,
+      )
 
-        // Display is updated synchronously by EditorHandlerActivity, following upstream AndroidIDE behavior.
-      }
-      FileOpenTrace.mark(file, "CodeEditorView.initializeAction.done")
+      // Display is updated synchronously by EditorHandlerActivity, following upstream AndroidIDE behavior.
     }
 
     if (ideEditor.isAttachedToWindow) {
-      FileOpenTrace.mark(file, "CodeEditorView.initializeAction.runDirect")
       initializeAction()
     } else {
-      FileOpenTrace.mark(file, "CodeEditorView.initializeAction.postInLifecycle")
       ideEditor.postInLifecycle(initializeAction)
     }
   }
@@ -532,46 +460,28 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   // Editor display is updated synchronously by EditorHandlerActivity.
 
   private fun postRead(file: File) {
-    measureOpenStage(file, "postRead.setupLanguage") {
-      binding.editor.setupLanguage(file)
-    }
-    measureOpenStage(file, "postRead.setLanguageServer") {
-      binding.editor.setLanguageServer(createLanguageServer(file))
-    }
+    binding.editor.setupLanguage(file)
+    binding.editor.setLanguageServer(createLanguageServer(file))
 
     if (IDELanguageClientImpl.isInitialized()) {
-      measureOpenStage(file, "postRead.setLanguageClient") {
-        binding.editor.setLanguageClient(IDELanguageClientImpl.getInstance())
-      }
+      binding.editor.setLanguageClient(IDELanguageClientImpl.getInstance())
     }
 
-    measureOpenStage(file, "postRead.setFile.dispatchOpen") {
-      binding.editor.file = file
-    }
+    binding.editor.file = file
 
     if (file.extension in setOf("c", "cpp", "cc", "cxx", "h", "hpp")) {
-      measureOpenStage(file, "postRead.initDiagnosticHandling") {
-        binding.editor.initDiagnosticHandling()
-      }
-      measureOpenStage(file, "postRead.startDiagnosticAnalysis") {
-        startDiagnosticAnalysis(file)
-      }
+      binding.editor.initDiagnosticHandling()
+      startDiagnosticAnalysis(file)
     }
     binding.editor.postDelayed(
       {
         if (_binding == null) {
           return@postDelayed
         }
-        measureOpenStage(file, "postRead.initCompletionTooltips.deferred") {
-          binding.editor.initCompletionTooltips()
-        }
-        measureOpenStage(file, "postRead.initHoverTooltips.deferred") {
-          binding.editor.initHoverTooltips()
-        }
+        binding.editor.initCompletionTooltips()
+        binding.editor.initHoverTooltips()
 
-        measureOpenStage(file, "postRead.invalidateOptionsMenu.deferred") {
-          (context as? Activity?)?.invalidateOptionsMenu()
-        }
+        (context as? Activity?)?.invalidateOptionsMenu()
       },
       350,
     )
