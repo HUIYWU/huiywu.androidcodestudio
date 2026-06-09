@@ -15,6 +15,7 @@ import com.tom.rv2ide.editor.api.IEditor
 import com.tom.rv2ide.editor.databinding.LayoutCodeEditorBinding
 import com.tom.rv2ide.editor.ui.EditorSearchLayout
 import com.tom.rv2ide.editor.ui.IDEEditor
+import com.tom.rv2ide.diagnostics.FileOpenTrace
 import com.tom.rv2ide.editor.ui.IDEEditor.Companion.createInputTypeFlags
 import com.tom.rv2ide.editor.ui.cleanupCompletionTooltips
 import com.tom.rv2ide.editor.ui.cleanupHoverTooltips
@@ -109,6 +110,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     if (contentReady) {
       return
     }
+    FileOpenTrace.mark(file, "CodeEditorView.contentReady.mark")
     contentReady = true
     val callbacks = contentReadyCallbacks.toList()
     contentReadyCallbacks.clear()
@@ -419,14 +421,17 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   }
 
   private fun readFileAndApplySelection(file: File, selection: Range) {
+    FileOpenTrace.mark(file, "CodeEditorView.readFileAndApplySelection.enter")
     val shouldShowReadProgress = file.length() > LargeFileOptimizationHelper.LARGE_FILE_THRESHOLD
 
     codeEditorScope.launch(Dispatchers.Main.immediate) {
+      FileOpenTrace.mark(file, "CodeEditorView.readCoroutine.main.start")
       if (shouldShowReadProgress) {
         updateReadWriteProgress(0)
       }
 
       withEditingDisabled {
+        FileOpenTrace.mark(file, "CodeEditorView.readContent.start")
         val content =
             withContext(readWriteContext) {
               measureOpenStage(file, "readContent") {
@@ -436,39 +441,51 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
                 file.readContent(progressConsumer)
               }
             }
+        FileOpenTrace.mark(file, "CodeEditorView.readContent.done")
 
         initializeContent(content, file, selection)
+        FileOpenTrace.mark(file, "CodeEditorView.initializeContent.returned")
         _binding?.rwProgress?.isVisible = false
       }
     }
   }
 
   private fun initializeContent(content: Content, file: File, selection: Range) {
+    FileOpenTrace.mark(file, "CodeEditorView.initializeContent.enter.attached=${binding.editor.isAttachedToWindow}")
     val ideEditor = binding.editor
     val initializeAction: () -> Unit = {
+      FileOpenTrace.mark(file, "CodeEditorView.initializeAction.start")
       measureOpenStage(file, "initializeContent") {
         val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
 
         measureOpenStage(file, "configureEditorTextAppearanceBeforeSetText") {
+          FileOpenTrace.mark(file, "CodeEditorView.configureTextAppearance.start")
           configureEditorTextAppearance()
+          FileOpenTrace.mark(file, "CodeEditorView.configureTextAppearance.done")
         }
 
         measureOpenStage(file, "setText") {
+          FileOpenTrace.mark(file, "CodeEditorView.setText.start")
           ideEditor.setText(content, args)
+          FileOpenTrace.mark(file, "CodeEditorView.setText.done")
         }
 
         measureOpenStage(file, "markUnmodified") {
           markUnmodified()
         }
         measureOpenStage(file, "postRead") {
+          FileOpenTrace.mark(file, "CodeEditorView.postRead.start")
           postRead(file)
+          FileOpenTrace.mark(file, "CodeEditorView.postRead.done")
         }
 
         measureOpenStage(file, "validateRange") {
           ideEditor.validateRange(selection)
         }
         measureOpenStage(file, "setSelection") {
+          FileOpenTrace.mark(file, "CodeEditorView.setSelection.start")
           ideEditor.setSelection(selection)
+          FileOpenTrace.mark(file, "CodeEditorView.setSelection.done")
         }
 
         markContentReady()
@@ -478,20 +495,25 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
             if (_binding == null) {
               return@postDelayed
             }
+            FileOpenTrace.mark(file, "CodeEditorView.configureEditorIfNeeded.deferred.start")
             measureOpenStage(file, "configureEditorIfNeeded.deferred") {
               configureEditorIfNeeded()
             }
+            FileOpenTrace.mark(file, "CodeEditorView.configureEditorIfNeeded.deferred.done")
           },
           48,
         )
 
         // Display is updated synchronously by EditorHandlerActivity, following upstream AndroidIDE behavior.
       }
+      FileOpenTrace.mark(file, "CodeEditorView.initializeAction.done")
     }
 
     if (ideEditor.isAttachedToWindow) {
+      FileOpenTrace.mark(file, "CodeEditorView.initializeAction.runDirect")
       initializeAction()
     } else {
+      FileOpenTrace.mark(file, "CodeEditorView.initializeAction.postInLifecycle")
       ideEditor.postInLifecycle(initializeAction)
     }
   }

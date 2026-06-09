@@ -36,6 +36,7 @@ import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_TOOLBAR
 import com.tom.rv2ide.actions.ActionsRegistry.Companion.getInstance
 import com.tom.rv2ide.actions.FillMenuParams
+import com.tom.rv2ide.diagnostics.FileOpenTrace
 import com.tom.rv2ide.editor.language.treesitter.JavaLanguage
 import com.tom.rv2ide.editor.language.treesitter.JsonLanguage
 import com.tom.rv2ide.editor.language.treesitter.KotlinLanguage
@@ -128,7 +129,10 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     CodeEditorView.prewarmEditorBinding(this)
 
     editorViewModel._displayedFile.observe(this) { index ->
+      val file = runCatching { editorViewModel.getOpenedFile(index) }.getOrNull()
+      FileOpenTrace.mark(file, "EditorHandler.displayedFileObserver.enter.index=$index")
       content.editorContainer.displayedChild = index
+      FileOpenTrace.mark(file, "EditorHandler.displayedFileObserver.displayedChild.done.index=$index")
     }
     editorViewModel._startDrawerOpened.observe(this) { opened ->
       this.binding.editorDrawerLayout.apply {
@@ -139,19 +143,24 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     editorViewModel._filesModified.observe(this) { invalidateOptionsMenu() }
     editorViewModel._filesSaving.observe(this) { invalidateOptionsMenu() }
 
-    editorViewModel.observeFiles(this) {
+    editorViewModel.observeFiles(this) { files ->
+      val tracedFile = files?.lastOrNull()
+      FileOpenTrace.mark(tracedFile, "EditorHandler.observeFiles.enter.count=${files?.size ?: 0}")
       // rewrite the cached files index if there are any opened files
       val currentFile =
           getCurrentEditor()?.editor?.file?.absolutePath
               ?: run {
+                FileOpenTrace.mark(tracedFile, "EditorHandler.observeFiles.noCurrentEditor")
                 editorViewModel.writeOpenedFiles(null)
                 editorViewModel.openedFilesCache = null
                 return@observeFiles
               }
       getOpenedFiles().also {
+        FileOpenTrace.mark(tracedFile, "EditorHandler.observeFiles.getOpenedFiles.done.count=${it.size}")
         val cache = OpenedFilesCache(currentFile, it)
         editorViewModel.writeOpenedFiles(cache)
         editorViewModel.openedFilesCache = cache
+        FileOpenTrace.mark(tracedFile, "EditorHandler.observeFiles.cacheUpdated.done")
       }
     }
 
@@ -328,76 +337,98 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   }
 
   override fun openFile(file: File, selection: Range?): CodeEditorView? {
+    FileOpenTrace.mark(file, "EditorHandler.openFile.enter")
     return measureOpenFileStage(file, "openFile.total") {
       val range = selection ?: Range.NONE
       if (ImageUtils.isImage(file)) {
+        FileOpenTrace.mark(file, "EditorHandler.openFile.image")
         openImage(this, file)
         return@measureOpenFileStage null
       }
 
+      FileOpenTrace.mark(file, "EditorHandler.openFileAndGetIndex.start")
       val index = measureOpenFileStage(file, "openFile.openFileAndGetIndex") {
         openFileAndGetIndex(file, range)
       }
+      FileOpenTrace.mark(file, "EditorHandler.openFileAndGetIndex.done.index=$index")
       measureOpenFileStage(file, "openFile.selectTab") {
+        FileOpenTrace.mark(file, "EditorHandler.openFile.selectTab.start.index=$index")
         val tab = content.tabs.getTabAt(index)
         if (tab != null && index >= 0 && !tab.isSelected) {
           tab.select()
         }
+        FileOpenTrace.mark(file, "EditorHandler.openFile.selectTab.done.index=$index")
       }
 
       measureOpenFileStage(file, "openFile.updateViewModel") {
+        FileOpenTrace.mark(file, "EditorHandler.openFile.updateViewModel.start")
         editorViewModel.startDrawerOpened = false
         if (index >= 0 && index < editorViewModel.getOpenedFileCount()) {
           editorViewModel.setCurrentFile(index, file)
         }
+        FileOpenTrace.mark(file, "EditorHandler.openFile.updateViewModel.done")
       }
 
       return@measureOpenFileStage try {
         measureOpenFileStage(file, "openFile.getEditorAtIndex") {
-          getEditorAtIndex(index)
+          val editor = getEditorAtIndex(index)
+          FileOpenTrace.mark(file, "EditorHandler.openFile.getEditorAtIndex.done.editor=${editor != null}")
+          editor
         }
       } catch (th: Throwable) {
         log.error("Unable to get editor fragment at opened file index {}", index, th)
+        FileOpenTrace.mark(file, "EditorHandler.openFile.getEditorAtIndex.error")
         null
       }
     }
   }
 
   override fun openFileAndGetIndex(file: File, selection: Range?): Int {
+    FileOpenTrace.mark(file, "EditorHandler.openFileAndGetIndex.enter")
     return measureOpenFileStage(file, "openFileAndGetIndex.total") {
       val openedFileIndex = measureOpenFileStage(file, "openFileAndGetIndex.findExisting") {
         findIndexOfEditorByFile(file)
       }
+      FileOpenTrace.mark(file, "EditorHandler.findExisting.done.index=$openedFileIndex")
       if (openedFileIndex != -1) {
+        FileOpenTrace.mark(file, "EditorHandler.openExisting.index=$openedFileIndex")
         return@measureOpenFileStage openedFileIndex
       }
 
       if (!file.exists()) {
+        FileOpenTrace.mark(file, "EditorHandler.fileMissing")
         return@measureOpenFileStage -1
       }
 
       val position = editorViewModel.getOpenedFileCount()
 
       log.info("Opening file at index {} file:{}", position, file)
+      FileOpenTrace.mark(file, "EditorHandler.createCodeEditorView.start.position=$position")
 
       val editor = measureOpenFileStage(file, "openFileAndGetIndex.createCodeEditorView") {
         CodeEditorView(this, file, selection!!)
       }
+      FileOpenTrace.mark(file, "EditorHandler.createCodeEditorView.done")
       measureOpenFileStage(file, "openFileAndGetIndex.setLayoutParams") {
         editor.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
       }
 
       measureOpenFileStage(file, "openFileAndGetIndex.addEditorView.pending") {
+        FileOpenTrace.mark(file, "EditorHandler.addEditorView.pending.start")
         editor.visibility = View.INVISIBLE
         content.editorContainer.addView(editor)
         pendingEditorFiles.add(file)
+        FileOpenTrace.mark(file, "EditorHandler.addEditorView.pending.done")
       }
 
       editor.doOnContentReady {
+        FileOpenTrace.mark(file, "EditorHandler.contentReady.callback")
         if (!pendingEditorFiles.remove(file) || editor.parent == null) {
+          FileOpenTrace.mark(file, "EditorHandler.contentReady.ignored")
           return@doOnContentReady
         }
         measureOpenFileStage(file, "openFileAndGetIndex.attachReadyEditor") {
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.start")
           val currentPosition = editorViewModel.getOpenedFileCount()
           if (currentPosition != position) {
             log.warn(
@@ -409,21 +440,30 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           }
 
           editor.visibility = View.VISIBLE
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.editorVisible")
           content.tabs.addTab(content.tabs.newTab(), false)
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.addTab.done")
           editorViewModel.addFile(file)
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.addFile.done")
           editorViewModel.setCurrentFile(currentPosition, file)
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.setCurrentFile.done")
           updateTabs()
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.updateTabs.done")
           onFileLoaded(editor, file)
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.onFileLoaded.done")
 
           val tab = content.tabs.getTabAt(currentPosition)
           if (tab != null && !tab.isSelected) {
+            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.tabSelect.start")
             tab.select()
+            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.tabSelect.done")
           } else {
+            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.displayedChild.direct")
             content.editorContainer.displayedChild = currentPosition
           }
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.done")
         }
       }
-
       return@measureOpenFileStage position
     }
   }

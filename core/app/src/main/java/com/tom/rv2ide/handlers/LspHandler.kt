@@ -4,6 +4,7 @@ import android.content.Context
 import com.tom.rv2ide.lsp.api.ILanguageClient
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.java.JavaLanguageServer
+import com.tom.rv2ide.lsp.clang.ClangLanguageServer
 import com.tom.rv2ide.lsp.kotlin.KotlinLanguageServer
 import com.tom.rv2ide.lsp.xml.XMLLanguageServer
 
@@ -14,10 +15,7 @@ object LspHandler {
     ILanguageServerRegistry.getDefault().apply {
       getServer(JavaLanguageServer.SERVER_ID) ?: register(JavaLanguageServer())
       getServer(KotlinLanguageServer.SERVER_ID) ?: register(KotlinLanguageServer(context))
-      // Clang LSP is temporarily disabled while diagnosing project initialization/editor jank.
-      // Registering it causes ProjectInitializedEvent to call ClangLanguageServer.setupWorkspace(),
-      // which scans the project tree, generates compile_commands.json and starts clangd.
-      // getServer(ClangLanguageServer.SERVER_ID) ?: register(ClangLanguageServer(context))
+      getServer(ClangLanguageServer.SERVER_ID) ?: register(ClangLanguageServer(context))
       getServer(XMLLanguageServer.SERVER_ID) ?: register(XMLLanguageServer())
     }
   }

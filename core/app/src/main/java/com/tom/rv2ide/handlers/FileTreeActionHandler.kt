@@ -25,6 +25,7 @@ import com.tom.rv2ide.actions.ActionMenu
 import com.tom.rv2ide.actions.ActionsRegistry
 import com.tom.rv2ide.actions.internal.DefaultActionsRegistry
 import com.tom.rv2ide.activities.editor.EditorHandlerActivity
+import com.tom.rv2ide.diagnostics.FileOpenTrace
 import com.tom.rv2ide.eventbus.events.filetree.FileClickEvent
 import com.tom.rv2ide.eventbus.events.filetree.FileLongClickEvent
 import com.tom.rv2ide.events.ExpandTreeNodeRequestEvent
@@ -89,8 +90,12 @@ class FileTreeActionHandler : BaseEventHandler() {
       return
     }
 
+    FileOpenTrace.begin(event.file, "FileTree.onFileClicked")
+    FileOpenTrace.mark(event.file, "FileTree.closeDrawer.start")
     context.binding.root.closeDrawer(GravityCompat.START)
+    FileOpenTrace.mark(event.file, "FileTree.root.postOpenFile.schedule")
     context.binding.root.post {
+      FileOpenTrace.mark(event.file, "FileTree.root.postOpenFile.run")
       context.openFile(event.file)
     }
   }

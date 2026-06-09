@@ -79,6 +79,7 @@ import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.databinding.ActivityEditorBinding
 import com.tom.rv2ide.databinding.ContentEditorBinding
 import com.tom.rv2ide.databinding.LayoutDiagnosticInfoBinding
+import com.tom.rv2ide.diagnostics.FileOpenTrace
 import com.tom.rv2ide.events.InstallationResultEvent
 import com.tom.rv2ide.fragments.SearchResultFragment
 import com.tom.rv2ide.fragments.sidebar.EditorSidebarFragment
@@ -1095,15 +1096,21 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
   override fun onTabSelected(tab: Tab) {
       val position = tab.position
-      editorViewModel.displayedFileIndex = position
-  
       val editorView = provideEditorAt(position)!!
-      editorView.onEditorSelected()
-
       val selectedFile = editorView.file ?: runCatching { editorViewModel.getOpenedFile(position) }.getOrNull()
+      FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.enter.position=$position")
+      editorViewModel.displayedFileIndex = position
+      FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.displayedFileIndex.done")
+  
+      editorView.onEditorSelected()
+      FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.onEditorSelected.done")
+
       editorViewModel.setCurrentFile(position, selectedFile)
+      FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.setCurrentFile.done")
       refreshSymbolInput(editorView)
+      FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.refreshSymbolInput.done")
       invalidateOptionsMenu()
+      FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.invalidateOptionsMenu.done")
   
       // Auto-save is initialized from observeFiles/onEditorCreated; avoid doing it again during tab selection.
   }
@@ -1352,24 +1359,30 @@ override fun onApplySystemBarInsets(insets: Insets) {
     editorViewModel._statusText.observe(this) { content.bottomSheet.setStatus(it.first, it.second) }
 
     editorViewModel.observeFiles(this) { files ->
+      val tracedFile = files?.lastOrNull()
+      FileOpenTrace.mark(tracedFile, "BaseEditor.observeFiles.enter.count=${files?.size ?: 0}")
       content.apply {
         if (files.isNullOrEmpty()) {
           tabs.visibility = View.GONE
           viewContainer.displayedChild = 1
+          FileOpenTrace.mark(tracedFile, "BaseEditor.observeFiles.noFiles")
         } else {
           tabs.visibility = View.VISIBLE
           viewContainer.displayedChild = 0
+          FileOpenTrace.mark(tracedFile, "BaseEditor.observeFiles.showEditorContainer")
 
           // Auto-save initialization can call editor.text.toString(). Do not do it in the same
           // frame as addFile/addTab while the drawer close animation is running.
           tabs.postDelayed(
             {
+              FileOpenTrace.mark(tracedFile, "BaseEditor.observeFiles.autoSaveInit.start")
               files.forEachIndexed { index, _ ->
                 val editor = provideEditorAt(index)
                 if (editor != null) {
                   initializeAutoSaveForEditor(editor)
                 }
               }
+              FileOpenTrace.mark(tracedFile, "BaseEditor.observeFiles.autoSaveInit.done")
             },
             500,
           )
@@ -1377,6 +1390,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
       }
 
       invalidateOptionsMenu()
+      FileOpenTrace.mark(tracedFile, "BaseEditor.observeFiles.invalidateOptionsMenu.done")
     }
 
     setupNoEditorView()
