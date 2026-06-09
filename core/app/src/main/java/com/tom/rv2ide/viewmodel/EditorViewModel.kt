@@ -54,6 +54,7 @@ class EditorViewModel : ViewModel() {
   private val _openedFiles = MutableLiveData<OpenedFilesCache>()
   private val _isBoundToBuildService = MutableLiveData(false)
   private val _files = MutableLiveData<MutableList<File>>(ArrayList())
+  private var writeOpenedFilesJob: Job? = null
 
   /**
    * Holds information about the currently selected editor fragment. First value in the pair is the
@@ -249,15 +250,20 @@ class EditorViewModel : ViewModel() {
 
   fun handleOpenedFilesCacheJobCompletion(it: Job, operation: String) {
     it.invokeOnCompletion { err ->
-      if (err != null) {
+      if (err != null && err !is kotlinx.coroutines.CancellationException) {
         ILogger.ROOT.error("[EditorViewModel] Failed to {} opened files cache", operation, err)
       }
     }
   }
 
-  fun writeOpenedFiles(cache: OpenedFilesCache?) {
-    viewModelScope
-        .launch(Dispatchers.IO) {
+  fun writeOpenedFiles(cache: OpenedFilesCache?, immediate: Boolean = false) {
+    writeOpenedFilesJob?.cancel()
+    writeOpenedFilesJob =
+        viewModelScope.launch(Dispatchers.IO) {
+          if (!immediate) {
+            kotlinx.coroutines.delay(750)
+          }
+
           try {
             val file = getOpenedFilesCache(true)
 
@@ -304,10 +310,12 @@ class EditorViewModel : ViewModel() {
               }
             }
           } catch (e: Exception) {
-            ILogger.ROOT.error("Error in writeOpenedFiles", e)
+            if (e !is kotlinx.coroutines.CancellationException) {
+              ILogger.ROOT.error("Error in writeOpenedFiles", e)
+            }
           }
         }
-        .also { job -> handleOpenedFilesCacheJobCompletion(job, "write") }
+    handleOpenedFilesCacheJobCompletion(writeOpenedFilesJob!!, "write")
   }
 
   @PublishedApi

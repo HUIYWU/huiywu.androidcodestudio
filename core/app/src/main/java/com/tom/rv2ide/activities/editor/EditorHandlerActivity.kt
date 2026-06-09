@@ -23,6 +23,7 @@ import android.os.Bundle
 import android.text.TextUtils
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
 import android.view.ViewGroup.LayoutParams
 import androidx.appcompat.view.menu.MenuBuilder
 import androidx.collection.MutableIntObjectMap
@@ -74,8 +75,10 @@ import org.greenrobot.eventbus.ThreadMode
  * @author Akash Yadav
  */
 open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
-
   protected val isOpenedFilesSaved = AtomicBoolean(false)
+
+  private val pendingEditorFiles = mutableSetOf<File>()
+
 
   private inline fun <R> measureOpenFileStage(file: File?, stage: String, action: () -> R): R {
     if (!IdeLogConfig.shouldLogDebug()) {
@@ -124,8 +127,8 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     content.viewContainer.layoutTransition = null
     CodeEditorView.prewarmEditorBinding(this)
 
-    editorViewModel._displayedFile.observe(this) {
-      this.content.editorContainer.displayedChild = it
+    editorViewModel._displayedFile.observe(this) { index ->
+      content.editorContainer.displayedChild = index
     }
     editorViewModel._startDrawerOpened.observe(this) { opened ->
       this.binding.editorDrawerLayout.apply {
@@ -188,7 +191,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   private fun writeOpenedFilesCache(openedFiles: List<OpenedFile>, selectedFile: File?) {
     if (selectedFile == null || openedFiles.isEmpty()) {
-      editorViewModel.writeOpenedFiles(null)
+      editorViewModel.writeOpenedFiles(null, immediate = true)
       editorViewModel.openedFilesCache = null
       log.debug("[onPause] No opened files. Opened files cache reset to null.")
       isOpenedFilesSaved.set(true)
@@ -197,7 +200,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
     val cache = OpenedFilesCache(selectedFile = selectedFile.absolutePath, allFiles = openedFiles)
 
-    editorViewModel.writeOpenedFiles(cache)
+    editorViewModel.writeOpenedFiles(cache, immediate = true)
     editorViewModel.openedFilesCache = if (!isDestroying) cache else null
     log.debug("[onPause] Opened files cache reset to {}", editorViewModel.openedFilesCache)
     isOpenedFilesSaved.set(true)
@@ -344,7 +347,9 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
       measureOpenFileStage(file, "openFile.updateViewModel") {
         editorViewModel.startDrawerOpened = false
-        editorViewModel.displayedFileIndex = index
+        if (index >= 0 && index < editorViewModel.getOpenedFileCount()) {
+          editorViewModel.setCurrentFile(index, file)
+        }
       }
 
       return@measureOpenFileStage try {
@@ -382,25 +387,41 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
         editor.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
       }
 
-      measureOpenFileStage(file, "openFileAndGetIndex.addEditorView") {
+      measureOpenFileStage(file, "openFileAndGetIndex.addEditorView.pending") {
+        editor.visibility = View.INVISIBLE
         content.editorContainer.addView(editor)
-      }
-      measureOpenFileStage(file, "openFileAndGetIndex.addTab") {
-        content.tabs.addTab(content.tabs.newTab())
+        pendingEditorFiles.add(file)
       }
 
-      measureOpenFileStage(file, "openFileAndGetIndex.addFileViewModel") {
-        editorViewModel.addFile(file)
-      }
-      measureOpenFileStage(file, "openFileAndGetIndex.setCurrentFile") {
-        editorViewModel.setCurrentFile(position, file)
-      }
+      editor.doOnContentReady {
+        if (!pendingEditorFiles.remove(file) || editor.parent == null) {
+          return@doOnContentReady
+        }
+        measureOpenFileStage(file, "openFileAndGetIndex.attachReadyEditor") {
+          val currentPosition = editorViewModel.getOpenedFileCount()
+          if (currentPosition != position) {
+            log.warn(
+              "Pending editor position changed for file {}. expected={}, actual={}",
+              file,
+              position,
+              currentPosition,
+            )
+          }
 
-      measureOpenFileStage(file, "openFileAndGetIndex.updateTabs") {
-        updateTabs()
-      }
-      measureOpenFileStage(file, "openFileAndGetIndex.onFileLoaded") {
-        onFileLoaded(editor, file)
+          editor.visibility = View.VISIBLE
+          content.tabs.addTab(content.tabs.newTab(), false)
+          editorViewModel.addFile(file)
+          editorViewModel.setCurrentFile(currentPosition, file)
+          updateTabs()
+          onFileLoaded(editor, file)
+
+          val tab = content.tabs.getTabAt(currentPosition)
+          if (tab != null && !tab.isSelected) {
+            tab.select()
+          } else {
+            content.editorContainer.displayedChild = currentPosition
+          }
+        }
       }
 
       return@measureOpenFileStage position
@@ -761,28 +782,35 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   private fun updateTabs() {
     editorActivityScope.launch {
       val files = editorViewModel.getOpenedFiles()
-      val dupliCount = mutableMapOf<String, Int>()
-      val names = MutableIntObjectMap<Pair<String, Int>>()
-
-      val nameBuilder = UniqueNameBuilder<File>("", File.separator)
-
-      files.forEach {
-        var count = dupliCount[it.name] ?: 0
-        dupliCount[it.name] = ++count
-        nameBuilder.addPath(it, it.path)
+      val tabCount = content.tabs.tabCount
+      val modifiedStates = BooleanArray(tabCount) { index ->
+        getEditorAtIndex(index)?.isModified ?: false
       }
 
-      for (index in 0 until content.tabs.tabCount) {
-        val file = files.getOrNull(index) ?: continue
-        val count = dupliCount[file.name] ?: 0
+      val names = withContext(Dispatchers.Default) {
+        val dupliCount = mutableMapOf<String, Int>()
+        val computedNames = MutableIntObjectMap<Pair<String, Int>>()
+        val nameBuilder = UniqueNameBuilder<File>("", File.separator)
 
-        val isModified = getEditorAtIndex(index)?.isModified ?: false
-        var name = if (count > 1) nameBuilder.getShortPath(file) else file.name
-        if (isModified) {
-          name = "*${name}"
+        files.forEach {
+          var count = dupliCount[it.name] ?: 0
+          dupliCount[it.name] = ++count
+          nameBuilder.addPath(it, it.path)
         }
 
-        names[index] = name to FileExtension.Factory.forFile(file).icon
+        for (index in 0 until tabCount) {
+          val file = files.getOrNull(index) ?: continue
+          val count = dupliCount[file.name] ?: 0
+
+          var name = if (count > 1) nameBuilder.getShortPath(file) else file.name
+          if (modifiedStates.getOrNull(index) == true) {
+            name = "*${name}"
+          }
+
+          computedNames[index] = name to FileExtension.Factory.forFile(file).icon
+        }
+
+        computedNames
       }
 
       withContext(Dispatchers.Main) {

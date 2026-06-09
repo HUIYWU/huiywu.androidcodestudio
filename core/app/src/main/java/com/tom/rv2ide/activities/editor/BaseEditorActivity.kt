@@ -525,6 +525,10 @@ abstract class BaseEditorActivity :
       return
     }
 
+    if (editorContentHashes.containsKey(editor)) {
+      return
+    }
+
     // Initialize content hash for change detection
     try {
       val currentContent = editor.editor?.text?.toString() ?: ""
@@ -612,12 +616,7 @@ abstract class BaseEditorActivity :
         log.warn("Failed to release editors: ${e.message}")
       }
       
-      try {
-        memoryUsageWatcher.stopWatching(true)
-        memoryUsageWatcher.listener = null
-      } catch (e: Exception) {
-        log.warn("Failed to stop memory monitoring: ${e.message}")
-      }
+      // Memory usage chart is disabled while diagnosing editor open jank.
       editorActivityScope.cancelIfActive("Activity is being destroyed")
     }
     
@@ -728,8 +727,8 @@ override fun onApplySystemBarInsets(insets: Insets) {
     uiDesignerResultLauncher =
         registerForActivityResult(StartActivityForResult(), this::handleUiDesignerResult)
 
-    setupMemUsageChart()
-    watchMemory()
+    // Memory usage chart is disabled while diagnosing editor open jank.
+    binding.memUsageView.root.visibility = View.GONE
 
     // Start auto-save mechanism
     startAutoSave()
@@ -891,11 +890,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
   private fun onSwipeRevealDragProgress(progress: Float) {
     _binding?.apply {
       contentCard.progress = progress
-      val insetsTop = systemBarInsets?.top ?: 0
-      // content.editorAppBarLayout.updatePadding(top = (insetsTop * (1f - progress)).roundToInt())
-      memUsageView.chart.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-        topMargin = (insetsTop * progress).roundToInt()
-      }
+      // Memory usage chart is disabled while diagnosing editor open jank.
     }
   }
 
@@ -1020,12 +1015,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
     // Save all pending files before pausing
     saveAllPendingFiles()
 
-    try {
-      memoryUsageWatcher.listener = null
-      memoryUsageWatcher.stopWatching(false)
-    } catch (e: Exception) {
-      log.warn("Failed to pause memory monitoring: ${e.message}")
-    }
+    // Memory usage chart is disabled while diagnosing editor open jank.
 
     this.isDestroying = isFinishing
     getFileTreeFragment()?.saveTreeState()
@@ -1035,15 +1025,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
     super.onResume()
     invalidateOptionsMenu()
 
-    try {
-      memoryUsageWatcher.listener = memoryUsageListener
-      memoryUsageWatcher.startWatching()
-    } catch (e: Exception) {
-      log.warn("Failed to resume memory monitoring: ${e.message}")
-    }
-
-    // Watch for gradle processes
-    watchGradleProcesses()
+    // Memory usage chart is disabled while diagnosing editor open jank.
 
     // Restart auto-save if it was stopped
     if (autoSaveCoroutineJob?.isActive != true) {
@@ -1101,9 +1083,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
       refreshSymbolInput(editorView)
       invalidateOptionsMenu()
   
-      if (editorView.file != null) {
-        initializeAutoSaveForEditor(editorView)
-      }
+      // Auto-save is initialized from observeFiles/onEditorCreated; avoid doing it again during tab selection.
   }
 
   override fun onTabUnselected(tab: Tab) {}
@@ -1358,13 +1338,19 @@ override fun onApplySystemBarInsets(insets: Insets) {
           tabs.visibility = View.VISIBLE
           viewContainer.displayedChild = 0
 
-          // Add auto-save initialization to all open editors
-          files.forEachIndexed { index, _ ->
-            val editor = provideEditorAt(index)
-            if (editor != null) {
-              initializeAutoSaveForEditor(editor)
-            }
-          }
+          // Auto-save initialization can call editor.text.toString(). Do not do it in the same
+          // frame as addFile/addTab while the drawer close animation is running.
+          tabs.postDelayed(
+            {
+              files.forEachIndexed { index, _ ->
+                val editor = provideEditorAt(index)
+                if (editor != null) {
+                  initializeAutoSaveForEditor(editor)
+                }
+              }
+            },
+            500,
+          )
         }
       }
 

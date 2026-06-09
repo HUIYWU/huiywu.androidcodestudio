@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.widget.FrameLayout
 import androidx.appcompat.widget.LinearLayoutCompat
 import androidx.core.view.isVisible
 import com.blankj.utilcode.util.SizeUtils
@@ -74,7 +73,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   private var _binding: LayoutCodeEditorBinding? = null
   private var _searchLayout: EditorSearchLayout? = null
   private var _suggestionView: SuggestionView? = null
-  private var _editorContainer: FrameLayout? = null
   private val prefManager: PreferenceManager
     get() = BaseApplication.getBaseInstance().prefManager
     
@@ -95,6 +93,28 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   private var analysisJob: Job? = null
 
+  private var contentReady = false
+  private val contentReadyCallbacks = mutableListOf<() -> Unit>()
+
+  /** Run [action] after this editor has applied file content, language setup and selection. */
+  fun doOnContentReady(action: () -> Unit) {
+    if (contentReady) {
+      post(action)
+      return
+    }
+    contentReadyCallbacks.add(action)
+  }
+
+  private fun markContentReady() {
+    if (contentReady) {
+      return
+    }
+    contentReady = true
+    val callbacks = contentReadyCallbacks.toList()
+    contentReadyCallbacks.clear()
+    callbacks.forEach { post(it) }
+  }
+
   /** Get the file of this editor. */
   val file: File?
     get() = editor?.file
@@ -114,49 +134,54 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   companion object {
     private val log = LoggerFactory.getLogger(CodeEditorView::class.java)
     private var prewarmedBinding: LayoutCodeEditorBinding? = null
+    private var cachedTypefacePath: String? = null
+    private var cachedTypeface: Typeface? = null
+    private var cachedLineNumberTypefaceState: Boolean? = null
+    private var cachedLineNumberTypeface: Typeface? = null
 
     fun prewarmEditorBinding(context: Context) {
+      prewarmTextAppearanceCache()
       if (prewarmedBinding != null) {
         return
       }
-
-      val appView = (context as? Activity)?.window?.decorView
-      val prewarmAction = Runnable {
-        if (prewarmedBinding != null) {
-          return@Runnable
-        }
-        val startNs = if (IdeLogConfig.shouldLogDebug()) System.nanoTime() else 0L
-        runCatching {
-          prewarmedBinding = LayoutCodeEditorBinding.inflate(LayoutInflater.from(context))
-        }.onFailure { error ->
-          log.warn("Failed to prewarm code editor binding", error)
-        }
+      runCatching {
+        prewarmedBinding = LayoutCodeEditorBinding.inflate(LayoutInflater.from(context))
+      }.onFailure { err ->
         if (IdeLogConfig.shouldLogDebug()) {
-          val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
-          log.debug("Prewarm editor binding took {} ms", elapsedMs)
+          log.debug("Failed to prewarm editor binding", err)
         }
+        prewarmedBinding = null
       }
-
-      appView?.postDelayed(prewarmAction, 350) ?: prewarmAction.run()
     }
 
     fun clearPrewarmedEditorBinding() {
       prewarmedBinding?.editor?.runCatching { release() }
       prewarmedBinding = null
     }
+
+    private fun prewarmTextAppearanceCache() {
+      val state = EditorPreferences.useCustomFont
+      var fontPath = "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/${EditorPreferences.selectedCustomFont}"
+      if (fontPath == "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/null") {
+        fontPath = "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/jetbrains-mono.ttf"
+      }
+
+      if (cachedTypefacePath != fontPath || cachedTypeface == null) {
+        cachedTypeface = runCatching { Typeface.createFromFile(fontPath) }.getOrNull() ?: Typeface.MONOSPACE
+        cachedTypefacePath = fontPath
+      }
+      if (cachedLineNumberTypefaceState != state || cachedLineNumberTypeface == null) {
+        cachedLineNumberTypeface = customOrJBMono(state)
+        cachedLineNumberTypefaceState = state
+      }
+    }
   }
 
   private fun obtainBinding(context: Context): LayoutCodeEditorBinding {
-    val warmed = prewarmedBinding
-    if (warmed != null) {
+    prewarmedBinding?.let { binding ->
       prewarmedBinding = null
-      prewarmEditorBinding(context)
-      if (IdeLogConfig.shouldLogDebug()) {
-        log.debug("Using prewarmed editor binding")
-      }
-      return warmed
+      return binding
     }
-
     return LayoutCodeEditorBinding.inflate(LayoutInflater.from(context))
   }
 
@@ -174,21 +199,9 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   }
 
   private fun ensureSuggestionView(): SuggestionView? {
-    val container = _editorContainer ?: return null
-    return _suggestionView ?: SuggestionView(context).apply {
-      layoutParams = FrameLayout.LayoutParams(
-        FrameLayout.LayoutParams.WRAP_CONTENT,
-        FrameLayout.LayoutParams.WRAP_CONTENT
-      ).apply {
-        val margin = SizeUtils.dp2px(8f)
-        setMargins(margin, margin, margin, margin)
-      }
-      elevation = SizeUtils.dp2px(8f).toFloat()
-      visibility = GONE
-    }.also { view ->
-      _suggestionView = view
-      container.addView(view)
-    }
+    // Keep the editor layout identical to upstream AndroidIDE. Inline suggestion UI is disabled
+    // until it can be hosted without wrapping the editor root in an extra FrameLayout.
+    return null
   }
 
   init {
@@ -211,18 +224,8 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
       removeAllViews()
 
-      // Wrap the editor in a FrameLayout so we can attach optional overlays lazily.
-      val editorContainer = measureOpenStage(file, "constructor.createEditorContainer") {
-        FrameLayout(context).apply {
-          id = R.id.editor_overlay_container
-          layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
-          addView(binding.root)
-        }
-      }
-      _editorContainer = editorContainer
-
       measureOpenStage(file, "constructor.addViews") {
-        addView(editorContainer)
+        addView(binding.root, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
       }
 
       measureOpenStage(file, "constructor.applyLargeFileOptimizationsBeforeRead") {
@@ -416,8 +419,9 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   }
 
   private fun readFileAndApplySelection(file: File, selection: Range) {
+    val shouldShowReadProgress = file.length() > LargeFileOptimizationHelper.LARGE_FILE_THRESHOLD
+
     codeEditorScope.launch(Dispatchers.Main.immediate) {
-      val shouldShowReadProgress = file.length() > LargeFileOptimizationHelper.LARGE_FILE_THRESHOLD
       if (shouldShowReadProgress) {
         updateReadWriteProgress(0)
       }
@@ -427,12 +431,8 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
             withContext(readWriteContext) {
               measureOpenStage(file, "readContent") {
                 selection.validate()
-                val progressConsumer: (Int) -> Unit =
-                    if (shouldShowReadProgress) {
-                      this@CodeEditorView::updateReadWriteProgress
-                    } else {
-                      {}
-                    }
+                val progressConsumer: ((Int) -> Unit)? =
+                    if (shouldShowReadProgress) this@CodeEditorView::updateReadWriteProgress else null
                 file.readContent(progressConsumer)
               }
             }
@@ -445,44 +445,54 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   private fun initializeContent(content: Content, file: File, selection: Range) {
     val ideEditor = binding.editor
-    measureOpenStage(file, "initializeContent") {
-      val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
+    val initializeAction: () -> Unit = {
+      measureOpenStage(file, "initializeContent") {
+        val args = Bundle().apply { putString(IEditor.KEY_FILE, file.absolutePath) }
 
-      measureOpenStage(file, "configureEditorTextAppearanceBeforeSetText") {
-        configureEditorTextAppearance()
-      }
+        measureOpenStage(file, "configureEditorTextAppearanceBeforeSetText") {
+          configureEditorTextAppearance()
+        }
 
-      measureOpenStage(file, "setText") {
-        ideEditor.setText(content, args)
-      }
+        measureOpenStage(file, "setText") {
+          ideEditor.setText(content, args)
+        }
 
-      measureOpenStage(file, "markUnmodified") {
-        markUnmodified()
-      }
-      measureOpenStage(file, "postRead") {
-        postRead(file)
-      }
+        measureOpenStage(file, "markUnmodified") {
+          markUnmodified()
+        }
+        measureOpenStage(file, "postRead") {
+          postRead(file)
+        }
 
-      measureOpenStage(file, "validateRange") {
-        ideEditor.validateRange(selection)
-      }
-      measureOpenStage(file, "setSelection") {
-        ideEditor.setSelection(selection)
-      }
+        measureOpenStage(file, "validateRange") {
+          ideEditor.validateRange(selection)
+        }
+        measureOpenStage(file, "setSelection") {
+          ideEditor.setSelection(selection)
+        }
 
-      ideEditor.postDelayed(
-        {
-          if (_binding == null) {
-            return@postDelayed
-          }
-          measureOpenStage(file, "configureEditorIfNeeded.deferred") {
-            configureEditorIfNeeded()
-          }
-        },
-        48,
-      )
+        markContentReady()
 
-      // Display is updated synchronously by EditorHandlerActivity, following upstream AndroidIDE behavior.
+        ideEditor.postDelayed(
+          {
+            if (_binding == null) {
+              return@postDelayed
+            }
+            measureOpenStage(file, "configureEditorIfNeeded.deferred") {
+              configureEditorIfNeeded()
+            }
+          },
+          48,
+        )
+
+        // Display is updated synchronously by EditorHandlerActivity, following upstream AndroidIDE behavior.
+      }
+    }
+
+    if (ideEditor.isAttachedToWindow) {
+      initializeAction()
+    } else {
+      ideEditor.postInLifecycle(initializeAction)
     }
   }
 
@@ -526,14 +536,20 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
           binding.editor.initHoverTooltips()
         }
 
-        measureOpenStage(file, "postRead.refreshSymbolInput.deferred") {
-          (context as? BaseEditorActivity?)?.refreshSymbolInput()
-        }
         measureOpenStage(file, "postRead.invalidateOptionsMenu.deferred") {
           (context as? Activity?)?.invalidateOptionsMenu()
         }
       },
-      48,
+      350,
+    )
+
+    binding.editor.postDelayed(
+      {
+        if (_binding != null) {
+          prewarmEditorBinding(context)
+        }
+      },
+      800,
     )
   }
 
@@ -560,7 +576,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   }
 
   private fun configureEditorIfNeeded() {
-    configureEditorTextAppearance()
     onPrintingFlagsPrefChanged()
     onInputTypePrefChanged()
     onWordwrapPrefChanged()
@@ -628,10 +643,29 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     if (fontPath == "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/null") {
       fontPath = "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/jetbrains-mono.ttf"
     }
-    val typeface = if (fontPath != null) Typeface.createFromFile(fontPath) else Typeface.MONOSPACE
-    
+
+    val typeface =
+        if (cachedTypefacePath == fontPath && cachedTypeface != null) {
+          cachedTypeface!!
+        } else {
+          (runCatching { Typeface.createFromFile(fontPath) }.getOrNull() ?: Typeface.MONOSPACE).also {
+            cachedTypefacePath = fontPath
+            cachedTypeface = it
+          }
+        }
+
+    val lineNumberTypeface =
+        if (cachedLineNumberTypefaceState == state && cachedLineNumberTypeface != null) {
+          cachedLineNumberTypeface!!
+        } else {
+          customOrJBMono(state).also {
+            cachedLineNumberTypefaceState = state
+            cachedLineNumberTypeface = it
+          }
+        }
+
     binding.editor.typefaceText = typeface
-    binding.editor.typefaceLineNumber = customOrJBMono(state)
+    binding.editor.typefaceLineNumber = lineNumberTypeface
   }
 
   private fun onDeleteEmptyLinesPrefChanged() {
