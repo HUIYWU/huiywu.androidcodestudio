@@ -29,7 +29,6 @@ import androidx.appcompat.view.menu.MenuBuilder
 import androidx.collection.MutableIntObjectMap
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
 import com.blankj.utilcode.util.ImageUtils
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.R.string
@@ -428,79 +427,41 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           FileOpenTrace.mark(file, "EditorHandler.contentReady.ignored")
           return@doOnContentReady
         }
-
-        fun attachReadyEditor() {
-          measureOpenFileStage(file, "openFileAndGetIndex.attachReadyEditor") {
-            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.start")
-            val currentPosition = editorViewModel.getOpenedFileCount()
-            if (currentPosition != position) {
-              log.warn(
-                "Pending editor position changed for file {}. expected={}, actual={}",
-                file,
-                position,
-                currentPosition,
-              )
-            }
-
-            editor.visibility = View.VISIBLE
-            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.editorVisible")
-            content.tabs.addTab(content.tabs.newTab(), false)
-            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.addTab.done")
-            editorViewModel.addFile(file)
-            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.addFile.done")
-            editorViewModel.setCurrentFile(currentPosition, file)
-            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.setCurrentFile.done")
-            updateTabs()
-            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.updateTabs.done")
-            onFileLoaded(editor, file)
-            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.onFileLoaded.done")
-
-            val tab = content.tabs.getTabAt(currentPosition)
-            if (tab != null && !tab.isSelected) {
-              FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.tabSelect.start")
-              tab.select()
-              FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.tabSelect.done")
-            } else {
-              FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.displayedChild.direct")
-              content.editorContainer.displayedChild = currentPosition
-            }
-            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.done")
+        measureOpenFileStage(file, "openFileAndGetIndex.attachReadyEditor") {
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.start")
+          val currentPosition = editorViewModel.getOpenedFileCount()
+          if (currentPosition != position) {
+            log.warn(
+              "Pending editor position changed for file {}. expected={}, actual={}",
+              file,
+              position,
+              currentPosition,
+            )
           }
-        }
 
-        val drawer = binding.editorDrawerLayout
-        if (drawer.isDrawerVisible(GravityCompat.START)) {
-          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.waitDrawerClosed")
-          var attachedAfterDrawer = false
-          fun attachAfterDrawer(reason: String) {
-            if (attachedAfterDrawer) {
-              return
-            }
-            attachedAfterDrawer = true
-            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.$reason")
-            if (editor.parent != null) {
-              attachReadyEditor()
-            } else {
-              FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.$reason.editorMissing")
-            }
+          editor.visibility = View.VISIBLE
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.editorVisible")
+          content.tabs.addTab(content.tabs.newTab(), false)
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.addTab.done")
+          editorViewModel.addFile(file)
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.addFile.done")
+          editorViewModel.setCurrentFile(currentPosition, file)
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.setCurrentFile.done")
+          updateTabs()
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.updateTabs.done")
+          onFileLoaded(editor, file)
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.onFileLoaded.done")
+
+          val tab = content.tabs.getTabAt(currentPosition)
+          if (tab != null && !tab.isSelected) {
+            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.tabSelect.start")
+            tab.select()
+            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.tabSelect.done")
+          } else {
+            FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.displayedChild.direct")
+            content.editorContainer.displayedChild = currentPosition
           }
-          val listener =
-            object : DrawerLayout.SimpleDrawerListener() {
-              override fun onDrawerClosed(drawerView: View) {
-                drawer.removeDrawerListener(this)
-                attachAfterDrawer("drawerClosed")
-              }
-            }
-          drawer.addDrawerListener(listener)
-          drawer.postDelayed(
-            {
-              drawer.removeDrawerListener(listener)
-              attachAfterDrawer("drawerClosedFallback")
-            },
-            360,
-          )
-        } else {
-          attachReadyEditor()
+          FileOpenTrace.mark(file, "EditorHandler.attachReadyEditor.done")
         }
       }
       return@measureOpenFileStage position
