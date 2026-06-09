@@ -91,8 +91,8 @@ class FileTreeActionHandler : BaseEventHandler() {
     }
 
     FileOpenTrace.begin(event.file, "FileTree.onFileClicked")
-    FileOpenTrace.mark(event.file, "FileTree.closeDrawer.start")
-    context.binding.root.closeDrawer(GravityCompat.START)
+    FileOpenTrace.mark(event.file, "FileTree.closeDrawer.noAnimation.start")
+    context.binding.root.closeDrawer(GravityCompat.START, false)
     FileOpenTrace.mark(event.file, "FileTree.root.postOpenFile.schedule")
     context.binding.root.post {
       FileOpenTrace.mark(event.file, "FileTree.root.postOpenFile.run")
