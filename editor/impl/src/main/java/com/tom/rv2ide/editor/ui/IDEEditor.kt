@@ -788,6 +788,12 @@ constructor(
     measureEditorInitStage("createInputTypeFlags") {
       inputType = createInputTypeFlags()
     }
+    measureEditorInitStage("disableRenderNodeTextCache") {
+      // Keep syntax highlighting immediate, but avoid Sora's synchronous RenderNode text-cache
+      // recording on the first styles/spans-ready frame. The view is still hardware accelerated;
+      // this only forces text rows to be drawn directly on Canvas for verification/optimization.
+      setHardwareAcceleratedDrawAllowed(false)
+    }
     measureEditorInitStage("applyBackground") {
       val backgroundColor = getSystemBackgroundColor()
       setBackgroundColor(backgroundColor)
