@@ -531,24 +531,10 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   // Editor display is updated synchronously by EditorHandlerActivity.
 
-  private fun scheduleLanguageSetupAfterFirstFrames(file: File) {
-    binding.editor.postDelayed(
-      {
-        if (_binding == null || binding.editor.file != file) {
-          return@postDelayed
-        }
-        FileOpenTrace.mark(file, "CodeEditorView.setupLanguage.deferred.start")
-        measureOpenStage(file, "postRead.setupLanguage.deferred") {
-          binding.editor.setupLanguage(file)
-        }
-        FileOpenTrace.mark(file, "CodeEditorView.setupLanguage.deferred.done")
-      },
-      650,
-    )
-  }
-
   private fun postRead(file: File) {
-    scheduleLanguageSetupAfterFirstFrames(file)
+    measureOpenStage(file, "postRead.setupLanguage") {
+      binding.editor.setupLanguage(file)
+    }
     measureOpenStage(file, "postRead.setLanguageServer") {
       binding.editor.setLanguageServer(createLanguageServer(file))
     }
@@ -576,11 +562,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
         if (_binding == null) {
           return@postDelayed
         }
-        FileOpenTrace.mark(file, "CodeEditorView.postFirstDrawFeatures.deferred.start")
-        measureOpenStage(file, "postRead.configurePostFirstDrawFeatures.deferred") {
-          configureEditorPostFirstDrawFeatures()
-        }
-        FileOpenTrace.mark(file, "CodeEditorView.postFirstDrawFeatures.deferred.done")
         measureOpenStage(file, "postRead.initCompletionTooltips.deferred") {
           binding.editor.initCompletionTooltips()
         }
@@ -635,9 +616,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     onUseIcuPrefChanged()
     onDeleteEmptyLinesPrefChanged()
     onDeleteTabsPrefChanged()
-  }
-
-  private fun configureEditorPostFirstDrawFeatures() {
     onStickyScrollEnabeldPrefChanged()
     onPinLineNumbersPrefChanged()
   }
