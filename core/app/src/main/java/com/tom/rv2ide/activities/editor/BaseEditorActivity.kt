@@ -616,7 +616,12 @@ abstract class BaseEditorActivity :
         log.warn("Failed to release editors: ${e.message}")
       }
       
-      // Memory usage chart is disabled while diagnosing editor open jank.
+      try {
+        memoryUsageWatcher.stopWatching(true)
+        memoryUsageWatcher.listener = null
+      } catch (e: Exception) {
+        log.warn("Failed to stop memory monitoring: ${e.message}")
+      }
       editorActivityScope.cancelIfActive("Activity is being destroyed")
     }
     
@@ -727,8 +732,8 @@ override fun onApplySystemBarInsets(insets: Insets) {
     uiDesignerResultLauncher =
         registerForActivityResult(StartActivityForResult(), this::handleUiDesignerResult)
 
-    // Memory usage chart is disabled while diagnosing editor open jank.
-    binding.memUsageView.root.visibility = View.GONE
+    setupMemUsageChart()
+    watchMemory()
 
     // Start auto-save mechanism
     startAutoSave()
@@ -890,7 +895,11 @@ override fun onApplySystemBarInsets(insets: Insets) {
   private fun onSwipeRevealDragProgress(progress: Float) {
     _binding?.apply {
       contentCard.progress = progress
-      // Memory usage chart is disabled while diagnosing editor open jank.
+      val insetsTop = systemBarInsets?.top ?: 0
+      // content.editorAppBarLayout.updatePadding(top = (insetsTop * (1f - progress)).roundToInt())
+      memUsageView.chart.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+        topMargin = (insetsTop * progress).roundToInt()
+      }
     }
   }
 
@@ -1015,7 +1024,12 @@ override fun onApplySystemBarInsets(insets: Insets) {
     // Save all pending files before pausing
     saveAllPendingFiles()
 
-    // Memory usage chart is disabled while diagnosing editor open jank.
+    try {
+      memoryUsageWatcher.listener = null
+      memoryUsageWatcher.stopWatching(false)
+    } catch (e: Exception) {
+      log.warn("Failed to pause memory monitoring: ${e.message}")
+    }
 
     this.isDestroying = isFinishing
     getFileTreeFragment()?.saveTreeState()
@@ -1025,7 +1039,15 @@ override fun onApplySystemBarInsets(insets: Insets) {
     super.onResume()
     invalidateOptionsMenu()
 
-    // Memory usage chart is disabled while diagnosing editor open jank.
+    try {
+      memoryUsageWatcher.listener = memoryUsageListener
+      memoryUsageWatcher.startWatching()
+    } catch (e: Exception) {
+      log.warn("Failed to resume memory monitoring: ${e.message}")
+    }
+
+    // Watch for gradle processes
+    watchGradleProcesses()
 
     // Restart auto-save if it was stopped
     if (autoSaveCoroutineJob?.isActive != true) {

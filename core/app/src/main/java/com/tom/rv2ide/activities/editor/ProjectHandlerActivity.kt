@@ -478,7 +478,13 @@ fun initializeProject(buildVariants: Map<String, String>) {
 
     if (!service.isToolingServerStarted()) {
       service.startToolingServer { pid ->
-        // Memory usage chart/process watching is disabled while diagnosing editor open jank.
+        try {
+          memoryUsageWatcher.watchProcess(pid, PROC_GRADLE_TOOLING)
+          resetMemUsageChart()
+        } catch (e: Exception) {
+          log.warn("Failed to watch tooling server process: ${e.message}")
+        }
+
         service.metadata().whenComplete { metadata, err ->
           if (metadata == null || err != null) {
             log.error("Failed to get tooling server metadata")
@@ -487,10 +493,16 @@ fun initializeProject(buildVariants: Map<String, String>) {
 
           if (pid != metadata.pid) {
             log.warn(
-                "Tooling server pid mismatch. Expected: {}, Actual: {}.",
+                "Tooling server pid mismatch. Expected: {}, Actual: {}. Replacing memory watcher...",
                 pid,
                 metadata.pid,
             )
+            try {
+              memoryUsageWatcher.watchProcess(metadata.pid, PROC_GRADLE_TOOLING)
+              resetMemUsageChart()
+            } catch (e: Exception) {
+              log.warn("Failed to watch tooling server process (metadata): ${e.message}")
+            }
           }
         }
 

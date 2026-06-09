@@ -54,16 +54,10 @@ class ClangLanguageServer(private val context: Context) : ILanguageServer {
     ClangLogs.debug("Applied settings: {}", settings)
   }
   override fun setupWorkspace(workspace: IWorkspace) {
-    ClangLogs.info("Setting up workspace: {}", workspace.getProjectDir())
-    workspaceSetup = ClangWorkspaceSetup(context, workspace)
-    val setupOk = workspaceSetup?.setup(processManager) == true
-    initialized = setupOk
-    if (setupOk) {
-      documentManager.flushPendingOpens()
-    } else {
-      ClangLogs.warn("Skipping pending didOpen flush because clang workspace setup did not complete successfully")
-    }
-    ClangLogs.info("Workspace setup complete, initialized={}", initialized)
+    // Clang workspace setup is temporarily disabled while diagnosing project initialization/editor jank.
+    // Avoid scanning the project tree, generating compile_commands.json and starting clangd.
+    ClangLogs.info("Clang workspace setup disabled for diagnostics: {}", workspace.getProjectDir())
+    initialized = false
   }
 
   // MATCH THE KOTLIN IMPLEMENTATION EXACTLY
