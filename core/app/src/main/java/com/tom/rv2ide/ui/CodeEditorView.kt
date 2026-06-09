@@ -531,10 +531,24 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   // Editor display is updated synchronously by EditorHandlerActivity.
 
+  private fun scheduleLanguageSetupAfterFirstFrames(file: File) {
+    binding.editor.postDelayed(
+      {
+        if (_binding == null || binding.editor.file != file) {
+          return@postDelayed
+        }
+        FileOpenTrace.mark(file, "CodeEditorView.setupLanguage.deferred.start")
+        measureOpenStage(file, "postRead.setupLanguage.deferred") {
+          binding.editor.setupLanguage(file)
+        }
+        FileOpenTrace.mark(file, "CodeEditorView.setupLanguage.deferred.done")
+      },
+      650,
+    )
+  }
+
   private fun postRead(file: File) {
-    measureOpenStage(file, "postRead.setupLanguage") {
-      binding.editor.setupLanguage(file)
-    }
+    scheduleLanguageSetupAfterFirstFrames(file)
     measureOpenStage(file, "postRead.setLanguageServer") {
       binding.editor.setLanguageServer(createLanguageServer(file))
     }
