@@ -18,11 +18,13 @@
 package com.tom.rv2ide.editor.ui
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
+import android.util.Log
 import android.view.inputmethod.EditorInfo
 import androidx.annotation.StringRes
 import com.blankj.utilcode.util.FileUtils
@@ -205,6 +207,26 @@ constructor(
       eventDispatcher.editor = this
       eventDispatcher.init(editorScope)
       initEditor()
+    }
+  }
+
+  private var drawTraceCount = 0
+
+  override fun onDraw(canvas: Canvas) {
+    val startNs = System.nanoTime()
+    try {
+      super.onDraw(canvas)
+    } finally {
+      val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
+      val count = ++drawTraceCount
+      if (count <= 8 || elapsedMs >= 8.0) {
+        Log.i(
+          "IDEEditorDraw",
+          "file=${_file?.name ?: \"<unset>\"} draw#$count cost=${String.format(java.util.Locale.US, \"%.3f\", elapsedMs)}ms " +
+            "size=${width}x${height} firstLine=${firstVisibleLine} lastLine=${lastVisibleLine} " +
+            "wordwrap=${isWordwrap} sticky=${props.stickyScroll} lineCount=${text?.lineCount ?: -1}",
+        )
+      }
     }
   }
 
