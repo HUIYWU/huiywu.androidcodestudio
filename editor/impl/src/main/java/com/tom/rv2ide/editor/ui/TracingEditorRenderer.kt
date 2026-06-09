@@ -22,6 +22,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.RenderNode
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.collection.MutableIntList
 import com.tom.rv2ide.editor.BuildConfig
@@ -395,10 +396,19 @@ class TracingEditorRenderer(private val enabled: Boolean = BuildConfig.DEBUG, ed
         return@trace super.measureText(text, line, index, count)
       }
 
-  private inline fun <T : Any?> trace(section: String, crossinline action: () -> T): T =
-      if (enabled) {
-        androidx.tracing.trace(section, action)
-      } else {
-        action()
+  private inline fun <T : Any?> trace(section: String, crossinline action: () -> T): T {
+    if (!enabled) {
+      return action()
+    }
+    val startNs = System.nanoTime()
+    return try {
+      androidx.tracing.trace(section, action)
+    } finally {
+      val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
+      if (elapsedMs >= 1.0) {
+        val cost = String.format(java.util.Locale.US, "%.3f", elapsedMs)
+        Log.i("IDEEditorRenderer", "section=$section cost=${cost}ms")
       }
+    }
+  }
 }

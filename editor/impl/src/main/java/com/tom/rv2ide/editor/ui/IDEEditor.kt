@@ -81,6 +81,7 @@ import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.lang.Language
 import io.github.rosemoe.sora.widget.CodeEditor
+import io.github.rosemoe.sora.widget.EditorRenderer
 import io.github.rosemoe.sora.widget.EditorSearcher
 import io.github.rosemoe.sora.widget.IDEEditorSearcher
 import io.github.rosemoe.sora.widget.component.EditorAutoCompletion
@@ -208,6 +209,10 @@ constructor(
       eventDispatcher.init(editorScope)
       initEditor()
     }
+  }
+
+  override fun onCreateRenderer(): EditorRenderer {
+    return TracingEditorRenderer(enabled = true, editor = this)
   }
 
   private var drawTraceCount = 0
