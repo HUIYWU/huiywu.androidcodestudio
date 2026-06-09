@@ -220,12 +220,21 @@ constructor(
       val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
       val count = ++drawTraceCount
       if (count <= 8 || elapsedMs >= 8.0) {
-        Log.i(
-          "IDEEditorDraw",
-          "file=${_file?.name ?: \"<unset>\"} draw#$count cost=${String.format(java.util.Locale.US, \"%.3f\", elapsedMs)}ms " +
-            "size=${width}x${height} firstLine=${firstVisibleLine} lastLine=${lastVisibleLine} " +
-            "wordwrap=${isWordwrap} sticky=${props.stickyScroll} lineCount=${text?.lineCount ?: -1}",
-        )
+        val fileName = _file?.name ?: "<unset>"
+        val cost = String.format(java.util.Locale.US, "%.3f", elapsedMs)
+        val lineCount = text?.lineCount ?: -1
+        val message = buildString {
+          append("file=").append(fileName)
+          append(" draw#").append(count)
+          append(" cost=").append(cost).append("ms")
+          append(" size=").append(width).append('x').append(height)
+          append(" firstLine=").append(firstVisibleLine)
+          append(" lastLine=").append(lastVisibleLine)
+          append(" wordwrap=").append(isWordwrap)
+          append(" sticky=").append(props.stickyScroll)
+          append(" lineCount=").append(lineCount)
+        }
+        Log.i("IDEEditorDraw", message)
       }
     }
   }
