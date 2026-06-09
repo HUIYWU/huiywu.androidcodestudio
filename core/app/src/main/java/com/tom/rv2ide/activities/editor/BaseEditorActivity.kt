@@ -1099,14 +1099,25 @@ override fun onApplySystemBarInsets(insets: Insets) {
       val editorView = provideEditorAt(position)!!
       val selectedFile = editorView.file ?: runCatching { editorViewModel.getOpenedFile(position) }.getOrNull()
       FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.enter.position=$position")
-      editorViewModel.displayedFileIndex = position
-      FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.displayedFileIndex.done")
+
+      val alreadyCurrent =
+        editorViewModel.getCurrentFileIndex() == position && editorViewModel.getCurrentFile() == selectedFile
+      if (alreadyCurrent) {
+        FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.skipCurrentState")
+      } else {
+        editorViewModel.displayedFileIndex = position
+        FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.displayedFileIndex.done")
+      }
   
       editorView.onEditorSelected()
       FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.onEditorSelected.done")
 
-      editorViewModel.setCurrentFile(position, selectedFile)
-      FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.setCurrentFile.done")
+      if (!alreadyCurrent) {
+        editorViewModel.setCurrentFile(position, selectedFile)
+        FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.setCurrentFile.done")
+      } else {
+        FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.setCurrentFile.skipped")
+      }
       refreshSymbolInput(editorView)
       FileOpenTrace.mark(selectedFile, "BaseEditor.onTabSelected.refreshSymbolInput.done")
       invalidateOptionsMenu()

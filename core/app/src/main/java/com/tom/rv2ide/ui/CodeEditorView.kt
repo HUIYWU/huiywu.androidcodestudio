@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.os.Bundle
+import android.os.Looper
 import android.view.LayoutInflater
 import androidx.appcompat.widget.LinearLayoutCompat
 import androidx.core.view.isVisible
@@ -100,7 +101,11 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   /** Run [action] after this editor has applied file content, language setup and selection. */
   fun doOnContentReady(action: () -> Unit) {
     if (contentReady) {
-      post(action)
+      if (Looper.myLooper() == Looper.getMainLooper()) {
+        action()
+      } else {
+        post(action)
+      }
       return
     }
     contentReadyCallbacks.add(action)
@@ -114,7 +119,13 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     contentReady = true
     val callbacks = contentReadyCallbacks.toList()
     contentReadyCallbacks.clear()
-    callbacks.forEach { post(it) }
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      FileOpenTrace.mark(file, "CodeEditorView.contentReady.callbacks.runDirect.count=${callbacks.size}")
+      callbacks.forEach { it() }
+    } else {
+      FileOpenTrace.mark(file, "CodeEditorView.contentReady.callbacks.post.count=${callbacks.size}")
+      callbacks.forEach { post(it) }
+    }
   }
 
   /** Get the file of this editor. */
