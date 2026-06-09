@@ -370,6 +370,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
       editorViewModel.setCurrentFile(currentPosition, file)
       updateTabs()
       onFileLoaded(editor, file)
+      refreshSymbolInput(editor)
 
       val tab = content.tabs.getTabAt(currentPosition)
       if (tab != null && !tab.isSelected) {
