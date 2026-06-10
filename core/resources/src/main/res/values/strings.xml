@@ -209,7 +209,6 @@
   <string name="no_projects_match_search">No projects match your search.</string>
   <string name="browse_other_location">Browse Other Location</string>
   <string name="recent_badge">Recent</string>
-  
   <string name="delete_project_title">Delete Project?</string>
   <string name="delete_project_message">Are you sure you want to delete \"%1$s\"?\n\nThis will permanently delete all files in this project. This action cannot be undone.</string>
   <string name="delete">Delete</string>
@@ -219,6 +218,12 @@
   <string name="project_deleted_success">Project deleted successfully</string>
   <string name="project_delete_failed">Failed to delete project</string>
   <string name="backup_success">Backup completed successfully</string>
+  <string name="project_option_backup">Backup project</string>
+  <string name="project_option_delete">Delete project</string>
+  <string name="project_option_rename">Rename</string>
+  <string name="delete_in_progress">Delete in Progress</string>
+  <string name="deleting_project">Deleting project...</string>
+  <string name="deleting_project_named">Deleting %1$s</string>
 
   <string name="rename_project">Rename Project</string>
   <string name="new_project_name">New project name</string>
@@ -278,6 +283,8 @@
   <string name="invalid_cmake_message">Invalid CMake: %1$s</string>
   <string name="project_already_exists_title">Project Already Exists</string>
   <string name="project_already_exists_message">A project named \"%1$s\" already exists at this location.</string>
+  <string name="project_name_exists_error">A project with this name already exists at this location</string>
+  <string name="project_name_invalid_error">Project name must start with a letter and contain only letters, numbers, and underscores</string>
   <string name="invalid_save_location_title">Invalid Save Location</string>
   <string name="invalid_save_location_message">Game projects must be saved in the Android Code Studio home directory to work correctly.</string>
   <string name="automatically_switch">Automatically switch</string>
@@ -572,8 +579,8 @@
 
   <!--The text sorrounded with '@@' is spanned as clickable.-->
   <!--There must be exactly two '@@' sorrounding the text that should be clickable.-->
-  <string name="msg_drawer_for_files">Open the left drawer for @@files@@.</string>
-  <string name="msg_swipe_for_output">Swipe up for @@build output@@.</string>
+  <string name="msg_drawer_for_files">Open the left drawer for @@files@@</string>
+  <string name="msg_swipe_for_output">Swipe up for @@build output@@</string>
   <string name="idepref_editor_useSoftTabs_title">Use soft tab</string>
   <string name="idepref_editor_useSoftTabs_summary">Choose whether to use spaces instead of tab character (\\t).</string>
   <string name="btn_idecfg">IDE Configurations</string>
@@ -1174,6 +1181,14 @@ Allow this action?</string>
 Add a remote to push/pull changes</string>
   <string name="project_settings">Project Settings</string>
   <string name="backup_my_project">Backup My Project</string>
+  <string name="backup_in_progress">Backup in Progress</string>
+  <string name="backing_up_project">Backing up project...</string>
+  <string name="creating_backup_of">Creating backup of %1$s</string>
+  <string name="backup_completed">Backup Completed</string>
+  <string name="project_backed_up_successfully">Project backed up successfully!</string>
+  <string name="backup_location">Location:</string>
+  <string name="backup_failed">Backup Failed</string>
+  <string name="failed_to_backup_project">Failed to backup project: %1$s</string>
   <string name="search_icons">Search Icons...</string>
   <string name="chat_prompt_hint">What would you like me to do?</string>
   <string name="clear">Clear</string>

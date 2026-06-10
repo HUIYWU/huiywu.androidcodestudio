@@ -82,7 +82,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:gravity="center"
-            android:text="@string/open_left_drawer_for_files"
+            android:text="@string/msg_drawer_for_files"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/colorSecondaryVariant"
             android:textSize="13sp"

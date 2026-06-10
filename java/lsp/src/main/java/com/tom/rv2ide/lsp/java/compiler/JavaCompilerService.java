@@ -103,8 +103,10 @@ public class JavaCompilerService implements CompilerProvider {
       new PartialReparseDryRunAttemptProvider();
   private final PartialReparseDryRunSnapshotCollector partialReparseDryRunSnapshotCollector =
       new PartialReparseDryRunSnapshotCollector();
-  private final PartialReparseDryRunComparator partialReparseDryRunComparator =
-      new PartialReparseDryRunComparator();
+  private final PartialReparseDryRunPartialSnapshotProvider partialReparseDryRunPartialSnapshotProvider =
+      new PartialReparseDryRunPartialSnapshotProvider();
+  private final PartialReparseDryRunComparisonRunner partialReparseDryRunComparisonRunner =
+      new PartialReparseDryRunComparisonRunner();
   private final JavaIncrementalState incrementalState = new JavaIncrementalState();
 
   // The module project must not be null
@@ -406,9 +408,14 @@ public class JavaCompilerService implements CompilerProvider {
               fullSnapshot[0] = collectDryRunFullRecompileSnapshot();
             },
             (result, err) -> logPartialReparseDryRun(result, err));
-    final PartialReparseDryRunComparison comparison =
-        partialReparseDryRunComparator.compare(null, fullSnapshot[0]);
-    logPartialReparseDryRunReport(report.withComparison(comparison));
+    final PartialReparseDryRunReport reportWithComparison =
+        partialReparseDryRunComparisonRunner.attachComparison(
+            report,
+            fullSnapshot[0],
+            attemptReport ->
+                partialReparseDryRunPartialSnapshotProvider.createPartialSnapshot(
+                    request, eligibility, attemptReport));
+    logPartialReparseDryRunReport(reportWithComparison);
   }
 
   @Nullable

@@ -284,7 +284,12 @@ class MainFragment : BaseFragment() {
   }
 
   private fun showProjectOptionsDialog(project: File, onActionComplete: () -> Unit) {
-    val options = arrayOf("Backup project", "Delete project", "Rename")
+    val options =
+        arrayOf(
+            getString(string.project_option_backup),
+            getString(string.project_option_delete),
+            getString(string.project_option_rename),
+        )
 
     val builder = DialogUtils.newMaterialDialogBuilder(requireContext())
     builder.setTitle(project.name)
@@ -340,7 +345,7 @@ class MainFragment : BaseFragment() {
               .MaterialAlertDialogBuilder(requireContext())
               .setTitle(getString(string.invalid_name))
               .setMessage(getString(string.invalid_project_name_message))
-              .setPositiveButton(getString(android.R.string.ok), null)
+              .setPositiveButton(getString(string.action_ok), null)
               .show()
         }
         else -> {
@@ -350,7 +355,7 @@ class MainFragment : BaseFragment() {
                 .MaterialAlertDialogBuilder(requireContext())
                 .setTitle(getString(string.name_already_exists))
                 .setMessage(getString(string.project_name_exists_message, newName))
-                .setPositiveButton(getString(android.R.string.ok), null)
+                .setPositiveButton(getString(string.action_ok), null)
                 .show()
           } else {
             renameProject(project, newProjectDir, onComplete)
@@ -444,11 +449,11 @@ class MainFragment : BaseFragment() {
     val binding = LayoutDialogProgressBinding.inflate(layoutInflater)
 
     binding.message.visibility = View.VISIBLE
-    binding.message.text = "Backing up project..."
+    binding.message.text = getString(string.backing_up_project)
     binding.progress.isIndeterminate = true
 
-    builder.setTitle("Backup in Progress")
-    builder.setMessage("Creating backup of ${project.name}")
+    builder.setTitle(getString(string.backup_in_progress))
+    builder.setMessage(getString(string.creating_backup_of, project.name))
     builder.setView(binding.root)
     builder.setCancelable(false)
 
@@ -483,11 +488,15 @@ class MainFragment : BaseFragment() {
           dialog.dismiss()
 
           val successBuilder = DialogUtils.newMaterialDialogBuilder(requireContext())
-          successBuilder.setTitle("Backup Completed")
+          successBuilder.setTitle(getString(string.backup_completed))
           successBuilder.setMessage(
-              "Project backed up successfully!\n\nLocation:\n${backupFile.absolutePath}"
+              getString(string.project_backed_up_successfully) +
+                  "\n\n" +
+                  getString(string.backup_location) +
+                  "\n" +
+                  backupFile.absolutePath
           )
-          successBuilder.setPositiveButton("OK") { d, _ ->
+          successBuilder.setPositiveButton(getString(string.action_ok)) { d, _ ->
             d.dismiss()
             onComplete()
           }
@@ -499,9 +508,11 @@ class MainFragment : BaseFragment() {
           dialog.dismiss()
 
           val errorBuilder = DialogUtils.newMaterialDialogBuilder(requireContext())
-          errorBuilder.setTitle("Backup Failed")
-          errorBuilder.setMessage("Failed to backup project: ${e.localizedMessage}")
-          errorBuilder.setPositiveButton("OK", null)
+          errorBuilder.setTitle(getString(string.backup_failed))
+          errorBuilder.setMessage(
+              getString(string.failed_to_backup_project, e.localizedMessage ?: e.toString())
+          )
+          errorBuilder.setPositiveButton(getString(string.action_ok), null)
           errorBuilder.show()
         }
       }
@@ -527,11 +538,11 @@ class MainFragment : BaseFragment() {
     val binding = LayoutDialogProgressBinding.inflate(layoutInflater)
 
     binding.message.visibility = View.VISIBLE
-    binding.message.text = "Deleting project..."
+    binding.message.text = getString(string.deleting_project)
     binding.progress.isIndeterminate = true
 
-    builder.setTitle("Delete in Progress")
-    builder.setMessage("Deleting ${project.name}")
+    builder.setTitle(getString(string.delete_in_progress))
+    builder.setMessage(getString(string.deleting_project_named, project.name))
     builder.setView(binding.root)
     builder.setCancelable(false)
 

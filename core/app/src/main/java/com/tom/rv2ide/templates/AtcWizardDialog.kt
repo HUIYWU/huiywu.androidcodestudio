@@ -423,12 +423,11 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
     when {
       projectDir.exists() -> {
-        binding.projectNameLayout.error = "A project with this name already exists at this location"
+        binding.projectNameLayout.error = getString(R.string.project_name_exists_error)
         binding.createButton.isEnabled = false
       }
       !projectName.matches(Regex("^[a-zA-Z][a-zA-Z0-9_]*$")) -> {
-        binding.projectNameLayout.error =
-            "Project name must start with a letter and contain only letters, numbers, and underscores"
+        binding.projectNameLayout.error = getString(R.string.project_name_invalid_error)
         binding.createButton.isEnabled = false
       }
       else -> {
