@@ -74,9 +74,6 @@
   <string name="delete_project_title">删除项目？</string>
   <string name="delete_project_message">确定要删除“%1$s”吗？\n\n这将永久删除该项目中的所有文件。此操作无法撤销。</string>
   <string name="delete">删除</string>
-  <string name="git">Git</string>
-  <string name="checkout">检出</string>
-  <string name="remove">移除</string>
   <string name="project_deleted_success">项目删除成功</string>
   <string name="project_delete_failed">删除项目失败</string>
   <string name="backup_success">备份完成</string>
