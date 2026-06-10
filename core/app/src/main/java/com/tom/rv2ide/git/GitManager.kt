@@ -16,6 +16,8 @@
 */
 package com.tom.rv2ide.git
 
+import com.tom.rv2ide.R
+import com.tom.rv2ide.app.BaseApplication
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.Status
 import org.eclipse.jgit.diff.DiffEntry
@@ -46,6 +48,10 @@ class GitManager(private val projectPath: String) {
     private var repository: Repository? = null
     private var ignoreNode: IgnoreNode? = null
     private var attributesNode: AttributesNode? = null
+
+    private fun string(resId: Int): String {
+        return BaseApplication.getBaseInstance().getString(resId)
+    }
     
     fun initRepository(initialBranchName: String = "main"): Boolean {
         return try {
@@ -221,7 +227,6 @@ class GitManager(private val projectPath: String) {
     fun stageFile(filePath: String): Boolean {
         return try {
             if (isIgnored(filePath)) {
-                // Force add ignored files if explicitly staged
                 git?.add()?.addFilepattern(filePath)?.setUpdate(false)?.call()
             } else {
                 git?.add()?.addFilepattern(filePath)?.call()
@@ -454,10 +459,10 @@ class GitManager(private val projectPath: String) {
                 }
             } ?: false
             
-            PushResult(success, if (success) "Push successful" else "Push failed")
+            PushResult(success, if (success) string(R.string.git_push_success) else string(R.string.git_push_failed))
         } catch (e: Exception) {
             e.printStackTrace()
-            PushResult(false, e.message ?: "Push failed")
+            PushResult(false, e.message ?: string(R.string.git_push_failed))
         }
     }
     
@@ -479,10 +484,10 @@ class GitManager(private val projectPath: String) {
             val result = pullCommand?.call()
             val success = result?.isSuccessful ?: false
             
-            PullResult(success, if (success) "Pull successful" else "Pull failed")
+            PullResult(success, if (success) string(R.string.git_pull_success) else string(R.string.git_pull_failed))
         } catch (e: Exception) {
             e.printStackTrace()
-            PullResult(false, e.message ?: "Pull failed")
+            PullResult(false, e.message ?: string(R.string.git_pull_failed))
         }
     }
     
@@ -498,10 +503,10 @@ class GitManager(private val projectPath: String) {
             }
             
             fetchCommand?.call()
-            FetchResult(true, "Fetch successful")
+            FetchResult(true, string(R.string.git_fetch_success))
         } catch (e: Exception) {
             e.printStackTrace()
-            FetchResult(false, e.message ?: "Fetch failed")
+            FetchResult(false, e.message ?: string(R.string.git_fetch_failed))
         }
     }
     

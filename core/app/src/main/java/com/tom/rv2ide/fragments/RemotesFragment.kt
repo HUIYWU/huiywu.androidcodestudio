@@ -89,7 +89,7 @@ class RemotesFragment : Fragment() {
         
         viewModel.operationResult.observe(viewLifecycleOwner) { result ->
             if (!result.success) {
-                showErrorDialog("Operation Failed", result.message)
+                showErrorDialog(getString(R.string.git_operation_failed), result.message)
             } else {
                 Snackbar.make(binding.root, result.message, Snackbar.LENGTH_SHORT).show()
             }
@@ -97,7 +97,7 @@ class RemotesFragment : Fragment() {
         
         viewModel.pushPullResult.observe(viewLifecycleOwner) { result ->
             if (!result.success) {
-                showErrorDialog("${result.operation.capitalize()} Failed", result.message)
+                showErrorDialog(getString(R.string.git_operation_failed), result.message)
             } else {
                 Snackbar.make(binding.root, result.message, Snackbar.LENGTH_LONG).show()
             }
@@ -138,7 +138,7 @@ class RemotesFragment : Fragment() {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton("OK", null)
+            .setPositiveButton(R.string.action_ok, null)
             .show()
     }
     
@@ -171,7 +171,7 @@ class RemotesFragment : Fragment() {
     private fun showPushDialog() {
         val remotesList = adapter.currentList
         if (remotesList.isEmpty()) {
-            showErrorDialog("No Remotes", "No remotes configured. Add a remote first.")
+            showErrorDialog(getString(R.string.git_no_remotes_title), getString(R.string.git_no_remotes_message))
             return
         }
         
@@ -179,19 +179,17 @@ class RemotesFragment : Fragment() {
         val editTextUsername = dialogView.findViewById<TextInputEditText>(R.id.editTextUsername)
         val editTextPassword = dialogView.findViewById<TextInputEditText>(R.id.editTextPassword)
         
-        // Load saved credentials
         prefsManager.getUsername()?.let { editTextUsername.setText(it) }
         prefsManager.getPassword()?.let { editTextPassword.setText(it) }
         
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Push to Remote")
-            .setMessage("Push your commits to ${remotesList[0].name}")
+            .setTitle(R.string.git_push_dialog_title)
+            .setMessage(getString(R.string.git_push_dialog_message, remotesList[0].name))
             .setView(dialogView)
-            .setPositiveButton("Push") { _, _ ->
+            .setPositiveButton(R.string.git_push) { _, _ ->
                 val username = editTextUsername.text.toString().takeIf { it.isNotBlank() }
                 val password = editTextPassword.text.toString().takeIf { it.isNotBlank() }
                 
-                // Save credentials if remember is enabled and credentials are provided
                 if (username != null && password != null && prefsManager.shouldRememberCredentials()) {
                     prefsManager.saveCredentials(username, password)
                 }
@@ -202,8 +200,8 @@ class RemotesFragment : Fragment() {
                     password = password
                 )
             }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Without credentials") { _, _ ->
+            .setNegativeButton(R.string.cancel, null)
+            .setNeutralButton(R.string.git_without_credentials) { _, _ ->
                 viewModel.push(remoteName = remotesList[0].name)
             }
             .show()
@@ -212,7 +210,7 @@ class RemotesFragment : Fragment() {
     private fun showPullDialog() {
         val remotesList = adapter.currentList
         if (remotesList.isEmpty()) {
-            showErrorDialog("No Remotes", "No remotes configured. Add a remote first.")
+            showErrorDialog(getString(R.string.git_no_remotes_title), getString(R.string.git_no_remotes_message))
             return
         }
         
@@ -224,14 +222,13 @@ class RemotesFragment : Fragment() {
         prefsManager.getPassword()?.let { editTextPassword.setText(it) }
         
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Pull from Remote")
-            .setMessage("Pull changes from ${remotesList[0].name}")
+            .setTitle(R.string.git_pull_dialog_title)
+            .setMessage(getString(R.string.git_pull_dialog_message, remotesList[0].name))
             .setView(dialogView)
-            .setPositiveButton("Pull") { _, _ ->
+            .setPositiveButton(R.string.git_pull) { _, _ ->
                 val username = editTextUsername.text.toString().takeIf { it.isNotBlank() }
                 val password = editTextPassword.text.toString().takeIf { it.isNotBlank() }
                 
-                // Save credentials if remember is enabled and credentials are provided
                 if (username != null && password != null && prefsManager.shouldRememberCredentials()) {
                     prefsManager.saveCredentials(username, password)
                 }
@@ -242,8 +239,8 @@ class RemotesFragment : Fragment() {
                     password = password
                 )
             }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Without credentials") { _, _ ->
+            .setNegativeButton(R.string.cancel, null)
+            .setNeutralButton(R.string.git_without_credentials) { _, _ ->
                 viewModel.pull(remoteName = remotesList[0].name)
             }
             .show()
@@ -252,7 +249,7 @@ class RemotesFragment : Fragment() {
     private fun showFetchDialog() {
         val remotesList = adapter.currentList
         if (remotesList.isEmpty()) {
-            showErrorDialog("No Remotes", "No remotes configured. Add a remote first.")
+            showErrorDialog(getString(R.string.git_no_remotes_title), getString(R.string.git_no_remotes_message))
             return
         }
         
@@ -260,19 +257,17 @@ class RemotesFragment : Fragment() {
         val editTextUsername = dialogView.findViewById<TextInputEditText>(R.id.editTextUsername)
         val editTextPassword = dialogView.findViewById<TextInputEditText>(R.id.editTextPassword)
         
-        // Load saved credentials
         prefsManager.getUsername()?.let { editTextUsername.setText(it) }
         prefsManager.getPassword()?.let { editTextPassword.setText(it) }
         
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Fetch from Remote")
-            .setMessage("Fetch changes from ${remotesList[0].name}")
+            .setTitle(R.string.git_fetch_dialog_title)
+            .setMessage(getString(R.string.git_fetch_dialog_message, remotesList[0].name))
             .setView(dialogView)
-            .setPositiveButton("Fetch") { _, _ ->
+            .setPositiveButton(R.string.git_fetch) { _, _ ->
                 val username = editTextUsername.text.toString().takeIf { it.isNotBlank() }
                 val password = editTextPassword.text.toString().takeIf { it.isNotBlank() }
                 
-                // Save credentials if remember is enabled and credentials are provided
                 if (username != null && password != null && prefsManager.shouldRememberCredentials()) {
                     prefsManager.saveCredentials(username, password)
                 }
@@ -283,8 +278,8 @@ class RemotesFragment : Fragment() {
                     password = password
                 )
             }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Without credentials") { _, _ ->
+            .setNegativeButton(R.string.cancel, null)
+            .setNeutralButton(R.string.git_without_credentials) { _, _ ->
                 viewModel.fetch(remoteName = remotesList[0].name)
             }
             .show()
@@ -292,12 +287,12 @@ class RemotesFragment : Fragment() {
 
     private fun showRemoveRemoteConfirmation(remoteName: String) {
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Remove Remote")
-            .setMessage("Are you sure you want to remove remote '$remoteName'?")
-            .setPositiveButton("Remove") { _, _ ->
+            .setTitle(R.string.git_remove_remote_title)
+            .setMessage(getString(R.string.git_remove_remote_message, remoteName))
+            .setPositiveButton(R.string.action_remove) { _, _ ->
                 viewModel.removeRemote(remoteName)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
     
