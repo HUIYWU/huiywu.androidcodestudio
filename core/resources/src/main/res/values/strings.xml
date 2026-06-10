@@ -33,14 +33,14 @@
 
   <!-- Progress and status messages -->
   <string name="updater_preparing_download">Preparing download…</string>
-  <string name="updater_progress_format">%d MB / %d MB</string>
+  <string name="updater_progress_format">%1$d MB / %2$d MB</string>
   <string name="updater_enable_install_permission">Please enable \'Install unknown apps\' and try again</string>
 
   <!-- Log messages -->
   <string name="updater_http_error">HTTP error: %d</string>
   <string name="updater_fetch_error">Error fetching update info</string>
   <string name="updater_parse_error">Error parsing update info</string>
-  <string name="updater_version_check_log">Current version: %d, Available version: %d for arch: %s</string>
+  <string name="updater_version_check_log">Current version: %1$d, Available version: %2$d for arch: %3$s</string>
   <string name="updater_no_compatible_variant">No compatible variant found for architecture: %s</string>
   <string name="updater_package_not_found">Package not found</string>
   <string name="updater_supported_abis">Supported ABIs: %s</string>
@@ -277,7 +277,7 @@
   <string name="cmake_selected_message">CMake %1$s selected</string>
   <string name="invalid_cmake_message">Invalid CMake: %1$s</string>
   <string name="project_already_exists_title">Project Already Exists</string>
-  <string name="project_already_exists_message">A project named '%1$s' already exists at this location.</string>
+  <string name="project_already_exists_message">A project named \"%1$s\" already exists at this location.</string>
   <string name="invalid_save_location_title">Invalid Save Location</string>
   <string name="invalid_save_location_message">Game projects must be saved in the Android Code Studio home directory to work correctly.</string>
   <string name="automatically_switch">Automatically switch</string>
@@ -550,8 +550,8 @@
     <string name="git_fetch_dialog_message">Fetch changes from %1$s</string>
     <string name="git_without_credentials">Without credentials</string>
     <string name="git_remove_remote_title">Remove Remote</string>
-    <string name="git_remove_remote_message">Are you sure you want to remove remote '%1$s'?</string>
-    <string name="status_saved">Saved</string>
+  <string name="git_remove_remote_message">Are you sure you want to remove remote \"%1$s\"?</string>
+  <string name="status_saved">Saved</string>
     <string name="git_clear_credentials_title">Clear Credentials</string>
     <string name="git_clear_credentials_message">Are you sure you want to clear saved credentials?</string>
     <string name="git_clear">Clear</string>
@@ -565,8 +565,8 @@
     <string name="git_branch_name_empty">Branch name cannot be empty</string>
     <string name="git_cannot_delete_current_branch">Cannot delete current branch</string>
     <string name="git_delete_branch_title">Delete Branch</string>
-    <string name="git_delete_branch_message">Are you sure you want to delete branch '%1$s'?</string>
-    <string name="action_delete">Delete</string>
+    <string name="git_delete_branch_message">Are you sure you want to delete branch \"%1$s\"?</string>
+  <string name="action_delete">Delete</string>
 
 
   <!--The text sorrounded with '@@' is spanned as clickable.-->
