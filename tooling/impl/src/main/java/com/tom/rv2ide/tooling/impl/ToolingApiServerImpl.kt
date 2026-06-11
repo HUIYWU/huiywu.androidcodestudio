@@ -45,7 +45,6 @@ import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UN
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_GRADLE_VERSION
 import com.tom.rv2ide.tooling.api.models.ToolingServerMetadata
 import com.tom.rv2ide.tooling.impl.internal.AndroidProjectImpl
-//import com.tom.rv2ide.tooling.impl.internal.AndroidProjectImpl
 import com.tom.rv2ide.tooling.impl.internal.ProjectImpl
 import com.tom.rv2ide.tooling.impl.net.SimpleHttpProxy
 import com.tom.rv2ide.tooling.impl.sync.ModelBuilderException
@@ -392,6 +391,10 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     this.buildCancellationToken = null
   }
 
+  private fun setupConnectorForGradleInstallation(
+      connector: GradleConnector,
+      params: GradleDistributionParams,
+  ) {
 
     when (params.type) {
       GradleDistributionType.GRADLE_WRAPPER -> {
