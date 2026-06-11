@@ -334,6 +334,22 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       }
     }
   }
+  private enum class AndroidGeneratedOutputCategory {
+    CORE_RESOURCES,
+    CORE_SOURCES,
+    BINDING_SOURCES,
+    AIDL_SOURCES,
+    KAPT_SOURCES,
+    NAVIGATION_SOURCES,
+  }
+
+  private data class AndroidWarmupContext(
+      val projectPath: String,
+      val variantNameCapitalized: String,
+      val metadata: com.tom.rv2ide.tooling.api.models.AndroidProjectMetadata?,
+      val artifact: com.tom.rv2ide.tooling.api.models.AndroidArtifactMetadata,
+      val generatedRootsOnDisk: Set<String>,
+  )
 
   private fun collectAndroidWarmupTasks(project: ProjectImpl): List<String> {
     val tasks = linkedSetOf<String>()
@@ -344,39 +360,130 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
           androidProject
               .getVariant(com.tom.rv2ide.tooling.api.models.params.StringParameter(configuredVariant))
               .get() ?: return@forEach
-      val metadata = androidProject.getMetadata().get()
-      val projectPath = metadata.projectPath
-
-      val generatedRoots =
-          variant.mainArtifact.generatedSourceFolders
-              .filter { it.exists() && it.isDirectory }
-              .filter { path ->
-                val normalized = path.absolutePath.replace('\\', '/').lowercase()
-                normalized.contains("/build/generated/") || normalized.contains("/build/intermediates/")
-              }
-
-      if (generatedRoots.isNotEmpty()) {
-        return@forEach
-      }
-
+      val rawMetadata = androidProject.getMetadata().get()
+      val metadata = rawMetadata as? com.tom.rv2ide.tooling.api.models.AndroidProjectMetadata
+      val projectPath = rawMetadata.projectPath
       val variantNameCapitalized =
           configuredVariant.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 
-      variant.mainArtifact.resGenTaskName.takeIf { !it.isNullOrBlank() }?.let {
-        tasks.add("${projectPath}:$it")
+      val context =
+          AndroidWarmupContext(
+              projectPath = projectPath,
+              variantName = configuredVariant,
+              variantNameCapitalized = variantNameCapitalized,
+              metadata = metadata,
+              artifact = variant.mainArtifact,
+              generatedRootsOnDisk = collectExistingGeneratedRoots(variant.mainArtifact),
+          )
+
+      val missingCategories = determineMissingGeneratedOutputCategories(context)
+      if (missingCategories.isEmpty()) {
+        return@forEach
       }
-      variant.mainArtifact.sourceGenTaskName.takeIf { !it.isNullOrBlank() }?.let {
-        tasks.add("${projectPath}:$it")
-      }
-      if (metadata is com.tom.rv2ide.tooling.api.models.AndroidProjectMetadata &&
-          metadata.viewBindingOptions.isEnabled) {
-        tasks.add("${projectPath}:dataBindingGenBaseClasses$variantNameCapitalized")
-      }
-      tasks.add("${projectPath}:process${variantNameCapitalized}Resources")
+
+      collectCoreWarmupTasks(context, missingCategories, tasks)
+      collectConditionalWarmupTasks(context, missingCategories, tasks)
     }
 
     return tasks.toList()
   }
+
+  private fun determineMissingGeneratedOutputCategories(
+      context: AndroidWarmupContext,
+  ): Set<AndroidGeneratedOutputCategory> {
+    val missing = linkedSetOf<AndroidGeneratedOutputCategory>()
+
+    if (!hasCoreResourceOutputs(context.generatedRootsOnDisk)) {
+      missing.add(AndroidGeneratedOutputCategory.CORE_RESOURCES)
+    }
+    if (!hasCoreSourceOutputs(context.generatedRootsOnDisk)) {
+      missing.add(AndroidGeneratedOutputCategory.CORE_SOURCES)
+    }
+    if (shouldCheckBindingOutputs(context) && !hasBindingOutputs(context.generatedRootsOnDisk)) {
+      missing.add(AndroidGeneratedOutputCategory.BINDING_SOURCES)
+    }
+
+    return missing
+  }
+
+  private fun collectCoreWarmupTasks(
+      context: AndroidWarmupContext,
+      missingCategories: Set<AndroidGeneratedOutputCategory>,
+      tasks: MutableSet<String>,
+  ) {
+    if (AndroidGeneratedOutputCategory.CORE_RESOURCES in missingCategories) {
+      context.artifact.resGenTaskName.takeIf { !it.isNullOrBlank() }?.let {
+        tasks.add("${context.projectPath}:$it")
+      }
+      tasks.add("${context.projectPath}:process${context.variantNameCapitalized}Resources")
+    }
+
+    if (AndroidGeneratedOutputCategory.CORE_SOURCES in missingCategories) {
+      context.artifact.sourceGenTaskName.takeIf { !it.isNullOrBlank() }?.let {
+        tasks.add("${context.projectPath}:$it")
+      }
+    }
+  }
+
+  private fun collectConditionalWarmupTasks(
+      context: AndroidWarmupContext,
+      missingCategories: Set<AndroidGeneratedOutputCategory>,
+      tasks: MutableSet<String>,
+  ) {
+    if (AndroidGeneratedOutputCategory.BINDING_SOURCES in missingCategories) {
+      tasks.add("${context.projectPath}:dataBindingGenBaseClasses${context.variantNameCapitalized}")
+    }
+  }
+
+  private fun shouldCheckBindingOutputs(context: AndroidWarmupContext): Boolean {
+    return context.metadata?.viewBindingOptions?.isEnabled == true
+  }
+
+  private fun hasCoreResourceOutputs(existingRoots: Set<String>): Boolean {
+    return existingRoots.any { path ->
+      path.contains("/build/generated/res/resvalues/") ||
+          path.contains("/build/intermediates/packaged_res/") ||
+          path.contains("/build/intermediates/merged_res/") ||
+          path.contains("/build/generated/source/r/") ||
+          path.contains("/build/generated/not_namespaced_r_class_sources/")
+    }
+  }
+
+  private fun hasCoreSourceOutputs(existingRoots: Set<String>): Boolean {
+    return existingRoots.any { path ->
+      path.contains("/build/generated/source/buildconfig/") ||
+          path.contains("/build/generated/source/")
+    }
+  }
+
+  private fun hasBindingOutputs(existingRoots: Set<String>): Boolean {
+    return existingRoots.any { path ->
+      path.contains("/build/generated/data_binding_base_class_source_out/") ||
+          path.contains("/build/generated/source/databinding/") ||
+          path.contains("/build/generated/source/viewbinding/")
+    }
+  }
+
+  private fun collectExistingGeneratedRoots(
+      artifact: com.tom.rv2ide.tooling.api.models.AndroidArtifactMetadata,
+  ): Set<String> {
+    return (artifact.generatedSourceFolders + artifact.generatedResourceFolders)
+        .asSequence()
+        .filter { it.exists() && it.isDirectory }
+        .filter(::isLikelyAgpGeneratedRoot)
+        .map { normalizeGeneratedRootPath(it) }
+        .toSet()
+  }
+
+  private fun isLikelyAgpGeneratedRoot(path: File): Boolean {
+    val normalized = normalizeGeneratedRootPath(path)
+    return normalized.contains("/build/generated/") || normalized.contains("/build/intermediates/")
+  }
+
+  private fun normalizeGeneratedRootPath(path: File): String {
+    return path.absolutePath.replace('\\', '/').lowercase()
+  }
+
 
   private fun runWarmupBuild(connection: ProjectConnection, tasks: List<String>) {
     if (tasks.isEmpty()) return
