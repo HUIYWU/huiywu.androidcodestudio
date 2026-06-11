@@ -557,7 +557,6 @@ class KotlinClasspathProvider {
       KslLogs.error("Failed to add Android generated sources for module: {}", module.projectDir.absolutePath, e)
     }
   }
-  }
 
   /**
    * Adds Kotlin scripting JARs from Gradle's cache These are needed for .kts file support and are
