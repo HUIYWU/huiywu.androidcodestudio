@@ -109,7 +109,9 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
 
     if (shouldPreGenerateAndroidSources(rootProject)) {
       withStopWatch("Warm up Android generated sources") {
-        val generated = withContext(Dispatchers.IO) { generateSourcesBlocking(timeoutMs = 120000L) }
+        val generated = withContext(Dispatchers.IO) {
+          generateSourcesBlocking(timeoutMs = 120000L, notifyOnSuccess = false)
+        }
         log.info("Android source warm-up during setupProject finished: success={}", generated)
       }
     } else {
@@ -190,7 +192,8 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
 
   @JvmOverloads
   fun generateSourcesAsync(
-      builder: BuildService? = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE)
+      builder: BuildService? = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE),
+      notifyOnSuccess: Boolean = true,
   ): java.util.concurrent.CompletableFuture<Boolean> {
     if (builder == null) {
       log.warn("Cannot generate sources. BuildService is null.")
@@ -248,7 +251,9 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
         false
       } else {
         log.info("Android source generation completed successfully: {}", tasks)
-        notifyProjectUpdate()
+        if (notifyOnSuccess) {
+          notifyProjectUpdate()
+        }
         true
       }
     }
@@ -258,9 +263,10 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
   fun generateSourcesBlocking(
       builder: BuildService? = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE),
       timeoutMs: Long = 120000L,
+      notifyOnSuccess: Boolean = true,
   ): Boolean {
     return try {
-      generateSourcesAsync(builder).get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+      generateSourcesAsync(builder, notifyOnSuccess).get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
     } catch (e: Exception) {
       log.warn("Timed out or failed while waiting for Android source generation", e)
       false
