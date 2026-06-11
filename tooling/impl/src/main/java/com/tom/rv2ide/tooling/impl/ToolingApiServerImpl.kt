@@ -44,6 +44,8 @@ import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UN
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_CONFIGURATION
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_GRADLE_VERSION
 import com.tom.rv2ide.tooling.api.models.ToolingServerMetadata
+import com.tom.rv2ide.tooling.impl.internal.AndroidProjectImpl
+//import com.tom.rv2ide.tooling.impl.internal.AndroidProjectImpl
 import com.tom.rv2ide.tooling.impl.internal.ProjectImpl
 import com.tom.rv2ide.tooling.impl.net.SimpleHttpProxy
 import com.tom.rv2ide.tooling.impl.sync.ModelBuilderException
@@ -192,7 +194,7 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
           } catch (_: Throwable) {}
         }
 
-        val project =
+        var project =
             try {
               val modelBuilderParams =
                   RootProjectModelBuilderParams(connection, this.buildCancellationToken!!.token())
@@ -205,6 +207,23 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
             }
 
         stopWatch.lapFromLast("Project read successful")
+
+        val warmupTasks = collectAndroidWarmupTasks(project)
+        if (warmupTasks.isNotEmpty()) {
+          log.info("Running Android source warm-up as part of initialize: {}", warmupTasks)
+          runWarmupBuild(connection, warmupTasks)
+          stopWatch.lapFromLast("Android source warm-up completed")
+
+          val rebuiltModelBuilderParams =
+              RootProjectModelBuilderParams(connection, this.buildCancellationToken!!.token())
+          project =
+              RootModelBuilder(params).build(rebuiltModelBuilderParams) as? ProjectImpl?
+                  ?: throw ModelBuilderException("Failed to rebuild project model after Android source warm-up")
+          stopWatch.lapFromLast("Project re-read after Android source warm-up")
+        } else {
+          log.info("Skipping Android source warm-up during initialize: critical generated outputs already exist")
+        }
+
         stopWatch.log()
 
         this.project.setFrom(project)
@@ -319,10 +338,61 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     }
   }
 
-  private fun setupConnectorForGradleInstallation(
-      connector: GradleConnector,
-      params: GradleDistributionParams,
-  ) {
+  private fun collectAndroidWarmupTasks(project: ProjectImpl): List<String> {
+    val tasks = linkedSetOf<String>()
+
+    project.projects.filterIsInstance<AndroidProjectImpl>().forEach { androidProject ->
+      val configuredVariant = androidProject.getConfiguredVariant().get().ifBlank { "debug" }
+      val variant = androidProject.getVariant(com.tom.rv2ide.tooling.api.models.params.StringParameter(configuredVariant)).get()
+          ?: return@forEach
+
+      val generatedRoots = variant.mainArtifact.generatedSourceFolders
+          .filter { it.exists() && it.isDirectory }
+          .filter { path ->
+            val normalized = path.absolutePath.replace('\\', '/').lowercase()
+            normalized.contains("/build/generated/") || normalized.contains("/build/intermediates/")
+          }
+
+      if (generatedRoots.isNotEmpty()) {
+        return@forEach
+      }
+
+      val variantNameCapitalized = configuredVariant.replaceFirstChar {
+        if (it.isLowerCase()) it.titlecase() else it.toString()
+      }
+
+      variant.mainArtifact.resGenTaskName.takeIf { it.isNotBlank() }?.let { tasks.add("${androidProject.path}:$it") }
+      variant.mainArtifact.sourceGenTaskName.takeIf { it.isNotBlank() }?.let { tasks.add("${androidProject.path}:$it") }
+
+      val metadata = androidProject.getMetadata().get()
+      if (metadata.viewBindingOptions.isEnabled) {
+        tasks.add("${androidProject.path}:dataBindingGenBaseClasses$variantNameCapitalized")
+      }
+
+      tasks.add("${androidProject.path}:process${variantNameCapitalized}Resources")
+    }
+
+    return tasks.toList()
+  }
+
+  private fun runWarmupBuild(connection: ProjectConnection, tasks: List<String>) {
+    if (tasks.isEmpty()) return
+
+    val builder = connection.newBuild()
+    val out = LoggingOutputStream()
+    builder.setStandardInput("NoOp".byteInputStream())
+    builder.setStandardError(out)
+    builder.setStandardOutput(out)
+    builder.forTasks(*tasks.filter { it.isNotBlank() }.toTypedArray())
+    Main.finalizeLauncher(builder)
+
+    this.buildCancellationToken = GradleConnector.newCancellationTokenSource()
+    builder.withCancellationToken(this.buildCancellationToken!!.token())
+    builder.run()
+    this.buildCancellationToken = null
+  }
+
+
     when (params.type) {
       GradleDistributionType.GRADLE_WRAPPER -> {
         log.info("Using Gradle wrapper for build...")

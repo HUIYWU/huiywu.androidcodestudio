@@ -107,17 +107,6 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     // build variants must be updated before the sources and classpaths are indexed
     updateBuildVariants { buildVariants -> _workspace!!.setVariantSelections(buildVariants) }
 
-    if (shouldPreGenerateAndroidSources(rootProject)) {
-      withStopWatch("Warm up Android generated sources") {
-        val generated = withContext(Dispatchers.IO) {
-          generateSourcesBlocking(timeoutMs = 120000L, notifyOnSuccess = false)
-        }
-        log.info("Android source warm-up during setupProject finished: success={}", generated)
-      }
-    } else {
-      log.info("Skipping Android source warm-up during setupProject: critical generated outputs already exist")
-    }
-
     log.info(
         "Found {} project sync issues: {}",
         rootProject.getProjectSyncIssues().syncIssues.size,
