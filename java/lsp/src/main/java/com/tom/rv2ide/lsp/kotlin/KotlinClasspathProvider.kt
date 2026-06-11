@@ -532,7 +532,12 @@ class KotlinClasspathProvider {
         return
       }
 
-      KslLogs.info("Scanning for generated sources in: {}", buildDir.absolutePath)
+      KslLogs.infoThrottled(
+          "kls:scan-generated-sources:${buildDir.absolutePath}",
+          5000L,
+          "Scanning for generated sources in: {}",
+          buildDir.absolutePath,
+      )
       addExternalLibraryJars(buildDir, classpaths)
 
       val variantName = module.getSelectedVariant()?.name ?: "debug"
@@ -545,14 +550,30 @@ class KotlinClasspathProvider {
           classpaths.add(dir.absolutePath)
           addedCount++
           val relative = dir.relativeToOrNull(buildDir)?.path ?: dir.absolutePath
-          KslLogs.info("✓ Added generated source: {}", relative)
+          KslLogs.infoThrottled(
+              "kls:added-generated-source:${relative}",
+              5000L,
+              "✓ Added generated source: {}",
+              relative,
+          )
         } else {
           val relative = dir.relativeToOrNull(buildDir)?.path ?: dir.absolutePath
-          KslLogs.debug("✗ Not found: {}", relative)
+          KslLogs.debugThrottled(
+              "kls:missing-generated-source:${relative}",
+              5000L,
+              "✗ Not found: {}",
+              relative,
+          )
         }
       }
 
-      KslLogs.info("Added {} generated source paths for module: {}", addedCount, module.projectDir.absolutePath)
+      KslLogs.infoThrottled(
+          "kls:generated-source-paths:${module.projectDir.absolutePath}",
+          5000L,
+          "Added {} generated source paths for module: {}",
+          addedCount,
+          module.projectDir.absolutePath,
+      )
     } catch (e: Exception) {
       KslLogs.error("Failed to add Android generated sources for module: {}", module.projectDir.absolutePath, e)
     }

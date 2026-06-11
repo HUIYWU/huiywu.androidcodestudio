@@ -212,9 +212,9 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
           try {
             runWarmupBuild(connection, warmupTasks)
             stopWatch.lapFromLast("Android source warm-up completed")
-            log.info("Skipping project model rebuild after Android source warm-up; using pre-warmup model with generated-source fallback")
+            log.info("Using pre-warmup project model after Android source warm-up; generated sources are supplied via model outputs and filesystem fallback")
           } catch (warmupError: Throwable) {
-            log.error("Android source warm-up failed during initialize. Falling back to pre-warmup model. tasks={}", warmupTasks, warmupError)
+            log.error("Android source warm-up failed during initialize. Continuing with pre-warmup model. tasks={}", warmupTasks, warmupError)
           }
         } else {
           log.info("Skipping Android source warm-up during initialize: critical generated outputs already exist")
@@ -401,6 +401,15 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     if (shouldCheckBindingOutputs(context) && !hasBindingOutputs(context.generatedRootsOnDisk)) {
       missing.add(AndroidGeneratedOutputCategory.BINDING_SOURCES)
     }
+    if (shouldCheckAidlOutputs(context) && !hasAidlOutputs(context.generatedRootsOnDisk)) {
+      missing.add(AndroidGeneratedOutputCategory.AIDL_SOURCES)
+    }
+    if (shouldCheckKaptOutputs(context) && !hasKaptOutputs(context.generatedRootsOnDisk)) {
+      missing.add(AndroidGeneratedOutputCategory.KAPT_SOURCES)
+    }
+    if (shouldCheckNavigationOutputs(context) && !hasNavigationOutputs(context.generatedRootsOnDisk)) {
+      missing.add(AndroidGeneratedOutputCategory.NAVIGATION_SOURCES)
+    }
 
     return missing
   }
@@ -438,6 +447,28 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     return context.metadata?.viewBindingOptions?.isEnabled == true
   }
 
+  private fun shouldCheckAidlOutputs(context: AndroidWarmupContext): Boolean {
+    return context.generatedRootsOnDisk.any { path ->
+      path.contains("/build/generated/aidl_source_output_dir/") ||
+          path.contains("/build/generated/source/aidl/")
+    }
+  }
+
+  private fun shouldCheckKaptOutputs(context: AndroidWarmupContext): Boolean {
+    return context.generatedRootsOnDisk.any { path ->
+      path.contains("/build/generated/ap_generated_sources/") ||
+          path.contains("/build/generated/source/kapt/") ||
+          path.contains("/build/generated/source/kaptkotlin/") ||
+          path.contains("/build/tmp/kapt3/classes/")
+    }
+  }
+
+  private fun shouldCheckNavigationOutputs(context: AndroidWarmupContext): Boolean {
+    return context.generatedRootsOnDisk.any { path ->
+      path.contains("/build/generated/source/navigation-args/")
+    }
+  }
+
   private fun hasCoreResourceOutputs(existingRoots: Set<String>): Boolean {
     return existingRoots.any { path ->
       path.contains("/build/generated/res/resvalues/") ||
@@ -460,6 +491,28 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       path.contains("/build/generated/data_binding_base_class_source_out/") ||
           path.contains("/build/generated/source/databinding/") ||
           path.contains("/build/generated/source/viewbinding/")
+    }
+  }
+
+  private fun hasAidlOutputs(existingRoots: Set<String>): Boolean {
+    return existingRoots.any { path ->
+      path.contains("/build/generated/aidl_source_output_dir/") ||
+          path.contains("/build/generated/source/aidl/")
+    }
+  }
+
+  private fun hasKaptOutputs(existingRoots: Set<String>): Boolean {
+    return existingRoots.any { path ->
+      path.contains("/build/generated/ap_generated_sources/") ||
+          path.contains("/build/generated/source/kapt/") ||
+          path.contains("/build/generated/source/kaptkotlin/") ||
+          path.contains("/build/tmp/kapt3/classes/")
+    }
+  }
+
+  private fun hasNavigationOutputs(existingRoots: Set<String>): Boolean {
+    return existingRoots.any { path ->
+      path.contains("/build/generated/source/navigation-args/")
     }
   }
 

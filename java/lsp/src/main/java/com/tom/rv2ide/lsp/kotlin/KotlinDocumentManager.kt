@@ -55,7 +55,9 @@ class KotlinDocumentManager(
       if (getDocumentVersion(uri) <= 0) {
         setDocumentVersion(uri, 1)
       }
-      KslLogs.debug(
+      KslLogs.debugThrottled(
+          "kls:didOpen-skip:${uri}",
+          1500L,
           "KLS TRACE didOpen.skip.alreadyOpened uri={} version={}",
           uri,
           getDocumentVersion(uri),
