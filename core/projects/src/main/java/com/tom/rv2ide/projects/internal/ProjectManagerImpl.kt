@@ -149,7 +149,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
 
   private fun shouldPreGenerateAndroidSources(workspace: IWorkspace): Boolean {
     val androidModules = workspace.androidProjects().filterIsInstance<AndroidModule>()
-    if (androidModules.isEmpty()) {
+    if (!androidModules.iterator().hasNext()) {
       return false
     }
 
