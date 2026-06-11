@@ -23,7 +23,7 @@ on:
 
 jobs:
   build_release_apk:
-    name: Build Debug APK
+    name: Build Release APK
     runs-on: ubuntu-latest
     steps:
       - name: Cancel previous runs
@@ -67,11 +67,11 @@ jobs:
           echo ""
           echo "=== SigningDirectory ==="
           ls -la core/app/signing/ || echo "core/app/signing directory not found"
-      - name: Assemble Debug APK
+      - name: Assemble Release APK
         # run: ./gradlew :core:app:assembleDebug
         run: ./gradlew :core:app:assembleRelease
-      - name: List APK files (debug)
-        run: ls -la core/app/build/outputs/apk/debug/
+      - name: List APK files (release)
+        run: ls -la core/app/build/outputs/apk/release/
       - name: Upload arm64-v8a Release APK
         uses: actions/upload-artifact@v4
         with:
