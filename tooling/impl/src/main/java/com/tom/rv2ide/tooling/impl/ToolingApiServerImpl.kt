@@ -354,7 +354,8 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
           androidProject
               .getVariant(com.tom.rv2ide.tooling.api.models.params.StringParameter(configuredVariant))
               .get() ?: return@forEach
-      val projectPath = androidProject.getMetadata().get().projectPath
+      val metadata = androidProject.getMetadata().get()
+      val projectPath = metadata.projectPath
 
       val generatedRoots =
           variant.mainArtifact.generatedSourceFolders
@@ -376,6 +377,10 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       }
       variant.mainArtifact.sourceGenTaskName.takeIf { !it.isNullOrBlank() }?.let {
         tasks.add("${projectPath}:$it")
+      }
+      if (metadata is com.tom.rv2ide.tooling.api.models.AndroidProjectMetadata &&
+          metadata.viewBindingOptions.isEnabled) {
+        tasks.add("${projectPath}:dataBindingGenBaseClasses$variantNameCapitalized")
       }
       tasks.add("${projectPath}:process${variantNameCapitalized}Resources")
     }
