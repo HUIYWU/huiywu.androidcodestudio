@@ -148,6 +148,8 @@ class KotlinWorkspaceSetup(
     val scripts = initOptions?.getAsJsonObject("scripts")
     val completion = initOptions?.getAsJsonObject("completion")
     val classpathCount = initOptions?.getAsJsonArray("classpath")?.size() ?: 0
+    val javaSourceRoots = initOptions?.getAsJsonArray("javaSourceRoots")
+    val javaSourceRootCount = javaSourceRoots?.size() ?: 0
     val snippetsEnabled =
         completion
             ?.getAsJsonObject("snippets")
@@ -155,13 +157,15 @@ class KotlinWorkspaceSetup(
             ?.takeIf { !it.isJsonNull }
             ?.asBoolean
     KslLogs.debug(
-        "KLS TRACE init.send backend={} rootUri={} rootPath={} workspaceFolders={} initOptionKeys={} classpathCount={} scriptsEnabled={} buildScriptsEnabled={} usePredefinedClasspath={} disableDependencyResolution={} indexing={} externalSources={} snippetsEnabled={} capabilitiesKeys={}",
+        "KLS TRACE init.send backend={} rootUri={} rootPath={} workspaceFolders={} initOptionKeys={} classpathCount={} javaSourceRootCount={} javaSourceRootsPreview={} scriptsEnabled={} buildScriptsEnabled={} usePredefinedClasspath={} disableDependencyResolution={} indexing={} externalSources={} snippetsEnabled={} capabilitiesKeys={}",
         backendId.name.lowercase(),
         params.get("rootUri")?.asString ?: "",
         params.get("rootPath")?.asString ?: "",
         summarizeJsonArrayStrings(workspaceFolders),
         summarizeJsonKeys(initOptions),
         classpathCount,
+        javaSourceRootCount,
+        summarizeJsonArrayStrings(javaSourceRoots),
         scripts?.get("enabled")?.takeIf { !it.isJsonNull }?.asBoolean,
         scripts?.get("buildScriptsEnabled")?.takeIf { !it.isJsonNull }?.asBoolean,
         initOptions?.get("usePredefinedClasspath")?.takeIf { !it.isJsonNull }?.asBoolean,
@@ -677,9 +681,12 @@ class KotlinWorkspaceSetup(
           )
 
           val effectiveClassPaths = classpathProvider.getClasspathList()
+          val javaSourceRoots = classpathProvider.getJavaSourceRootsList()
           val classpathArray = JsonArray()
+          val javaSourceRootsArray = JsonArray()
 
           effectiveClassPaths.forEach { path -> classpathArray.add(path) }
+          javaSourceRoots.forEach { path -> javaSourceRootsArray.add(path) }
 
           val initOptions =
               JsonObject().apply {
@@ -721,11 +728,13 @@ class KotlinWorkspaceSetup(
                 addProperty("usePredefinedClasspath", true)
                 addProperty("disableDependencyResolution", true)
                 add("classpath", classpathArray)
+                add("javaSourceRoots", javaSourceRootsArray)
               }
 
           add("initializationOptions", initOptions)
 
           KslLogs.debugThrottled("kls:configured-classpath-count", 5000L, "Configured KLS with {} classpath entries", effectiveClassPaths.size)
+          KslLogs.debugThrottled("kls:configured-java-source-roots", 5000L, "Configured KLS with {} java source roots: {}", javaSourceRoots.size, summarizeJsonArrayStrings(javaSourceRootsArray))
         }
 
     KslLogs.debugThrottled("kls:init-params-created", 5000L, "Full init params created with script support and formatting")

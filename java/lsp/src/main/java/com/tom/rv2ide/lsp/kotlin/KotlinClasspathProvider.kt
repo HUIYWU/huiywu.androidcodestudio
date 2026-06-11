@@ -50,7 +50,6 @@ class KotlinClasspathProvider {
     cachedClasspathList = null
     cachedClasspath = null
   }
-
   fun getClasspath(): String {
     if (cachedClasspath != null) {
       return cachedClasspath!!
@@ -59,10 +58,53 @@ class KotlinClasspathProvider {
     return cachedClasspath!!
   }
 
+  fun getJavaSourceRootsList(): List<String> {
+    return try {
+      val workspace = IProjectManager.getInstance().getWorkspace() ?: return emptyList()
+      val sourceRoots = linkedSetOf<String>()
+
+      val allProjects = mutableListOf(workspace.getRootProject())
+      allProjects.addAll(workspace.getSubProjects())
+
+      allProjects.filterIsInstance<ModuleProject>().forEach { project ->
+        when (project) {
+          is AndroidModule -> {
+            project.mainSourceSet?.sourceProvider?.javaDirectories
+              ?.filter(File::exists)
+              ?.forEach { sourceRoots.add(it.absolutePath) }
+            project.getSelectedVariant()?.mainArtifact?.generatedSourceFolders
+              ?.filter(File::exists)
+              ?.forEach { sourceRoots.add(it.absolutePath) }
+          }
+          is com.tom.rv2ide.projects.java.JavaModule -> {
+            project.getCompileSourceDirectories()
+              .filter(File::exists)
+              .forEach { sourceRoots.add(it.absolutePath) }
+          }
+          else -> {
+            project.getCompileSourceDirectories()
+              .filter(File::exists)
+              .filter(::containsJavaSources)
+              .forEach { sourceRoots.add(it.absolutePath) }
+          }
+        }
+      }
+
+      sourceRoots.toList()
+    } catch (e: Exception) {
+      KslLogs.error("Failed to get Java source roots from project system", e)
+      emptyList()
+    }
+  }
+
+  private fun containsJavaSources(dir: File): Boolean =
+    dir.isDirectory && dir.walkTopDown().maxDepth(2).any { it.isFile && it.extension.equals("java", ignoreCase = true) }
+
   fun getClasspathList(): List<String> {
     if (cachedClasspathList != null) {
       return cachedClasspathList!!
     }
+
 
     val classpaths = mutableSetOf<String>()
     val compilerServicePaths = mutableListOf<String>()
