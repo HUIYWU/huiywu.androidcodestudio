@@ -35,11 +35,9 @@ import com.tom.rv2ide.fragments.sheets.ProgressSheet
 import com.tom.rv2ide.handlers.EditorBuildEventListener
 import com.tom.rv2ide.handlers.LspHandler.connectClient
 import com.tom.rv2ide.handlers.LspHandler.destroyLanguageServers
-import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.IDELanguageClientImpl
 import com.tom.rv2ide.lsp.java.utils.CancelChecker
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
-import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.services.builder.GradleBuildService
@@ -110,11 +108,6 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
     const val STATE_KEY_SHOULD_INITIALIZE = "ide.editor.isInitializing"
     private const val BOTTOM_SHEET_HIDE_REASON_FIND_DIALOG = "find_in_project_dialog"
   }
-
-  abstract fun doCloseAll(runAfter: () -> Unit)
-
-  abstract fun saveOpenedFiles()
-
   override fun doDismissSearchProgress() {
     if (mSearchingProgress?.isShowing == true) {
       mSearchingProgress!!.dismiss()
@@ -535,13 +528,6 @@ fun initializeProject(buildVariants: Map<String, String>) {
             postProjectInit(false, null)
           }
           return@launch
-        }
-
-        val hasAndroidProjects = workspace.androidProjects().iterator().hasNext()
-        if (hasAndroidProjects) {
-          log.info("Pre-generating Android sources before dispatching project initialization to language servers...")
-          val generated = manager.generateSourcesBlocking(timeoutMs = 120000L)
-          log.info("Android source pre-generation finished before language-server init: success={}", generated)
         }
 
         manager.notifyProjectUpdate()

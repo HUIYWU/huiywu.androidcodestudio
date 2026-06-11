@@ -50,6 +50,111 @@ class KotlinClasspathProvider {
     cachedClasspathList = null
     cachedClasspath = null
   }
+  fun hasMissingCriticalAndroidGeneratedSources(): Boolean {
+    return try {
+      val workspace = IProjectManager.getInstance().getWorkspace() ?: return false
+      val allProjects = mutableListOf(workspace.getRootProject())
+      allProjects.addAll(workspace.getSubProjects())
+
+      allProjects.filterIsInstance<AndroidModule>().any { module ->
+        val variant = module.getSelectedVariant() ?: return@any true
+        val buildDir = module.buildDir
+        if (!buildDir.exists()) {
+          KslLogs.info("Critical Android generated sources missing: build directory does not exist for module {} -> {}", module.path, buildDir.absolutePath)
+          return@any true
+        }
+
+        val expectedJavaRoots = collectCriticalGeneratedJavaRoots(module, variant.name)
+        if (expectedJavaRoots.isEmpty()) {
+          KslLogs.info("Critical Android generated sources missing for module {}: no AGP generated source roots are currently available", module.path)
+          return@any true
+        }
+
+        val missing = expectedJavaRoots.firstOrNull { !it.exists() }
+        if (missing != null) {
+          KslLogs.info("Critical Android generated sources missing for module {} -> {}", module.path, missing.absolutePath)
+          true
+        } else {
+          false
+        }
+      }
+    } catch (e: Exception) {
+      KslLogs.warn("Failed to evaluate critical Android generated sources state", e)
+      true
+    }
+  }
+
+  private fun collectCriticalGeneratedJavaRoots(module: AndroidModule, variantName: String): List<File> {
+    val selectedVariant = module.getSelectedVariant()
+    val generatedFromModel = selectedVariant?.mainArtifact?.generatedSourceFolders
+      ?.filter { it.exists() && it.isDirectory }
+      ?.filter(::isLikelyAgpGeneratedSourceDir)
+      .orEmpty()
+
+    val generatedCandidates = collectGeneratedSourceCandidates(module, variantName)
+      .filter(::isLikelyAgpGeneratedSourceDir)
+      .filter { it.exists() && it.isDirectory }
+
+    return (generatedFromModel + generatedCandidates)
+      .distinctBy { it.absolutePath }
+  }
+
+  private fun isLikelyAgpGeneratedSourceDir(dir: File): Boolean {
+    val normalized = dir.absolutePath.replace('\\', '/').lowercase()
+    return normalized.contains("/build/generated/") ||
+      normalized.contains("/build/intermediates/")
+  }
+
+  private fun isClasspathRelevantGeneratedDir(dir: File): Boolean {
+    val normalized = dir.absolutePath.replace('\\', '/').lowercase()
+    return normalized.contains("/build/generated/source/") ||
+      normalized.contains("/build/generated/data_binding_base_class_source_out/") ||
+      normalized.contains("/build/generated/ap_generated_sources/") ||
+      normalized.contains("/build/generated/aidl_source_output_dir/") ||
+      normalized.contains("/build/generated/res/resvalues/") ||
+      normalized.contains("/build/intermediates/packaged_res/") ||
+      normalized.contains("/build/intermediates/merged_res/") ||
+      normalized.contains("/build/tmp/kapt3/classes/")
+  }
+
+  private fun collectGeneratedSourceCandidates(module: AndroidModule, variantName: String): List<File> {
+    val buildDir = module.buildDir
+    val variantLower = variantName.lowercase()
+    val variantCapitalized = variantName.replaceFirstChar {
+      if (it.isLowerCase()) it.titlecase() else it.toString()
+    }
+
+    return listOf(
+      // R / resource-generated Java sources
+      File(buildDir, "generated/source/r/$variantLower"),
+      File(buildDir, "generated/not_namespaced_r_class_sources/$variantLower/r"),
+      File(buildDir, "generated/not_namespaced_r_class_sources/$variantLower/process${variantCapitalized}Resources/r"),
+
+      // BuildConfig
+      File(buildDir, "generated/source/buildConfig/$variantLower"),
+
+      // Data/View binding and general generated Java sources
+      File(buildDir, "generated/data_binding_base_class_source_out/$variantLower/out"),
+      File(buildDir, "generated/source/dataBinding/$variantLower"),
+      File(buildDir, "generated/source/viewBinding/$variantLower"),
+      File(buildDir, "generated/ap_generated_sources/$variantLower/out"),
+
+      // AIDL / KAPT / annotation processing
+      File(buildDir, "generated/aidl_source_output_dir/$variantLower/out"),
+      File(buildDir, "generated/source/aidl/$variantLower"),
+      File(buildDir, "generated/source/kapt/$variantLower"),
+      File(buildDir, "generated/source/kaptKotlin/$variantLower"),
+      File(buildDir, "tmp/kapt3/classes/$variantLower"),
+
+      // Other AGP generators
+      File(buildDir, "generated/source/rs/$variantLower"),
+      File(buildDir, "generated/source/navigation-args/$variantLower"),
+      File(buildDir, "generated/res/resValues/$variantLower"),
+      File(buildDir, "intermediates/packaged_res/$variantLower/package${variantCapitalized}Resources"),
+      File(buildDir, "intermediates/merged_res/$variantLower/merge${variantCapitalized}Resources"),
+      File(buildDir, "generated/assets"),
+    ).distinct()
+  }
   fun getClasspath(): String {
     if (cachedClasspath != null) {
       return cachedClasspath!!
@@ -72,9 +177,24 @@ class KotlinClasspathProvider {
             project.mainSourceSet?.sourceProvider?.javaDirectories
               ?.filter(File::exists)
               ?.forEach { sourceRoots.add(it.absolutePath) }
-            project.getSelectedVariant()?.mainArtifact?.generatedSourceFolders
+
+            val variantName = project.getSelectedVariant()?.name
+            val generatedFromModel = project.getSelectedVariant()?.mainArtifact?.generatedSourceFolders
               ?.filter(File::exists)
-              ?.forEach { sourceRoots.add(it.absolutePath) }
+              ?.filter(::isLikelyAgpGeneratedSourceDir)
+              .orEmpty()
+
+            val generatedCandidates = if (variantName != null) {
+              collectGeneratedSourceCandidates(project, variantName)
+                .filter(File::exists)
+                .filter(::isLikelyAgpGeneratedSourceDir)
+            } else {
+              emptyList()
+            }
+
+            (generatedFromModel + generatedCandidates)
+              .distinctBy { it.absolutePath }
+              .forEach { sourceRoots.add(it.absolutePath) }
           }
           is com.tom.rv2ide.projects.java.JavaModule -> {
             project.getCompileSourceDirectories()
@@ -403,7 +523,6 @@ class KotlinClasspathProvider {
         .filterNot { it.name.contains("-javadoc") }
         .firstOrNull()
   }
-
   private fun addAndroidGeneratedSources(module: AndroidModule, classpaths: MutableSet<String>) {
     try {
       val buildDir = module.buildDir
@@ -415,90 +534,29 @@ class KotlinClasspathProvider {
 
       KslLogs.info("Scanning for generated sources in: {}", buildDir.absolutePath)
       addExternalLibraryJars(buildDir, classpaths)
-      // List of potential generated source directories
-      val generatedPaths =
-          listOf(
-              // R.java and resource classes
-              "generated/source/r/debug",
-              "generated/not_namespaced_r_class_sources/debug/r",
-              "generated/not_namespaced_r_class_sources/debug/processDebugResources/r",
 
-              // BuildConfig
-              "generated/source/buildConfig/debug",
-
-              // Data Binding
-              "generated/data_binding_base_class_source_out/",
-              "generated/data_binding_base_class_source_out/debug/out",
-              "generated/source/dataBinding/debug",
-              "generated/ap_generated_sources/debug/out",
-
-              // View Binding (often bundled with data binding)
-              "generated/source/viewBinding/debug",
-
-              // AIDL
-              "generated/aidl_source_output_dir/debug/out",
-              "generated/source/aidl/debug",
-
-              // Annotation Processing (KAPT)
-              "generated/source/kapt/debug",
-              "generated/source/kaptKotlin/debug",
-              "tmp/kapt3/classes/debug",
-              "generated/ap_generated_sources/debug/out",
-
-              // RenderScript
-              "generated/source/rs/debug",
-
-              // Navigation component generated args
-              "generated/source/navigation-args/debug",
-
-              // Assets
-              "generated/assets",
-
-              // Merged resources
-              "intermediates/packaged_res/debug/packageDebugResources",
-              "intermediates/merged_res/debug/mergeDebugResources",
-
-              // Compiled resources (res values)
-              "generated/res/resValues/debug",
-          )
+      val variantName = module.getSelectedVariant()?.name ?: "debug"
+      val generatedPaths = collectGeneratedSourceCandidates(module, variantName)
+        .filter(::isClasspathRelevantGeneratedDir)
 
       var addedCount = 0
-      for (path in generatedPaths) {
-        val dir = File(buildDir, path)
+      for (dir in generatedPaths) {
         if (dir.exists() && dir.isDirectory) {
           classpaths.add(dir.absolutePath)
           addedCount++
-          KslLogs.info("✓ Added generated source: {}", path)
+          val relative = dir.relativeToOrNull(buildDir)?.path ?: dir.absolutePath
+          KslLogs.info("✓ Added generated source: {}", relative)
         } else {
-          KslLogs.debug("✗ Not found: {}", path)
+          val relative = dir.relativeToOrNull(buildDir)?.path ?: dir.absolutePath
+          KslLogs.debug("✗ Not found: {}", relative)
         }
-      }
-
-      // Scan the entire generated directory for any missed directories
-      val generatedDir = File(buildDir, "generated")
-      if (generatedDir.exists() && generatedDir.isDirectory) {
-        scanForSourceDirectories(generatedDir, classpaths, 4)
-      }
-
-      // Also check intermediates directory for compiled classes
-      val intermediatesDir = File(buildDir, "intermediates")
-      if (intermediatesDir.exists() && intermediatesDir.isDirectory) {
-        // Add javac output
-        val javacDir = File(intermediatesDir, "javac/debug/classes")
-        if (javacDir.exists()) {
-          classpaths.add(javacDir.absolutePath)
-          addedCount++
-          KslLogs.info("✓ Added javac classes: {}", javacDir.absolutePath)
-        }
-
-        // Add compiled classes from other tasks
-        findCompiledClassDirectories(intermediatesDir, classpaths)
       }
 
       KslLogs.info("Added {} generated source paths for module: {}", addedCount, module.projectDir.absolutePath)
     } catch (e: Exception) {
-      KslLogs.error("Failed to add Android-generated sources for module: {}", module.projectDir.absolutePath, e)
+      KslLogs.error("Failed to add Android generated sources for module: {}", module.projectDir.absolutePath, e)
     }
+  }
   }
 
   /**

@@ -107,6 +107,15 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     // build variants must be updated before the sources and classpaths are indexed
     updateBuildVariants { buildVariants -> _workspace!!.setVariantSelections(buildVariants) }
 
+    if (shouldPreGenerateAndroidSources(rootProject)) {
+      withStopWatch("Warm up Android generated sources") {
+        val generated = withContext(Dispatchers.IO) { generateSourcesBlocking(timeoutMs = 120000L) }
+        log.info("Android source warm-up during setupProject finished: success={}", generated)
+      }
+    } else {
+      log.info("Skipping Android source warm-up during setupProject: critical generated outputs already exist")
+    }
+
     log.info(
         "Found {} project sync issues: {}",
         rootProject.getProjectSyncIssues().syncIssues.size,
@@ -135,6 +144,30 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
 
       // wait for the indexing to finish
       jobs.toList().awaitAll()
+    }
+  }
+
+  private fun shouldPreGenerateAndroidSources(workspace: IWorkspace): Boolean {
+    val androidModules = workspace.androidProjects().filterIsInstance<AndroidModule>()
+    if (androidModules.isEmpty()) {
+      return false
+    }
+
+    return try {
+      val allReady = androidModules.all { module ->
+        val variant = module.getSelectedVariant() ?: return@all false
+        val generatedRoots = variant.mainArtifact.generatedSourceFolders
+          .filter { it.exists() && it.isDirectory }
+          .filter { path ->
+            val normalized = path.absolutePath.replace('\\', '/').lowercase()
+            normalized.contains("/build/generated/") || normalized.contains("/build/intermediates/")
+          }
+        generatedRoots.isNotEmpty()
+      }
+      !allReady
+    } catch (e: Exception) {
+      log.warn("Failed to evaluate Android generated source warm-up requirement", e)
+      true
     }
   }
 
