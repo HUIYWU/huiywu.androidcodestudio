@@ -206,30 +206,20 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
             }
 
         stopWatch.lapFromLast("Project read successful")
-
         val warmupTasks = collectAndroidWarmupTasks(project)
         if (warmupTasks.isNotEmpty()) {
           log.info("Running Android source warm-up as part of initialize: {}", warmupTasks)
           try {
             runWarmupBuild(connection, warmupTasks)
             stopWatch.lapFromLast("Android source warm-up completed")
-
-            try {
-              val rebuiltModelBuilderParams =
-                  RootProjectModelBuilderParams(connection, this.buildCancellationToken!!.token())
-              project =
-                  RootModelBuilder(params).build(rebuiltModelBuilderParams) as? ProjectImpl?
-                      ?: throw ModelBuilderException("Failed to rebuild project model after Android source warm-up")
-              stopWatch.lapFromLast("Project re-read after Android source warm-up")
-            } catch (rebuildError: Throwable) {
-              log.error("Failed to rebuild project model after Android source warm-up. Falling back to pre-warmup model.", rebuildError)
-            }
+            log.info("Skipping project model rebuild after Android source warm-up; using pre-warmup model with generated-source fallback")
           } catch (warmupError: Throwable) {
             log.error("Android source warm-up failed during initialize. Falling back to pre-warmup model. tasks={}", warmupTasks, warmupError)
           }
         } else {
           log.info("Skipping Android source warm-up during initialize: critical generated outputs already exist")
         }
+
 
         stopWatch.log()
 
