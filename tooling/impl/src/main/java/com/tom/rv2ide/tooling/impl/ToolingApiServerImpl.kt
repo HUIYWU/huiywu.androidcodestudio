@@ -369,7 +369,6 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       val context =
           AndroidWarmupContext(
               projectPath = projectPath,
-              variantName = configuredVariant,
               variantNameCapitalized = variantNameCapitalized,
               metadata = metadata,
               artifact = variant.mainArtifact,
