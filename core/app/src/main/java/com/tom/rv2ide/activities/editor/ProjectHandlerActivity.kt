@@ -537,6 +537,13 @@ fun initializeProject(buildVariants: Map<String, String>) {
           return@launch
         }
 
+        val hasAndroidProjects = workspace.androidProjects().isNotEmpty()
+        if (hasAndroidProjects) {
+          log.info("Pre-generating Android sources before dispatching project initialization to language servers...")
+          val generated = manager.generateSourcesBlocking(timeoutMs = 120000L)
+          log.info("Android source pre-generation finished before language-server init: success={}", generated)
+        }
+
         manager.notifyProjectUpdate()
         updateBuildVariants(workspace.getAndroidVariantSelections())
 

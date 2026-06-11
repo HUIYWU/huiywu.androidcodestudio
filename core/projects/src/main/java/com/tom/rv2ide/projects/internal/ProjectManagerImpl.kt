@@ -148,23 +148,30 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     this.cachedInitResult = null
     this.projectInitialized = false
   }
-
   @JvmOverloads
   fun generateSources(
       builder: BuildService? = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE)
   ) {
+    generateSourcesAsync(builder)
+  }
+
+  @JvmOverloads
+  fun generateSourcesAsync(
+      builder: BuildService? = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE)
+  ): java.util.concurrent.CompletableFuture<Boolean> {
     if (builder == null) {
       log.warn("Cannot generate sources. BuildService is null.")
-      return
+      return java.util.concurrent.CompletableFuture.completedFuture(false)
     }
 
     if (!builder.isToolingServerStarted()) {
       flashError(R.string.msg_tooling_server_unavailable)
-      return
+      return java.util.concurrent.CompletableFuture.completedFuture(false)
     }
 
     if (builder.isBuildInProgress) {
-      return
+      log.info("Skipping source generation because a build is already in progress")
+      return java.util.concurrent.CompletableFuture.completedFuture(false)
     }
 
     val tasks =
@@ -193,16 +200,40 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
                   )
                   .mapNotNull { it?.let { "${module.path}:${it}" } }
             }
+            ?.distinct()
             ?.toList() ?: emptyList()
 
-    builder.executeTasks(*tasks.toTypedArray()).whenComplete { result, taskErr ->
+    if (tasks.isEmpty()) {
+      log.info("No Android source generation tasks resolved for current workspace")
+      return java.util.concurrent.CompletableFuture.completedFuture(false)
+    }
+
+    log.info("Generating Android sources before language-server init: {}", tasks)
+    return builder.executeTasks(*tasks.toTypedArray()).handle { result, taskErr ->
       if (result == null || !result.isSuccessful || taskErr != null) {
         log.warn("Execution for tasks failed: {} {}", tasks, taskErr ?: "")
+        false
       } else {
+        log.info("Android source generation completed successfully: {}", tasks)
         notifyProjectUpdate()
+        true
       }
     }
   }
+
+  @JvmOverloads
+  fun generateSourcesBlocking(
+      builder: BuildService? = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE),
+      timeoutMs: Long = 120000L,
+  ): Boolean {
+    return try {
+      generateSourcesAsync(builder).get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+    } catch (e: Exception) {
+      log.warn("Timed out or failed while waiting for Android source generation", e)
+      false
+    }
+  }
+
 
   fun notifyProjectUpdate() {
 
