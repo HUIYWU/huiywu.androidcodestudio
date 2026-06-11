@@ -341,34 +341,35 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     val tasks = linkedSetOf<String>()
 
     project.projects.filterIsInstance<AndroidProjectImpl>().forEach { androidProject ->
-      val configuredVariant = androidProject.getConfiguredVariant().get().ifBlank { "debug" }
-      val variant = androidProject.getVariant(com.tom.rv2ide.tooling.api.models.params.StringParameter(configuredVariant)).get()
-          ?: return@forEach
+      val configuredVariant = androidProject.getConfiguredVariant().get().orEmpty().ifBlank { "debug" }
+      val variant =
+          androidProject
+              .getVariant(com.tom.rv2ide.tooling.api.models.params.StringParameter(configuredVariant))
+              .get() ?: return@forEach
+      val projectPath = androidProject.getMetadata().get().projectPath
 
-      val generatedRoots = variant.mainArtifact.generatedSourceFolders
-          .filter { it.exists() && it.isDirectory }
-          .filter { path ->
-            val normalized = path.absolutePath.replace('\\', '/').lowercase()
-            normalized.contains("/build/generated/") || normalized.contains("/build/intermediates/")
-          }
+      val generatedRoots =
+          variant.mainArtifact.generatedSourceFolders
+              .filter { it.exists() && it.isDirectory }
+              .filter { path ->
+                val normalized = path.absolutePath.replace('\\', '/').lowercase()
+                normalized.contains("/build/generated/") || normalized.contains("/build/intermediates/")
+              }
 
       if (generatedRoots.isNotEmpty()) {
         return@forEach
       }
 
-      val variantNameCapitalized = configuredVariant.replaceFirstChar {
-        if (it.isLowerCase()) it.titlecase() else it.toString()
+      val variantNameCapitalized =
+          configuredVariant.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+
+      variant.mainArtifact.resGenTaskName.takeIf { !it.isNullOrBlank() }?.let {
+        tasks.add("${projectPath}:$it")
       }
-
-      variant.mainArtifact.resGenTaskName.takeIf { it.isNotBlank() }?.let { tasks.add("${androidProject.path}:$it") }
-      variant.mainArtifact.sourceGenTaskName.takeIf { it.isNotBlank() }?.let { tasks.add("${androidProject.path}:$it") }
-
-      val metadata = androidProject.getMetadata().get()
-      if (metadata.viewBindingOptions.isEnabled) {
-        tasks.add("${androidProject.path}:dataBindingGenBaseClasses$variantNameCapitalized")
+      variant.mainArtifact.sourceGenTaskName.takeIf { !it.isNullOrBlank() }?.let {
+        tasks.add("${projectPath}:$it")
       }
-
-      tasks.add("${androidProject.path}:process${variantNameCapitalized}Resources")
+      tasks.add("${projectPath}:process${variantNameCapitalized}Resources")
     }
 
     return tasks.toList()
