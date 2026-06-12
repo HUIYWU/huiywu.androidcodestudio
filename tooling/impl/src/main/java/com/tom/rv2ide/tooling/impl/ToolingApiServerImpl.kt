@@ -463,8 +463,10 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       tasks.add("${context.projectPath}:dataBindingGenBaseClasses${context.variantNameCapitalized}")
     }
   }
+
   private data class AndroidNativeWarmupContext(
       val projectPath: String,
+      val projectDir: File,
       val variantName: String,
       val variantNameCapitalized: String,
       val tasks: List<com.tom.rv2ide.tooling.api.models.GradleTask>,
@@ -477,39 +479,47 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       val configuredVariant = androidProject.getConfiguredVariant().get().orEmpty().ifBlank { "debug" }
       val rawMetadata = androidProject.getMetadata().get()
       val projectPath = rawMetadata.projectPath
+      val projectDir = rawMetadata.projectDir
       val variantNameCapitalized =
           configuredVariant.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
       val availableTasks = androidProject.getTasks().get().orEmpty()
       val context =
           AndroidNativeWarmupContext(
               projectPath = projectPath,
+              projectDir = projectDir,
               variantName = configuredVariant,
               variantNameCapitalized = variantNameCapitalized,
               tasks = availableTasks,
           )
 
+      if (!isLikelyAndroidNativeProject(context.projectDir)) {
+        return@forEach
+      }
+
       val selected = selectAndroidNativeWarmupTasks(context)
       if (selected.isNotEmpty()) {
-        log.info(
+        log.debug(
             "Android native warm-up task candidates for {} (variant={}): {}",
             projectPath,
             configuredVariant,
             selected,
         )
         tasks.addAll(selected)
-      } else {
-        log.debug(
-            "No Android native warm-up task candidates found for {} (variant={}); available task count={}",
-            projectPath,
-            configuredVariant,
-            availableTasks.size,
-        )
       }
     }
 
     return tasks.toList()
   }
 
+  /**
+   * For Android/CMake modules opened before any native build has run, clang fallback flags are not
+   * sufficient to resolve NDK sysroot, prefab and imported target include chains. We therefore run a
+   * lightweight native configuration task during initialize so AGP emits the authoritative
+   * `.cxx/.../compile_commands.json` before clangd starts.
+   *
+   * `configureCMake<Variant>` has been validated as the lightest stable task that produces usable
+   * compile_commands across ABIs, so it is preferred over heavier native build tasks.
+   */
   private fun runAndroidNativeCompileCommandsWarmup(
       connection: ProjectConnection,
       project: ProjectImpl,
@@ -517,7 +527,6 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
   ) {
     val configureTasks = discoveredTasks.filter { it.substringAfterLast(':').startsWith("configureCMake") }
     if (configureTasks.isEmpty()) {
-      log.debug("Skipping Android native compile_commands warm-up execution: no configureCMake task found in {}", discoveredTasks)
       return
     }
 
@@ -554,9 +563,41 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
         .mapNotNull { androidProject ->
           runCatching { androidProject.getMetadata().get().projectDir }.getOrNull()
         }
+        .filter(::isLikelyAndroidNativeProject)
         .any { moduleDir ->
           findCompileCommandsUnder(File(moduleDir, ".cxx"), maxDepth = 8).isNotEmpty() ||
               findCompileCommandsUnder(File(moduleDir, ".externalNativeBuild"), maxDepth = 8).isNotEmpty()
+        }
+  }
+
+  private fun isLikelyAndroidNativeProject(projectDir: File): Boolean {
+    if (!projectDir.exists() || !projectDir.isDirectory) {
+      return false
+    }
+
+    val conventionalCppDir = File(projectDir, "src/main/cpp")
+    if (conventionalCppDir.isDirectory) {
+      return true
+    }
+
+    val directCMakeLists = File(projectDir, "CMakeLists.txt")
+    if (directCMakeLists.isFile) {
+      return true
+    }
+
+    if (findFilesByName(projectDir, "CMakeLists.txt", maxDepth = 5).isNotEmpty()) {
+      return true
+    }
+
+    val buildGradleKts = File(projectDir, "build.gradle.kts")
+    val buildGradle = File(projectDir, "build.gradle")
+    return sequenceOf(buildGradleKts, buildGradle)
+        .filter { it.isFile }
+        .mapNotNull {
+          runCatching { it.readText() }.getOrNull()
+        }
+        .any { script ->
+          script.contains("externalNativeBuild") || script.contains("cmake") || script.contains("ndkBuild")
         }
   }
 

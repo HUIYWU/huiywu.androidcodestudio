@@ -37,6 +37,65 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
-    return PartialReparseDryRunIsolatedSession.notAvailable(DEFAULT_NOT_AVAILABLE_REASON);
+    final PartialReparseDryRunIsolatedSessionCandidate candidate =
+        createSessionCandidate(request, eligibility, attemptReport);
+    if (!candidate.isCreated()) {
+      return PartialReparseDryRunIsolatedSession.notAvailable(candidate.reason);
+    }
+    return PartialReparseDryRunIsolatedSession.ready(
+        candidate.reason,
+        candidate.requiresClose,
+        candidate.sharesSourceFileManagerWithLiveCompiler,
+        candidate.requiresFreshReusableCompiler,
+        candidate.cachedCompileMustStartEmpty);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedSessionCandidate createSessionCandidate(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerHandle handle =
+        createCompilerHandle(request, eligibility, attemptReport);
+    if (!handle.isCreated()) {
+      return PartialReparseDryRunIsolatedSessionCandidate.notAvailable(handle.reason);
+    }
+    return PartialReparseDryRunIsolatedSessionCandidate.created(
+        handle.reason,
+        handle.requiresDestroy,
+        handle.requiresClose,
+        handle.sharesSourceFileManagerWithLiveCompiler,
+        handle.requiresFreshReusableCompiler,
+        handle.cachedCompileMustStartEmpty);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerHandle createCompilerHandle(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedSessionAssembly assembly =
+        createSessionAssembly(request, eligibility, attemptReport);
+    return PartialReparseDryRunIsolatedCompilerHandle.notAvailable(assembly.reason);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCopyBlueprint createCopyBlueprint(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    return PartialReparseDryRunIsolatedCopyBlueprint.fromJavaCompilerServiceCopy(
+        DEFAULT_NOT_AVAILABLE_REASON);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedSessionAssembly createSessionAssembly(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCopyBlueprint blueprint =
+        createCopyBlueprint(request, eligibility, attemptReport);
+    return PartialReparseDryRunIsolatedSessionAssembly.fromCopyBlueprint(
+        blueprint, blueprint.reason);
   }
 }

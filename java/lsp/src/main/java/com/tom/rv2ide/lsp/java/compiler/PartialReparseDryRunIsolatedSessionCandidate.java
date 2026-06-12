@@ -20,65 +20,69 @@ package com.tom.rv2ide.lsp.java.compiler;
 import androidx.annotation.NonNull;
 
 /**
- * Represents the lifecycle of an isolated dry-run compiler session.
+ * Represents a non-executing candidate for an isolated dry-run compiler session.
  *
- * <p>This model intentionally does not expose a real compiler copy yet. Its first job is to make the
- * safety and resource-management requirements explicit before the dry-run path is allowed to execute
- * against any copied compiler state.
+ * <p>This is the first seam allowed to model a future copied {@link JavaCompilerService} session as a
+ * concrete lifecycle participant, while still deliberately avoiding any real compile/reparse work.
  */
-public final class PartialReparseDryRunIsolatedSession {
+public final class PartialReparseDryRunIsolatedSessionCandidate {
 
   public enum State {
     NOT_AVAILABLE,
-    READY,
+    CREATED,
     CLOSED
   }
 
   @NonNull public final State state;
   @NonNull public final String reason;
-  public final boolean requiresCompilerCopy;
+  public final boolean hasCompilerCopyCandidate;
+  public final boolean requiresDestroy;
   public final boolean requiresClose;
-  public final boolean mayMutateLiveCompilerState;
+  public final boolean canExecuteDryRun;
   public final boolean sharesSourceFileManagerWithLiveCompiler;
   public final boolean requiresFreshReusableCompiler;
   public final boolean cachedCompileMustStartEmpty;
 
-  private PartialReparseDryRunIsolatedSession(
+  private PartialReparseDryRunIsolatedSessionCandidate(
       @NonNull State state,
       @NonNull String reason,
-      boolean requiresCompilerCopy,
+      boolean hasCompilerCopyCandidate,
+      boolean requiresDestroy,
       boolean requiresClose,
-      boolean mayMutateLiveCompilerState,
+      boolean canExecuteDryRun,
       boolean sharesSourceFileManagerWithLiveCompiler,
       boolean requiresFreshReusableCompiler,
       boolean cachedCompileMustStartEmpty) {
     this.state = state;
     this.reason = reason;
-    this.requiresCompilerCopy = requiresCompilerCopy;
+    this.hasCompilerCopyCandidate = hasCompilerCopyCandidate;
+    this.requiresDestroy = requiresDestroy;
     this.requiresClose = requiresClose;
-    this.mayMutateLiveCompilerState = mayMutateLiveCompilerState;
+    this.canExecuteDryRun = canExecuteDryRun;
     this.sharesSourceFileManagerWithLiveCompiler = sharesSourceFileManagerWithLiveCompiler;
     this.requiresFreshReusableCompiler = requiresFreshReusableCompiler;
     this.cachedCompileMustStartEmpty = cachedCompileMustStartEmpty;
   }
 
   @NonNull
-  public static PartialReparseDryRunIsolatedSession notAvailable(@NonNull String reason) {
-    return new PartialReparseDryRunIsolatedSession(
-        State.NOT_AVAILABLE, reason, true, false, false, false, true, true);
+  public static PartialReparseDryRunIsolatedSessionCandidate notAvailable(@NonNull String reason) {
+    return new PartialReparseDryRunIsolatedSessionCandidate(
+        State.NOT_AVAILABLE, reason, false, false, false, false, false, true, true);
   }
 
   @NonNull
-  public static PartialReparseDryRunIsolatedSession ready(
+  public static PartialReparseDryRunIsolatedSessionCandidate created(
       @NonNull String reason,
+      boolean requiresDestroy,
       boolean requiresClose,
       boolean sharesSourceFileManagerWithLiveCompiler,
       boolean requiresFreshReusableCompiler,
       boolean cachedCompileMustStartEmpty) {
-    return new PartialReparseDryRunIsolatedSession(
-        State.READY,
+    return new PartialReparseDryRunIsolatedSessionCandidate(
+        State.CREATED,
         reason,
         true,
+        requiresDestroy,
         requiresClose,
         false,
         sharesSourceFileManagerWithLiveCompiler,
@@ -87,13 +91,37 @@ public final class PartialReparseDryRunIsolatedSession {
   }
 
   @NonNull
-  public static PartialReparseDryRunIsolatedSession closed(@NonNull String reason) {
-    return new PartialReparseDryRunIsolatedSession(
-        State.CLOSED, reason, true, false, false, false, true, true);
+  public static PartialReparseDryRunIsolatedSessionCandidate closed(
+      @NonNull String reason,
+      boolean sharesSourceFileManagerWithLiveCompiler,
+      boolean requiresFreshReusableCompiler,
+      boolean cachedCompileMustStartEmpty) {
+    return new PartialReparseDryRunIsolatedSessionCandidate(
+        State.CLOSED,
+        reason,
+        false,
+        false,
+        false,
+        false,
+        sharesSourceFileManagerWithLiveCompiler,
+        requiresFreshReusableCompiler,
+        cachedCompileMustStartEmpty);
   }
 
-  public boolean isReady() {
-    return state == State.READY;
+  @NonNull
+  public PartialReparseDryRunIsolatedSessionCandidate close(@NonNull String reason) {
+    if (isClosed()) {
+      return this;
+    }
+    return closed(
+        reason,
+        sharesSourceFileManagerWithLiveCompiler,
+        requiresFreshReusableCompiler,
+        cachedCompileMustStartEmpty);
+  }
+
+  public boolean isCreated() {
+    return state == State.CREATED;
   }
 
   public boolean isClosed() {

@@ -21,7 +21,7 @@ class PartialReparseDryRunIsolatedPlannerTest {
     val plan = PartialReparseDryRunIsolatedPlanner().plan(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedPlan.State.NOT_AVAILABLE, plan.state)
-    assertEquals(PartialReparseDryRunIsolatedCompilerCopyProvider.DEFAULT_NOT_AVAILABLE_REASON, plan.reason)
+    assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, plan.reason)
     assertTrue(plan.requiresCompilerCopy)
     assertFalse(plan.mayMutateLiveCompilerState)
     assertFalse(plan.isReady)
