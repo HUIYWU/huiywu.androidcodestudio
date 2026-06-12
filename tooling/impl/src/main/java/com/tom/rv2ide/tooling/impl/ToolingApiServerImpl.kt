@@ -230,6 +230,11 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
               "Discovered Android native compile_commands warm-up task candidates during initialize: {}",
               nativeWarmupTasks,
           )
+          try {
+            runAndroidNativeCompileCommandsWarmup(connection, project, nativeWarmupTasks)
+          } catch (nativeWarmupError: Throwable) {
+            log.error("Android native compile_commands warm-up failed during initialize. Continuing without native warm-up. tasks={}", nativeWarmupTasks, nativeWarmupError)
+          }
         } else {
           log.debug("No Android native compile_commands warm-up task candidates discovered during initialize")
         }
@@ -503,6 +508,75 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     }
 
     return tasks.toList()
+  }
+
+  private fun runAndroidNativeCompileCommandsWarmup(
+      connection: ProjectConnection,
+      project: ProjectImpl,
+      discoveredTasks: List<String>,
+  ) {
+    val configureTasks = discoveredTasks.filter { it.substringAfterLast(':').startsWith("configureCMake") }
+    if (configureTasks.isEmpty()) {
+      log.debug("Skipping Android native compile_commands warm-up execution: no configureCMake task found in {}", discoveredTasks)
+      return
+    }
+
+    val targetTask = configureTasks.first()
+    val hadCompileCommandsBefore = projectHasNativeCompileCommands(project)
+    if (hadCompileCommandsBefore) {
+      log.info(
+          "Skipping Android native compile_commands warm-up execution because compile_commands already exist. task={}",
+          targetTask,
+      )
+      return
+    }
+
+    log.info("Running Android native compile_commands warm-up as part of initialize: {}", targetTask)
+    runWarmupBuild(connection, listOf(targetTask))
+
+    val hasCompileCommandsAfter = projectHasNativeCompileCommands(project)
+    if (hasCompileCommandsAfter) {
+      log.info(
+          "Android native compile_commands warm-up produced compile_commands.json via {}",
+          targetTask,
+      )
+    } else {
+      log.warn(
+          "Android native compile_commands warm-up completed but no compile_commands.json were found after running {}",
+          targetTask,
+      )
+    }
+  }
+
+  private fun projectHasNativeCompileCommands(project: ProjectImpl): Boolean {
+    return project.projects
+        .filterIsInstance<AndroidProjectImpl>()
+        .mapNotNull { androidProject ->
+          runCatching { androidProject.getMetadata().get().projectDir }.getOrNull()
+        }
+        .any { moduleDir ->
+          findCompileCommandsUnder(File(moduleDir, ".cxx"), maxDepth = 8).isNotEmpty() ||
+              findCompileCommandsUnder(File(moduleDir, ".externalNativeBuild"), maxDepth = 8).isNotEmpty()
+        }
+  }
+
+  private fun findCompileCommandsUnder(
+      dir: File,
+      maxDepth: Int,
+      currentDepth: Int = 0,
+  ): List<File> {
+    if (currentDepth > maxDepth || !dir.exists() || !dir.isDirectory) {
+      return emptyList()
+    }
+
+    val matches = mutableListOf<File>()
+    dir.listFiles()?.forEach { file ->
+      when {
+        file.isFile && file.name == "compile_commands.json" -> matches.add(file)
+        file.isDirectory -> matches.addAll(findCompileCommandsUnder(file, maxDepth, currentDepth + 1))
+      }
+    }
+    return matches
   }
 
   private fun selectAndroidNativeWarmupTasks(
