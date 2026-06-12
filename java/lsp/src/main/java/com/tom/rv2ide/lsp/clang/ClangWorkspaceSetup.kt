@@ -185,29 +185,87 @@ class ClangWorkspaceSetup(private val context: Context, private val workspace: I
 
     commonCandidates.firstOrNull { it.isFile }?.let { return it }
 
-    return findFileByName(projectDir, "compile_commands.json", maxDepth = 6)
+    val discoveredCandidates =
+        findFilesByName(
+            dir = projectDir,
+            name = "compile_commands.json",
+            maxDepth = 8,
+            includeHiddenDirs = true,
+            excludedDirNames = EXCLUDED_DIR_NAMES - ".cxx" - ".externalNativeBuild",
+        )
+    return selectBestCompileCommands(projectDir, discoveredCandidates)
   }
 
-  private fun findFileByName(
+  private fun selectBestCompileCommands(projectDir: File, candidates: List<File>): File? {
+    if (candidates.isEmpty()) {
+      return null
+    }
+
+    val projectSources = findSourceFiles(projectDir)
+    val mainCpp = projectSources.firstOrNull { it.name.equals("main.cpp", ignoreCase = true) }
+
+    return candidates
+        .distinctBy { it.absolutePath }
+        .sortedWith(
+            compareByDescending<File> { candidateContainsSourceEntry(it, mainCpp) }
+                .thenByDescending { it.absolutePath.contains("/.cxx/") }
+                .thenByDescending { it.absolutePath.contains("/.externalNativeBuild/") }
+                .thenByDescending { it.absolutePath.contains("/app/") }
+                .thenByDescending { it.absolutePath.contains("/Debug/") }
+                .thenByDescending { it.absolutePath.contains("/RelWithDebInfo/") }
+                .thenByDescending { it.absolutePath.contains("/Release/") }
+                .thenBy { it.absolutePath.length })
+        .firstOrNull()
+  }
+
+  private fun candidateContainsSourceEntry(candidate: File, sourceFile: File?): Boolean {
+    if (sourceFile == null || !candidate.isFile) {
+      return false
+    }
+
+    return try {
+      val entries = JsonParser.parseString(candidate.readText()).asJsonArray
+      entries.any { element ->
+        val obj = element.asJsonObject
+        val filePath = obj.get("file")?.asString ?: return@any false
+        filePath == sourceFile.absolutePath
+      }
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  private fun findFilesByName(
       dir: File,
       name: String,
       maxDepth: Int,
       currentDepth: Int = 0,
-  ): File? {
-    if (currentDepth > maxDepth || !dir.isDirectory || dir.name in EXCLUDED_DIR_NAMES) {
-      return null
+      includeHiddenDirs: Boolean = false,
+      excludedDirNames: Set<String> = EXCLUDED_DIR_NAMES,
+  ): List<File> {
+    if (currentDepth > maxDepth || !dir.isDirectory || dir.name in excludedDirNames) {
+      return emptyList()
     }
 
+    val matches = mutableListOf<File>()
     dir.listFiles()?.forEach { file ->
       when {
-        file.isFile && file.name == name -> return file
-        file.isDirectory && !file.name.startsWith(".") -> {
-          findFileByName(file, name, maxDepth, currentDepth + 1)?.let { return it }
+        file.isFile && file.name == name -> matches.add(file)
+        file.isDirectory && (includeHiddenDirs || !file.name.startsWith(".")) -> {
+          matches +=
+              findFilesByName(
+                  dir = file,
+                  name = name,
+                  maxDepth = maxDepth,
+                  currentDepth = currentDepth + 1,
+                  includeHiddenDirs = includeHiddenDirs,
+                  excludedDirNames = excludedDirNames,
+              )
         }
       }
     }
 
-    return null
+    return matches
   }
 
   private fun findSourceFiles(dir: File, maxDepth: Int = 6, currentDepth: Int = 0): List<File> {
