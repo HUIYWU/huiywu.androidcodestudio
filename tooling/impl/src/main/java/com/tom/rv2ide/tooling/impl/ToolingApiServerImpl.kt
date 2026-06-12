@@ -212,6 +212,10 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
           try {
             runWarmupBuild(connection, warmupTasks)
             stopWatch.lapFromLast("Android source warm-up completed")
+            // Intentionally keep using the model that was read at the start of initialize.
+            // A second full RootModelBuilder pass after warm-up proved unstable in practice,
+            // while KLS can still recover generated sources from the original model roots plus
+            // filesystem candidates under build/generated and build/intermediates.
             log.info("Using pre-warmup project model after Android source warm-up; generated sources are supplied via model outputs and filesystem fallback")
           } catch (warmupError: Throwable) {
             log.error("Android source warm-up failed during initialize. Continuing with pre-warmup model. tasks={}", warmupTasks, warmupError)
@@ -375,6 +379,9 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
               generatedRootsOnDisk = collectExistingGeneratedRoots(variant.mainArtifact),
           )
 
+      // Warm-up is driven by generated output categories instead of a single databinding task.
+      // Core resource/source tasks stay generic, while binding and other generators are treated as
+      // conditional additions when their outputs are missing.
       val missingCategories = determineMissingGeneratedOutputCategories(context)
       if (missingCategories.isEmpty()) {
         return@forEach

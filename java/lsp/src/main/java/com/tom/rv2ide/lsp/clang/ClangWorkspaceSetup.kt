@@ -19,6 +19,7 @@ package com.tom.rv2ide.lsp.clang
 import android.content.Context
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.utils.Environment
 import java.io.File
@@ -75,6 +76,7 @@ class ClangWorkspaceSetup(private val context: Context, private val workspace: I
     try {
       val projectDir = workspace.getProjectDir()
       findExistingCompileCommands(projectDir)?.let { existing ->
+        logCompileCommandsSelection(existing, projectDir, source = "existing")
         return existing.parentFile?.absolutePath
       }
 
@@ -106,12 +108,64 @@ class ClangWorkspaceSetup(private val context: Context, private val workspace: I
         jsonArray.add(entry)
       }
       compileCommandsFile.writeText(jsonArray.toString())
+      logCompileCommandsSelection(compileCommandsFile, projectDir, source = "generated-fallback")
 
       return buildDir.absolutePath
 
     } catch (e: Exception) {
       ClangLogs.error("Failed to generate compile_commands.json", e)
       return null
+    }
+  }
+
+  private fun logCompileCommandsSelection(
+      compileCommandsFile: File,
+      projectDir: File,
+      source: String,
+  ) {
+    try {
+      val compileDir = compileCommandsFile.parentFile?.absolutePath ?: "<no-parent>"
+      val isFromCxx = compileCommandsFile.absolutePath.contains("/.cxx/")
+      val projectSources = findSourceFiles(projectDir)
+      val mainCpp = projectSources.firstOrNull { it.name.equals("main.cpp", ignoreCase = true) }
+      val rootElement = JsonParser.parseString(compileCommandsFile.readText())
+      val entries = rootElement.asJsonArray
+      val matchingEntry =
+          entries.firstOrNull { element ->
+            val obj = element.asJsonObject
+            val filePath = obj.get("file")?.asString ?: return@firstOrNull false
+            if (mainCpp != null) {
+              filePath == mainCpp.absolutePath
+            } else {
+              filePath.endsWith("/main.cpp") || filePath.endsWith("\\main.cpp")
+            }
+          }?.asJsonObject
+      val preview =
+          matchingEntry?.let { entry ->
+            entry.get("command")?.asString ?: entry.getAsJsonArray("arguments")?.joinToString(" ") { it.asString }
+          }?.replace('\n', ' ')
+              ?.take(600)
+
+      ClangLogs.info(
+          "Selected compile_commands: source={}, file={}, dir={}, fromCxx={}, entries={}",
+          source,
+          compileCommandsFile.absolutePath,
+          compileDir,
+          isFromCxx,
+          entries.size(),
+      )
+      if (mainCpp != null) {
+        ClangLogs.info(
+            "compile_commands main.cpp match: file={}, matched={}",
+            mainCpp.absolutePath,
+            matchingEntry != null,
+        )
+      }
+      if (!preview.isNullOrBlank()) {
+        ClangLogs.info("compile_commands main.cpp command preview: {}", preview)
+      }
+    } catch (e: Exception) {
+      ClangLogs.warn("Failed to inspect compile_commands file: {}", compileCommandsFile.absolutePath, e)
     }
   }
 

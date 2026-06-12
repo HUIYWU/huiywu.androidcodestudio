@@ -33,11 +33,27 @@ public class PartialReparseDryRunIsolatedCompilerCopyProvider {
   public static final String DEFAULT_NOT_AVAILABLE_REASON =
       "isolated compiler copy provider is not implemented yet";
 
+  private final PartialReparseDryRunIsolatedSessionFactory sessionFactory;
+
+  public PartialReparseDryRunIsolatedCompilerCopyProvider() {
+    this(new PartialReparseDryRunIsolatedSessionFactory());
+  }
+
+  PartialReparseDryRunIsolatedCompilerCopyProvider(
+      @NonNull PartialReparseDryRunIsolatedSessionFactory sessionFactory) {
+    this.sessionFactory = sessionFactory;
+  }
+
   @NonNull
   public PartialReparseDryRunIsolatedPlan planCompilerCopy(
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
-    return PartialReparseDryRunIsolatedPlan.notAvailable(DEFAULT_NOT_AVAILABLE_REASON);
+    final PartialReparseDryRunIsolatedSession session =
+        sessionFactory.createSession(request, eligibility, attemptReport);
+    if (!session.isReady()) {
+      return PartialReparseDryRunIsolatedPlan.notAvailable(session.reason);
+    }
+    return PartialReparseDryRunIsolatedPlan.ready(session.reason);
   }
 }

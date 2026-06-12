@@ -11,76 +11,76 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class PartialReparseDryRunIsolatedCompilerCopyProviderTest {
+class PartialReparseDryRunIsolatedSessionFactoryTest {
 
   @Test
-  fun defaultCompilerCopyProviderIsNotAvailable() {
+  fun defaultFactoryReturnsNotAvailableSession() {
     val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
     val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
     val report = PartialReparseDryRunReport.notCreated()
 
-    val plan =
-        PartialReparseDryRunIsolatedCompilerCopyProvider()
-            .planCompilerCopy(request, eligibility, report)
+    val session =
+        PartialReparseDryRunIsolatedSessionFactory().createSession(request, eligibility, report)
 
-    assertEquals(PartialReparseDryRunIsolatedPlan.State.NOT_AVAILABLE, plan.state)
-    assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, plan.reason)
-    assertTrue(plan.requiresCompilerCopy)
-    assertFalse(plan.mayMutateLiveCompilerState)
-    assertFalse(plan.isReady)
+    assertEquals(PartialReparseDryRunIsolatedSession.State.NOT_AVAILABLE, session.state)
+    assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, session.reason)
+    assertTrue(session.requiresCompilerCopy)
+    assertFalse(session.requiresClose)
+    assertFalse(session.mayMutateLiveCompilerState)
+    assertFalse(session.isReady)
   }
 
   @Test
-  fun plannerConsultsCompilerCopyProviderAndPropagatesNotAvailablePlan() {
+  fun compilerCopyProviderConsultsSessionFactoryAndPropagatesNotAvailable() {
     val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
     val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
     val report = PartialReparseDryRunReport.notCreated()
-    val provider = RecordingCompilerCopyProvider(PartialReparseDryRunIsolatedPlan.notAvailable("copy missing"))
+    val factory = RecordingSessionFactory(PartialReparseDryRunIsolatedSession.notAvailable("session missing"))
 
-    val plan = PartialReparseDryRunIsolatedPlanner(provider).plan(request, eligibility, report)
+    val plan = PartialReparseDryRunIsolatedCompilerCopyProvider(factory).planCompilerCopy(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedPlan.State.NOT_AVAILABLE, plan.state)
-    assertEquals("copy missing", plan.reason)
-    assertEquals(1, provider.calls)
-    assertSame(request, provider.request)
-    assertSame(eligibility, provider.eligibility)
-    assertSame(report, provider.report)
+    assertEquals("session missing", plan.reason)
+    assertEquals(1, factory.calls)
+    assertSame(request, factory.request)
+    assertSame(eligibility, factory.eligibility)
+    assertSame(report, factory.report)
   }
 
   @Test
-  fun plannerReturnsReadyOnlyWhenCompilerCopyProviderIsReady() {
+  fun compilerCopyProviderReturnsReadyWhenSessionFactoryReturnsReadySession() {
     val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
     val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
     val report = PartialReparseDryRunReport.notCreated()
-    val provider = RecordingCompilerCopyProvider(PartialReparseDryRunIsolatedPlan.ready("copy ready"))
+    val factory = RecordingSessionFactory(PartialReparseDryRunIsolatedSession.ready("session ready", true))
 
-    val plan = PartialReparseDryRunIsolatedPlanner(provider).plan(request, eligibility, report)
+    val plan = PartialReparseDryRunIsolatedCompilerCopyProvider(factory).planCompilerCopy(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedPlan.State.READY, plan.state)
-    assertEquals("copy ready", plan.reason)
+    assertEquals("session ready", plan.reason)
     assertTrue(plan.requiresCompilerCopy)
     assertFalse(plan.mayMutateLiveCompilerState)
     assertTrue(plan.isReady)
-    assertEquals(1, provider.calls)
+    assertEquals(1, factory.calls)
   }
 
-  private class RecordingCompilerCopyProvider(private val plan: PartialReparseDryRunIsolatedPlan) :
-      PartialReparseDryRunIsolatedCompilerCopyProvider() {
+  private class RecordingSessionFactory(private val session: PartialReparseDryRunIsolatedSession) :
+      PartialReparseDryRunIsolatedSessionFactory() {
     var calls = 0
     var request: CompilationRequest? = null
     var eligibility: PartialReparseEligibility? = null
     var report: PartialReparseDryRunReport? = null
 
-    override fun planCompilerCopy(
+    override fun createSession(
         request: CompilationRequest,
         eligibility: PartialReparseEligibility,
         attemptReport: PartialReparseDryRunReport,
-    ): PartialReparseDryRunIsolatedPlan {
+    ): PartialReparseDryRunIsolatedSession {
       calls++
       this.request = request
       this.eligibility = eligibility
       this.report = attemptReport
-      return plan
+      return session
     }
   }
 

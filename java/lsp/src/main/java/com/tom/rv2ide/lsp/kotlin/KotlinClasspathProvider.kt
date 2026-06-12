@@ -95,6 +95,10 @@ class KotlinClasspathProvider {
       .filter(::isLikelyAgpGeneratedSourceDir)
       .filter { it.exists() && it.isDirectory }
 
+    // Model-provided generated roots are authoritative when available, but they may still reflect
+    // the pre-warmup project model during initialization. Merge them with filesystem candidates so
+    // generated symbols such as ActivityMainBinding remain visible as soon as the warm-up tasks have
+    // materialized their outputs on disk.
     return (generatedFromModel + generatedCandidates)
       .distinctBy { it.absolutePath }
   }
