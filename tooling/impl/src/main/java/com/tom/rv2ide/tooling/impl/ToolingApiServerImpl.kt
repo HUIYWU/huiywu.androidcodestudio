@@ -224,6 +224,15 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
           log.info("Skipping Android source warm-up during initialize: critical generated outputs already exist")
         }
 
+        val nativeWarmupTasks = collectAndroidNativeCompileCommandsWarmupTasks(project)
+        if (nativeWarmupTasks.isNotEmpty()) {
+          log.info(
+              "Discovered Android native compile_commands warm-up task candidates during initialize: {}",
+              nativeWarmupTasks,
+          )
+        } else {
+          log.debug("No Android native compile_commands warm-up task candidates discovered during initialize")
+        }
 
         stopWatch.log()
 
@@ -449,6 +458,97 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       tasks.add("${context.projectPath}:dataBindingGenBaseClasses${context.variantNameCapitalized}")
     }
   }
+  private data class AndroidNativeWarmupContext(
+      val projectPath: String,
+      val variantName: String,
+      val variantNameCapitalized: String,
+      val tasks: List<com.tom.rv2ide.tooling.api.models.GradleTask>,
+  )
+
+  private fun collectAndroidNativeCompileCommandsWarmupTasks(project: ProjectImpl): List<String> {
+    val tasks = linkedSetOf<String>()
+
+    project.projects.filterIsInstance<AndroidProjectImpl>().forEach { androidProject ->
+      val configuredVariant = androidProject.getConfiguredVariant().get().orEmpty().ifBlank { "debug" }
+      val rawMetadata = androidProject.getMetadata().get()
+      val projectPath = rawMetadata.projectPath
+      val variantNameCapitalized =
+          configuredVariant.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+      val availableTasks = androidProject.getTasks().get().orEmpty()
+      val context =
+          AndroidNativeWarmupContext(
+              projectPath = projectPath,
+              variantName = configuredVariant,
+              variantNameCapitalized = variantNameCapitalized,
+              tasks = availableTasks,
+          )
+
+      val selected = selectAndroidNativeWarmupTasks(context)
+      if (selected.isNotEmpty()) {
+        log.info(
+            "Android native warm-up task candidates for {} (variant={}): {}",
+            projectPath,
+            configuredVariant,
+            selected,
+        )
+        tasks.addAll(selected)
+      } else {
+        log.debug(
+            "No Android native warm-up task candidates found for {} (variant={}); available task count={}",
+            projectPath,
+            configuredVariant,
+            availableTasks.size,
+        )
+      }
+    }
+
+    return tasks.toList()
+  }
+
+  private fun selectAndroidNativeWarmupTasks(
+      context: AndroidNativeWarmupContext,
+  ): List<String> {
+    val moduleTasks =
+        context.tasks
+            .asSequence()
+            .filter { task ->
+              task.path.startsWith("${context.projectPath}:") || task.projectPath == context.projectPath
+            }
+            .toList()
+
+    val selected = linkedSetOf<String>()
+    val variantSuffixes =
+        listOf(
+            context.variantNameCapitalized,
+            context.variantName,
+            context.variantName.lowercase(),
+        )
+    val normalizedVariantTokens = variantSuffixes.map { it.lowercase() }
+
+    fun matchesVariant(taskName: String): Boolean {
+      val normalized = taskName.lowercase()
+      return normalizedVariantTokens.any { token -> normalized.contains(token) }
+    }
+
+    fun addBestMatchingTask(prefixes: List<String>) {
+      moduleTasks
+          .filter { task ->
+            val normalized = task.name.lowercase()
+            prefixes.any { prefix -> normalized.startsWith(prefix) } && matchesVariant(task.name)
+          }
+          .sortedWith(compareBy<com.tom.rv2ide.tooling.api.models.GradleTask> { it.path.length }.thenBy { it.name })
+          .firstOrNull()
+          ?.path
+          ?.let(selected::add)
+    }
+
+    addBestMatchingTask(listOf("configurecmake"))
+    addBestMatchingTask(listOf("generatejsonmodel"))
+    addBestMatchingTask(listOf("externalnativebuild"))
+
+    return selected.toList()
+  }
+
 
   private fun shouldCheckBindingOutputs(context: AndroidWarmupContext): Boolean {
     return context.metadata?.viewBindingOptions?.isEnabled == true
