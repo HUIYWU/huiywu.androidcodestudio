@@ -601,6 +601,26 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
         }
   }
 
+  private fun findFilesByName(
+      dir: File,
+      name: String,
+      maxDepth: Int,
+      currentDepth: Int = 0,
+  ): List<File> {
+    if (currentDepth > maxDepth || !dir.exists() || !dir.isDirectory) {
+      return emptyList()
+    }
+
+    val matches = mutableListOf<File>()
+    dir.listFiles()?.forEach { file ->
+      when {
+        file.isFile && file.name == name -> matches.add(file)
+        file.isDirectory -> matches.addAll(findFilesByName(file, name, maxDepth, currentDepth + 1))
+      }
+    }
+    return matches
+  }
+
   private fun findCompileCommandsUnder(
       dir: File,
       maxDepth: Int,
