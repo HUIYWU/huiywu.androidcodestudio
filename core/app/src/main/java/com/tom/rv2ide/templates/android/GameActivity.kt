@@ -65,7 +65,6 @@ class GameActivity : Template {
 
   override fun configureOptions() {
     Options.OPT_IS_NATIVE_CPP = true
-    Options.OPT_BUILD_SYSTEM_USE_CMAKE = true
     Options.OPT_IS_NATIVE_GAME_ACTIVITY = true
   }
 
