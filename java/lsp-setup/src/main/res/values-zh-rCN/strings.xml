@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="installing_lsp">正在安装语言支持</string>
+    <string name="lsp_task_working">正在处理...</string>
+    <string name="lsp_task_output_label">任务输出</string>
+    <string name="lsp_task_output_copied">输出已复制</string>
+    <string name="lsp_task_prepare_installation">正在准备安装...</string>
+    <string name="lsp_task_installation_completed">安装完成</string>
+    <string name="lsp_task_installation_failed">安装失败</string>
+    <string name="lsp_task_installation_completed_success">安装已成功完成！</string>
+    <string name="lsp_task_installation_failed_detail">安装失败，请检查上方输出日志。</string>
+    <string name="lsp_task_failed">失败</string>
+    <string name="lsp_task_prepare_clang_removal">正在准备卸载 Clang...</string>
+    <string name="lsp_task_prepare_kotlin_removal">正在准备卸载 Kotlin...</string>
+    <string name="lsp_task_uninstallation_completed">卸载完成</string>
+    <string name="lsp_task_uninstallation_failed">卸载失败</string>
+    <string name="lsp_task_uninstallation_completed_success">卸载已成功完成！</string>
+    <string name="lsp_task_uninstallation_failed_detail">卸载失败，请检查上方输出日志。</string>
+    <string name="lsp_task_logs">日志</string>
+</resources>

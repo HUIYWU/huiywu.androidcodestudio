@@ -573,6 +573,10 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
   }
 
   private fun projectHasNativeCompileCommands(project: ProjectImpl): Boolean {
+    // Native build metadata is not always laid out directly under <module>/.cxx.
+    // AGP often places both CMake and ndk-build outputs under <module>/build/.cxx or
+    // <module>/build/.externalNativeBuild, and traditional ndk-build projects may only
+    // emit compile_commands.json.bin until ACS reconstructs a text compile_commands.json later.
     return project.projects
         .filterIsInstance<AndroidProjectImpl>()
         .mapNotNull { androidProject ->

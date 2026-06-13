@@ -13,12 +13,11 @@
  *
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
-*/
+ */
 
-package com.tom.rv2ide.setup.servers.clang
+package com.tom.rv2ide.setup.servers
 
 import android.content.Context
-import com.tom.rv2ide.setup.servers.ILanguageServerInstaller
 import com.tom.rv2ide.shell.executeProcessAsync
 import com.tom.rv2ide.utils.Environment
 import java.io.BufferedReader
@@ -42,6 +41,65 @@ class Clang(private val context: Context) : ILanguageServerInstaller {
     "returned an error code",
     "Unmet dependencies"
   )
+
+  fun uninstall(onOutput: (String) -> Unit): Boolean {
+    return try {
+      val env = mutableMapOf<String, String>()
+      Environment.putEnvironment(env, false)
+
+      onOutput("Preparing clang removal...")
+
+      val removeProcess = executeProcessAsync {
+        command = listOf(
+          Environment.BIN_DIR.absolutePath + "/apt",
+          "remove",
+          "clang",
+          "-y"
+        )
+        environment = env
+        workingDirectory = Environment.HOME
+        redirectErrorStream = true
+      }
+
+      readProcessOutput(removeProcess, onOutput)
+      val removeExitCode = removeProcess.waitFor()
+      onOutput("\nClang removal command completed (exit code: $removeExitCode)")
+
+      if (!isInstalled()) {
+        onOutput("Clang binaries removed successfully!")
+        return true
+      }
+
+      onOutput("\nclang/clangd still present after remove; trying purge...")
+      val purgeProcess = executeProcessAsync {
+        command = listOf(
+          Environment.BIN_DIR.absolutePath + "/apt",
+          "purge",
+          "clang",
+          "-y"
+        )
+        environment = env
+        workingDirectory = Environment.HOME
+        redirectErrorStream = true
+      }
+
+      readProcessOutput(purgeProcess, onOutput)
+      val purgeExitCode = purgeProcess.waitFor()
+      onOutput("\nClang purge command completed (exit code: $purgeExitCode)")
+
+      val removed = !isInstalled()
+      if (removed) {
+        onOutput("Clang binaries removed successfully!")
+      } else {
+        onOutput("Clang binaries are still present after purge attempt.")
+      }
+      removed
+    } catch (e: Exception) {
+      onOutput("\nError during uninstallation: ${e.message}")
+      e.printStackTrace()
+      false
+    }
+  }
   
   override fun isInstalled(): Boolean {
     val clangBinary = File(Environment.BIN_DIR, "clang")

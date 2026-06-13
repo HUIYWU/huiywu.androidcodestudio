@@ -1,66 +1,121 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
-  xmlns:app="http://schemas.android.com/apk/res-auto"
-  android:layout_width="match_parent"
-  android:layout_height="wrap_content"
-  app:cardCornerRadius="28dp"
-  app:cardElevation="0dp"
-  style="?attr/materialCardViewElevatedStyle">
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:cardCornerRadius="28dp"
+    app:cardElevation="0dp"
+    style="?attr/materialCardViewElevatedStyle">
 
     <LinearLayout
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:orientation="vertical"
-      android:padding="24dp">
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
 
         <com.google.android.material.textview.MaterialTextView
-          android:layout_width="match_parent"
-          android:layout_height="wrap_content"
-          android:text="@string/installing_lsp"
-          android:textAppearance="?attr/textAppearanceHeadlineSmall"
-          android:layout_marginBottom="16dp" />
+            android:id="@+id/tv_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/installing_lsp"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
 
-        <com.google.android.material.progressindicator.CircularProgressIndicator
-          android:id="@+id/progress_indicator"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_gravity="center"
-          android:indeterminate="true"
-          android:layout_marginBottom="16dp"
-          style="@style/Widget.Material3.CircularProgressIndicator" />
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/tv_step"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="20dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:text="@string/lsp_task_prepare_installation"
+            android:textAppearance="?attr/textAppearanceBodyLarge"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/progress_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:indeterminate="true"
+            android:max="100"
+            android:layout_marginBottom="8dp" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/tv_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:text="@string/lsp_task_working"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textStyle="bold"
+            android:layout_marginBottom="20dp" />
 
         <com.google.android.material.card.MaterialCardView
-          android:layout_width="match_parent"
-          android:layout_height="wrap_content"
-          app:cardCornerRadius="16dp"
-          app:cardElevation="0dp"
-          style="?attr/materialCardViewElevatedStyle">
-            <com.tom.rv2ide.editor.ui.IDEEditor
-              android:id="@+id/tv_output"
-              android:layout_width="match_parent"
-              android:layout_height="200dp"
-              android:fontFamily="monospace" />
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp"
+            style="?attr/materialCardViewElevatedStyle">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.textview.MaterialTextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/lsp_task_logs"
+                    android:textAppearance="?attr/textAppearanceTitleMedium"
+                    android:layout_marginBottom="12dp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="?android:attr/listDivider" />
+
+                <ScrollView
+                    android:id="@+id/log_scroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="220dp"
+                    android:fillViewport="true">
+
+                    <com.google.android.material.textview.MaterialTextView
+                        android:id="@+id/tv_output"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:lineSpacingExtra="2dp"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textIsSelectable="true" />
+                </ScrollView>
+            </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <LinearLayout
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:orientation="horizontal"
-          android:layout_marginTop="16dp">
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
-              android:id="@+id/btn_copy"
-              android:layout_width="wrap_content"
-              android:layout_height="wrap_content"
-              android:text="@string/copy"
-              style="@style/Widget.Material3.Button.TextButton"
-              android:layout_marginEnd="8dp" />
+                android:id="@+id/btn_copy"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="@string/copy" />
 
             <com.google.android.material.button.MaterialButton
-              android:id="@+id/btn_close"
-              android:layout_width="wrap_content"
-              android:layout_height="wrap_content"
-              android:text="@string/btn_close" />
+                android:id="@+id/btn_close"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/btn_close" />
         </LinearLayout>
 
     </LinearLayout>

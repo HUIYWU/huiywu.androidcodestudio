@@ -674,8 +674,14 @@
   <string name="server_status">Server Status: %s</string>
 
   <string name="kotlin">Kotlin</string>
-  <string name="kotlin_lsp_category_summary">Kotlin language server and features</string>
-  <string name="c_cpp">C/C++</string>
+<string name="kotlin_lsp_category_summary">Kotlin language server and features</string>
+<string name="clang">Clang</string>
+<string name="clang_lsp_category_summary">C/C++ language server and features</string>
+<string name="lsp_options_clang_title">Clang Language Server</string>
+<string name="lsp_options_clang_summary">Clang language server for C/C++</string>
+<string name="clang_lsp_enabled_title">Enable Clang language server</string>
+<string name="clang_lsp_enabled_summary">Enable or disable the Clang language server for C/C++ files</string>
+<string name="c_cpp">C/C++</string>
   <string name="ccpp_lsp_category_summary">C/C++ language server and features</string>
 
   <!-- LSP Server Management -->

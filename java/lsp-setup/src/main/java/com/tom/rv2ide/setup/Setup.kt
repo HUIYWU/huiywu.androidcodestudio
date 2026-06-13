@@ -22,6 +22,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.ScrollView
 import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textview.MaterialTextView
@@ -29,8 +30,6 @@ import com.google.android.material.button.MaterialButton
 import com.tom.rv2ide.setup.R
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.setup.servers.ILanguageServerInstaller
-import com.tom.rv2ide.models.Range
-import com.tom.rv2ide.models.Position
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -137,100 +136,144 @@ class Setup(private val context: Context) {
     dialog.show()
   }
   
-  private fun installLanguageServer(serverId: String, onComplete: ((Boolean) -> Unit)?) {
+  fun installLanguageServer(serverId: String, onComplete: ((Boolean) -> Unit)? = null) {
+    runLanguageServerTask(
+      title = context.getString(R.string.installing_lsp),
+      initialStep = context.getString(R.string.lsp_task_prepare_installation),
+      successStep = context.getString(R.string.lsp_task_installation_completed),
+      failureStep = context.getString(R.string.lsp_task_installation_failed),
+      successTail = context.getString(R.string.lsp_task_installation_completed_success),
+      failureTail = context.getString(R.string.lsp_task_installation_failed_detail),
+      onComplete = onComplete,
+    ) { log ->
+      val installer = getLanguageServerInstaller(serverId)
+      installer.install(log)
+    }
+  }
+
+  fun uninstallLanguageServer(
+    title: String,
+    initialStep: String,
+    successStep: String,
+    failureStep: String,
+    successTail: String,
+    failureTail: String,
+    onComplete: ((Boolean) -> Unit)? = null,
+    action: (log: (String) -> Unit) -> Boolean,
+  ) {
+    runLanguageServerTask(
+      title = title,
+      initialStep = initialStep,
+      successStep = successStep,
+      failureStep = failureStep,
+      successTail = successTail,
+      failureTail = failureTail,
+      onComplete = onComplete,
+      action = action,
+    )
+  }
+
+  private fun runLanguageServerTask(
+    title: String,
+    initialStep: String,
+    successStep: String,
+    failureStep: String,
+    successTail: String,
+    failureTail: String,
+    onComplete: ((Boolean) -> Unit)? = null,
+    action: (log: (String) -> Unit) -> Boolean,
+  ) {
     val progressView = LayoutInflater.from(context).inflate(R.layout.dialog_installation_progress, null)
-    
-    val progressIndicator = progressView.findViewById<com.google.android.material.progressindicator.CircularProgressIndicator>(R.id.progress_indicator)
-    val outputText = progressView.findViewById<com.tom.rv2ide.editor.ui.IDEEditor>(R.id.tv_output)
+
+    val progressBar = progressView.findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.progress_bar)
+    val titleText = progressView.findViewById<MaterialTextView>(R.id.tv_title)
+    val stepText = progressView.findViewById<MaterialTextView>(R.id.tv_step)
+    val progressText = progressView.findViewById<MaterialTextView>(R.id.tv_progress)
+    val outputText = progressView.findViewById<MaterialTextView>(R.id.tv_output)
+    val logScroll = progressView.findViewById<ScrollView>(R.id.log_scroll)
     val copyButton = progressView.findViewById<MaterialButton>(R.id.btn_copy)
     val closeButton = progressView.findViewById<MaterialButton>(R.id.btn_close)
-    
+
     val progressDialog = MaterialAlertDialogBuilder(context)
       .setView(progressView)
       .setCancelable(false)
       .create()
-    
+
     val outputBuilder = StringBuilder()
-    val installationResult = arrayOf(false)
-    
+    val taskResult = arrayOf(false)
+    var currentStepText = initialStep
+
     copyButton.visibility = View.GONE
     closeButton.visibility = View.GONE
-    
-    outputText.setTextSize(8f)
-    
+
+    titleText.text = title
+    stepText.text = currentStepText
+    progressText.text = context.getString(R.string.lsp_task_working)
+    progressBar.isIndeterminate = true
+
     copyButton.setOnClickListener {
       val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-      val clip = ClipData.newPlainText("Installation Output", outputBuilder.toString())
+      val clip = ClipData.newPlainText(context.getString(R.string.lsp_task_output_label), outputBuilder.toString())
       clipboard.setPrimaryClip(clip)
-      Toast.makeText(context, "Output copied to clipboard", Toast.LENGTH_SHORT).show()
+      Toast.makeText(context, context.getString(R.string.lsp_task_output_copied), Toast.LENGTH_SHORT).show()
     }
-    
+
     closeButton.setOnClickListener {
       progressDialog.dismiss()
-      onComplete?.invoke(installationResult[0])
+      onComplete?.invoke(taskResult[0])
     }
-    
+
     progressDialog.show()
-    
+
     scope.launch {
       try {
-        val installer = getLanguageServerInstaller(serverId)
-        installationResult[0] = withContext(Dispatchers.IO) {
-          installer.install { output ->
+        taskResult[0] = withContext(Dispatchers.IO) {
+          action { output ->
             scope.launch(Dispatchers.Main) {
               outputBuilder.append(output).append("\n")
-              val text = outputBuilder.toString()
-              outputText.setText(text)
-              // Move cursor to the end of the text
-              val lineCount = outputText.lineCount
-              if (lineCount > 0) {
-                val lastLine = lineCount - 1
-                val lastLineLength = outputText.text.getLine(lastLine).length
-                outputText.setSelection(Range(
-                  Position(lastLine, lastLineLength, -1),
-                  Position(lastLine, lastLineLength, -1)
-                ))
+              outputText.text = outputBuilder.toString()
+              val latestStep = output.lineSequence().lastOrNull()
+                ?.trim()
+                ?.replace(Regex("\\s+"), " ")
+                ?.takeIf { it.isNotEmpty() }
+                ?: initialStep
+              if (latestStep != currentStepText) {
+                currentStepText = latestStep
+                stepText.text = currentStepText
               }
+              logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
             }
           }
         }
-        
-        progressIndicator.visibility = View.GONE
-        if (installationResult[0]) {
-          outputBuilder.append("\nInstallation completed successfully!")
-          showSuccessfullyInstalledDialog(context)
+
+        progressBar.isIndeterminate = false
+        progressBar.progress = 100
+        progressText.text = "100%"
+
+        if (taskResult[0]) {
+          currentStepText = successStep
+          stepText.text = currentStepText
+          outputBuilder.append("\n").append(successTail)
         } else {
-          outputBuilder.append("\nInstallation failed. Please check the output above.")
+          currentStepText = failureStep
+          stepText.text = currentStepText
+          outputBuilder.append("\n").append(failureTail)
           copyButton.visibility = View.VISIBLE
         }
-        val text = outputBuilder.toString()
-        outputText.setText(text)
-        val lineCount = outputText.lineCount
-        if (lineCount > 0) {
-          val lastLine = lineCount - 1
-          val lastLineLength = outputText.text.getLine(lastLine).length
-          outputText.setSelection(Range(
-            Position(lastLine, lastLineLength, -1),
-            Position(lastLine, lastLineLength, -1)
-          ))
-        }
+
+        outputText.text = outputBuilder.toString()
+        logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
         closeButton.visibility = View.VISIBLE
-        
       } catch (e: Exception) {
-        installationResult[0] = false
-        progressIndicator.visibility = View.GONE
+        taskResult[0] = false
+        progressBar.isIndeterminate = false
+        progressBar.progress = 100
+        progressText.text = context.getString(R.string.lsp_task_failed)
+        currentStepText = failureStep
+        stepText.text = currentStepText
         outputBuilder.append("\nError: ${e.message}")
-        val text = outputBuilder.toString()
-        outputText.setText(text)
-        val lineCount = outputText.lineCount
-        if (lineCount > 0) {
-          val lastLine = lineCount - 1
-          val lastLineLength = outputText.text.getLine(lastLine).length
-          outputText.setSelection(Range(
-            Position(lastLine, lastLineLength, -1),
-            Position(lastLine, lastLineLength, -1)
-          ))
-        }
+        outputText.text = outputBuilder.toString()
+        logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
         copyButton.visibility = View.VISIBLE
         closeButton.visibility = View.VISIBLE
         e.printStackTrace()
@@ -238,16 +281,8 @@ class Setup(private val context: Context) {
     }
   }
   
-  private fun showSuccessfullyInstalledDialog(ctx: Context) {
-     MaterialAlertDialogBuilder(ctx)
-       .setTitle(ctx.getString(R.string.lsp_installed_title))
-       .setMessage(ctx.getString(R.string.lsp_installed_summary))
-       .setPositiveButton(ctx.getString(R.string.lsp_ok_button), null)
-       .show()
-  }
-  
   private fun getLanguageServerInstaller(serverId: String): ILanguageServerInstaller {
-    val className = "com.tom.rv2ide.setup.servers.${serverId}.${serverId.capitalize()}"
+    val className = "com.tom.rv2ide.setup.servers.${serverId.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }}"
     val clazz = Class.forName(className)
     val constructor = clazz.getDeclaredConstructor(Context::class.java)
     return constructor.newInstance(context) as ILanguageServerInstaller

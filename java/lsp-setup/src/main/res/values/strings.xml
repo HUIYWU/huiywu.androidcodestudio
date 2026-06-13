@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="installing_lsp">Installing language support</string>
+    <string name="lsp_task_working">Working...</string>
+    <string name="lsp_task_output_label">Task Output</string>
+    <string name="lsp_task_output_copied">Output copied to clipboard</string>
+    <string name="lsp_task_prepare_installation">Preparing installation...</string>
+    <string name="lsp_task_installation_completed">Installation completed</string>
+    <string name="lsp_task_installation_failed">Installation failed</string>
+    <string name="lsp_task_installation_completed_success">Installation completed successfully!</string>
+    <string name="lsp_task_installation_failed_detail">Installation failed. Please check the output above.</string>
+    <string name="lsp_task_failed">Failed</string>
+    <string name="lsp_task_prepare_clang_removal">Preparing clang removal...</string>
+    <string name="lsp_task_prepare_kotlin_removal">Preparing Kotlin removal...</string>
+    <string name="lsp_task_uninstallation_completed">Uninstallation completed</string>
+    <string name="lsp_task_uninstallation_failed">Uninstallation failed</string>
+    <string name="lsp_task_uninstallation_completed_success">Uninstallation completed successfully!</string>
+    <string name="lsp_task_uninstallation_failed_detail">Uninstallation failed. Please check the output above.</string>
+    <string name="lsp_task_logs">Logs</string>
+</resources>

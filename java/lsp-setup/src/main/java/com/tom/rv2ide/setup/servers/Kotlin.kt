@@ -13,13 +13,12 @@
  *
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
-*/
+ */
 
-package com.tom.rv2ide.setup.servers.kotlin
+package com.tom.rv2ide.setup.servers
 
 import android.content.Context
 import com.tom.rv2ide.preferences.internal.LSPPreferences
-import com.tom.rv2ide.setup.servers.ILanguageServerInstaller
 import com.tom.rv2ide.utils.Environment
 import java.io.File
 import java.io.FileOutputStream
@@ -181,6 +180,49 @@ class Kotlin(private val context: Context) : ILanguageServerInstaller {
       
     } catch (e: Exception) {
       onOutput("\nError during installation: ${e.message}")
+      e.printStackTrace()
+      false
+    }
+  }
+
+  fun uninstall(onOutput: (String) -> Unit): Boolean {
+    return try {
+      val backendId = activeBackendManifestId()
+      onOutput("Resolving Kotlin language server installation...")
+
+      if (backendId == "stub") {
+        onOutput("Stub backend does not require uninstall.")
+        return true
+      }
+
+      val manifest = runCatching { json.decodeFromString<Manifest>(URL(MANIFEST_URL).readText()) }.getOrNull()
+      val server = manifest?.let { selectServerItem(it, backendId) }
+      val serverDir = installRootFor(backendId, server)
+
+      onOutput("Target directory: ${serverDir.absolutePath}")
+
+      if (!serverDir.exists()) {
+        onOutput("Kotlin language server files not found.")
+        return true
+      }
+
+      onOutput("Removing Kotlin language server files...")
+      val deleted = serverDir.deleteRecursively()
+      if (!deleted) {
+        onOutput("Failed to remove Kotlin language server files.")
+        return false
+      }
+
+      onOutput("Verifying removal...")
+      val removed = !serverDir.exists()
+      if (removed) {
+        onOutput("Kotlin language server removed.")
+      } else {
+        onOutput("Removal verification failed.")
+      }
+      removed
+    } catch (e: Exception) {
+      onOutput("\nError during uninstall: ${e.message}")
       e.printStackTrace()
       false
     }

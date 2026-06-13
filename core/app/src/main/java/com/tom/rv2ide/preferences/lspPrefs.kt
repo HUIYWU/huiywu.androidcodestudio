@@ -18,6 +18,7 @@
 package com.tom.rv2ide.preferences
 
 import androidx.preference.Preference
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.app.BaseApplication
 import com.tom.rv2ide.lsp.kotlin.KotlinLspBackendId
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
@@ -27,8 +28,17 @@ import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_ENABLED
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_FORMAT_STYLE
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
+import com.tom.rv2ide.setup.Setup
+import com.tom.rv2ide.setup.servers.Clang
+import com.tom.rv2ide.setup.servers.Kotlin
+import com.tom.rv2ide.utils.AppRestartDialog
 import com.tom.rv2ide.utils.Environment
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import android.widget.Toast
 import kotlinx.parcelize.IgnoredOnParcel
 import kotlinx.parcelize.Parcelize
 
@@ -45,6 +55,7 @@ class LSPPreferencesScreen(
 
   init {
     addPreference(KotlinCategory())
+    addPreference(ClangCategory())
   }
 }
 
@@ -68,6 +79,79 @@ private class KotlinCategory(
 }
 
 @Parcelize
+private class ClangCategory(
+    override val key: String = "lsp_clang_category",
+    override val title: Int = string.clang,
+    override val summary: Int? = string.clang_lsp_category_summary,
+    override val icon: Int? = drawable.ic_clangd,
+    override val children: List<IPreference> = mutableListOf(),
+) : IPreferenceScreen() {
+
+  init {
+    addPreference(ClangLSP())
+    addPreference(ClangLspEnabled())
+  }
+}
+
+@Parcelize
+private class ClangLspEnabled(
+    override val key: String = "acs_clang_lsp_enabled",
+    override val title: Int = string.clang_lsp_enabled_title,
+    override val summary: Int? = string.clang_lsp_enabled_summary,
+    override val icon: Int? = drawable.ic_flick,
+) :
+    SwitchPreference(
+        setValue = { ClangLspState.enabled = it },
+        getValue = { ClangLspState.enabled },
+    )
+@Parcelize
+private class ClangLSP(
+    override val key: String = "lsp_clang_server",
+    override val title: Int = string.lsp_options_clang_title,
+    override val summary: Int? = string.lsp_options_clang_summary,
+    override val icon: Int? = drawable.ic_server,
+) :
+    LSPPreference(
+        hint = string.server_status,
+        getValue = { getStatus(isClangServerInstalled()) },
+        serverId = { "clang" },
+        isInstalled = ::isClangServerInstalled,
+    ) {
+
+  override fun onRequestDownload(context: android.content.Context, serverId: String) {
+    Setup(context).installLanguageServer("clang")
+  }
+  override fun onRequestUninstall(context: android.content.Context, serverId: String) {
+    showClangUninstallConfirmation(context)
+  }
+
+  private fun showClangUninstallConfirmation(context: android.content.Context) {
+    MaterialAlertDialogBuilder(context)
+        .setTitle(context.getString(string.lsp_server_uninstall_title))
+        .setMessage(context.getString(string.lsp_server_uninstall_message, "clang"))
+        .setPositiveButton(string.lsp_server_uninstall) { _, _ ->
+          Setup(context).uninstallLanguageServer(
+            title = context.getString(string.lsp_server_uninstalling, "clang"),
+            initialStep = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_prepare_clang_removal),
+            successStep = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_uninstallation_completed),
+            failureStep = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_uninstallation_failed),
+            successTail = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_uninstallation_completed_success),
+            failureTail = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_uninstallation_failed_detail),
+            onComplete = { success ->
+              if (success) {
+                AppRestartDialog.show(context)
+              }
+            },
+          ) { log ->
+            Clang(context).uninstall(log)
+          }
+        }
+        .setNegativeButton(android.R.string.cancel) { dialog, _ -> dialog.dismiss() }
+        .show()
+  }
+}
+
+@Parcelize
 private class KotlinLspEnabled(
     override val key: String = ACS_KOTLIN_LSP_ENABLED,
     override val title: Int = string.kotlin_lsp_enabled_title,
@@ -78,7 +162,6 @@ private class KotlinLspEnabled(
         setValue = LSPPreferences::kotlinLspEnabled::set,
         getValue = LSPPreferences::kotlinLspEnabled::get,
     )
-
 @Parcelize
 private class KotlinLSP(
     override val key: String = "lsp_kotlin_server",
@@ -91,7 +174,45 @@ private class KotlinLSP(
         getValue = { getStatus(isActiveKotlinBackendInstalled()) },
         serverId = { activeKotlinBackendManifestId() },
         isInstalled = ::isActiveKotlinBackendInstalled,
-    )
+    ) {
+
+  override fun onRequestDownload(context: android.content.Context, serverId: String) {
+    if (serverId == "stub") {
+      Toast.makeText(context, context.getString(string.status_installed), Toast.LENGTH_SHORT).show()
+      return
+    }
+    Setup(context).installLanguageServer("kotlin")
+  }
+
+  override fun onRequestUninstall(context: android.content.Context, serverId: String) {
+    if (serverId == "stub") {
+      Toast.makeText(context, context.getString(string.status_installed), Toast.LENGTH_SHORT).show()
+      return
+    }
+    MaterialAlertDialogBuilder(context)
+        .setTitle(context.getString(string.lsp_server_uninstall_title))
+        .setMessage(context.getString(string.lsp_server_uninstall_message, serverId))
+        .setPositiveButton(string.lsp_server_uninstall) { _, _ ->
+          Setup(context).uninstallLanguageServer(
+            title = context.getString(string.lsp_server_uninstalling, serverId),
+            initialStep = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_prepare_kotlin_removal),
+            successStep = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_uninstallation_completed),
+            failureStep = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_uninstallation_failed),
+            successTail = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_uninstallation_completed_success),
+            failureTail = context.getString(com.tom.rv2ide.setup.R.string.lsp_task_uninstallation_failed_detail),
+            onComplete = { success ->
+              if (success) {
+                AppRestartDialog.show(context)
+              }
+            },
+          ) { log ->
+            Kotlin(context).uninstall(log)
+          }
+        }
+        .setNegativeButton(android.R.string.cancel) { dialog, _ -> dialog.dismiss() }
+        .show()
+  }
+}
 
 @Parcelize
 private class KotlinBackend(
@@ -121,7 +242,6 @@ private class KotlinBackend(
     )
   }
 
-
   override fun onSelectionChanged(
       preference: Preference,
       entry: PreferenceChoices.Entry,
@@ -138,7 +258,6 @@ private class KotlinBackend(
     LSPPreferences.kotlinLspBackend = selected
   }
 }
-
 
 @Parcelize
 private class KotlinFormatStyle(
@@ -262,8 +381,16 @@ private fun isActiveKotlinBackendInstalled(): Boolean =
 private fun isDirectoryInstalled(dir: File): Boolean {
   return dir.exists() && dir.isDirectory && dir.listFiles()?.isNotEmpty() == true
 }
-
 private fun isCCppServerInstalled(): Boolean {
   val serverDir = File(Environment.HOME, "acs/servers/c_cpp")
   return serverDir.exists() && serverDir.isDirectory && serverDir.listFiles()?.isNotEmpty() == true
 }
+
+private fun isClangServerInstalled(): Boolean {
+  return Clang(BaseApplication.getBaseInstance()).isInstalled()
+}
+
+private object ClangLspState {
+  var enabled: Boolean = false
+}
+

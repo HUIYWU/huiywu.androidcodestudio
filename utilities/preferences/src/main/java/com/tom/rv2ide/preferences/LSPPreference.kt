@@ -42,7 +42,6 @@ import org.json.JSONObject
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
-
 abstract class LSPPreference(
     val hint: Int? = null,
     val setValue: ((Any) -> Unit)? = null,
@@ -67,12 +66,12 @@ abstract class LSPPreference(
       if (installed) {
         // Show uninstall button when installed
         dialog.setNeutralButton(string.lsp_server_uninstall) { _, _ ->
-          showUninstallConfirmation(dialog.context, resolvedServerId)
+          onRequestUninstall(dialog.context, resolvedServerId)
         }
       } else {
         // Show download button when not installed
         dialog.setNeutralButton(string.updater_download) { _, _ ->
-          downloadServer(dialog.context, resolvedServerId)
+          onRequestDownload(dialog.context, resolvedServerId)
         }
 
         // Fetch server info
@@ -85,6 +84,14 @@ abstract class LSPPreference(
 
     dialog.setPositiveButton(android.R.string.ok) { iface, _ -> iface.dismiss() }
     dialog.setNegativeButton(android.R.string.cancel) { iface, _ -> iface.dismiss() }
+  }
+
+  protected open fun onRequestDownload(context: android.content.Context, serverId: String) {
+    downloadServer(context, serverId)
+  }
+
+  protected open fun onRequestUninstall(context: android.content.Context, serverId: String) {
+    showUninstallConfirmation(context, serverId)
   }
 
   protected open fun onConfigureTextView(textView: MaterialTextView) {
