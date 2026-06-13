@@ -203,7 +203,207 @@ class ClangWorkspaceSetup(private val context: Context, private val workspace: I
             includeHiddenDirs = true,
             excludedDirNames = EXCLUDED_DIR_NAMES - ".cxx" - ".externalNativeBuild",
         )
-    return selectBestCompileCommands(projectDir, discoveredCandidates)
+    selectBestCompileCommands(projectDir, discoveredCandidates)?.let { return it }
+
+    val binaryCandidates =
+        findFilesByName(
+            dir = projectDir,
+            name = "compile_commands.json.bin",
+            maxDepth = 8,
+            includeHiddenDirs = true,
+            excludedDirNames = EXCLUDED_DIR_NAMES - ".cxx" - ".externalNativeBuild",
+        )
+    return reconstructCompileCommandsFromBinary(projectDir, binaryCandidates)
+  }
+
+  /**
+   * Some Android Gradle ndk-build variants do not emit a text compile_commands.json, but instead
+   * store equivalent compilation metadata in compile_commands.json.bin plus neighboring
+   * android_gradle_build*.json files. This recovery path reconstructs a standard JSON compilation
+   * database heuristically from those artifacts so clangd can still use the authoritative NDK /
+   * sysroot / prefab flags instead of falling back to ACS-generated defaults.
+   */
+  private fun reconstructCompileCommandsFromBinary(projectDir: File, candidates: List<File>): File? {
+    if (candidates.isEmpty()) {
+      return null
+    }
+
+    val selected =
+        candidates
+            .distinctBy { it.absolutePath }
+            .sortedWith(
+                compareByDescending<File> { it.absolutePath.contains("/.cxx/") }
+                    .thenByDescending { it.absolutePath.contains("/Debug/") }
+                    .thenByDescending { it.absolutePath.contains("/RelWithDebInfo/") }
+                    .thenByDescending { it.absolutePath.contains("/Release/") }
+                    .thenBy { it.absolutePath.length }
+            )
+            .firstOrNull() ?: return null
+
+    val reconstructed = reconstructCompileCommandsFromBinary(projectDir, selected)
+    if (reconstructed != null) {
+      ClangLogs.info(
+          "Reconstructed compile_commands.json from ndk-build binary metadata: source={}, output={}",
+          selected.absolutePath,
+          reconstructed.absolutePath,
+      )
+    }
+    return reconstructed
+  }
+
+  private fun reconstructCompileCommandsFromBinary(projectDir: File, binaryFile: File): File? {
+    return try {
+      val metadataDir = binaryFile.parentFile ?: return null
+      val gradleBuildJson = File(metadataDir, "android_gradle_build.json")
+      if (!gradleBuildJson.isFile) {
+        ClangLogs.debug("Skipping binary compile db reconstruction because metadata json is missing: {}", gradleBuildJson.absolutePath)
+        return null
+      }
+
+      val buildMetadata = JsonParser.parseString(gradleBuildJson.readText()).asJsonObject
+      val toolchains = buildMetadata.getAsJsonObject("toolchains") ?: return null
+      val firstToolchain = toolchains.entrySet().firstOrNull()?.value?.asJsonObject ?: return null
+      val compiler = firstToolchain.get("cppCompilerExecutable")?.asString ?: return null
+
+      val buildFiles = buildMetadata.getAsJsonArray("buildFiles")
+      val directory =
+          buildFiles?.firstOrNull()?.asString?.let { File(it).parentFile?.parentFile?.parentFile?.absolutePath }
+              ?: projectDir.absolutePath
+
+      val printableRuns = extractPrintableRuns(binaryFile.readBytes())
+      val publicTokens = mutableListOf<String>()
+      for (token in printableRuns) {
+        if (token.endsWith(".cpp") || token.endsWith(".o")) {
+          break
+        }
+        publicTokens.add(token)
+      }
+
+      val commandTokens = mutableListOf<String>()
+      var started = false
+      val seen = linkedSetOf<String>()
+      publicTokens.forEach { token ->
+        when {
+          token == "C/C++ Build Metadata" -> return@forEach
+          token.contains("clang++") && token.startsWith("/data/") -> {
+            started = true
+            if (seen.add(token)) {
+              commandTokens.add(token)
+            }
+          }
+          !started -> return@forEach
+          token == "myapplication" -> return@forEach
+          token.startsWith("/data/") -> {
+            if (
+                token.contains("sysroot") ||
+                    token.contains("/src/main/cpp") ||
+                    token.contains("/prefab/modules/")
+            ) {
+              val normalized =
+                  if (token.contains("/src/main/cpp") || token.contains("/prefab/modules/")) {
+                    "-I$token"
+                  } else {
+                    token
+                  }
+              if (seen.add(normalized)) {
+                commandTokens.add(normalized)
+              }
+            }
+          }
+          else -> {
+            if (seen.add(token)) {
+              commandTokens.add(token)
+            }
+          }
+        }
+      }
+
+      if (commandTokens.isEmpty()) {
+        commandTokens.add(compiler)
+      }
+
+      val sourceFiles =
+          printableRuns
+              .filter { it.endsWith(".cpp") && it.contains("/src/main/cpp/") }
+              .distinct()
+      if (sourceFiles.isEmpty()) {
+        return null
+      }
+
+      val entries = JsonArray()
+      sourceFiles.forEach { sourceFile ->
+        entries.add(
+            JsonObject().apply {
+              addProperty("directory", directory)
+              addProperty("file", sourceFile)
+              addProperty("command", (commandTokens + listOf("-c", sourceFile)).joinToString(" "))
+            }
+        )
+      }
+
+      val outDir =
+          File(Environment.PREFIX, "clanglsp/reconstructed/${binaryFile.absolutePath.hashCode()}").apply {
+            mkdirs()
+          }
+      val output = File(outDir, "compile_commands.json")
+      output.writeText(entries.toString())
+      output
+    } catch (e: Exception) {
+      ClangLogs.warn("Failed to reconstruct compile_commands from binary metadata: {}", binaryFile.absolutePath, e)
+      null
+    }
+  }
+
+  private fun extractPrintableRuns(bytes: ByteArray): List<String> {
+    val runs = mutableListOf<String>()
+    val current = StringBuilder()
+
+    fun flush() {
+      if (current.length >= 4) {
+        runs.add(normalizePrintableRun(current.toString()))
+      }
+      current.setLength(0)
+    }
+
+    bytes.forEach { byteValue ->
+      val ch = byteValue.toInt() and 0xFF
+      val printable = ch in 32..126 || ch == 9 || ch == 10 || ch == 13
+      if (printable) {
+        current.append(ch.toChar())
+      } else {
+        flush()
+      }
+    }
+    flush()
+    return runs
+  }
+
+  private fun normalizePrintableRun(value: String): String {
+    val trimmed = value.trim()
+    val includeIndex = trimmed.indexOf("-I/")
+    if (includeIndex >= 0) {
+      return trimmed.substring(includeIndex)
+    }
+
+    val anchors =
+        listOf(
+            "/data/",
+            "-target",
+            "--sysroot",
+            "-f",
+            "-W",
+            "-D",
+            "-U",
+            "aarch64-",
+            "myapplication",
+        )
+    anchors.forEach { anchor ->
+      val idx = trimmed.indexOf(anchor)
+      if (idx >= 0) {
+        return trimmed.substring(idx)
+      }
+    }
+    return trimmed
   }
 
   /**
