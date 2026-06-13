@@ -101,6 +101,12 @@ object GameSources {
           # https://developer.android.com/ndk/guides/android_mk
           
           LOCAL_PATH := $(call my-dir)
+
+          # Gradle/AGP exposes Prefab ndk-build packages through this injected import path.
+          # Make game-activity discoverable by import-module below.
+          ifdef NDK_GRADLE_INJECTED_IMPORT_PATH
+          NDK_MODULE_PATH += $(subst $(space),:,$(NDK_GRADLE_INJECTED_IMPORT_PATH))
+          endif
           
           include $(CLEAR_VARS)
           
@@ -116,9 +122,11 @@ object GameSources {
               Shader.cpp \
               TextureAsset.cpp \
               Utility.cpp
+
+          LOCAL_CPPFLAGS += -std=c++17
           
-          # Add additional include directories if needed, e.g.:
-          # LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
+          # Link against the GameActivity static library exposed from the prefab package.
+          LOCAL_STATIC_LIBRARIES := game-activity_static
           
           # Add libraries to link against
           LOCAL_LDLIBS := -llog -landroid -lEGL -lGLESv3 -ljnigraphics
@@ -126,18 +134,9 @@ object GameSources {
           # Force linker to keep the JNI entry point for GameActivity
           LOCAL_LDFLAGS += -u Java_com_google_androidgamesdk_GameActivity_initializeNativeCode
           
-          # Include the prebuilt game-activity static library (from Google’s Game SDK)
-          # Adjust the path if needed depending on where the library is located.
-          # Example path if you have imported the GameActivity SDK:
-          # $(call import-add-path, $(NDK_PROJECT_PATH)/../game-activity/prebuilt)
-          # $(call import-module, game-activity)
-          # If you have a static lib file instead, link it directly:
-          # LOCAL_STATIC_LIBRARIES := game-activity_static
-          
           include $(BUILD_SHARED_LIBRARY)
-          
-          # Uncomment if using prebuilt static library for game-activity
-          # include $(PREBUILT_STATIC_LIBRARY)
+
+          $(call import-module,prefab/game-activity)
       """
           .trimIndent()
 

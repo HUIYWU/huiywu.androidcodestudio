@@ -327,7 +327,7 @@ class NativeCpp : Template {
                     versionName = "1.0",
                 )
             )
-            if (!Options.OPT_BUILD_SYSTEM_USE_CMAKE) {
+            if (!options.useCMake) {
               externalNativeBuild(
                   ExternalNativeBuild(ndkBuild = NdkBuildConfig(path = "src/main/cpp/Android.mk"))
               )
@@ -472,7 +472,7 @@ class NativeCpp : Template {
           )
 
           // Create build system files based on option
-          if (Options.OPT_BUILD_SYSTEM_USE_CMAKE) {
+          if (options.useCMake) {
             // CMake build system
             val cmakeContent = CppSources.jniBuildSystemCMake()
             activityWriter.createFile(nativeDir, "CMakeLists", "txt", cmakeContent)

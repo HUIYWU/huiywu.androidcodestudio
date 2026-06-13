@@ -348,7 +348,7 @@ class GameActivity : Template {
                     versionName = "1.0",
                 )
             )
-            if (!Options.OPT_BUILD_SYSTEM_USE_CMAKE) {
+            if (!options.useCMake) {
               externalNativeBuild(
                   ExternalNativeBuild(ndkBuild = NdkBuildConfig(path = "src/main/cpp/Android.mk"))
               )
@@ -454,14 +454,16 @@ class GameActivity : Template {
           createIfNotExists(nativeDir)
 
           // Create build system files based on option
-          if (Options.OPT_BUILD_SYSTEM_USE_CMAKE) {
+          if (options.useCMake) {
             // CMake build system
             val cmakeContent = GameSources.jniBuildSystemCMake()
             activityWriter.createFile(nativeDir, "CMakeLists", "txt", cmakeContent)
           } else {
             // NDK build system
             val androidMkContent = GameSources.jniBuildSystemNdk()
+            val applicationMkContent = GameSources.jniBuildSystemApplicatNdk()
             activityWriter.createFile(nativeDir, "Android", "mk", androidMkContent)
+            activityWriter.createFile(nativeDir, "Application", "mk", applicationMkContent)
           }
 
           val valuesDir = File(projectRoot, "app/src/main/res/values")

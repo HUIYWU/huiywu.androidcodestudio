@@ -60,5 +60,6 @@ data class TemplateOptions(
     val languageType: LanguageType,
     val minSdk: Int,
     val useKts: Boolean,
+    val useCMake: Boolean,
     val saveLocation: File,
 )

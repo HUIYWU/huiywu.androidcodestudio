@@ -385,7 +385,15 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
           t.create(
               ctx,
               listener,
-              TemplateOptions(proj, pkg, lang, sdkApi, Options.OPT_USE_GRADLE_KTS, File(savePath)),
+              TemplateOptions(
+                  proj,
+                  pkg,
+                  lang,
+                  sdkApi,
+                  Options.OPT_USE_GRADLE_KTS,
+                  Options.OPT_BUILD_SYSTEM_USE_CMAKE,
+                  File(savePath),
+              ),
           )
         } catch (e: Exception) {
           listener?.onTemplateCreated(false, "Error: ${e.message}")
