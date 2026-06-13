@@ -581,7 +581,9 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
         .filter(::isLikelyAndroidNativeProject)
         .any { moduleDir ->
           hasNativeCompileCommandsMetadata(File(moduleDir, ".cxx"), maxDepth = 8) ||
-              hasNativeCompileCommandsMetadata(File(moduleDir, ".externalNativeBuild"), maxDepth = 8)
+              hasNativeCompileCommandsMetadata(File(moduleDir, ".externalNativeBuild"), maxDepth = 8) ||
+              hasNativeCompileCommandsMetadata(File(moduleDir, "build/.cxx"), maxDepth = 8) ||
+              hasNativeCompileCommandsMetadata(File(moduleDir, "build/.externalNativeBuild"), maxDepth = 8)
         }
   }
 
