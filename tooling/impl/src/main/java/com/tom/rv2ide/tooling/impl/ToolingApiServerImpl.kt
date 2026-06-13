@@ -580,9 +580,32 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
         }
         .filter(::isLikelyAndroidNativeProject)
         .any { moduleDir ->
-          findCompileCommandsUnder(File(moduleDir, ".cxx"), maxDepth = 8).isNotEmpty() ||
-              findCompileCommandsUnder(File(moduleDir, ".externalNativeBuild"), maxDepth = 8).isNotEmpty()
+          hasNativeCompileCommandsMetadata(File(moduleDir, ".cxx"), maxDepth = 8) ||
+              hasNativeCompileCommandsMetadata(File(moduleDir, ".externalNativeBuild"), maxDepth = 8)
         }
+  }
+
+  private fun hasNativeCompileCommandsMetadata(
+      dir: File,
+      maxDepth: Int,
+      currentDepth: Int = 0,
+  ): Boolean {
+    if (currentDepth > maxDepth || !dir.exists() || !dir.isDirectory) {
+      return false
+    }
+
+    dir.listFiles()?.forEach { file ->
+      when {
+        file.isFile &&
+            (file.name == "compile_commands.json" || file.name == "compile_commands.json.bin") -> {
+          return true
+        }
+        file.isDirectory && hasNativeCompileCommandsMetadata(file, maxDepth, currentDepth + 1) -> {
+          return true
+        }
+      }
+    }
+    return false
   }
 
   private fun isLikelyAndroidNativeProject(projectDir: File): Boolean {
@@ -631,25 +654,6 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       when {
         file.isFile && file.name == name -> matches.add(file)
         file.isDirectory -> matches.addAll(findFilesByName(file, name, maxDepth, currentDepth + 1))
-      }
-    }
-    return matches
-  }
-
-  private fun findCompileCommandsUnder(
-      dir: File,
-      maxDepth: Int,
-      currentDepth: Int = 0,
-  ): List<File> {
-    if (currentDepth > maxDepth || !dir.exists() || !dir.isDirectory) {
-      return emptyList()
-    }
-
-    val matches = mutableListOf<File>()
-    dir.listFiles()?.forEach { file ->
-      when {
-        file.isFile && file.name == "compile_commands.json" -> matches.add(file)
-        file.isDirectory -> matches.addAll(findCompileCommandsUnder(file, maxDepth, currentDepth + 1))
       }
     }
     return matches
