@@ -211,7 +211,7 @@ class ClangWorkspaceSetup(private val context: Context, private val workspace: I
             name = "compile_commands.json.bin",
             maxDepth = 8,
             includeHiddenDirs = true,
-            excludedDirNames = EXCLUDED_DIR_NAMES - ".cxx" - ".externalNativeBuild",
+            excludedDirNames = EXCLUDED_DIR_NAMES - ".cxx" - ".externalNativeBuild" - "build",
         )
     return reconstructCompileCommandsFromBinary(projectDir, binaryCandidates)
   }
