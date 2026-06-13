@@ -93,8 +93,14 @@ object GameSources {
       }
   """
           .trimIndent()
-
   // Android.mk
+  //
+  // Unlike the plain NativeCpp template, GameActivity's native sources depend on the
+  // game-activity Prefab package (headers + static library). When Gradle invokes ndk-build,
+  // it injects the resolved Prefab import roots through NDK_GRADLE_INJECTED_IMPORT_PATH.
+  // This template consumes that path, makes the prefab module discoverable via
+  // import-module, and links against game-activity_static so the generated project can
+  // build without manual Android.mk fixes.
   fun jniBuildSystemNdk(): String =
       """
            # For more information about using Android.mk:
@@ -113,6 +119,7 @@ object GameSources {
           # Module name — must match the name used in Java/Kotlin when loading:
           # System.loadLibrary("myapplication")
           LOCAL_MODULE := myapplication
+
           
           # Source files
           LOCAL_SRC_FILES := \

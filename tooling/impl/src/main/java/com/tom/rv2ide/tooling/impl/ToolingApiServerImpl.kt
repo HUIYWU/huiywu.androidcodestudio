@@ -512,25 +512,40 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
   }
 
   /**
-   * For Android/CMake modules opened before any native build has run, clang fallback flags are not
+   * For Android native modules opened before any native build has run, clang fallback flags are not
    * sufficient to resolve NDK sysroot, prefab and imported target include chains. We therefore run a
-   * lightweight native configuration task during initialize so AGP emits the authoritative
-   * `.cxx/.../compile_commands.json` before clangd starts.
+   * lightweight native configuration task during initialize so AGP emits the authoritative native
+   * build metadata under `.cxx/...` before clangd starts.
    *
-   * `configureCMake<Variant>` has been validated as the lightest stable task that produces usable
-   * compile_commands across ABIs, so it is preferred over heavier native build tasks.
+   * `configureCMake<Variant>` remains the preferred path for CMake projects, while
+   * `configureNdkBuild<Variant>` is now treated as the equivalent lightweight entry point for
+   * traditional ndk-build projects that also generate the `.cxx` directory and compile db metadata.
    */
   private fun runAndroidNativeCompileCommandsWarmup(
       connection: ProjectConnection,
       project: ProjectImpl,
       discoveredTasks: List<String>,
   ) {
-    val configureTasks = discoveredTasks.filter { it.substringAfterLast(':').startsWith("configureCMake") }
+    val configureTasks =
+        discoveredTasks.filter { task ->
+          val name = task.substringAfterLast(':')
+          name.startsWith("configureCMake") || name.startsWith("configureNdkBuild")
+        }
     if (configureTasks.isEmpty()) {
       return
     }
 
-    val targetTask = configureTasks.first()
+    val targetTask =
+        configureTasks.sortedWith(
+            compareBy<String> {
+                  when {
+                    it.substringAfterLast(':').startsWith("configureCMake") -> 0
+                    it.substringAfterLast(':').startsWith("configureNdkBuild") -> 1
+                    else -> 2
+                  }
+                }
+                .thenBy { it.length }
+        ).first()
     val hadCompileCommandsBefore = projectHasNativeCompileCommands(project)
     if (hadCompileCommandsBefore) {
       log.info(
@@ -678,6 +693,7 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     }
 
     addBestMatchingTask(listOf("configurecmake"))
+    addBestMatchingTask(listOf("configurendkbuild"))
     addBestMatchingTask(listOf("generatejsonmodel"))
     addBestMatchingTask(listOf("externalnativebuild"))
 

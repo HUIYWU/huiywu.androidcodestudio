@@ -453,7 +453,9 @@ class GameActivity : Template {
           val nativeDir = File(projectRoot, "app/src/main/cpp")
           createIfNotExists(nativeDir)
 
-          // Create build system files based on option
+          // GameActivity's ndk-build path needs both Android.mk and Application.mk.
+          // Application.mk carries STL / C++ standard settings and avoids generating a
+          // project that immediately fails with missing STL configuration.
           if (options.useCMake) {
             // CMake build system
             val cmakeContent = GameSources.jniBuildSystemCMake()

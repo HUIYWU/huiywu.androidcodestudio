@@ -76,7 +76,13 @@ class ClangWorkspaceSetup(private val context: Context, private val workspace: I
     try {
       val projectDir = workspace.getProjectDir()
       findExistingCompileCommands(projectDir)?.let { existing ->
-        logCompileCommandsSelection(existing, projectDir, source = "existing")
+        val source =
+            if (existing.absolutePath.contains("/clanglsp/reconstructed/")) {
+              "reconstructed-binary"
+            } else {
+              "existing"
+            }
+        logCompileCommandsSelection(existing, projectDir, source = source)
         return existing.parentFile?.absolutePath
       }
 
@@ -251,6 +257,12 @@ class ClangWorkspaceSetup(private val context: Context, private val workspace: I
     return reconstructed
   }
 
+  /**
+   * Reconstruct a text compile_commands.json from ndk-build binary metadata and write it to an
+   * ACS-managed derived directory under clanglsp/reconstructed/ instead of mutating project build
+   * outputs. The binary metadata already encodes real compiler, target, sysroot, include and TU
+   * file information; this function normalizes those fragments into standard clangd entries.
+   */
   private fun reconstructCompileCommandsFromBinary(projectDir: File, binaryFile: File): File? {
     return try {
       val metadataDir = binaryFile.parentFile ?: return null
