@@ -22,6 +22,7 @@ package com.tom.rv2ide.preferences.internal
  */
 @Suppress("MemberVisibilityCanBePrivate")
 object LSPPreferences {
+  const val ACS_CLANG_LSP_ENABLED = "acs_clang_lsp_enabled"
   const val ACS_KOTLIN_LSP_FORMAT_STYLE = "acs_kotlin_lsp_format_style"
   const val ACS_KOTLIN_LSP_BACKEND = "acs_kotlin_lsp_backend"
   const val ACS_KOTLIN_LSP_ENABLED = "acs_kotlin_lsp_enabled"
@@ -36,6 +37,11 @@ object LSPPreferences {
     set(value) {
       prefManager.putString(ACS_KOTLIN_LSP_FORMAT_STYLE, value)
     }
+  var clangLspEnabled: Boolean
+    get() = prefManager.getBoolean(ACS_CLANG_LSP_ENABLED, true)
+    set(value) {
+      prefManager.putBoolean(ACS_CLANG_LSP_ENABLED, value)
+    }
 
   var kotlinLspEnabled: Boolean
     get() = prefManager.getBoolean(ACS_KOTLIN_LSP_ENABLED, true)
@@ -44,6 +50,7 @@ object LSPPreferences {
     }
 
   var kotlinLspBackend: String
+
     get() {
       val stored = prefManager.getString(ACS_KOTLIN_LSP_BACKEND, DEFAULT_KOTLIN_LSP_BACKEND)
       val normalized =

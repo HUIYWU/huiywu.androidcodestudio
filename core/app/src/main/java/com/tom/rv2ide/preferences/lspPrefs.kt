@@ -24,8 +24,10 @@ import com.tom.rv2ide.lsp.kotlin.KotlinLspBackendId
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.preferences.internal.LSPPreferences
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_BACKEND
+import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_CLANG_LSP_ENABLED
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_ENABLED
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_FORMAT_STYLE
+
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.setup.Setup
@@ -95,15 +97,17 @@ private class ClangCategory(
 
 @Parcelize
 private class ClangLspEnabled(
-    override val key: String = "acs_clang_lsp_enabled",
+    override val key: String = ACS_CLANG_LSP_ENABLED,
+
     override val title: Int = string.clang_lsp_enabled_title,
     override val summary: Int? = string.clang_lsp_enabled_summary,
     override val icon: Int? = drawable.ic_flick,
 ) :
     SwitchPreference(
-        setValue = { ClangLspState.enabled = it },
-        getValue = { ClangLspState.enabled },
+        setValue = LSPPreferences::clangLspEnabled::set,
+        getValue = LSPPreferences::clangLspEnabled::get,
     )
+
 @Parcelize
 private class ClangLSP(
     override val key: String = "lsp_clang_server",
