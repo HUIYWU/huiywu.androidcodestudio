@@ -10,7 +10,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
-import android.widget.ArrayAdapter
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -128,9 +127,10 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private fun setupDropdowns(ctx: Context) {
     val languageItems = arrayOf(ctx.getString(R.string.kotlin), ctx.getString(R.string.java))
-    binding.languageInput.applyDropdownPopupStyle()
-    binding.languageInput.setAdapter(createDropdownAdapter(languageItems))
+binding.languageInput.applyDropdownPopupStyle()
     binding.languageInput.apply {
+      setSimpleItems(languageItems)
+
       setText(languageItems[0], false)
       updateLanguageIcon(languageItems[0])
       setOnClickListener { showDropDown() }
@@ -143,9 +143,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     val minSdkDisplay = sdkValues.map { it.displayName() }.toTypedArray()
     val defIdx = sdkValues.indexOfFirst { it.api == 21 }.coerceAtLeast(0)
     Options.OPT_MIN_SDK = sdkValues.getOrNull(defIdx)?.api ?: 21
-    binding.minSdkInput.applyDropdownPopupStyle()
-    binding.minSdkInput.setAdapter(createDropdownAdapter(minSdkDisplay))
+        binding.minSdkInput.applyDropdownPopupStyle()
     binding.minSdkInput.apply {
+      setSimpleItems(minSdkDisplay)
       setText(minSdkDisplay[defIdx], false)
       setOnClickListener { showDropDown() }
       setOnItemClickListener { _, _, position, _ ->
@@ -155,8 +155,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
     val nativeLangValues = arrayOf("C++", "C")
     binding.nativeLanguageInput.applyDropdownPopupStyle()
-    binding.nativeLanguageInput.setAdapter(createDropdownAdapter(nativeLangValues))
     binding.nativeLanguageInput.apply {
+      setSimpleItems(nativeLangValues)
       setText(nativeLangValues[0], false)
       updateNativeLanguageIcon(nativeLangValues[0])
       setOnClickListener { showDropDown() }
@@ -173,10 +173,6 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
     )
     dropDownVerticalOffset = dpToPx(8)
-  }
-
-  private fun createDropdownAdapter(items: Array<String>): ArrayAdapter<String> {
-    return ArrayAdapter(requireContext(), R.layout.item_atc_dropdown, items)
   }
 
   private fun dpToPx(dp: Int): Int {

@@ -121,7 +121,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="none"
-            android:focusable="false" />
+            android:focusable="false"
+            app:simpleItemSelectedColor="?attr/colorSecondaryContainer"
+            app:simpleItemSelectedRippleColor="?attr/colorSecondaryContainer" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
@@ -138,7 +140,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="none"
-            android:focusable="false" />
+            android:focusable="false"
+            app:simpleItemSelectedColor="?attr/colorSecondaryContainer"
+            app:simpleItemSelectedRippleColor="?attr/colorSecondaryContainer" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
@@ -157,7 +161,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="none"
-            android:focusable="false" />
+            android:focusable="false"
+            app:simpleItemSelectedColor="?attr/colorSecondaryContainer"
+            app:simpleItemSelectedRippleColor="?attr/colorSecondaryContainer" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton
