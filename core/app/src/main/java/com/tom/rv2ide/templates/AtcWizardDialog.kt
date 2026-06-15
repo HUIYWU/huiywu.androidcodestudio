@@ -16,7 +16,6 @@ import android.widget.LinearLayout
 import android.widget.ListPopupWindow
 import android.widget.TextView
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
-import com.google.android.material.textfield.TextInputLayout
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.provider.DocumentsContractCompat
@@ -138,8 +137,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     updateLanguageIcon(languageItems[selectedLanguageIndex])
     val showLanguageDropdown = {
 showAtcDropdown(
-            anchor = binding.languageInputLayout,
-            widthSource = binding.languageInput,
+            anchor = binding.languageInput,
           items = languageItems,
           selectedIndexProvider = { selectedLanguageIndex },
       ) { position ->
@@ -160,8 +158,7 @@ showAtcDropdown(
     binding.minSdkInput.setText(minSdkDisplay[selectedMinSdkIndex], false)
     val showMinSdkDropdown = {
 showAtcDropdown(
-            anchor = binding.minSdkInputLayout,
-            widthSource = binding.minSdkInput,
+            anchor = binding.minSdkInput,
           items = minSdkDisplay,
           selectedIndexProvider = { selectedMinSdkIndex },
       ) { position ->
@@ -180,8 +177,7 @@ showAtcDropdown(
     updateNativeLanguageIcon(nativeLangValues[selectedNativeLanguageIndex])
     val showNativeLanguageDropdown = {
 showAtcDropdown(
-            anchor = binding.nativeLanguageInputLayout,
-            widthSource = binding.nativeLanguageInput,
+            anchor = binding.nativeLanguageInput,
           items = nativeLangValues,
           selectedIndexProvider = { selectedNativeLanguageIndex },
       ) { position ->
@@ -204,8 +200,7 @@ showAtcDropdown(
   }
 
   private fun showAtcDropdown(
-      anchor: TextInputLayout,
-      widthSource: MaterialAutoCompleteTextView,
+      anchor: MaterialAutoCompleteTextView,
       items: Array<String>,
       selectedIndexProvider: () -> Int,
       onSelected: (Int) -> Unit,
@@ -221,7 +216,7 @@ showAtcDropdown(
               ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
           )
           verticalOffset = 0
-          width = widthSource.width
+          width = anchor.width
           setOnItemClickListener { _, _, position, _ ->
             onSelected(position)
             dismiss()
