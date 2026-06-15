@@ -135,7 +135,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.languageInput.applyDropdownFieldStyle()
     binding.languageInput.setText(languageItems[selectedLanguageIndex], false)
     updateLanguageIcon(languageItems[selectedLanguageIndex])
-    binding.languageInput.setOnClickListener {
+    val showLanguageDropdown = {
       showAtcDropdown(
           anchor = binding.languageInput,
           items = languageItems,
@@ -146,6 +146,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         updateLanguageIcon(languageItems[selectedLanguageIndex])
       }
     }
+    binding.languageInput.setOnClickListener { showLanguageDropdown() }
+    binding.languageInputLayout.setEndIconOnClickListener { showLanguageDropdown() }
 
     val sdkValues = Sdk.values()
     val minSdkDisplay = sdkValues.map { it.displayName() }.toTypedArray()
@@ -154,7 +156,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     Options.OPT_MIN_SDK = sdkValues.getOrNull(defIdx)?.api ?: 21
     binding.minSdkInput.applyDropdownFieldStyle()
     binding.minSdkInput.setText(minSdkDisplay[selectedMinSdkIndex], false)
-    binding.minSdkInput.setOnClickListener {
+    val showMinSdkDropdown = {
       showAtcDropdown(
           anchor = binding.minSdkInput,
           items = minSdkDisplay,
@@ -165,13 +167,15 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         Options.OPT_MIN_SDK = sdkValues.getOrNull(selectedMinSdkIndex)?.api ?: 21
       }
     }
+    binding.minSdkInput.setOnClickListener { showMinSdkDropdown() }
+    binding.minSdkInputLayout.setEndIconOnClickListener { showMinSdkDropdown() }
 
     val nativeLangValues = arrayOf("C++", "C")
     var selectedNativeLanguageIndex = 0
     binding.nativeLanguageInput.applyDropdownFieldStyle()
     binding.nativeLanguageInput.setText(nativeLangValues[selectedNativeLanguageIndex], false)
     updateNativeLanguageIcon(nativeLangValues[selectedNativeLanguageIndex])
-    binding.nativeLanguageInput.setOnClickListener {
+    val showNativeLanguageDropdown = {
       showAtcDropdown(
           anchor = binding.nativeLanguageInput,
           items = nativeLangValues,
@@ -184,6 +188,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         updateNativeLanguageIcon(selected)
       }
     }
+    binding.nativeLanguageInput.setOnClickListener { showNativeLanguageDropdown() }
+    binding.nativeLanguageInputLayout.setEndIconOnClickListener { showNativeLanguageDropdown() }
   }
 
   private fun MaterialAutoCompleteTextView.applyDropdownFieldStyle() {
