@@ -194,7 +194,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
   }
 
   private fun showAtcDropdown(
-      anchorView: MaterialAutoCompleteTextView,
+      anchor: MaterialAutoCompleteTextView,
       items: Array<String>,
       selectedIndexProvider: () -> Int,
       onSelected: (Int) -> Unit,
@@ -203,14 +203,14 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     val adapter = createDropdownAdapter(items, selectedIndexProvider)
     val popup =
         ListPopupWindow(requireContext()).apply {
-          anchorView = anchorView
+          anchorView = anchor
           isModal = true
           setAdapter(adapter)
           setBackgroundDrawable(
               ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
           )
           verticalOffset = dpToPx(8)
-          width = anchorView.width
+          width = anchor.width
           setOnItemClickListener { _, _, position, _ ->
             onSelected(position)
             dismiss()
