@@ -137,7 +137,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     updateLanguageIcon(languageItems[selectedLanguageIndex])
     binding.languageInput.setOnClickListener {
       showAtcDropdown(
-          anchorView = binding.languageInput,
+          anchor = binding.languageInput,
           items = languageItems,
           selectedIndexProvider = { selectedLanguageIndex },
       ) { position ->
@@ -156,7 +156,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.minSdkInput.setText(minSdkDisplay[selectedMinSdkIndex], false)
     binding.minSdkInput.setOnClickListener {
       showAtcDropdown(
-          anchorView = binding.minSdkInput,
+          anchor = binding.minSdkInput,
           items = minSdkDisplay,
           selectedIndexProvider = { selectedMinSdkIndex },
       ) { position ->
@@ -173,7 +173,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     updateNativeLanguageIcon(nativeLangValues[selectedNativeLanguageIndex])
     binding.nativeLanguageInput.setOnClickListener {
       showAtcDropdown(
-          anchorView = binding.nativeLanguageInput,
+          anchor = binding.nativeLanguageInput,
           items = nativeLangValues,
           selectedIndexProvider = { selectedNativeLanguageIndex },
       ) { position ->
