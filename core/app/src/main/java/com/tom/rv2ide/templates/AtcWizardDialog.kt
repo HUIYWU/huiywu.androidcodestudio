@@ -4,6 +4,7 @@ import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.graphics.Rect
 import android.os.Bundle
 import android.os.Environment as AndroidEnvironment
 import android.view.LayoutInflater
@@ -136,8 +137,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.languageInput.setText(languageItems[selectedLanguageIndex], false)
     updateLanguageIcon(languageItems[selectedLanguageIndex])
     val showLanguageDropdown = {
-showAtcDropdown(
-            anchor = binding.languageInput,
+      showAtcDropdown(
+          anchor = binding.languageInput,
           items = languageItems,
           selectedIndexProvider = { selectedLanguageIndex },
       ) { position ->
@@ -146,6 +147,7 @@ showAtcDropdown(
         updateLanguageIcon(languageItems[selectedLanguageIndex])
       }
     }
+
     binding.languageInput.setOnClickListener { showLanguageDropdown() }
     binding.languageInputLayout.setEndIconOnClickListener { showLanguageDropdown() }
 
@@ -157,8 +159,8 @@ showAtcDropdown(
     binding.minSdkInput.applyDropdownFieldStyle()
     binding.minSdkInput.setText(minSdkDisplay[selectedMinSdkIndex], false)
     val showMinSdkDropdown = {
-showAtcDropdown(
-            anchor = binding.minSdkInput,
+      showAtcDropdown(
+          anchor = binding.minSdkInput,
           items = minSdkDisplay,
           selectedIndexProvider = { selectedMinSdkIndex },
       ) { position ->
@@ -176,8 +178,8 @@ showAtcDropdown(
     binding.nativeLanguageInput.setText(nativeLangValues[selectedNativeLanguageIndex], false)
     updateNativeLanguageIcon(nativeLangValues[selectedNativeLanguageIndex])
     val showNativeLanguageDropdown = {
-showAtcDropdown(
-            anchor = binding.nativeLanguageInput,
+      showAtcDropdown(
+          anchor = binding.nativeLanguageInput,
           items = nativeLangValues,
           selectedIndexProvider = { selectedNativeLanguageIndex },
       ) { position ->
@@ -207,6 +209,29 @@ showAtcDropdown(
   ) {
     activeDropdownPopup?.dismiss()
     val adapter = createDropdownAdapter(items, selectedIndexProvider)
+    val visibleFrame = Rect()
+    anchor.getWindowVisibleDisplayFrame(visibleFrame)
+    val anchorLocation = IntArray(2)
+    anchor.getLocationOnScreen(anchorLocation)
+    val anchorTopOnScreen = anchorLocation[1]
+    val anchorBottomOnScreen = anchorTopOnScreen + anchor.height
+    val availableAbove = (anchorTopOnScreen - visibleFrame.top).coerceAtLeast(0)
+    val availableBelow = (visibleFrame.bottom - anchorBottomOnScreen).coerceAtLeast(0)
+    val rowHeight = dpToPx(48)
+    val popupVerticalPadding = dpToPx(4)
+    val rowSpacing = dpToPx(3)
+    val itemCount = items.size
+    val contentHeight =
+        itemCount * rowHeight + ((itemCount - 1).coerceAtLeast(0) * rowSpacing) + popupVerticalPadding
+    val maxBelowHeight = (availableBelow - popupVerticalPadding).coerceAtLeast(0)
+    val maxAboveHeight = (availableAbove - popupVerticalPadding).coerceAtLeast(0)
+    val shouldShowAbove = contentHeight > maxBelowHeight && maxAboveHeight > maxBelowHeight
+    val resolvedHeight =
+        if (shouldShowAbove) {
+          contentHeight.coerceAtMost(maxAboveHeight)
+        } else {
+          contentHeight.coerceAtMost(maxBelowHeight)
+        }
     val popup =
         ListPopupWindow(requireContext()).apply {
           anchorView = anchor
@@ -215,8 +240,11 @@ showAtcDropdown(
           setBackgroundDrawable(
               ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
           )
-          verticalOffset = 0
+          verticalOffset = if (shouldShowAbove) -(anchor.height + resolvedHeight) else 0
           width = anchor.width
+          if (resolvedHeight > rowHeight) {
+            height = resolvedHeight
+          }
           setOnItemClickListener { _, _, position, _ ->
             onSelected(position)
             dismiss()
