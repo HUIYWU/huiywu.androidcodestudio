@@ -13,6 +13,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.ArrayAdapter
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ListPopupWindow
 import android.widget.TextView
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import android.widget.Toast
@@ -47,8 +48,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-
 class AtcWizardDialog : BottomSheetDialogFragment() {
+
+  private var activeDropdownPopup: ListPopupWindow? = null
+
 
   private var listener: AtcInterface.TemplateCreationListener? = null
   private var selectedTemplate: Template? = null
@@ -129,19 +132,18 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
   private fun setupDropdowns(ctx: Context) {
     val languageItems = arrayOf(ctx.getString(R.string.kotlin), ctx.getString(R.string.java))
     var selectedLanguageIndex = 0
-    binding.languageInput.applyDropdownPopupStyle()
-    binding.languageInput.setAdapter(createDropdownAdapter(languageItems) { selectedLanguageIndex })
-    binding.languageInput.apply {
-      setText(languageItems[selectedLanguageIndex], false)
-      updateLanguageIcon(languageItems[selectedLanguageIndex])
-      setOnClickListener {
-        (adapter as? ArrayAdapter<*>)?.notifyDataSetChanged()
-        showDropDown()
-      }
-      setOnItemClickListener { _, _, position, _ ->
+    binding.languageInput.applyDropdownFieldStyle()
+    binding.languageInput.setText(languageItems[selectedLanguageIndex], false)
+    updateLanguageIcon(languageItems[selectedLanguageIndex])
+    binding.languageInput.setOnClickListener {
+      showAtcDropdown(
+          anchorView = binding.languageInput,
+          items = languageItems,
+          selectedIndexProvider = { selectedLanguageIndex },
+      ) { position ->
         selectedLanguageIndex = position.coerceIn(languageItems.indices)
+        binding.languageInput.setText(languageItems[selectedLanguageIndex], false)
         updateLanguageIcon(languageItems[selectedLanguageIndex])
-        (adapter as? ArrayAdapter<*>)?.notifyDataSetChanged()
       }
     }
 
@@ -150,47 +152,75 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     val defIdx = sdkValues.indexOfFirst { it.api == 21 }.coerceAtLeast(0)
     var selectedMinSdkIndex = defIdx
     Options.OPT_MIN_SDK = sdkValues.getOrNull(defIdx)?.api ?: 21
-    binding.minSdkInput.applyDropdownPopupStyle()
-    binding.minSdkInput.setAdapter(createDropdownAdapter(minSdkDisplay) { selectedMinSdkIndex })
-    binding.minSdkInput.apply {
-      setText(minSdkDisplay[selectedMinSdkIndex], false)
-      setOnClickListener {
-        (adapter as? ArrayAdapter<*>)?.notifyDataSetChanged()
-        showDropDown()
-      }
-      setOnItemClickListener { _, _, position, _ ->
+    binding.minSdkInput.applyDropdownFieldStyle()
+    binding.minSdkInput.setText(minSdkDisplay[selectedMinSdkIndex], false)
+    binding.minSdkInput.setOnClickListener {
+      showAtcDropdown(
+          anchorView = binding.minSdkInput,
+          items = minSdkDisplay,
+          selectedIndexProvider = { selectedMinSdkIndex },
+      ) { position ->
         selectedMinSdkIndex = position.coerceIn(minSdkDisplay.indices)
+        binding.minSdkInput.setText(minSdkDisplay[selectedMinSdkIndex], false)
         Options.OPT_MIN_SDK = sdkValues.getOrNull(selectedMinSdkIndex)?.api ?: 21
-        (adapter as? ArrayAdapter<*>)?.notifyDataSetChanged()
       }
     }
 
     val nativeLangValues = arrayOf("C++", "C")
     var selectedNativeLanguageIndex = 0
-    binding.nativeLanguageInput.applyDropdownPopupStyle()
-    binding.nativeLanguageInput.setAdapter(createDropdownAdapter(nativeLangValues) { selectedNativeLanguageIndex })
-    binding.nativeLanguageInput.apply {
-      setText(nativeLangValues[selectedNativeLanguageIndex], false)
-      updateNativeLanguageIcon(nativeLangValues[selectedNativeLanguageIndex])
-      setOnClickListener {
-        (adapter as? ArrayAdapter<*>)?.notifyDataSetChanged()
-        showDropDown()
-      }
-      setOnItemClickListener { _, _, position, _ ->
+    binding.nativeLanguageInput.applyDropdownFieldStyle()
+    binding.nativeLanguageInput.setText(nativeLangValues[selectedNativeLanguageIndex], false)
+    updateNativeLanguageIcon(nativeLangValues[selectedNativeLanguageIndex])
+    binding.nativeLanguageInput.setOnClickListener {
+      showAtcDropdown(
+          anchorView = binding.nativeLanguageInput,
+          items = nativeLangValues,
+          selectedIndexProvider = { selectedNativeLanguageIndex },
+      ) { position ->
         selectedNativeLanguageIndex = position.coerceIn(nativeLangValues.indices)
         val selected = nativeLangValues[selectedNativeLanguageIndex]
+        binding.nativeLanguageInput.setText(selected, false)
         Options.OPT_NATIVE_LANGUAGE = if (selectedNativeLanguageIndex == 1) "c" else "cpp"
         updateNativeLanguageIcon(selected)
-        (adapter as? ArrayAdapter<*>)?.notifyDataSetChanged()
       }
     }
   }
 
-  private fun MaterialAutoCompleteTextView.applyDropdownPopupStyle() {
-    setDropDownBackgroundDrawable(
-        ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
-    )
-    dropDownVerticalOffset = dpToPx(8)
+  private fun MaterialAutoCompleteTextView.applyDropdownFieldStyle() {
+    keyListener = null
+    inputType = android.text.InputType.TYPE_NULL
+    isFocusable = false
+    isClickable = true
+  }
+
+  private fun showAtcDropdown(
+      anchorView: MaterialAutoCompleteTextView,
+      items: Array<String>,
+      selectedIndexProvider: () -> Int,
+      onSelected: (Int) -> Unit,
+  ) {
+    activeDropdownPopup?.dismiss()
+    val adapter = createDropdownAdapter(items, selectedIndexProvider)
+    val popup =
+        ListPopupWindow(requireContext()).apply {
+          anchorView = anchorView
+          isModal = true
+          setAdapter(adapter)
+          setBackgroundDrawable(
+              ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
+          )
+          verticalOffset = dpToPx(8)
+          width = anchorView.width
+          setOnItemClickListener { _, _, position, _ ->
+            onSelected(position)
+            dismiss()
+          }
+          setOnDismissListener {
+            if (activeDropdownPopup === this) activeDropdownPopup = null
+          }
+        }
+    activeDropdownPopup = popup
+    popup.show()
   }
 
   private fun createDropdownAdapter(
@@ -198,9 +228,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       selectedIndexProvider: () -> Int,
   ): ArrayAdapter<String> {
     return object : ArrayAdapter<String>(requireContext(), R.layout.item_atc_dropdown, items) {
-      override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-        val view = super.getDropDownView(position, convertView, parent)
-        val textView = view as TextView
+      override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+        val view = super.getView(position, convertView, parent) as TextView
         val selectedIndex = selectedIndexProvider().coerceIn(0, items.lastIndex)
         val backgroundRes =
             if (position != selectedIndex) {
@@ -214,8 +243,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
             } else {
               R.drawable.bg_atc_dropdown_selected_middle
             }
-        textView.background = ContextCompat.getDrawable(requireContext(), backgroundRes)
-        return textView
+        view.background = ContextCompat.getDrawable(requireContext(), backgroundRes)
+        return view
       }
     }
   }
