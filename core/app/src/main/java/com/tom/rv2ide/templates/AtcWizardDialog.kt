@@ -171,7 +171,11 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     setDropDownBackgroundDrawable(
         ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
     )
-    dropDownVerticalOffset = 8.dpToPx(requireContext())
+    dropDownVerticalOffset = dpToPx(8)
+  }
+
+  private fun dpToPx(dp: Int): Int {
+    return (dp * requireContext().resources.displayMetrics.density).toInt()
   }
 
   private fun updateLanguageIcon(selected: String) {
