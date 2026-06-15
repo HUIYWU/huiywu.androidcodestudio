@@ -16,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.ListPopupWindow
 import android.widget.TextView
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
+import com.google.android.material.textfield.TextInputLayout
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.provider.DocumentsContractCompat
@@ -136,8 +137,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.languageInput.setText(languageItems[selectedLanguageIndex], false)
     updateLanguageIcon(languageItems[selectedLanguageIndex])
     val showLanguageDropdown = {
-      showAtcDropdown(
-          anchor = binding.languageInput,
+showAtcDropdown(
+            anchor = binding.languageInputLayout,
+            widthSource = binding.languageInput,
           items = languageItems,
           selectedIndexProvider = { selectedLanguageIndex },
       ) { position ->
@@ -157,8 +159,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.minSdkInput.applyDropdownFieldStyle()
     binding.minSdkInput.setText(minSdkDisplay[selectedMinSdkIndex], false)
     val showMinSdkDropdown = {
-      showAtcDropdown(
-          anchor = binding.minSdkInput,
+showAtcDropdown(
+            anchor = binding.minSdkInputLayout,
+            widthSource = binding.minSdkInput,
           items = minSdkDisplay,
           selectedIndexProvider = { selectedMinSdkIndex },
       ) { position ->
@@ -176,8 +179,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.nativeLanguageInput.setText(nativeLangValues[selectedNativeLanguageIndex], false)
     updateNativeLanguageIcon(nativeLangValues[selectedNativeLanguageIndex])
     val showNativeLanguageDropdown = {
-      showAtcDropdown(
-          anchor = binding.nativeLanguageInput,
+showAtcDropdown(
+            anchor = binding.nativeLanguageInputLayout,
+            widthSource = binding.nativeLanguageInput,
           items = nativeLangValues,
           selectedIndexProvider = { selectedNativeLanguageIndex },
       ) { position ->
@@ -200,7 +204,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
   }
 
   private fun showAtcDropdown(
-      anchor: MaterialAutoCompleteTextView,
+      anchor: TextInputLayout,
+      widthSource: MaterialAutoCompleteTextView,
       items: Array<String>,
       selectedIndexProvider: () -> Int,
       onSelected: (Int) -> Unit,
@@ -216,7 +221,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
               ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
           )
           verticalOffset = dpToPx(8)
-          width = anchor.width
+          width = widthSource.width
           setOnItemClickListener { _, _, position, _ ->
             onSelected(position)
             dismiss()
