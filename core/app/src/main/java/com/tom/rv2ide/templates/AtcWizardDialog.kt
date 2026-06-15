@@ -220,7 +220,7 @@ showAtcDropdown(
           setBackgroundDrawable(
               ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
           )
-          verticalOffset = dpToPx(8)
+          verticalOffset = 0
           width = widthSource.width
           setOnItemClickListener { _, _, position, _ ->
             onSelected(position)
@@ -245,14 +245,8 @@ showAtcDropdown(
         val backgroundRes =
             if (position != selectedIndex) {
               R.drawable.bg_atc_dropdown_unselected
-            } else if (items.size == 1) {
-              R.drawable.bg_atc_dropdown_selected_single
-            } else if (position == 0) {
-              R.drawable.bg_atc_dropdown_selected_first
-            } else if (position == items.lastIndex) {
-              R.drawable.bg_atc_dropdown_selected_last
             } else {
-              R.drawable.bg_atc_dropdown_selected_middle
+              R.drawable.bg_atc_dropdown_selected_single
             }
         view.background = ContextCompat.getDrawable(requireContext(), backgroundRes)
         return view
