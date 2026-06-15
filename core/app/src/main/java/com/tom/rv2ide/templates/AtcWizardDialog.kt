@@ -14,6 +14,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.core.provider.DocumentsContractCompat
 import androidx.databinding.DataBindingUtil
 import androidx.fragment.app.FragmentActivity
@@ -128,7 +129,11 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.languageInput.apply {
       setSimpleItems(languageItems)
       setText(languageItems[0], false)
+      updateLanguageIcon(languageItems[0])
       setOnClickListener { showDropDown() }
+      setOnItemClickListener { _, _, position, _ ->
+        updateLanguageIcon(languageItems.getOrElse(position) { languageItems[0] })
+      }
     }
 
     val sdkValues = Sdk.values()
@@ -148,11 +153,35 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.nativeLanguageInput.apply {
       setSimpleItems(nativeLangValues)
       setText(nativeLangValues[0], false)
+      updateNativeLanguageIcon(nativeLangValues[0])
       setOnClickListener { showDropDown() }
       setOnItemClickListener { _, _, position, _ ->
+        val selected = nativeLangValues.getOrElse(position) { nativeLangValues[0] }
         Options.OPT_NATIVE_LANGUAGE = if (position == 1) "c" else "cpp"
+        updateNativeLanguageIcon(selected)
       }
     }
+  }
+
+  private fun updateLanguageIcon(selected: String) {
+    val iconRes =
+        if (selected.equals(getString(R.string.java), ignoreCase = true)) {
+          R.drawable.ic_language_java
+        } else {
+          R.drawable.ic_language_kotlin
+        }
+    binding.languageInputLayout.startIconDrawable =
+        ContextCompat.getDrawable(requireContext(), iconRes)
+  }
+
+  private fun updateNativeLanguageIcon(selected: String) {
+    val iconRes = if (selected.trim().equals("C", ignoreCase = true)) {
+      R.drawable.ic_language_c
+    } else {
+      R.drawable.ic_language_cpp
+    }
+    binding.nativeLanguageInputLayout.startIconDrawable =
+        ContextCompat.getDrawable(requireContext(), iconRes)
   }
 
   private fun setupTemplatesGrid(ctx: Context) {
