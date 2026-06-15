@@ -64,7 +64,8 @@
           android:layout_height="wrap_content"
           android:layout_marginTop="8dp"
           android:layout_marginBottom="8dp"
-          android:hint="@string/project_name">
+          android:hint="@string/project_name"
+          app:startIconDrawable="@drawable/ic_android">
 
           <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/projectNameInput"
@@ -78,7 +79,8 @@
           android:layout_height="wrap_content"
           android:layout_marginTop="8dp"
           android:layout_marginBottom="8dp"
-          android:hint="@string/package_name">
+          android:hint="@string/package_name"
+          app:startIconDrawable="@drawable/ic_package">
 
           <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/packageNameInput"
@@ -110,7 +112,8 @@
           android:layout_marginTop="8dp"
           android:layout_marginBottom="8dp"
           android:hint="@string/language"
-          style="@style/Widget.Material3.TextInputLayout.FilledBox.ExposedDropdownMenu">
+          app:startIconDrawable="@drawable/ic_code"
+          style="@style/AppTheme.TextInputLayout.Dropdown">
 
           <com.google.android.material.textfield.MaterialAutoCompleteTextView
             android:id="@+id/languageInput"
@@ -126,7 +129,8 @@
           android:layout_marginTop="8dp"
           android:layout_marginBottom="8dp"
           android:hint="@string/minimum_sdk"
-          style="@style/Widget.Material3.TextInputLayout.FilledBox.ExposedDropdownMenu">
+          app:startIconDrawable="@drawable/ic_min_sdk"
+          style="@style/AppTheme.TextInputLayout.Dropdown">
 
           <com.google.android.material.textfield.MaterialAutoCompleteTextView
             android:id="@+id/minSdkInput"
@@ -144,7 +148,8 @@
           android:layout_marginTop="8dp"
           android:layout_marginBottom="8dp"
           android:hint="@string/native_language"
-          style="@style/Widget.Material3.TextInputLayout.FilledBox.ExposedDropdownMenu">
+          app:startIconDrawable="@drawable/ic_code"
+          style="@style/AppTheme.TextInputLayout.Dropdown">
 
           <com.google.android.material.textfield.MaterialAutoCompleteTextView
             android:id="@+id/nativeLanguageInput"

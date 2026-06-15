@@ -107,17 +107,10 @@ class TemplateWidgetViewProviderImpl : ITemplateWidgetViewProvider {
         }
         .root
   }
-
   private fun createTextField(context: Context, widget: TextFieldWidget): View {
     return LayoutTextfieldBinding.inflate(LayoutInflater.from(context))
         .apply {
           val param = widget.parameter as StringParameter
-          android.util.Log.e(
-              "TemplateWidget",
-              "createTextField called for param with hint: ${param.name}",
-          )
-          android.util.Log.e("TemplateWidget", "Has endIcon: ${param.endIcon != null}")
-          android.util.Log.e("TemplateWidget", "Has startIcon: ${param.startIcon != null}")
 
           val observer =
               object : DefaultObserver<String>() {
@@ -125,6 +118,7 @@ class TemplateWidgetViewProviderImpl : ITemplateWidgetViewProvider {
                   disableAndRun { input.setText(param.value) }
                 }
               }
+
 
           param.configureTextField(context, root) { value ->
             observer.disableAndRun {
@@ -239,31 +233,28 @@ class TemplateWidgetViewProviderImpl : ITemplateWidgetViewProvider {
       context: Context,
       root: TextInputLayout,
   ) {
-    startIcon?.let {
-      root.startIconDrawable = ContextCompat.getDrawable(context, it(this))
-      onStartIconClick?.let(root::setStartIconOnClickListener)
-      android.util.Log.d("TemplateWidget", "Set start icon for ${this.javaClass.simpleName}")
+    val startDrawable = startIcon?.let { ContextCompat.getDrawable(context, it(this)) }
+    root.startIconDrawable = startDrawable
+    root.isStartIconVisible = startDrawable != null
+    if (onStartIconClick != null) {
+      root.setStartIconOnClickListener(onStartIconClick)
+    } else {
+      root.setStartIconOnClickListener(null)
     }
 
-    endIcon?.let {
-      val iconRes = it(this)
-      val drawable = ContextCompat.getDrawable(context, iconRes)
-      android.util.Log.d(
-          "TemplateWidget",
-          "Setting end icon: res=$iconRes, drawable=$drawable, hasClickListener=${onEndIconClick != null}",
-      )
+    val endDrawable = endIcon?.let { ContextCompat.getDrawable(context, it(this)) }
+    if (endDrawable != null) {
       root.endIconMode = TextInputLayout.END_ICON_CUSTOM
-      root.endIconDrawable = drawable
-      onEndIconClick?.let { listener ->
-        android.util.Log.d("TemplateWidget", "Setting end icon click listener")
-        root.setEndIconOnClickListener(listener)
+      root.endIconDrawable = endDrawable
+      if (onEndIconClick != null) {
+        root.setEndIconOnClickListener(onEndIconClick)
+      } else {
+        root.setEndIconOnClickListener(null)
       }
+    } else {
+      root.endIconDrawable = null
+      root.endIconMode = TextInputLayout.END_ICON_NONE
+      root.setEndIconOnClickListener(null)
     }
-        ?: run {
-          android.util.Log.d(
-              "TemplateWidget",
-              "No end icon for parameter: ${this.javaClass.simpleName}",
-          )
-        }
   }
 }
