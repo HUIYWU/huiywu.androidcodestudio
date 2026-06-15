@@ -13,6 +13,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.provider.DocumentsContractCompat
@@ -126,6 +127,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private fun setupDropdowns(ctx: Context) {
     val languageItems = arrayOf(ctx.getString(R.string.kotlin), ctx.getString(R.string.java))
+    binding.languageInput.applyDropdownPopupStyle()
     binding.languageInput.apply {
       setSimpleItems(languageItems)
       setText(languageItems[0], false)
@@ -140,6 +142,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     val minSdkDisplay = sdkValues.map { it.displayName() }.toTypedArray()
     val defIdx = sdkValues.indexOfFirst { it.api == 21 }.coerceAtLeast(0)
     Options.OPT_MIN_SDK = sdkValues.getOrNull(defIdx)?.api ?: 21
+    binding.minSdkInput.applyDropdownPopupStyle()
     binding.minSdkInput.apply {
       setSimpleItems(minSdkDisplay)
       setText(minSdkDisplay[defIdx], false)
@@ -150,6 +153,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     }
 
     val nativeLangValues = arrayOf("C++", "C")
+    binding.nativeLanguageInput.applyDropdownPopupStyle()
     binding.nativeLanguageInput.apply {
       setSimpleItems(nativeLangValues)
       setText(nativeLangValues[0], false)
@@ -161,6 +165,13 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         updateNativeLanguageIcon(selected)
       }
     }
+  }
+
+  private fun MaterialAutoCompleteTextView.applyDropdownPopupStyle() {
+    setDropDownBackgroundDrawable(
+        ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
+    )
+    dropDownVerticalOffset = 8.dpToPx(requireContext())
   }
 
   private fun updateLanguageIcon(selected: String) {
