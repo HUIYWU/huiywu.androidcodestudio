@@ -3,7 +3,6 @@
     android:id="@android:id/text1"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/bg_atc_dropdown_item"
     android:ellipsize="end"
     android:gravity="center_vertical"
     android:minHeight="48dp"

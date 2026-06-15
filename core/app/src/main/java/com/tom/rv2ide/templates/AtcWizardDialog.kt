@@ -10,6 +10,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
+import android.widget.ArrayAdapter
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -127,15 +128,15 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private fun setupDropdowns(ctx: Context) {
     val languageItems = arrayOf(ctx.getString(R.string.kotlin), ctx.getString(R.string.java))
-binding.languageInput.applyDropdownPopupStyle()
+    binding.languageInput.applyDropdownPopupStyle()
+    binding.languageInput.setAdapter(createDropdownAdapter(languageItems, binding.languageInput))
     binding.languageInput.apply {
-      setSimpleItems(languageItems)
-
       setText(languageItems[0], false)
       updateLanguageIcon(languageItems[0])
       setOnClickListener { showDropDown() }
       setOnItemClickListener { _, _, position, _ ->
         updateLanguageIcon(languageItems.getOrElse(position) { languageItems[0] })
+        ;(adapter as? ArrayAdapter<*>)?.notifyDataSetChanged()
       }
     }
 
@@ -143,20 +144,21 @@ binding.languageInput.applyDropdownPopupStyle()
     val minSdkDisplay = sdkValues.map { it.displayName() }.toTypedArray()
     val defIdx = sdkValues.indexOfFirst { it.api == 21 }.coerceAtLeast(0)
     Options.OPT_MIN_SDK = sdkValues.getOrNull(defIdx)?.api ?: 21
-        binding.minSdkInput.applyDropdownPopupStyle()
+    binding.minSdkInput.applyDropdownPopupStyle()
+    binding.minSdkInput.setAdapter(createDropdownAdapter(minSdkDisplay, binding.minSdkInput))
     binding.minSdkInput.apply {
-      setSimpleItems(minSdkDisplay)
       setText(minSdkDisplay[defIdx], false)
       setOnClickListener { showDropDown() }
       setOnItemClickListener { _, _, position, _ ->
         Options.OPT_MIN_SDK = sdkValues.getOrNull(position)?.api ?: 21
+        ;(adapter as? ArrayAdapter<*>)?.notifyDataSetChanged()
       }
     }
 
     val nativeLangValues = arrayOf("C++", "C")
     binding.nativeLanguageInput.applyDropdownPopupStyle()
+    binding.nativeLanguageInput.setAdapter(createDropdownAdapter(nativeLangValues, binding.nativeLanguageInput))
     binding.nativeLanguageInput.apply {
-      setSimpleItems(nativeLangValues)
       setText(nativeLangValues[0], false)
       updateNativeLanguageIcon(nativeLangValues[0])
       setOnClickListener { showDropDown() }
@@ -164,6 +166,7 @@ binding.languageInput.applyDropdownPopupStyle()
         val selected = nativeLangValues.getOrElse(position) { nativeLangValues[0] }
         Options.OPT_NATIVE_LANGUAGE = if (position == 1) "c" else "cpp"
         updateNativeLanguageIcon(selected)
+        ;(adapter as? ArrayAdapter<*>)?.notifyDataSetChanged()
       }
     }
   }
@@ -173,6 +176,34 @@ binding.languageInput.applyDropdownPopupStyle()
         ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
     )
     dropDownVerticalOffset = dpToPx(8)
+  }
+
+  private fun createDropdownAdapter(
+      items: Array<String>,
+      anchorView: MaterialAutoCompleteTextView,
+  ): ArrayAdapter<String> {
+    return object : ArrayAdapter<String>(requireContext(), R.layout.item_atc_dropdown, items) {
+      override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
+        val view = super.getDropDownView(position, convertView, parent)
+        val textView = view.findViewById<TextView>(android.R.id.text1)
+        val currentText = anchorView.text?.toString().orEmpty()
+        val isSelected = currentText == getItem(position).orEmpty()
+        val backgroundRes =
+            if (!isSelected) {
+              R.drawable.bg_atc_dropdown_unselected
+            } else if (items.size == 1) {
+              R.drawable.bg_atc_dropdown_selected_single
+            } else if (position == 0) {
+              R.drawable.bg_atc_dropdown_selected_first
+            } else if (position == items.lastIndex) {
+              R.drawable.bg_atc_dropdown_selected_last
+            } else {
+              R.drawable.bg_atc_dropdown_selected_middle
+            }
+        textView.background = ContextCompat.getDrawable(requireContext(), backgroundRes)
+        return view
+      }
+    }
   }
 
   private fun dpToPx(dp: Int): Int {
