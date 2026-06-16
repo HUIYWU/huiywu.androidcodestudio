@@ -19,7 +19,7 @@
   <!--  Required by F-Droid-->
   <!-- <string name="app_name" translatable="false">AndroidIDE</string> -->
   <string name="app_name" translatable="false">Android Code Studio</string>
-  
+
   <!-- Asset Studio -->
   <string name="asset_studio_title">Asset Studio</string>
   <string name="asset_studio_subtitle">Drawable &amp; Icon Maker</string>
@@ -31,7 +31,7 @@
   <string name="asset_studio_quick_actions">Quick Actions</string>
   <string name="asset_studio_default_path">res/drawable</string>
   <string name="asset_studio_launch_description">Open the full Asset Studio interface</string>
-  
+
   <!-- Sub-Module Maker -->
   <string name="sub_module_maker_title">Sub-Module Maker</string>
   <string name="sub_module_maker_subtitle">Create new sub-modules for your project</string>
@@ -47,7 +47,7 @@
   <string name="sub_module_created_error">Failed to create module: %1$s</string>
   <string name="sub_module_info_title">About Sub-Modules</string>
   <string name="sub_module_info_description">Sub-modules help organize your project into smaller, manageable components. Each module can have its own dependencies and build configuration.</string>
-  
+
   <!-- Terminal -->
   <string name="title_terminal">Terminal</string>
   <string name="terminal_bstab">Terminal</string>
@@ -58,7 +58,4 @@
   <string name="terminal_create_first">Create Terminal</string>
 
   <string name="edit">Edit</string>
-
-
-
 </resources>

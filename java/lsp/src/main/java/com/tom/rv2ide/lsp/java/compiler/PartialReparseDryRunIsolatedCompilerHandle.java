@@ -32,10 +32,10 @@ public final class PartialReparseDryRunIsolatedCompilerHandle {
     CREATED,
     RELEASED
   }
-
   @NonNull public final State state;
   @NonNull public final String reason;
   public final boolean hasCompilerCopy;
+  @NonNull public final PartialReparseDryRunIsolatedCleanupPlan cleanupPlan;
   public final boolean requiresDestroy;
   public final boolean requiresClose;
   public final boolean sharesSourceFileManagerWithLiveCompiler;
@@ -46,6 +46,7 @@ public final class PartialReparseDryRunIsolatedCompilerHandle {
       @NonNull State state,
       @NonNull String reason,
       boolean hasCompilerCopy,
+      @NonNull PartialReparseDryRunIsolatedCleanupPlan cleanupPlan,
       boolean requiresDestroy,
       boolean requiresClose,
       boolean sharesSourceFileManagerWithLiveCompiler,
@@ -54,6 +55,7 @@ public final class PartialReparseDryRunIsolatedCompilerHandle {
     this.state = state;
     this.reason = reason;
     this.hasCompilerCopy = hasCompilerCopy;
+    this.cleanupPlan = cleanupPlan;
     this.requiresDestroy = requiresDestroy;
     this.requiresClose = requiresClose;
     this.sharesSourceFileManagerWithLiveCompiler = sharesSourceFileManagerWithLiveCompiler;
@@ -61,10 +63,20 @@ public final class PartialReparseDryRunIsolatedCompilerHandle {
     this.cachedCompileMustStartEmpty = cachedCompileMustStartEmpty;
   }
 
+
   @NonNull
   public static PartialReparseDryRunIsolatedCompilerHandle notAvailable(@NonNull String reason) {
     return new PartialReparseDryRunIsolatedCompilerHandle(
-        State.NOT_AVAILABLE, reason, false, false, false, false, true, true);
+        State.NOT_AVAILABLE,
+        reason,
+        false,
+        PartialReparseDryRunIsolatedCleanupPlan.notRequired(reason),
+        false,
+        false,
+        false,
+        true,
+        true);
+
   }
 
   @NonNull
@@ -79,11 +91,14 @@ public final class PartialReparseDryRunIsolatedCompilerHandle {
         State.CREATED,
         reason,
         true,
+        PartialReparseDryRunIsolatedCleanupPlan.required(
+            reason, requiresDestroy, requiresClose, false, true),
         requiresDestroy,
         requiresClose,
         sharesSourceFileManagerWithLiveCompiler,
         requiresFreshReusableCompiler,
         cachedCompileMustStartEmpty);
+
   }
 
   @NonNull
@@ -96,11 +111,13 @@ public final class PartialReparseDryRunIsolatedCompilerHandle {
         State.RELEASED,
         reason,
         false,
+        PartialReparseDryRunIsolatedCleanupPlan.completed(reason),
         false,
         false,
         sharesSourceFileManagerWithLiveCompiler,
         requiresFreshReusableCompiler,
         cachedCompileMustStartEmpty);
+
   }
 
   @NonNull

@@ -37,6 +37,7 @@ public final class PartialReparseDryRunIsolatedSession {
   @NonNull public final State state;
   @NonNull public final String reason;
   public final boolean requiresCompilerCopy;
+  @NonNull public final PartialReparseDryRunIsolatedCleanupPlan cleanupPlan;
   public final boolean requiresClose;
   public final boolean mayMutateLiveCompilerState;
   public final boolean sharesSourceFileManagerWithLiveCompiler;
@@ -47,6 +48,7 @@ public final class PartialReparseDryRunIsolatedSession {
       @NonNull State state,
       @NonNull String reason,
       boolean requiresCompilerCopy,
+      @NonNull PartialReparseDryRunIsolatedCleanupPlan cleanupPlan,
       boolean requiresClose,
       boolean mayMutateLiveCompilerState,
       boolean sharesSourceFileManagerWithLiveCompiler,
@@ -55,6 +57,7 @@ public final class PartialReparseDryRunIsolatedSession {
     this.state = state;
     this.reason = reason;
     this.requiresCompilerCopy = requiresCompilerCopy;
+    this.cleanupPlan = cleanupPlan;
     this.requiresClose = requiresClose;
     this.mayMutateLiveCompilerState = mayMutateLiveCompilerState;
     this.sharesSourceFileManagerWithLiveCompiler = sharesSourceFileManagerWithLiveCompiler;
@@ -65,7 +68,15 @@ public final class PartialReparseDryRunIsolatedSession {
   @NonNull
   public static PartialReparseDryRunIsolatedSession notAvailable(@NonNull String reason) {
     return new PartialReparseDryRunIsolatedSession(
-        State.NOT_AVAILABLE, reason, true, false, false, false, true, true);
+        State.NOT_AVAILABLE,
+        reason,
+        true,
+        PartialReparseDryRunIsolatedCleanupPlan.notRequired(reason),
+        false,
+        false,
+        false,
+        true,
+        true);
   }
 
   @NonNull
@@ -79,6 +90,8 @@ public final class PartialReparseDryRunIsolatedSession {
         State.READY,
         reason,
         true,
+        PartialReparseDryRunIsolatedCleanupPlan.required(
+            reason, false, requiresClose, false, true),
         requiresClose,
         false,
         sharesSourceFileManagerWithLiveCompiler,
@@ -89,7 +102,15 @@ public final class PartialReparseDryRunIsolatedSession {
   @NonNull
   public static PartialReparseDryRunIsolatedSession closed(@NonNull String reason) {
     return new PartialReparseDryRunIsolatedSession(
-        State.CLOSED, reason, true, false, false, false, true, true);
+        State.CLOSED,
+        reason,
+        true,
+        PartialReparseDryRunIsolatedCleanupPlan.completed(reason),
+        false,
+        false,
+        false,
+        true,
+        true);
   }
 
   public boolean isReady() {

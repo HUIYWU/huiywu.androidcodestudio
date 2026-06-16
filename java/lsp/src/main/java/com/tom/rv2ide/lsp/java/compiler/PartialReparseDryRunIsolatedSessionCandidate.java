@@ -36,6 +36,7 @@ public final class PartialReparseDryRunIsolatedSessionCandidate {
   @NonNull public final State state;
   @NonNull public final String reason;
   public final boolean hasCompilerCopyCandidate;
+  @NonNull public final PartialReparseDryRunIsolatedCleanupPlan cleanupPlan;
   public final boolean requiresDestroy;
   public final boolean requiresClose;
   public final boolean canExecuteDryRun;
@@ -47,6 +48,7 @@ public final class PartialReparseDryRunIsolatedSessionCandidate {
       @NonNull State state,
       @NonNull String reason,
       boolean hasCompilerCopyCandidate,
+      @NonNull PartialReparseDryRunIsolatedCleanupPlan cleanupPlan,
       boolean requiresDestroy,
       boolean requiresClose,
       boolean canExecuteDryRun,
@@ -56,6 +58,7 @@ public final class PartialReparseDryRunIsolatedSessionCandidate {
     this.state = state;
     this.reason = reason;
     this.hasCompilerCopyCandidate = hasCompilerCopyCandidate;
+    this.cleanupPlan = cleanupPlan;
     this.requiresDestroy = requiresDestroy;
     this.requiresClose = requiresClose;
     this.canExecuteDryRun = canExecuteDryRun;
@@ -67,7 +70,16 @@ public final class PartialReparseDryRunIsolatedSessionCandidate {
   @NonNull
   public static PartialReparseDryRunIsolatedSessionCandidate notAvailable(@NonNull String reason) {
     return new PartialReparseDryRunIsolatedSessionCandidate(
-        State.NOT_AVAILABLE, reason, false, false, false, false, false, true, true);
+        State.NOT_AVAILABLE,
+        reason,
+        false,
+        PartialReparseDryRunIsolatedCleanupPlan.notRequired(reason),
+        false,
+        false,
+        false,
+        false,
+        true,
+        true);
   }
 
   @NonNull
@@ -82,6 +94,8 @@ public final class PartialReparseDryRunIsolatedSessionCandidate {
         State.CREATED,
         reason,
         true,
+        PartialReparseDryRunIsolatedCleanupPlan.required(
+            reason, requiresDestroy, requiresClose, false, true),
         requiresDestroy,
         requiresClose,
         false,
@@ -100,6 +114,7 @@ public final class PartialReparseDryRunIsolatedSessionCandidate {
         State.CLOSED,
         reason,
         false,
+        PartialReparseDryRunIsolatedCleanupPlan.completed(reason),
         false,
         false,
         false,

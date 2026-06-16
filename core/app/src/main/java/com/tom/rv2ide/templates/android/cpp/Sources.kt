@@ -139,7 +139,7 @@ object CppSources {
         include $(CLEAR_VARS)
         
         LOCAL_MODULE    := myapplication
-        LOCAL_SRC_FILES := native-lib.cpp
+        LOCAL_SRC_FILES := native-lib.${Options.OPT_NATIVE_LANGUAGE}
         
         include $(BUILD_SHARED_LIBRARY)
       """

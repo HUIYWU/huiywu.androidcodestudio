@@ -43,11 +43,82 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       return PartialReparseDryRunIsolatedSession.notAvailable(candidate.reason);
     }
     return PartialReparseDryRunIsolatedSession.ready(
-        candidate.reason,
+        candidate.cleanupPlan.reason,
         candidate.requiresClose,
         candidate.sharesSourceFileManagerWithLiveCompiler,
         candidate.requiresFreshReusableCompiler,
         candidate.cachedCompileMustStartEmpty);
+  }
+  @NonNull
+  PartialReparseDryRunIsolatedSessionReadinessResult createIsolatedSessionReadinessResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedSession session =
+        createSession(request, eligibility, attemptReport);
+    if (!session.isReady()) {
+      return PartialReparseDryRunIsolatedSessionReadinessResult.notReady(session.reason);
+    }
+    return PartialReparseDryRunIsolatedSessionReadinessResult.deferred(session.reason, session);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedExecutablePreflightResult createExecutablePreflightResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedSessionReadinessResult sessionReadinessResult =
+        createIsolatedSessionReadinessResult(request, eligibility, attemptReport);
+    if (!sessionReadinessResult.session.isReady()) {
+      return PartialReparseDryRunIsolatedExecutablePreflightResult.notReady(
+          sessionReadinessResult.reason);
+    }
+    return PartialReparseDryRunIsolatedExecutablePreflightResult.deferred(
+        sessionReadinessResult.reason, sessionReadinessResult);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedExecutionAttemptResult createIsolatedExecutionAttemptResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult =
+        createExecutablePreflightResult(request, eligibility, attemptReport);
+    if (!preflightResult.sessionReadinessResult.session.isReady()) {
+      return PartialReparseDryRunIsolatedExecutionAttemptResult.notStarted(preflightResult.reason);
+    }
+    return PartialReparseDryRunIsolatedExecutionAttemptResult.deferred(
+        preflightResult.reason, preflightResult);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedAttemptExecutorBridge createAttemptExecutorBridge(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedExecutionAttemptResult executionAttemptResult =
+        createIsolatedExecutionAttemptResult(request, eligibility, attemptReport);
+    if (!executionAttemptResult.attemptStarted && !executionAttemptResult.preflightResult.sessionReadinessResult.session.isReady()) {
+      return PartialReparseDryRunIsolatedAttemptExecutorBridge.notBridged(
+          executionAttemptResult.reason);
+    }
+    return PartialReparseDryRunIsolatedAttemptExecutorBridge.deferred(
+        executionAttemptResult.reason, executionAttemptResult);
+  }
+
+
+  @NonNull
+  PartialReparseDryRunIsolatedSessionCandidateReadyResult createSessionCandidateReadyResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedSessionCandidate candidate =
+        createSessionCandidate(request, eligibility, attemptReport);
+    if (!candidate.isCreated()) {
+      return PartialReparseDryRunIsolatedSessionCandidateReadyResult.notReady(candidate.reason);
+    }
+    return PartialReparseDryRunIsolatedSessionCandidateReadyResult.deferred(
+        candidate.reason, candidate);
   }
 
   @NonNull
@@ -55,29 +126,264 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerHandleReadyResult handleReadyResult =
+        createCompilerHandleReadyResult(request, eligibility, attemptReport);
+    if (!handleReadyResult.handle.isCreated()) {
+      return PartialReparseDryRunIsolatedSessionCandidate.notAvailable(handleReadyResult.reason);
+    }
+    return PartialReparseDryRunIsolatedSessionCandidate.created(
+        handleReadyResult.handle.cleanupPlan.reason,
+        handleReadyResult.handle.cleanupPlan.requiresDestroy,
+        handleReadyResult.handle.cleanupPlan.requiresClose,
+        handleReadyResult.handle.sharesSourceFileManagerWithLiveCompiler,
+        handleReadyResult.handle.requiresFreshReusableCompiler,
+        handleReadyResult.handle.cachedCompileMustStartEmpty);
+  }
+@NonNull
+  PartialReparseDryRunIsolatedCompilerHandleReadyResult createCompilerHandleReadyResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
     final PartialReparseDryRunIsolatedCompilerHandle handle =
         createCompilerHandle(request, eligibility, attemptReport);
     if (!handle.isCreated()) {
-      return PartialReparseDryRunIsolatedSessionCandidate.notAvailable(handle.reason);
+      return PartialReparseDryRunIsolatedCompilerHandleReadyResult.notReady(handle.reason);
     }
-    return PartialReparseDryRunIsolatedSessionCandidate.created(
-        handle.reason,
-        handle.requiresDestroy,
-        handle.requiresClose,
-        handle.sharesSourceFileManagerWithLiveCompiler,
-        handle.requiresFreshReusableCompiler,
-        handle.cachedCompileMustStartEmpty);
+    return PartialReparseDryRunIsolatedCompilerHandleReadyResult.deferred(handle.reason, handle);
+  }
+@NonNull
+  PartialReparseDryRunIsolatedCompilerHandle createCompilerHandle(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerReference reference =
+        createCompilerReference(request, eligibility, attemptReport);
+    if (!reference.isCreated()) {
+      return PartialReparseDryRunIsolatedCompilerHandle.notAvailable(reference.reason);
+    }
+    return PartialReparseDryRunIsolatedCompilerHandle.created(
+        reference.reason,
+        reference.requiresDestroy,
+        reference.requiresClose,
+        true,
+        true,
+        true);
   }
 
   @NonNull
-  PartialReparseDryRunIsolatedCompilerHandle createCompilerHandle(
+  PartialReparseDryRunIsolatedCompilerReference createCompilerReference(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerReferenceReadyResult readyResult =
+        createCompilerReferenceReadyResult(request, eligibility, attemptReport);
+    return readyResult.reference;
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerReferenceReadyResult createCompilerReferenceReadyResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerBindingResult bindingResult =
+        createCompilerBindingResult(request, eligibility, attemptReport);
+    if (!bindingResult.reference.isCreated()) {
+      return PartialReparseDryRunIsolatedCompilerReferenceReadyResult.notReady(bindingResult.reason);
+    }
+    if (bindingResult.isBound() && bindingResult.reference.hasCompilerReference) {
+      return PartialReparseDryRunIsolatedCompilerReferenceReadyResult.ready(
+          bindingResult.reason, bindingResult, bindingResult.reference);
+    }
+    return PartialReparseDryRunIsolatedCompilerReferenceReadyResult.deferred(
+        bindingResult.reason, bindingResult, bindingResult.reference);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerBindingResult createCompilerBindingResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerObjectAttachResult attachResult =
+        createCompilerObjectAttachResult(request, eligibility, attemptReport);
+    if (!attachResult.reference.isCreated()) {
+      return PartialReparseDryRunIsolatedCompilerBindingResult.notBound(attachResult.reason);
+    }
+    if (attachResult.isAttached() && attachResult.reference.hasCompilerReference) {
+      return PartialReparseDryRunIsolatedCompilerBindingResult.bound(
+          attachResult.reason,
+          createCompilerAcquisition(request, eligibility, attemptReport),
+          attachResult.reference);
+    }
+    return PartialReparseDryRunIsolatedCompilerBindingResult.deferred(
+        attachResult.reason,
+        createCompilerAcquisition(request, eligibility, attemptReport),
+        attachResult.reference);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerObjectAttachResult createCompilerObjectAttachResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerObjectFill objectFill =
+        createCompilerObjectFill(request, eligibility, attemptReport);
+    if (!(objectFill.isReserved() || objectFill.isFilled())) {
+      return PartialReparseDryRunIsolatedCompilerObjectAttachResult.notAttached(objectFill.reason);
+    }
+    if (objectFill.isFilled() && objectFill.compiler != null) {
+      return PartialReparseDryRunIsolatedCompilerObjectAttachResult.attached(
+          objectFill.reason,
+          objectFill,
+          PartialReparseDryRunIsolatedCompilerReference.created(
+              objectFill.reason,
+              objectFill.compiler,
+              true,
+              true));
+    }
+    return PartialReparseDryRunIsolatedCompilerObjectAttachResult.deferred(
+        objectFill.reason, objectFill);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerObjectFill createCompilerObjectFill(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerObjectMaterialization objectMaterialization =
+        createCompilerObjectMaterialization(request, eligibility, attemptReport);
+    if (!(objectMaterialization.isReserved() || objectMaterialization.isMaterialized())) {
+      return PartialReparseDryRunIsolatedCompilerObjectFill.notFilled(objectMaterialization.reason);
+    }
+    if (objectMaterialization.isMaterialized() && objectMaterialization.compiler != null) {
+      return PartialReparseDryRunIsolatedCompilerObjectFill.filled(
+          objectMaterialization.reason,
+          objectMaterialization.objectAcquisitionResult.acquisition.compilerSlot,
+          objectMaterialization.compiler);
+    }
+    return PartialReparseDryRunIsolatedCompilerObjectFill.reserved(
+        objectMaterialization.reason,
+        objectMaterialization.objectAcquisitionResult.acquisition.compilerSlot);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerObjectMaterialization createCompilerObjectMaterialization(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerObjectAcquisitionResult objectAcquisitionResult =
+        createCompilerObjectAcquisitionResult(request, eligibility, attemptReport);
+    if (!(objectAcquisitionResult.isReserved() || objectAcquisitionResult.isAcquired())) {
+      return PartialReparseDryRunIsolatedCompilerObjectMaterialization.notMaterialized(
+          objectAcquisitionResult.reason);
+    }
+    if (objectAcquisitionResult.isAcquired() && objectAcquisitionResult.compiler != null) {
+      return PartialReparseDryRunIsolatedCompilerObjectMaterialization.materialized(
+          objectAcquisitionResult.reason, objectAcquisitionResult, objectAcquisitionResult.compiler);
+    }
+    return PartialReparseDryRunIsolatedCompilerObjectMaterialization.reserved(
+        objectAcquisitionResult.reason, objectAcquisitionResult);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerObjectAcquisitionResult createCompilerObjectAcquisitionResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerAcquisition acquisition =
+        createCompilerAcquisition(request, eligibility, attemptReport);
+    if (!(acquisition.isReserved() || acquisition.isAcquired())) {
+      return PartialReparseDryRunIsolatedCompilerObjectAcquisitionResult.notRequested(
+          acquisition.reason);
+    }
+    if (acquisition.isAcquired() && acquisition.compilerSlot.compiler != null) {
+      return PartialReparseDryRunIsolatedCompilerObjectAcquisitionResult.acquired(
+          acquisition.reason, acquisition, acquisition.compilerSlot.compiler);
+    }
+    return PartialReparseDryRunIsolatedCompilerObjectAcquisitionResult.reserved(
+        acquisition.reason, acquisition);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerAcquisition createCompilerAcquisition(
+
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerSlot compilerSlot =
+        createCompilerSlot(request, eligibility, attemptReport);
+    if (!compilerSlot.hasReservedSlot) {
+      return PartialReparseDryRunIsolatedCompilerAcquisition.notAcquired(compilerSlot.reason);
+    }
+    final PartialReparseDryRunIsolatedCleanupExecutor cleanupExecutor =
+        createCleanupExecutor(request, eligibility, attemptReport);
+    if (compilerSlot.hasCompilerObject) {
+      return PartialReparseDryRunIsolatedCompilerAcquisition.acquired(
+          compilerSlot.reason, compilerSlot, cleanupExecutor);
+    }
+    return PartialReparseDryRunIsolatedCompilerAcquisition.reserved(
+        compilerSlot.reason, compilerSlot, cleanupExecutor);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerSlot createCompilerSlot(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerCreationResult creationResult =
+        createCompilerCreationResult(request, eligibility, attemptReport);
+    if (!creationResult.isCreated()) {
+      return PartialReparseDryRunIsolatedCompilerSlot.notAllocated(creationResult.reason);
+    }
+    if (creationResult.hasCreatedCompiler && creationResult.compiler != null) {
+      return PartialReparseDryRunIsolatedCompilerSlot.filled(
+          creationResult.reason, creationResult.compiler, true);
+    }
+    return PartialReparseDryRunIsolatedCompilerSlot.reserved(creationResult.reason, true);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCleanupExecutor createCleanupExecutor(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerSlot compilerSlot =
+        createCompilerSlot(request, eligibility, attemptReport);
+    if (!compilerSlot.hasReservedSlot) {
+      return PartialReparseDryRunIsolatedCleanupExecutor.notNeeded(compilerSlot.reason);
+    }
+    return PartialReparseDryRunIsolatedCleanupExecutor.pending(
+        compilerSlot.reason,
+        PartialReparseDryRunIsolatedCleanupPlan.required(compilerSlot.reason, true, true, true, true),
+        compilerSlot,
+        true,
+        false);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerCreationResult createCompilerCreationResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedCompilerCreationGuard guard =
+        createCompilerCreationGuard(request, eligibility, attemptReport);
+    if (!guard.isAllowed()) {
+      return PartialReparseDryRunIsolatedCompilerCreationResult.notCreated(guard.reason);
+    }
+    return PartialReparseDryRunIsolatedCompilerCreationResult.createdWithoutCompiler(
+        guard.reason, true, true);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedCompilerCreationGuard createCompilerCreationGuard(
+
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
     final PartialReparseDryRunIsolatedSessionAssembly assembly =
         createSessionAssembly(request, eligibility, attemptReport);
-    return PartialReparseDryRunIsolatedCompilerHandle.notAvailable(assembly.reason);
+    return PartialReparseDryRunIsolatedCompilerCreationGuard.notAllowed(assembly.reason);
   }
+
 
   @NonNull
   PartialReparseDryRunIsolatedCopyBlueprint createCopyBlueprint(

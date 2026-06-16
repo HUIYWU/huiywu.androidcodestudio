@@ -4,6 +4,7 @@ import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.content.res.ColorStateList
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.Environment as AndroidEnvironment
@@ -19,6 +20,7 @@ import android.widget.TextView
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.google.android.material.color.MaterialColors
 import androidx.core.provider.DocumentsContractCompat
 import androidx.databinding.DataBindingUtil
 import androidx.fragment.app.FragmentActivity
@@ -52,8 +54,11 @@ import org.slf4j.LoggerFactory
 class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private var activeDropdownPopup: ListPopupWindow? = null
-
-
+  private var showLanguageDropdownAction: (() -> Unit)? = null
+  private var languageDefaultTextColors: ColorStateList? = null
+  private var languageDefaultHintTextColors: ColorStateList? = null
+  private var languageDefaultStrokeColors: ColorStateList? = null
+ 
   private var listener: AtcInterface.TemplateCreationListener? = null
   private var selectedTemplate: Template? = null
   private var _binding: DialogAtcWizardBinding? = null
@@ -134,6 +139,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     val languageItems = arrayOf(ctx.getString(R.string.kotlin), ctx.getString(R.string.java))
     var selectedLanguageIndex = 0
     binding.languageInput.applyDropdownFieldStyle()
+    languageDefaultTextColors = binding.languageInput.textColors
+    languageDefaultHintTextColors = binding.languageInputLayout.defaultHintTextColor
+    languageDefaultStrokeColors = ColorStateList.valueOf(binding.languageInputLayout.boxStrokeColor)
     binding.languageInput.setText(languageItems[selectedLanguageIndex], false)
     updateLanguageIcon(languageItems[selectedLanguageIndex])
     val showLanguageDropdown = {
@@ -147,9 +155,10 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         updateLanguageIcon(languageItems[selectedLanguageIndex])
       }
     }
-
-    binding.languageInput.setOnClickListener { showLanguageDropdown() }
-    binding.languageInputLayout.setEndIconOnClickListener { showLanguageDropdown() }
+    showLanguageDropdownAction = showLanguageDropdown
+ 
+    binding.languageInput.setOnClickListener { showLanguageDropdownAction?.invoke() }
+    binding.languageInputLayout.setEndIconOnClickListener { showLanguageDropdownAction?.invoke() }
 
     val sdkValues = Sdk.values()
     val minSdkDisplay = sdkValues.map { it.displayName() }.toTypedArray()
@@ -199,6 +208,98 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     inputType = android.text.InputType.TYPE_NULL
     isFocusable = false
     isClickable = true
+  }
+
+  private fun isComposeTemplateSelected(): Boolean {
+    return selectedTemplate?.javaClass?.simpleName?.contains("Compose", ignoreCase = true) == true
+  }
+
+  private fun updateLanguageDropdownAvailability() {
+    if (isComposeTemplateSelected()) {
+      binding.languageInput.setText(getString(R.string.kotlin), false)
+      updateLanguageIcon(getString(R.string.kotlin))
+      activeDropdownPopup?.dismiss()
+      applyLockedLanguageDropdownUi()
+    } else {
+      applyUnlockedLanguageDropdownUi()
+    }
+  }
+
+  private fun applyLockedLanguageDropdownUi() {
+    val lockedTextStateList =
+        ColorStateList.valueOf(
+            MaterialColors.getColor(
+                binding.languageInput,
+                com.google.android.material.R.attr.colorOnSurfaceVariant,
+            )
+        )
+    val lockedStrokeStateList =
+        ColorStateList.valueOf(
+            MaterialColors.getColor(
+                binding.languageInputLayout,
+                com.google.android.material.R.attr.colorOutlineVariant,
+            )
+        )
+    val lockedContainerColor =
+        MaterialColors.layer(
+            MaterialColors.getColor(
+                binding.languageInputLayout,
+                com.google.android.material.R.attr.colorSurface,
+            ),
+            MaterialColors.getColor(
+                binding.languageInputLayout,
+                com.google.android.material.R.attr.colorOnSurface,
+            ),
+            0.06f,
+        )
+
+    binding.languageInput.isClickable = false
+    binding.languageInput.isEnabled = true
+    binding.languageInput.isLongClickable = false
+    binding.languageInput.setTextColor(lockedTextStateList)
+    binding.languageInput.setOnClickListener(null)
+
+    binding.languageInputLayout.isEnabled = true
+    binding.languageInputLayout.defaultHintTextColor = lockedTextStateList
+    binding.languageInputLayout.setBoxStrokeColorStateList(lockedStrokeStateList)
+    binding.languageInputLayout.boxBackgroundColor = lockedContainerColor
+    binding.languageInputLayout.helperText = null
+    binding.languageInputLayout.endIconContentDescription = null
+    binding.languageInputLayout.endIconMode = com.google.android.material.textfield.TextInputLayout.END_ICON_CUSTOM
+    binding.languageInputLayout.isEndIconVisible = true
+    binding.languageInputLayout.endIconDrawable =
+        ContextCompat.getDrawable(requireContext(), R.drawable.ic_locked)
+    binding.languageInputLayout.setEndIconTintList(lockedTextStateList)
+    binding.languageInputLayout.setEndIconOnClickListener(null)
+  }
+
+  private fun applyUnlockedLanguageDropdownUi() {
+    binding.languageInput.isClickable = true
+    binding.languageInput.isEnabled = true
+    binding.languageInput.isLongClickable = false
+    binding.languageInput.setTextColor(requireNotNull(languageDefaultTextColors))
+    binding.languageInput.setOnClickListener {
+      showLanguageDropdownAction?.invoke()
+    }
+
+    binding.languageInputLayout.isEnabled = true
+    binding.languageInputLayout.defaultHintTextColor =
+        languageDefaultHintTextColors ?: requireNotNull(languageDefaultTextColors)
+    binding.languageInputLayout.setBoxStrokeColorStateList(
+        languageDefaultStrokeColors
+            ?: ColorStateList.valueOf(binding.languageInputLayout.boxStrokeColor)
+    )
+    binding.languageInputLayout.boxBackgroundColor = android.graphics.Color.TRANSPARENT
+    binding.languageInputLayout.helperText = null
+    binding.languageInputLayout.endIconContentDescription = null
+    binding.languageInputLayout.endIconMode = com.google.android.material.textfield.TextInputLayout.END_ICON_CUSTOM
+    binding.languageInputLayout.isEndIconVisible = true
+    binding.languageInputLayout.endIconDrawable =
+        ContextCompat.getDrawable(requireContext(), R.drawable.ic_dropdown_arrow)
+    binding.languageInputLayout.setEndIconTintList(languageDefaultHintTextColors)
+    binding.languageInputLayout.setEndIconOnClickListener {
+      showLanguageDropdownAction?.invoke()
+    }
   }
 
   private fun showAtcDropdown(
@@ -408,7 +509,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       binding.ndkVersionButton.visibility = if (isNative) View.VISIBLE else View.GONE
       binding.ndkVersionButton.text =
           getString(R.string.ndk_version_selected, Options.OPT_SELECTED_NDK_VERSION ?: getString(R.string.auto))
-
+      updateLanguageDropdownAvailability()
+ 
       setPageInteractive(binding.pageTemplates, false)
       setPageInteractive(binding.pageOptions, true)
       SheetTransitions.slide(
@@ -678,6 +780,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
           .apply { show() }
 
   override fun onDestroyView() {
+    activeDropdownPopup?.dismiss()
+    activeDropdownPopup = null
+    showLanguageDropdownAction = null
     super.onDestroyView()
     _binding = null
   }

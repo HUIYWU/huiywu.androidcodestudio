@@ -18,35 +18,97 @@ class PartialReparseDryRunIsolatedSessionFactoryTest {
     val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
     val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
     val report = PartialReparseDryRunReport.notCreated()
-
-    val session =
+val session =
         PartialReparseDryRunIsolatedSessionFactory().createSession(request, eligibility, report)
+    val candidateReadyResult =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createSessionCandidateReadyResult(request, eligibility, report)
+    val sessionReadinessResult =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createIsolatedSessionReadinessResult(request, eligibility, report)
+    val executablePreflightResult =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createExecutablePreflightResult(request, eligibility, report)
+    val executionAttemptResult =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createIsolatedExecutionAttemptResult(request, eligibility, report)
+    val attemptExecutorBridge =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createAttemptExecutorBridge(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedSession.State.NOT_AVAILABLE, session.state)
     assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, session.reason)
     assertTrue(session.requiresCompilerCopy)
     assertFalse(session.requiresClose)
+    assertFalse(session.cleanupPlan.isRequired)
     assertFalse(session.mayMutateLiveCompilerState)
     assertFalse(session.sharesSourceFileManagerWithLiveCompiler)
     assertTrue(session.requiresFreshReusableCompiler)
     assertTrue(session.cachedCompileMustStartEmpty)
     assertFalse(session.isReady)
+    assertEquals(PartialReparseDryRunIsolatedSessionCandidateReadyResult.State.NOT_READY, candidateReadyResult.state)
+    assertEquals(PartialReparseDryRunIsolatedSessionReadinessResult.State.NOT_READY, sessionReadinessResult.state)
+    assertEquals(PartialReparseDryRunIsolatedExecutablePreflightResult.State.NOT_READY, executablePreflightResult.state)
+    assertEquals(PartialReparseDryRunIsolatedExecutionAttemptResult.State.NOT_STARTED, executionAttemptResult.state)
+    assertEquals(PartialReparseDryRunIsolatedAttemptExecutorBridge.State.NOT_BRIDGED, attemptExecutorBridge.state)
   }
+  @Test
+  fun defaultFactoryReturnsNotAvailableCompilerReference() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+
+    val bindingResult =
+        PartialReparseDryRunIsolatedSessionFactory().createCompilerBindingResult(request, eligibility, report)
+    val reference =
+        PartialReparseDryRunIsolatedSessionFactory().createCompilerReference(request, eligibility, report)
+
+    assertEquals(PartialReparseDryRunIsolatedCompilerBindingResult.State.NOT_BOUND, bindingResult.state)
+    assertFalse(bindingResult.bindingAttempted)
+    assertEquals(PartialReparseDryRunIsolatedCompilerReference.State.NOT_AVAILABLE, reference.state)
+    assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, reference.reason)
+    assertFalse(reference.hasCompilerReference)
+    assertFalse(reference.requiresDestroy)
+    assertFalse(reference.requiresClose)
+    assertFalse(reference.isCreated)
+  }
+
+  @Test
+  fun defaultFactoryReturnsNotAllowedCreationGuard() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+
+    val guard =
+        PartialReparseDryRunIsolatedSessionFactory().createCompilerCreationGuard(request, eligibility, report)
+
+    assertEquals(PartialReparseDryRunIsolatedCompilerCreationGuard.State.NOT_ALLOWED, guard.state)
+    assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, guard.reason)
+    assertFalse(guard.mayCreateCompilerCopy)
+    assertFalse(guard.mayMutateLiveCompilerState)
+    assertFalse(guard.isAllowed)
+  }
+
 
   @Test
   fun defaultFactoryReturnsNotAvailableCompilerHandle() {
     val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
     val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
     val report = PartialReparseDryRunReport.notCreated()
-
-    val handle =
+val handle =
         PartialReparseDryRunIsolatedSessionFactory().createCompilerHandle(request, eligibility, report)
+    val handleReadyResult =
+        PartialReparseDryRunIsolatedSessionFactory().createCompilerHandleReadyResult(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedCompilerHandle.State.NOT_AVAILABLE, handle.state)
     assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, handle.reason)
     assertFalse(handle.hasCompilerCopy)
     assertFalse(handle.requiresDestroy)
     assertFalse(handle.requiresClose)
+    assertFalse(handle.cleanupPlan.isRequired)
+    assertFalse(handle.isCreated)
+    assertEquals(PartialReparseDryRunIsolatedCompilerHandleReadyResult.State.NOT_READY, handleReadyResult.state)
+    assertFalse(handleReadyResult.readyCheckAttempted)
     assertFalse(handle.sharesSourceFileManagerWithLiveCompiler)
     assertTrue(handle.requiresFreshReusableCompiler)
     assertTrue(handle.cachedCompileMustStartEmpty)
@@ -61,6 +123,8 @@ class PartialReparseDryRunIsolatedSessionFactoryTest {
 
     val candidate =
         PartialReparseDryRunIsolatedSessionFactory().createSessionCandidate(request, eligibility, report)
+    val handleReadyResult =
+        PartialReparseDryRunIsolatedSessionFactory().createCompilerHandleReadyResult(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedSessionCandidate.State.NOT_AVAILABLE, candidate.state)
     assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, candidate.reason)
@@ -68,7 +132,9 @@ class PartialReparseDryRunIsolatedSessionFactoryTest {
     assertFalse(candidate.requiresDestroy)
     assertFalse(candidate.requiresClose)
     assertFalse(candidate.canExecuteDryRun)
+    assertFalse(candidate.cleanupPlan.isRequired)
     assertFalse(candidate.isCreated)
+    assertEquals(PartialReparseDryRunIsolatedCompilerHandleReadyResult.State.NOT_READY, handleReadyResult.state)
   }
 
   @Test
@@ -149,6 +215,182 @@ class PartialReparseDryRunIsolatedSessionFactoryTest {
     assertTrue(plan.isReady)
     assertEquals(1, factory.calls)
   }
+  @Test
+  fun createCompilerCreationResultReturnsNotCreatedWhenGuardRejects() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+val result =
+        PartialReparseDryRunIsolatedSessionFactory().createCompilerCreationResult(request, eligibility, report)
+val slot = PartialReparseDryRunIsolatedSessionFactory().createCompilerSlot(request, eligibility, report)
+    val acquisition =
+        PartialReparseDryRunIsolatedSessionFactory().createCompilerAcquisition(request, eligibility, report)
+    val objectAcquisitionResult =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createCompilerObjectAcquisitionResult(request, eligibility, report)
+    val objectMaterialization =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createCompilerObjectMaterialization(request, eligibility, report)
+    val objectFill =
+        PartialReparseDryRunIsolatedSessionFactory().createCompilerObjectFill(request, eligibility, report)
+    val objectAttachResult =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createCompilerObjectAttachResult(request, eligibility, report)
+    val referenceReadyResult =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createCompilerReferenceReadyResult(request, eligibility, report)
+    val cleanupExecutor =
+        PartialReparseDryRunIsolatedSessionFactory().createCleanupExecutor(request, eligibility, report)
+
+    assertEquals(PartialReparseDryRunIsolatedCompilerCreationResult.State.NOT_CREATED, result.state)
+
+    assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, result.reason)
+    assertFalse(result.hasCreatedCompiler)
+    assertFalse(result.requiresDestroy)
+    assertFalse(result.requiresClose)
+    assertFalse(result.cleanupRequired)
+    assertFalse(result.isCreated)
+    assertEquals(PartialReparseDryRunIsolatedCompilerSlot.State.NOT_ALLOCATED, slot.state)
+    assertFalse(slot.hasReservedSlot)
+assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.NOT_ACQUIRED, acquisition.state)
+    assertFalse(acquisition.acquisitionAttempted)
+    assertEquals(
+        PartialReparseDryRunIsolatedCompilerObjectAcquisitionResult.State.NOT_REQUESTED,
+        objectAcquisitionResult.state,
+    )
+    assertFalse(objectAcquisitionResult.acquisitionAttempted)
+    assertEquals(
+        PartialReparseDryRunIsolatedCompilerObjectMaterialization.State.NOT_MATERIALIZED,
+        objectMaterialization.state,
+    )
+    assertFalse(objectMaterialization.materializationAttempted)
+    assertEquals(PartialReparseDryRunIsolatedCompilerObjectFill.State.NOT_FILLED, objectFill.state)
+    assertFalse(objectFill.fillAttempted)
+    assertEquals(PartialReparseDryRunIsolatedCompilerObjectAttachResult.State.NOT_ATTACHED, objectAttachResult.state)
+    assertFalse(objectAttachResult.attachAttempted)
+    assertEquals(PartialReparseDryRunIsolatedCompilerReferenceReadyResult.State.NOT_READY, referenceReadyResult.state)
+    assertFalse(referenceReadyResult.readyCheckAttempted)
+    assertEquals(PartialReparseDryRunIsolatedCleanupExecutor.State.NOT_NEEDED, cleanupExecutor.state)
+
+    assertFalse(cleanupExecutor.isPending)
+  }
+
+  @Test
+  fun createCompilerReferenceReturnsCreatedWhenCreationGuardAllows() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val factory = GuardAllowedSessionFactory()
+val result = factory.createCompilerCreationResult(request, eligibility, report)
+    val slot = factory.createCompilerSlot(request, eligibility, report)
+val acquisition = factory.createCompilerAcquisition(request, eligibility, report)
+    val objectAcquisitionResult =
+        factory.createCompilerObjectAcquisitionResult(request, eligibility, report)
+    val objectMaterialization =
+        factory.createCompilerObjectMaterialization(request, eligibility, report)
+    val objectFill = factory.createCompilerObjectFill(request, eligibility, report)
+    val objectAttachResult =
+        factory.createCompilerObjectAttachResult(request, eligibility, report)
+    val bindingResult = factory.createCompilerBindingResult(request, eligibility, report)
+    val referenceReadyResult =
+        factory.createCompilerReferenceReadyResult(request, eligibility, report)
+    val cleanupExecutor = factory.createCleanupExecutor(request, eligibility, report)
+    val reference = factory.createCompilerReference(request, eligibility, report)
+
+    assertEquals(PartialReparseDryRunIsolatedCompilerCreationResult.State.CREATED, result.state)
+    assertEquals("guard allowed", result.reason)
+    assertFalse(result.hasCreatedCompiler)
+    assertTrue(result.requiresDestroy)
+    assertTrue(result.requiresClose)
+    assertTrue(result.isCreated)
+    assertEquals(PartialReparseDryRunIsolatedCompilerSlot.State.RESERVED, slot.state)
+    assertTrue(slot.hasReservedSlot)
+    assertFalse(slot.hasCompilerObject)
+    assertTrue(slot.ownedBySession)
+assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acquisition.state)
+    assertFalse(acquisition.acquisitionAttempted)
+    assertEquals(
+        PartialReparseDryRunIsolatedCompilerObjectAcquisitionResult.State.RESERVED,
+        objectAcquisitionResult.state,
+    )
+    assertFalse(objectAcquisitionResult.acquisitionAttempted)
+    assertEquals(
+        PartialReparseDryRunIsolatedCompilerObjectMaterialization.State.RESERVED,
+        objectMaterialization.state,
+    )
+    assertFalse(objectMaterialization.materializationAttempted)
+    assertEquals(PartialReparseDryRunIsolatedCompilerObjectFill.State.RESERVED, objectFill.state)
+    assertFalse(objectFill.fillAttempted)
+    assertEquals(PartialReparseDryRunIsolatedCompilerObjectAttachResult.State.DEFERRED, objectAttachResult.state)
+    assertFalse(objectAttachResult.attachAttempted)
+    assertTrue(objectAttachResult.reference.isCreated)
+    assertEquals(PartialReparseDryRunIsolatedCompilerBindingResult.State.DEFERRED, bindingResult.state)
+    assertEquals(PartialReparseDryRunIsolatedCompilerReferenceReadyResult.State.DEFERRED, referenceReadyResult.state)
+
+    assertFalse(bindingResult.bindingAttempted)
+    assertFalse(bindingResult.hasBoundCompilerObject)
+    assertFalse(referenceReadyResult.readyCheckAttempted)
+    assertTrue(referenceReadyResult.reference.isCreated)
+    assertEquals(PartialReparseDryRunIsolatedCleanupExecutor.State.PENDING, cleanupExecutor.state)
+    assertTrue(cleanupExecutor.shouldRunOnFailure)
+    assertFalse(cleanupExecutor.shouldRunOnSuccess)
+    assertEquals(PartialReparseDryRunIsolatedCompilerReference.State.CREATED, reference.state)
+    assertEquals("guard allowed", reference.reason)
+    assertFalse(reference.hasCompilerReference)
+    assertTrue(reference.requiresDestroy)
+    assertTrue(reference.requiresClose)
+    assertTrue(reference.isCreated)
+  }
+
+  @Test
+  fun createCompilerHandleReturnsCreatedWhenReferenceIsCreated() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val factory = ReferenceBackedSessionFactory()
+
+    val handle = factory.createCompilerHandle(request, eligibility, report)
+    val handleReadyResult = factory.createCompilerHandleReadyResult(request, eligibility, report)
+
+    assertEquals(PartialReparseDryRunIsolatedCompilerHandle.State.CREATED, handle.state)
+    assertEquals("reference created", handle.reason)
+    assertEquals(PartialReparseDryRunIsolatedCompilerHandleReadyResult.State.DEFERRED, handleReadyResult.state)
+    assertTrue(handle.hasCompilerCopy)
+    assertTrue(handle.requiresDestroy)
+    assertTrue(handle.requiresClose)
+    assertTrue(handle.cleanupPlan.isRequired)
+    assertTrue(handle.cleanupPlan.cleanupOwnedBySession)
+    assertTrue(handle.sharesSourceFileManagerWithLiveCompiler)
+    assertTrue(handle.requiresFreshReusableCompiler)
+    assertTrue(handle.cachedCompileMustStartEmpty)
+    assertTrue(handle.isCreated)
+  }
+
+  @Test
+  fun createCompilerHandleWorksWhenReferenceStageIsCreatedWithoutInstantiatingCompiler() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val factory = ReferenceHoldingSessionFactory()
+
+    val handle = factory.createCompilerHandle(request, eligibility, report)
+    val handleReadyResult = factory.createCompilerHandleReadyResult(request, eligibility, report)
+
+    assertEquals(PartialReparseDryRunIsolatedCompilerHandle.State.CREATED, handle.state)
+    assertEquals("reference with compiler", handle.reason)
+    assertEquals(PartialReparseDryRunIsolatedCompilerHandleReadyResult.State.DEFERRED, handleReadyResult.state)
+    assertTrue(handle.hasCompilerCopy)
+    assertTrue(handle.requiresDestroy)
+    assertTrue(handle.requiresClose)
+    assertTrue(handle.cleanupPlan.isRequired)
+    assertTrue(handle.cleanupPlan.cleanupOwnedBySession)
+    assertTrue(handle.sharesSourceFileManagerWithLiveCompiler)
+    assertTrue(handle.requiresFreshReusableCompiler)
+    assertTrue(handle.cachedCompileMustStartEmpty)
+    assertTrue(handle.isCreated)
+  }
+
+
 
   @Test
   fun createSessionCandidateReturnsCreatedWhenHandleIsCreated() {
@@ -158,12 +400,18 @@ class PartialReparseDryRunIsolatedSessionFactoryTest {
     val factory = HandleBackedSessionFactory()
 
     val candidate = factory.createSessionCandidate(request, eligibility, report)
+    val handleReadyResult = factory.createCompilerHandleReadyResult(request, eligibility, report)
+    val candidateReadyResult = factory.createSessionCandidateReadyResult(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedSessionCandidate.State.CREATED, candidate.state)
     assertEquals("handle created", candidate.reason)
+    assertEquals(PartialReparseDryRunIsolatedCompilerHandleReadyResult.State.DEFERRED, handleReadyResult.state)
+    assertEquals(PartialReparseDryRunIsolatedSessionCandidateReadyResult.State.DEFERRED, candidateReadyResult.state)
     assertTrue(candidate.hasCompilerCopyCandidate)
     assertTrue(candidate.requiresDestroy)
     assertTrue(candidate.requiresClose)
+    assertTrue(candidate.cleanupPlan.isRequired)
+    assertTrue(candidate.cleanupPlan.cleanupOwnedBySession)
     assertFalse(candidate.canExecuteDryRun)
     assertTrue(candidate.sharesSourceFileManagerWithLiveCompiler)
     assertTrue(candidate.requiresFreshReusableCompiler)
@@ -179,11 +427,23 @@ class PartialReparseDryRunIsolatedSessionFactoryTest {
     val factory = CandidateBackedSessionFactory()
 
     val session = factory.createSession(request, eligibility, report)
+    val candidateReadyResult = factory.createSessionCandidateReadyResult(request, eligibility, report)
+    val sessionReadinessResult = factory.createIsolatedSessionReadinessResult(request, eligibility, report)
+    val executablePreflightResult = factory.createExecutablePreflightResult(request, eligibility, report)
+    val executionAttemptResult = factory.createIsolatedExecutionAttemptResult(request, eligibility, report)
+    val attemptExecutorBridge = factory.createAttemptExecutorBridge(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedSession.State.READY, session.state)
     assertEquals("candidate created", session.reason)
+    assertEquals(PartialReparseDryRunIsolatedSessionCandidateReadyResult.State.DEFERRED, candidateReadyResult.state)
+    assertEquals(PartialReparseDryRunIsolatedSessionReadinessResult.State.DEFERRED, sessionReadinessResult.state)
+    assertEquals(PartialReparseDryRunIsolatedExecutablePreflightResult.State.DEFERRED, executablePreflightResult.state)
+    assertEquals(PartialReparseDryRunIsolatedExecutionAttemptResult.State.DEFERRED, executionAttemptResult.state)
+    assertEquals(PartialReparseDryRunIsolatedAttemptExecutorBridge.State.DEFERRED, attemptExecutorBridge.state)
     assertTrue(session.requiresCompilerCopy)
     assertTrue(session.requiresClose)
+    assertTrue(session.cleanupPlan.isRequired)
+    assertTrue(session.cleanupPlan.cleanupOwnedBySession)
     assertFalse(session.mayMutateLiveCompilerState)
     assertTrue(session.sharesSourceFileManagerWithLiveCompiler)
     assertTrue(session.requiresFreshReusableCompiler)
@@ -210,8 +470,47 @@ class PartialReparseDryRunIsolatedSessionFactoryTest {
       return session
     }
   }
+  private class GuardAllowedSessionFactory : PartialReparseDryRunIsolatedSessionFactory() {
+    override fun createCompilerCreationGuard(
+        request: CompilationRequest,
+        eligibility: PartialReparseEligibility,
+        attemptReport: PartialReparseDryRunReport,
+    ): PartialReparseDryRunIsolatedCompilerCreationGuard {
+      return PartialReparseDryRunIsolatedCompilerCreationGuard.allowed("guard allowed")
+    }
+  }
+
+  private class ReferenceBackedSessionFactory : PartialReparseDryRunIsolatedSessionFactory() {
+    override fun createCompilerReference(
+        request: CompilationRequest,
+        eligibility: PartialReparseEligibility,
+        attemptReport: PartialReparseDryRunReport,
+    ): PartialReparseDryRunIsolatedCompilerReference {
+      return PartialReparseDryRunIsolatedCompilerReference.createdWithoutReference(
+          "reference created",
+          true,
+          true,
+      )
+    }
+  }
+
+  private class ReferenceHoldingSessionFactory : PartialReparseDryRunIsolatedSessionFactory() {
+    override fun createCompilerReference(
+        request: CompilationRequest,
+        eligibility: PartialReparseEligibility,
+        attemptReport: PartialReparseDryRunReport,
+    ): PartialReparseDryRunIsolatedCompilerReference {
+      return PartialReparseDryRunIsolatedCompilerReference.createdWithoutReference(
+          "reference with compiler",
+          true,
+          true,
+      )
+    }
+  }
+
 
   private class HandleBackedSessionFactory : PartialReparseDryRunIsolatedSessionFactory() {
+
     override fun createCompilerHandle(
         request: CompilationRequest,
         eligibility: PartialReparseEligibility,
