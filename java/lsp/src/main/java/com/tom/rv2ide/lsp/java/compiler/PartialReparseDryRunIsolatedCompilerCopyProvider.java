@@ -56,4 +56,35 @@ public class PartialReparseDryRunIsolatedCompilerCopyProvider {
     }
     return PartialReparseDryRunIsolatedPlan.ready(session.reason);
   }
+
+  @NonNull
+  public PartialReparseDryRunIsolatedPlan planCompilerCopy(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport,
+      CompilerProvider liveCompiler) {
+    final PartialReparseDryRunIsolatedSession session =
+        sessionFactory.createSession(request, eligibility, attemptReport, liveCompiler);
+    if (!session.isReady()) {
+      return PartialReparseDryRunIsolatedPlan.notAvailable(session.reason);
+    }
+    return PartialReparseDryRunIsolatedPlan.ready(session.reason);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedAttemptExecutorConsumerResult createAttemptExecutorConsumerResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    return sessionFactory.createAttemptExecutorConsumerResult(request, eligibility, attemptReport);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedAttemptExecutorConsumerResult createAttemptExecutorConsumerResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport,
+      CompilerProvider liveCompiler) {
+    return sessionFactory.createAttemptExecutorConsumerResult(request, eligibility, attemptReport, liveCompiler);
+  }
 }

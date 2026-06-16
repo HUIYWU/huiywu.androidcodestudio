@@ -42,11 +42,45 @@ public class PartialReparseDryRunIsolatedPlanner {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
+    return plan(request, eligibility, attemptReport, null);
+  }
+
+  @NonNull
+  public PartialReparseDryRunIsolatedPlan plan(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport,
+      CompilerProvider liveCompiler) {
     final PartialReparseDryRunIsolatedPlan compilerCopyPlan =
-        compilerCopyProvider.planCompilerCopy(request, eligibility, attemptReport);
+        compilerCopyProvider.planCompilerCopy(request, eligibility, attemptReport, liveCompiler);
     if (!compilerCopyPlan.isReady()) {
       return compilerCopyPlan;
     }
     return PartialReparseDryRunIsolatedPlan.ready(compilerCopyPlan.reason);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedPlanConsumerReadinessResult createPlanConsumerReadinessResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    return createPlanConsumerReadinessResult(request, eligibility, attemptReport, null);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedPlanConsumerReadinessResult createPlanConsumerReadinessResult(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport,
+      CompilerProvider liveCompiler) {
+    final PartialReparseDryRunIsolatedAttemptExecutorConsumerResult attemptExecutorConsumerResult =
+        compilerCopyProvider.createAttemptExecutorConsumerResult(
+            request, eligibility, attemptReport, liveCompiler);
+    if (!attemptExecutorConsumerResult.attemptExecutorBridge.executionAttemptResult.preflightResult.sessionReadinessResult.session.isReady()) {
+      return PartialReparseDryRunIsolatedPlanConsumerReadinessResult.notReady(
+          attemptExecutorConsumerResult.reason);
+    }
+    return PartialReparseDryRunIsolatedPlanConsumerReadinessResult.deferred(
+        attemptExecutorConsumerResult.reason, attemptExecutorConsumerResult);
   }
 }

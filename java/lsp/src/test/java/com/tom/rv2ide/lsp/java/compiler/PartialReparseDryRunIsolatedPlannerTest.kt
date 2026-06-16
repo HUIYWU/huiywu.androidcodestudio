@@ -18,13 +18,16 @@ class PartialReparseDryRunIsolatedPlannerTest {
     val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
     val report = PartialReparseDryRunReport.notCreated()
 
-    val plan = PartialReparseDryRunIsolatedPlanner().plan(request, eligibility, report)
+    val planner = PartialReparseDryRunIsolatedPlanner()
+    val plan = planner.plan(request, eligibility, report)
+    val planConsumerReadinessResult = planner.createPlanConsumerReadinessResult(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedPlan.State.NOT_AVAILABLE, plan.state)
     assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, plan.reason)
     assertTrue(plan.requiresCompilerCopy)
     assertFalse(plan.mayMutateLiveCompilerState)
     assertFalse(plan.isReady)
+    assertEquals(PartialReparseDryRunIsolatedPlanConsumerReadinessResult.State.NOT_READY, planConsumerReadinessResult.state)
   }
 
   private class FakeSourceFile :

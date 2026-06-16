@@ -413,8 +413,8 @@ public class JavaCompilerService implements CompilerProvider {
             report,
             fullSnapshot[0],
             attemptReport ->
-                partialReparseDryRunPartialSnapshotProvider.createPartialSnapshot(
-                    request, eligibility, attemptReport));
+                      partialReparseDryRunPartialSnapshotProvider.createPartialSnapshot(
+                          request, eligibility, attemptReport, this));
     logPartialReparseDryRunReport(reportWithComparison);
   }
 

@@ -46,8 +46,17 @@ public final class PartialReparseDryRunPartialSnapshotProvider {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
+    return createPartialSnapshot(request, eligibility, attemptReport, null);
+  }
+
+  @Nullable
+  public PartialReparseDryRunSnapshot createPartialSnapshot(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport,
+      @Nullable CompilerProvider liveCompiler) {
     final PartialReparseDryRunIsolatedPlan plan =
-        isolatedPlanner.plan(request, eligibility, attemptReport);
+        isolatedPlanner.plan(request, eligibility, attemptReport, liveCompiler);
     if (!plan.isReady()) {
       return null;
     }

@@ -7,6 +7,7 @@ import jdkx.tools.JavaFileObject
 import jdkx.tools.SimpleJavaFileObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -35,6 +36,9 @@ val session =
     val attemptExecutorBridge =
         PartialReparseDryRunIsolatedSessionFactory()
             .createAttemptExecutorBridge(request, eligibility, report)
+    val attemptExecutorConsumerResult =
+        PartialReparseDryRunIsolatedSessionFactory()
+            .createAttemptExecutorConsumerResult(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedSession.State.NOT_AVAILABLE, session.state)
     assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, session.reason)
@@ -51,6 +55,7 @@ val session =
     assertEquals(PartialReparseDryRunIsolatedExecutablePreflightResult.State.NOT_READY, executablePreflightResult.state)
     assertEquals(PartialReparseDryRunIsolatedExecutionAttemptResult.State.NOT_STARTED, executionAttemptResult.state)
     assertEquals(PartialReparseDryRunIsolatedAttemptExecutorBridge.State.NOT_BRIDGED, attemptExecutorBridge.state)
+    assertEquals(PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.State.NOT_CONSUMED, attemptExecutorConsumerResult.state)
   }
   @Test
   fun defaultFactoryReturnsNotAvailableCompilerReference() {
@@ -432,6 +437,7 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
     val executablePreflightResult = factory.createExecutablePreflightResult(request, eligibility, report)
     val executionAttemptResult = factory.createIsolatedExecutionAttemptResult(request, eligibility, report)
     val attemptExecutorBridge = factory.createAttemptExecutorBridge(request, eligibility, report)
+    val attemptExecutorConsumerResult = factory.createAttemptExecutorConsumerResult(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedSession.State.READY, session.state)
     assertEquals("candidate created", session.reason)
@@ -440,6 +446,7 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
     assertEquals(PartialReparseDryRunIsolatedExecutablePreflightResult.State.DEFERRED, executablePreflightResult.state)
     assertEquals(PartialReparseDryRunIsolatedExecutionAttemptResult.State.DEFERRED, executionAttemptResult.state)
     assertEquals(PartialReparseDryRunIsolatedAttemptExecutorBridge.State.DEFERRED, attemptExecutorBridge.state)
+    assertEquals(PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.State.DEFERRED, attemptExecutorConsumerResult.state)
     assertTrue(session.requiresCompilerCopy)
     assertTrue(session.requiresClose)
     assertTrue(session.cleanupPlan.isRequired)
@@ -449,6 +456,63 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
     assertTrue(session.requiresFreshReusableCompiler)
     assertTrue(session.cachedCompileMustStartEmpty)
     assertTrue(session.isReady)
+  }
+  @Test
+  fun createExecutionAttemptCanBeBridgedThroughSingleHookWithoutAddingNewLayers() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val factory = StartedAttemptSessionFactory()
+
+    val executionAttemptResult = factory.createIsolatedExecutionAttemptResult(request, eligibility, report)
+
+    assertEquals(PartialReparseDryRunIsolatedExecutionAttemptResult.State.STARTED, executionAttemptResult.state)
+    assertTrue(executionAttemptResult.attemptStarted)
+  }
+
+  @Test
+  fun defaultFactoryDoesNotAllowFutureCompilerCopyBridge() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val factory = CandidateBackedSessionFactory()
+    val preflightResult = factory.createExecutablePreflightResult(request, eligibility, report)
+
+    assertFalse(factory.allowsFutureCompilerCopyBridge(request, eligibility, report, preflightResult))
+  }
+
+  @Test
+  fun createSessionCanReceiveLiveCompilerSourceWithoutChangingDefaultSemantics() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val liveCompiler = FakeCompilerProvider()
+    val factory = RecordingLiveCompilerSessionFactory(PartialReparseDryRunIsolatedSession.notAvailable("session missing"))
+
+    val session = factory.createSession(request, eligibility, report, liveCompiler)
+
+    assertEquals(PartialReparseDryRunIsolatedSession.State.NOT_AVAILABLE, session.state)
+    assertEquals("session missing", session.reason)
+    assertEquals(1, factory.calls)
+    assertNotNull(factory.liveCompiler)
+    assertSame(liveCompiler, factory.liveCompiler)
+  }
+
+  @Test
+  fun executionAttemptBridgeCanObserveLiveCompilerSourceWithoutExecutingCopy() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val liveCompiler = FakeCompilerProvider()
+    val factory = ObservingBridgeSessionFactory()
+
+    val executionAttemptResult =
+        factory.createIsolatedExecutionAttemptResult(request, eligibility, report, liveCompiler)
+
+    assertEquals(PartialReparseDryRunIsolatedExecutionAttemptResult.State.DEFERRED, executionAttemptResult.state)
+    assertFalse(executionAttemptResult.attemptStarted)
+    assertNotNull(factory.observedLiveCompiler)
+    assertSame(liveCompiler, factory.observedLiveCompiler)
   }
 
   private class RecordingSessionFactory(private val session: PartialReparseDryRunIsolatedSession) :
@@ -467,6 +531,29 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
       this.request = request
       this.eligibility = eligibility
       this.report = attemptReport
+      return session
+    }
+  }
+
+  private class RecordingLiveCompilerSessionFactory(private val session: PartialReparseDryRunIsolatedSession) :
+      PartialReparseDryRunIsolatedSessionFactory() {
+    var calls = 0
+    var request: CompilationRequest? = null
+    var eligibility: PartialReparseEligibility? = null
+    var report: PartialReparseDryRunReport? = null
+    var liveCompiler: CompilerProvider? = null
+
+    override fun createSession(
+        request: CompilationRequest,
+        eligibility: PartialReparseEligibility,
+        attemptReport: PartialReparseDryRunReport,
+        liveCompiler: CompilerProvider?,
+    ): PartialReparseDryRunIsolatedSession {
+      calls++
+      this.request = request
+      this.eligibility = eligibility
+      this.report = attemptReport
+      this.liveCompiler = liveCompiler
       return session
     }
   }
@@ -527,20 +614,91 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
     }
   }
 
-  private class CandidateBackedSessionFactory : PartialReparseDryRunIsolatedSessionFactory() {
-    override fun createSessionCandidate(
-        request: CompilationRequest,
-        eligibility: PartialReparseEligibility,
-        attemptReport: PartialReparseDryRunReport,
-    ): PartialReparseDryRunIsolatedSessionCandidate {
-      return PartialReparseDryRunIsolatedSessionCandidate.created(
-          "candidate created",
-          true,
-          true,
-          true,
-          true,
-          true,
-      )
+  private open class CandidateBackedSessionFactory : PartialReparseDryRunIsolatedSessionFactory() {
+  override fun createSessionCandidate(
+      request: CompilationRequest,
+      eligibility: PartialReparseEligibility,
+      attemptReport: PartialReparseDryRunReport,
+  ): PartialReparseDryRunIsolatedSessionCandidate {
+    return PartialReparseDryRunIsolatedSessionCandidate.created(
+        "candidate created",
+        true,
+        true,
+        true,
+        true,
+        true,
+    )
+  }
+}
+private class StartedAttemptSessionFactory : CandidateBackedSessionFactory() {
+  override fun allowsFutureCompilerCopyBridge(
+      request: CompilationRequest,
+      eligibility: PartialReparseEligibility,
+      attemptReport: PartialReparseDryRunReport,
+      preflightResult: PartialReparseDryRunIsolatedExecutablePreflightResult,
+  ): Boolean = true
+
+  override fun bridgeExecutionAttempt(
+      request: CompilationRequest,
+      eligibility: PartialReparseEligibility,
+      attemptReport: PartialReparseDryRunReport,
+      preflightResult: PartialReparseDryRunIsolatedExecutablePreflightResult,
+  ): PartialReparseDryRunIsolatedExecutionAttemptResult {
+    return PartialReparseDryRunIsolatedExecutionAttemptResult.started(
+        "attempt started",
+        preflightResult,
+        true,
+    )
+  }
+}
+
+private class ObservingBridgeSessionFactory : CandidateBackedSessionFactory() {
+  var observedLiveCompiler: CompilerProvider? = null
+
+  override fun createSessionCandidate(
+      request: CompilationRequest,
+      eligibility: PartialReparseEligibility,
+      attemptReport: PartialReparseDryRunReport,
+      liveCompiler: CompilerProvider?,
+  ): PartialReparseDryRunIsolatedSessionCandidate {
+    return PartialReparseDryRunIsolatedSessionCandidate.created(
+        "candidate created",
+        true,
+        true,
+        true,
+        true,
+        true,
+    )
+  }
+
+  override fun allowsFutureCompilerCopyBridge(
+      request: CompilationRequest,
+      eligibility: PartialReparseEligibility,
+      attemptReport: PartialReparseDryRunReport,
+      preflightResult: PartialReparseDryRunIsolatedExecutablePreflightResult,
+      liveCompiler: CompilerProvider?,
+  ): Boolean {
+    observedLiveCompiler = liveCompiler
+    return false
+  }
+}
+
+private class FakeCompilerProvider : CompilerProvider {
+    override fun publicTopLevelTypes() = java.util.TreeSet<String>()
+    override fun packagePrivateTopLevelTypes(packageName: String) = java.util.TreeSet<String>()
+    override fun findAnywhere(className: String) = java.util.Optional.empty<JavaFileObject>()
+    override fun findTypeDeclaration(className: String) = CompilerProvider.NOT_FOUND
+    override fun findTypeReferences(className: String) = emptyArray<java.nio.file.Path>()
+    override fun findMemberReferences(className: String, memberName: String) = emptyArray<java.nio.file.Path>()
+    override fun findQualifiedNames(simpleName: String, onlyOne: Boolean) = emptyList<String>()
+    override fun parse(file: java.nio.file.Path): com.tom.rv2ide.lsp.java.parser.ParseTask {
+      throw UnsupportedOperationException()
+    }
+    override fun parse(file: JavaFileObject): com.tom.rv2ide.lsp.java.parser.ParseTask {
+      throw UnsupportedOperationException()
+    }
+    override fun compile(request: CompilationRequest): SynchronizedTask {
+      throw UnsupportedOperationException()
     }
   }
 
