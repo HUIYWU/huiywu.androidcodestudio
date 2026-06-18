@@ -33,7 +33,7 @@ final class CompilationWorkingSetBuilder {
       return request;
     }
 
-    final Collection<JavaFileObject> originalSources = request.getSources();
+    final Collection<JavaFileObject> originalSources = request.sources;
     if (originalSources.isEmpty() || originalSources.size() != 1) {
       return request;
     }
@@ -43,7 +43,7 @@ final class CompilationWorkingSetBuilder {
     if (primaryPath == null) {
       return request;
     }
-    final CompilationRequest cached = cachedRequestIfValid(request, primaryPath);
+    final CompilationRequest cached = cachedRequestIfValid(compiler, request, primaryPath);
     if (cached != null) {
       return cached;
     }
@@ -59,7 +59,7 @@ final class CompilationWorkingSetBuilder {
           new WorkingSetCacheEntry(
               primaryPath,
               primary.getLastModified(),
-              module.sourceIndexVersion(),
+              module.getSourceIndexVersion(),
               List.of(primaryPath));
       return request;
     }
@@ -77,29 +77,31 @@ final class CompilationWorkingSetBuilder {
         new WorkingSetCacheEntry(
             primaryPath,
             primary.getLastModified(),
-            module.sourceIndexVersion(),
+            module.getSourceIndexVersion(),
             new ArrayList<>(expanded.keySet()));
 
     return new CompilationRequest(
         expanded.values(),
-        request.getPartialRequest(),
-        request.getCompilationTaskProcessor(),
-        request.getConfigureContext());
+        request.partialRequest,
+        request.compilationTaskProcessor,
+        request.configureContext);
   }
 
   @Nullable
   private CompilationRequest cachedRequestIfValid(
-      @NonNull final CompilationRequest request, @NonNull final Path primaryPath) {
+      @NonNull final JavaCompilerService compiler,
+      @NonNull final CompilationRequest request,
+      @NonNull final Path primaryPath) {
     if (cacheEntry == null || !cacheEntry.primaryPath.equals(primaryPath)) {
       return null;
     }
 
     final ModuleProject module = compiler.getModule();
-    if (module == null || module.sourceIndexVersion() != cacheEntry.moduleSourceIndexVersion) {
+    if (module == null || module.getSourceIndexVersion() != cacheEntry.moduleSourceIndexVersion) {
       return null;
     }
 
-    final JavaFileObject primary = request.getSources().iterator().next();
+    final JavaFileObject primary = request.sources.iterator().next();
     if (primary.getLastModified() != cacheEntry.primaryLastModified) {
       return null;
     }
@@ -111,9 +113,9 @@ final class CompilationWorkingSetBuilder {
 
     return new CompilationRequest(
         cachedSources,
-        request.getPartialRequest(),
-        request.getCompilationTaskProcessor(),
-        request.getConfigureContext());
+        request.partialRequest,
+        request.compilationTaskProcessor,
+        request.configureContext);
   }
 
   private void addSamePackageSources(

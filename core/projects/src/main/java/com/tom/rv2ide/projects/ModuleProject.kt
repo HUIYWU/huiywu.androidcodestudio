@@ -190,8 +190,7 @@ abstract class ModuleProject(
     bumpSourceIndexVersion()
   }
 
-  @JvmName("getSourceIndexVersion")
-  fun sourceIndexVersion(): Long = sourceIndexVersion
+  fun getSourceIndexVersion(): Long = sourceIndexVersion
 
   fun bumpSourceIndexVersion() {
     sourceIndexVersion++
