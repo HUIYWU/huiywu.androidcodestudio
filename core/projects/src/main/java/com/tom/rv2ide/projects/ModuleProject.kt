@@ -65,6 +65,8 @@ abstract class ModuleProject(
 
   @JvmField val compileJavaSourceClasses = SourceClassTrie()
 
+  @Volatile private var sourceIndexVersion: Long = 0
+
   @JvmField val compileClasspathClasses = ClassTrie()
 
   /**
@@ -184,6 +186,15 @@ abstract class ModuleProject(
       watch.log()
       log.debug("Found {} source files.", count)
     }
+
+    bumpSourceIndexVersion()
+  }
+
+  @JvmName("getSourceIndexVersion")
+  fun sourceIndexVersion(): Long = sourceIndexVersion
+
+  fun bumpSourceIndexVersion() {
+    sourceIndexVersion++
   }
 
   fun getSourceFilesInDir(dir: Path): List<SourceNode> =

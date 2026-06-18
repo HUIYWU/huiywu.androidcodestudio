@@ -219,22 +219,54 @@ public class CompileBatch implements AutoCloseable {
       return Collections.emptySet();
     }
 
-    // Check for "class not found errors" that refer to package private classes
     Set<Path> addFiles = new HashSet<>();
     for (Diagnostic<? extends JavaFileObject> err : parent.diagnostics) {
-      if (!err.getCode().equals("compiler.err.cant.resolve.location")) {
+      if (!"compiler.err.cant.resolve.location".equals(err.getCode())) {
         continue;
       }
       if (!isValidFileRange(err)) {
         continue;
       }
-      String packageName = packageName(err);
-      ClassTrie.Node node = parent.getModule().compileJavaSourceClasses.findNode(packageName);
-      if (node != null && node.isClass() && node instanceof SourceClassTrie.SourceNode) {
-        addFiles.add(((SourceClassTrie.SourceNode) node).getFile());
-      }
+
+      addPackagePrivateSiblingSource(err, addFiles);
+      addMissingTypeSource(err, addFiles);
     }
     return addFiles;
+  }
+
+  private void addPackagePrivateSiblingSource(
+      @NonNull final Diagnostic<? extends JavaFileObject> err, @NonNull final Set<Path> addFiles) {
+    final String packageName = packageName(err);
+    final ClassTrie.Node node = parent.getModule().compileJavaSourceClasses.findNode(packageName);
+    if (node != null && node.isClass() && node instanceof SourceClassTrie.SourceNode) {
+      addFiles.add(((SourceClassTrie.SourceNode) node).getFile());
+    }
+  }
+
+  private void addMissingTypeSource(
+      @NonNull final Diagnostic<? extends JavaFileObject> err, @NonNull final Set<Path> addFiles) {
+    final String missingClassName = missingClassName(err);
+    if (missingClassName == null || missingClassName.isBlank()) {
+      return;
+    }
+
+    Path exact = parent.findTypeDeclaration(missingClassName);
+    if (exact != CompilerProvider.NOT_FOUND) {
+      addFiles.add(exact);
+      return;
+    }
+
+    if (missingClassName.indexOf('.') >= 0) {
+      return;
+    }
+
+    for (String qualifiedName : parent.findQualifiedNames(missingClassName, true)) {
+      Path inferred = parent.findTypeDeclaration(qualifiedName);
+      if (inferred != CompilerProvider.NOT_FOUND) {
+        addFiles.add(inferred);
+        return;
+      }
+    }
   }
 
   private String packageName(Diagnostic<? extends JavaFileObject> err) {
@@ -251,6 +283,67 @@ public class CompileBatch implements AutoCloseable {
     }
     Path file = Paths.get(err.getSource().toUri());
     return StringSearch.packageName(file);
+  }
+
+  private String missingClassName(Diagnostic<? extends JavaFileObject> err) {
+    if (!(err instanceof ClientCodeWrapper.DiagnosticSourceUnwrapper)) {
+      return null;
+    }
+
+    JCDiagnostic diagnostic = ((ClientCodeWrapper.DiagnosticSourceUnwrapper) err).d;
+    Object[] args = diagnostic.getArgs();
+    if (args == null || args.length < 2 || !(args[0] instanceof Kinds.KindName)) {
+      return null;
+    }
+
+    Kinds.KindName kind = (Kinds.KindName) args[0];
+    if (kind != Kinds.KindName.CLASS) {
+      return null;
+    }
+
+    String positionText = diagnostic.getDiagnosticPosition() == null
+        ? ""
+        : diagnostic.getDiagnosticPosition().toString();
+    if (isResolvableClassName(positionText)) {
+      return positionText;
+    }
+
+    for (Object arg : args) {
+      if (arg == null) {
+        continue;
+      }
+
+      String candidate = String.valueOf(arg).trim();
+      if (isResolvableClassName(candidate)) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private boolean isResolvableClassName(String candidate) {
+    if (candidate == null || candidate.isBlank()) {
+      return false;
+    }
+
+    if (candidate.contains(" ") || candidate.contains("/") || candidate.contains("(")) {
+      return false;
+    }
+
+    char first = candidate.charAt(0);
+    if (!Character.isJavaIdentifierStart(first)) {
+      return false;
+    }
+
+    for (int i = 1; i < candidate.length(); i++) {
+      char ch = candidate.charAt(i);
+      if (!(Character.isJavaIdentifierPart(ch) || ch == '.')) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private boolean isValidFileRange(Diagnostic<? extends JavaFileObject> d) {

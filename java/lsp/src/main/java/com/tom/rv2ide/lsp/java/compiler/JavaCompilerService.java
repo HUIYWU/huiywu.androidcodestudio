@@ -108,6 +108,8 @@ public class JavaCompilerService implements CompilerProvider {
   private final PartialReparseDryRunComparisonRunner partialReparseDryRunComparisonRunner =
       new PartialReparseDryRunComparisonRunner();
   private final JavaIncrementalState incrementalState = new JavaIncrementalState();
+  private final CompilationWorkingSetBuilder compilationWorkingSetBuilder =
+      new CompilationWorkingSetBuilder();
 
   // The module project must not be null
   // It is marked as nullable just for some special cases like tests
@@ -618,15 +620,17 @@ public class JavaCompilerService implements CompilerProvider {
       cachedModified.put(f, f.getLastModified());
     }
   }
-
   private CompileBatch performCompilation(CompilationRequest request) {
-    final Collection<? extends JavaFileObject> sources = request.sources;
+    final CompilationRequest expandedRequest =
+        compilationWorkingSetBuilder.expand(this, request);
+    final Collection<? extends JavaFileObject> sources = expandedRequest.sources;
     if (sources.isEmpty()) {
       throw new RuntimeException("empty sources");
     }
 
-    CompileBatch firstAttempt = new CompileBatch(this, sources, request);
+    CompileBatch firstAttempt = new CompileBatch(this, sources, expandedRequest);
     Set<Path> addFiles = firstAttempt.needsAdditionalSources();
+
 
     if (addFiles.isEmpty()) {
       return firstAttempt;
@@ -644,7 +648,12 @@ public class JavaCompilerService implements CompilerProvider {
       moreSources.add(new SourceFileObject(add));
     }
 
-    return new CompileBatch(this, moreSources, request);
+    return new CompileBatch(this, moreSources, expandedRequest);
+  }
+
+  @NonNull
+  List<String> readImportsForWorkingSet(@NonNull Path file) {
+    return readImports(file);
   }
 
   private boolean containsWord(Path file, String word) {
@@ -703,7 +712,7 @@ public class JavaCompilerService implements CompilerProvider {
     cacheFileImports.load(file, null, list);
   }
 
-  private String packageNameOrEmpty(Path file) {
+  String packageNameOrEmpty(Path file) {
     return module != null ? module.packageNameOrEmpty(file) : "";
   }
 

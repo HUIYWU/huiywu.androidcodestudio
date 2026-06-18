@@ -378,6 +378,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
 
         // add the source node entry
         it.compileJavaSourceClasses.append(event.file.toPath(), sourceRoot)
+        it.bumpSourceIndexVersion()
       }
     }
   }
@@ -393,9 +394,14 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     if (event.file.extension == "java") {
       getWorkspace()
           ?.findModuleForFile(event.file, false)
-          ?.compileJavaSourceClasses
-          ?.findSource(event.file.toPath())
-          ?.let { it.parent?.removeChild(it) }
+          ?.let { module ->
+            module.compileJavaSourceClasses
+                .findSource(event.file.toPath())
+                ?.let {
+                  it.parent?.removeChild(it)
+                  module.bumpSourceIndexVersion()
+                }
+          }
     }
   }
 
@@ -410,9 +416,14 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
       // remove the source node entry
       getWorkspace()
           ?.findModuleForFile(event.file, false)
-          ?.compileJavaSourceClasses
-          ?.findSource(event.file.toPath())
-          ?.let { it.parent?.removeChild(it) }
+          ?.let { module ->
+            module.compileJavaSourceClasses
+                .findSource(event.file.toPath())
+                ?.let {
+                  it.parent?.removeChild(it)
+                  module.bumpSourceIndexVersion()
+                }
+          }
     }
 
     if (DocumentUtils.isJavaFile(event.newFile.toPath())) {
@@ -420,6 +431,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
         val sourceRoot = it.findSourceRoot(event.newFile) ?: return@let
         // add the new source node entry
         it.compileJavaSourceClasses.append(event.newFile.toPath(), sourceRoot)
+        it.bumpSourceIndexVersion()
       }
     }
   }
