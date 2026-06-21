@@ -67,8 +67,8 @@ issues using the app, please let us know.
   the [Java Language Server](https://github.com/georgewfraser/java-language-server)
 - [FWCD](https://github.com/fwcd) for
   the [Kotlin Language Server](https://github.com/fwcd/kotlin-language-server)
-- [Itsaky](https://github.com/itsaky) The original developer
-  of [AndroidIDE](https://github.com/AndroidIDEOfficial/AndroidIDE.git) whose project I forked and now maintain.
+- [Itsaky](https://github.com/itsaky) for [AndroidIDE](https://github.com/AndroidIDEOfficial/AndroidIDE.git).
+- [Mohammed-Baqer-null](https://github.com/Mohammed-Baqer-null) for [AndroidCS](https://github.com/AndroidCSOfficial/android-code-studio.git)
   
 Thanks to all the developers who have contributed to this project.
 
