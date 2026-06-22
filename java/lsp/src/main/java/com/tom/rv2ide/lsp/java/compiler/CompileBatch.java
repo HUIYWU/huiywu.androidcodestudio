@@ -61,9 +61,12 @@ import openjdk.tools.javac.api.ClientCodeWrapper;
 import openjdk.tools.javac.api.JavacTaskImpl;
 import openjdk.tools.javac.code.Kinds;
 import openjdk.tools.javac.util.JCDiagnostic;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class CompileBatch implements AutoCloseable {
 
+  private static final Logger LOG = LoggerFactory.getLogger(CompileBatch.class);
   public static final String DEFAULT_COMPILER_SOURCE_AND_TARGET_VERSION = "11";
   protected final JavaCompilerService parent;
   protected final ReusableBorrow borrow;
