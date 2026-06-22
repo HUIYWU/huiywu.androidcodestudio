@@ -201,14 +201,6 @@ public class CompileBatch implements AutoCloseable {
     }
 
     final IJavaCompilerSettings compilerSettings = module.getCompilerSettings();
-    if (IdeLogConfig.shouldLogIde()) {
-      LOG.info(
-          "setupCompileOptions modulePath={} moduleDir={} source={} target={}",
-          module.getPath(),
-          module.getProjectDir(),
-          compilerSettings.getJavaSourceVersion(),
-          compilerSettings.getJavaBytecodeVersion());
-    }
     options.add("-source");
     options.add(compilerSettings.getJavaSourceVersion());
     options.add("-target");

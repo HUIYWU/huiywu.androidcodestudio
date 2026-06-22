@@ -111,6 +111,14 @@ internal object WorkspaceModelBuilder {
     )
   }
 
+  /**
+   * Workspace-level fallback for composite build dependencies.
+   *
+   * The tooling/root model currently enumerates only the main build modules, so sources under
+   * `composite-builds/build-deps/*` would otherwise be attributed to the root module `:` and lose
+   * their own source index. To keep Java LSP diagnostics/source lookup working for these checked-in
+   * dependency sources, synthesize lightweight Java modules from their `src/main/java` roots.
+   */
   private fun augmentWithCompositeBuildDeps(
     workspaceDir: File,
     projects: MutableList<GradleProject>,

@@ -45,14 +45,6 @@ final class CompilationWorkingSetBuilder {
     }
     final CompilationRequest cached = cachedRequestIfValid(compiler, request, primaryPath);
     if (cached != null) {
-      if (IdeLogConfig.shouldLogIde()) {
-        LOG.info(
-            "Working set cache HIT file={} module={} sourceIndexVersion={} sources={}",
-            primaryPath,
-            module.getPath(),
-            module.getSourceIndexVersion(),
-            cached.sources.size());
-      }
       return cached;
     }
 
@@ -63,14 +55,6 @@ final class CompilationWorkingSetBuilder {
     addImportedSources(compiler, primaryPath, expanded);
 
     if (expanded.size() == 1) {
-      if (IdeLogConfig.shouldLogIde()) {
-        LOG.info(
-            "Working set unchanged file={} module={} sourceIndexVersion={} imports={} sources=1",
-            primaryPath,
-            module.getPath(),
-            module.getSourceIndexVersion(),
-            compiler.readImportsForWorkingSet(primaryPath));
-      }
       cacheEntry =
           new WorkingSetCacheEntry(
               primaryPath,
@@ -78,19 +62,6 @@ final class CompilationWorkingSetBuilder {
               module.getSourceIndexVersion(),
               List.of(primaryPath));
       return request;
-    }
-
-
-    if (IdeLogConfig.shouldLogIde()) {
-      LOG.info(
-          "Expanded Java compilation working set for file={} module={} sourceIndexVersion={} from {} to {} sources imports={} expandedPaths={}",
-          primaryPath,
-          module.getPath(),
-          module.getSourceIndexVersion(),
-          originalSources.size(),
-          expanded.size(),
-          compiler.readImportsForWorkingSet(primaryPath),
-          expanded.keySet());
     }
 
     cacheEntry =

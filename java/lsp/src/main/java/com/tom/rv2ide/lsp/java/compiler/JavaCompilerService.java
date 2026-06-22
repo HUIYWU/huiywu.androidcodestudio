@@ -239,9 +239,6 @@ public class JavaCompilerService implements CompilerProvider {
   public Path findTypeDeclaration(String className) {
     Path fastFind = findPublicTypeDeclaration(className);
     if (fastFind != NOT_FOUND) {
-      if (IdeLogConfig.shouldLogIde()) {
-        LOG.info("findTypeDeclaration HIT-fast className={} path={}", className, fastFind);
-      }
       return fastFind;
     }
     // In principle, the slow path can be skipped in many cases.
@@ -254,25 +251,8 @@ public class JavaCompilerService implements CompilerProvider {
     for (SourceClassTrie.SourceNode node : classes) {
       final Path path = node.getFile();
       if (containsWord(path, simpleName) && containsType(path, className)) {
-        if (IdeLogConfig.shouldLogIde()) {
-          LOG.info(
-              "findTypeDeclaration HIT-slow className={} packageName={} candidates={} path={}",
-              className,
-              packageName,
-              classes.size(),
-              path);
-        }
         return path;
       }
-    }
-    if (IdeLogConfig.shouldLogIde()) {
-      LOG.warn(
-          "findTypeDeclaration MISS className={} packageName={} simpleName={} candidates={} module={}",
-          className,
-          packageName,
-          simpleName,
-          classes.size(),
-          module != null ? module.getPath() : "<null>");
     }
     return NOT_FOUND;
   }
@@ -648,15 +628,6 @@ public class JavaCompilerService implements CompilerProvider {
       throw new RuntimeException("empty sources");
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
-      LOG.info(
-          "performCompilation module={} requestSources={} expandedSources={} sourcePaths={}",
-          module != null ? module.getPath() : "<null>",
-          request.sources.size(),
-          sources.size(),
-          sources.stream().map(JavaFileObject::toUri).collect(Collectors.toList()));
-    }
-
     CompileBatch firstAttempt = new CompileBatch(this, sources, expandedRequest);
     Set<Path> addFiles = firstAttempt.needsAdditionalSources();
 
@@ -666,9 +637,6 @@ public class JavaCompilerService implements CompilerProvider {
     }
 
     // If the compiler needs additional source files that contain package-private files
-    if (IdeLogConfig.shouldLogIde()) {
-      LOG.info("...need to recompile with {}", addFiles);
-    }
     firstAttempt.close();
     firstAttempt.borrow.close();
 

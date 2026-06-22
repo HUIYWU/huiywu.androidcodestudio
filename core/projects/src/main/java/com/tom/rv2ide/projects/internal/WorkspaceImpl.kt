@@ -24,7 +24,6 @@ import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.tooling.api.models.BuildVariantInfo
-import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -44,10 +43,6 @@ internal class WorkspaceImpl(
     private val subProjects: List<GradleProject>,
     private val projectSyncIssues: ProjectSyncIssues,
 ) : IWorkspace {
-
-  companion object {
-    private val log = LoggerFactory.getLogger(WorkspaceImpl::class.java)
-  }
 
   private val variantSelections = mutableMapOf<String, BuildVariantInfo>()
 
@@ -92,42 +87,24 @@ internal class WorkspaceImpl(
   override fun findModuleForFile(file: File, checkExistance: Boolean): ModuleProject? {
 
     if (!file.exists() && checkExistance) {
-      log.info("findModuleForFile skip missing file={} checkExistance={}", file.path, checkExistance)
       return null
     }
 
     val path = file.canonicalPath
     var longestPath = ""
     var moduleWithLongestPath: ModuleProject? = null
-    val matchedCandidates = mutableListOf<String>()
-    var moduleCount = 0
 
     for (module in subProjects) {
       if (module !is ModuleProject) {
         continue
       }
-      moduleCount++
 
       val moduleDir = module.projectDir.canonicalPath
-      val matched = path.startsWith(moduleDir)
-      if (matched && matchedCandidates.size < 24) {
-        matchedCandidates.add("${module.path} -> ${moduleDir}")
-      }
-      if (matched && longestPath.length < moduleDir.length) {
+      if (path.startsWith(moduleDir) && longestPath.length < moduleDir.length) {
         longestPath = moduleDir
         moduleWithLongestPath = module
       }
     }
-
-    log.info(
-      "findModuleForFile file={} matchedCandidates={} moduleCount={} selected={} selectedDir={} workspaceDir={}",
-      path,
-      matchedCandidates,
-      moduleCount,
-      moduleWithLongestPath?.path ?: "<none>",
-      longestPath.ifEmpty { "<none>" },
-      projectDir.canonicalPath,
-    )
 
     if (longestPath.isEmpty() || moduleWithLongestPath == null) {
       return null
