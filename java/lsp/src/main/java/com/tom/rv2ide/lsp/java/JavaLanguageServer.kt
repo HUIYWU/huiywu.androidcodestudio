@@ -105,6 +105,7 @@ class JavaLanguageServer : ILanguageServer {
     const val SERVER_ID = "ide.lsp.java"
     private const val LARGE_CHANGE_DELTA_FOR_DIAGNOSTIC_DEBOUNCE = 2_000
     private const val LARGE_CHANGE_ANALYZE_INTERVAL_MS = 1_500L
+    private const val HEAVY_COMPOSITE_IDLE_EVICTION_MS = 30_000L
     private val log = LoggerFactory.getLogger(JavaLanguageServer::class.java)
   }
 
@@ -234,9 +235,19 @@ class JavaLanguageServer : ILanguageServer {
       return DiagnosticResult.NO_UPDATE
     }
 
-    return if (!settings.codeAnalysisEnabled()) {
-      DiagnosticResult.NO_UPDATE
-    } else diagnosticProvider!!.analyze(file)
+    if (!settings.codeAnalysisEnabled()) {
+      return DiagnosticResult.NO_UPDATE
+    }
+
+    val workspace = getInstance().getWorkspace() ?: return DiagnosticResult.NO_UPDATE
+    val module = workspace.findModuleForFile(file, false) ?: return DiagnosticResult.NO_UPDATE
+    if (module.isHeavyCompositeBuildModule() && !module.hasBeenIndexed()) {
+      workspace.ensureModuleActivated(module)
+      log.info("Deferring analysis until heavy composite module activation completes: module={} file={}", module.path, file)
+      return DiagnosticResult.NO_UPDATE
+    }
+
+    return diagnosticProvider!!.analyze(file)
   }
 
   override fun formatCode(params: FormatCodeParams?): CodeFormatResult {
@@ -283,7 +294,7 @@ class JavaLanguageServer : ILanguageServer {
       .filterIsInstance<ModuleProject>()
       .filter { it.isHeavyCompositeBuildModule() }
       .forEach { module ->
-        val evicted = module.evictIfIdle(5 * 60_000L)
+        val evicted = module.evictIfIdle(HEAVY_COMPOSITE_IDLE_EVICTION_MS)
         if (evicted) {
           log.info("Idle heavy composite module eviction observed by JavaLanguageServer: {}", module.path)
         }
