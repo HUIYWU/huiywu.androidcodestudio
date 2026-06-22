@@ -14,20 +14,22 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.projects.internal
 
 import com.android.builder.model.v2.models.ProjectSyncIssues
 import com.google.common.collect.ImmutableList
 import com.google.common.collect.ImmutableMap
+import com.tom.rv2ide.preferences.internal.IdeLogConfig
 import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.tooling.api.models.BuildVariantInfo
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+
 
 /**
  * Model for representing the whole project that is opened in the IDE (including the root project).
@@ -43,6 +45,10 @@ internal class WorkspaceImpl(
     private val subProjects: List<GradleProject>,
     private val projectSyncIssues: ProjectSyncIssues,
 ) : IWorkspace {
+
+  companion object {
+    private val log = LoggerFactory.getLogger(WorkspaceImpl::class.java)
+  }
 
   private val variantSelections = mutableMapOf<String, BuildVariantInfo>()
 
@@ -84,27 +90,48 @@ internal class WorkspaceImpl(
   override fun findModuleForFile(file: Path, checkExistance: Boolean): ModuleProject? {
     return findModuleForFile(file.toFile(), checkExistance)
   }
-
   override fun findModuleForFile(file: File, checkExistance: Boolean): ModuleProject? {
 
     if (!file.exists() && checkExistance) {
+      if (IdeLogConfig.shouldLogIde()) {
+        log.info("findModuleForFile skip missing file={} checkExistance={}", file.path, checkExistance)
+      }
       return null
     }
 
     val path = file.canonicalPath
     var longestPath = ""
     var moduleWithLongestPath: ModuleProject? = null
+    val matchedCandidates = mutableListOf<String>()
+    var moduleCount = 0
 
     for (module in subProjects) {
       if (module !is ModuleProject) {
         continue
       }
+      moduleCount++
 
       val moduleDir = module.projectDir.canonicalPath
-      if (path.startsWith(moduleDir) && longestPath.length < moduleDir.length) {
+      val matched = path.startsWith(moduleDir)
+      if (matched && matchedCandidates.size < 24) {
+        matchedCandidates.add("${module.path} -> ${moduleDir}")
+      }
+      if (matched && longestPath.length < moduleDir.length) {
         longestPath = moduleDir
         moduleWithLongestPath = module
       }
+    }
+
+    if (IdeLogConfig.shouldLogIde()) {
+      log.info(
+        "findModuleForFile file={} matchedCandidates={} moduleCount={} selected={} selectedDir={} workspaceDir={}",
+        path,
+        matchedCandidates,
+        moduleCount,
+        moduleWithLongestPath?.path ?: "<none>",
+        longestPath.ifEmpty { "<none>" },
+        projectDir.canonicalPath,
+      )
     }
 
     if (longestPath.isEmpty() || moduleWithLongestPath == null) {
@@ -113,6 +140,7 @@ internal class WorkspaceImpl(
 
     return moduleWithLongestPath
   }
+
 
   override fun containsSourceFile(file: Path): Boolean {
     if (!Files.exists(file)) {

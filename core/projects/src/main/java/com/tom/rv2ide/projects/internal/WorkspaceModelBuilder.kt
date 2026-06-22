@@ -60,13 +60,32 @@ internal object WorkspaceModelBuilder {
           "Root project must be either an Android project or a Gradle project"
         )
       }
-
+      val transformedProjects = CopyOnWriteArrayList(transform(allProjects, project))
+      if (com.tom.rv2ide.preferences.internal.IdeLogConfig.shouldLogIde()) {
+        log.info(
+          "WorkspaceModelBuilder.build workspaceDir={} rootProject={} allProjects={} transformedProjects={}",
+          projectDir.canonicalPath,
+          rootProject.path,
+          allProjects.size,
+          transformedProjects.size,
+        )
+        transformedProjects.take(80).forEach { module ->
+          log.info(
+            "WorkspaceModelBuilder.project path={} type={} projectDir={} buildDir={}",
+            module.path,
+            module.javaClass.simpleName,
+            module.projectDir.canonicalPath,
+            module.buildDir.canonicalPath,
+          )
+        }
+      }
       return WorkspaceImpl(
         projectDir,
         rootProject,
-        CopyOnWriteArrayList(transform(allProjects, project)),
+        transformedProjects,
         project.getProjectSyncIssues().get()
       )
+
     } catch (error: Throwable) {
       log.error("Unable to transform project", error)
       return null
