@@ -61,23 +61,21 @@ internal object WorkspaceModelBuilder {
         )
       }
       val transformedProjects = CopyOnWriteArrayList(transform(allProjects, project))
-      if (com.tom.rv2ide.preferences.internal.IdeLogConfig.shouldLogIde()) {
+      log.info(
+        "WorkspaceModelBuilder.build workspaceDir={} rootProject={} allProjects={} transformedProjects={}",
+        projectDir.canonicalPath,
+        rootProject.path,
+        allProjects.size,
+        transformedProjects.size,
+      )
+      transformedProjects.take(80).forEach { module ->
         log.info(
-          "WorkspaceModelBuilder.build workspaceDir={} rootProject={} allProjects={} transformedProjects={}",
-          projectDir.canonicalPath,
-          rootProject.path,
-          allProjects.size,
-          transformedProjects.size,
+          "WorkspaceModelBuilder.project path={} type={} projectDir={} buildDir={}",
+          module.path,
+          module.javaClass.simpleName,
+          module.projectDir.canonicalPath,
+          module.buildDir.canonicalPath,
         )
-        transformedProjects.take(80).forEach { module ->
-          log.info(
-            "WorkspaceModelBuilder.project path={} type={} projectDir={} buildDir={}",
-            module.path,
-            module.javaClass.simpleName,
-            module.projectDir.canonicalPath,
-            module.buildDir.canonicalPath,
-          )
-        }
       }
       return WorkspaceImpl(
         projectDir,

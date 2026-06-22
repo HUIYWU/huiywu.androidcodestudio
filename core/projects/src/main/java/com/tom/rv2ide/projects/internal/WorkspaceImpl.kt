@@ -19,7 +19,6 @@ package com.tom.rv2ide.projects.internal
 import com.android.builder.model.v2.models.ProjectSyncIssues
 import com.google.common.collect.ImmutableList
 import com.google.common.collect.ImmutableMap
-import com.tom.rv2ide.preferences.internal.IdeLogConfig
 import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
@@ -93,9 +92,7 @@ internal class WorkspaceImpl(
   override fun findModuleForFile(file: File, checkExistance: Boolean): ModuleProject? {
 
     if (!file.exists() && checkExistance) {
-      if (IdeLogConfig.shouldLogIde()) {
-        log.info("findModuleForFile skip missing file={} checkExistance={}", file.path, checkExistance)
-      }
+      log.info("findModuleForFile skip missing file={} checkExistance={}", file.path, checkExistance)
       return null
     }
 
@@ -122,17 +119,15 @@ internal class WorkspaceImpl(
       }
     }
 
-    if (IdeLogConfig.shouldLogIde()) {
-      log.info(
-        "findModuleForFile file={} matchedCandidates={} moduleCount={} selected={} selectedDir={} workspaceDir={}",
-        path,
-        matchedCandidates,
-        moduleCount,
-        moduleWithLongestPath?.path ?: "<none>",
-        longestPath.ifEmpty { "<none>" },
-        projectDir.canonicalPath,
-      )
-    }
+    log.info(
+      "findModuleForFile file={} matchedCandidates={} moduleCount={} selected={} selectedDir={} workspaceDir={}",
+      path,
+      matchedCandidates,
+      moduleCount,
+      moduleWithLongestPath?.path ?: "<none>",
+      longestPath.ifEmpty { "<none>" },
+      projectDir.canonicalPath,
+    )
 
     if (longestPath.isEmpty() || moduleWithLongestPath == null) {
       return null
