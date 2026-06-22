@@ -63,6 +63,8 @@ import com.tom.rv2ide.projects.FileManager.getActiveDocumentCount
 import com.tom.rv2ide.projects.IProjectManager.Companion.getInstance
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
+import com.tom.rv2ide.projects.events.LazyModuleActivatedEvent
+import com.tom.rv2ide.projects.events.LazyModuleEvictedEvent
 import com.tom.rv2ide.utils.DocumentUtils
 import com.tom.rv2ide.utils.VMUtils
 import java.nio.file.Path
@@ -81,6 +83,7 @@ class JavaLanguageServer : ILanguageServer {
 
   private val completionProvider: CompletionProvider = CompletionProvider()
   private val diagnosticProvider: JavaDiagnosticProvider?
+  private var lastHeavyModuleCleanupAt: Long = 0L
   override var client: ILanguageClient? = null
     private set
 
@@ -255,13 +258,29 @@ class JavaLanguageServer : ILanguageServer {
     }
     val workspace = getInstance().getWorkspace() ?: return JavaCompilerService.NO_MODULE_COMPILER
     val module =
-        workspace.findModuleForFile(file!!) ?: return JavaCompilerService.NO_MODULE_COMPILER
+      workspace.findModuleForFile(file!!) ?: return JavaCompilerService.NO_MODULE_COMPILER
+    workspace.ensureModuleActivated(module)
     return JavaCompilerProvider.get(module)
   }
 
   private fun updateCachedCompletion(cachedCompletion: CachedCompletion) {
     Objects.requireNonNull(cachedCompletion)
     this.cachedCompletion = cachedCompletion
+  }
+
+  private fun maybeEvictIdleHeavyCompositeModules() {
+    val now = System.currentTimeMillis()
+    if (now - lastHeavyModuleCleanupAt < 60_000L) {
+      return
+    }
+    lastHeavyModuleCleanupAt = now
+    val workspace = getInstance().getWorkspace() ?: return
+    workspace.getSubProjects()
+      .filterIsInstance<ModuleProject>()
+      .filter { it.isHeavyCompositeBuildModule() }
+      .forEach { module ->
+        module.evictIfIdle(5 * 60_000L)
+      }
   }
 
   private fun startOrRestartAnalyzeTimer() {
@@ -294,8 +313,10 @@ class JavaLanguageServer : ILanguageServer {
 
     // TODO Find an alternative to efficiently update changeDelta in JavaCompilerService instance
     JavaCompilerService.NO_MODULE_COMPILER.onDocumentChange(event)
-    val module = getInstance().getWorkspace()?.findModuleForFile(event.changedFile, true)
+    val workspace = getInstance().getWorkspace()
+    val module = workspace?.findModuleForFile(event.changedFile, true)
     if (module != null) {
+      workspace.ensureModuleActivated(module)
       val compiler = JavaCompilerProvider.get(module)
       compiler.onDocumentChange(event)
     }
@@ -335,6 +356,25 @@ class JavaLanguageServer : ILanguageServer {
     }
   }
 
+  @Subscribe(threadMode = ThreadMode.ASYNC)
+  @Suppress("unused")
+  fun onLazyModuleActivated(event: LazyModuleActivatedEvent) {
+    val fileToAnalyze = selectedFile ?: return
+    if (!DocumentUtils.isJavaFile(fileToAnalyze)) {
+      return
+    }
+    if (!event.module.isFromThisModule(fileToAnalyze)) {
+      return
+    }
+    analyzeSelected()
+  }
+
+  @Subscribe(threadMode = ThreadMode.ASYNC)
+  @Suppress("unused")
+  fun onLazyModuleEvicted(event: LazyModuleEvictedEvent) {
+    JavaCompilerProvider.getInstance().destroy(event.module)
+  }
+
   private fun analyzeSelected() {
     val fileToAnalyze = selectedFile
     if (fileToAnalyze == null || client == null) {
@@ -342,6 +382,7 @@ class JavaLanguageServer : ILanguageServer {
     }
 
     CoroutineScope(Dispatchers.Default).launch {
+      maybeEvictIdleHeavyCompositeModules()
       val result = analyze(fileToAnalyze)
       if (result == DiagnosticResult.NO_UPDATE) {
         return@launch

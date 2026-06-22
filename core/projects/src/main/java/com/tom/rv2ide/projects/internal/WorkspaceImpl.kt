@@ -24,6 +24,8 @@ import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.tooling.api.models.BuildVariantInfo
+import com.tom.rv2ide.utils.StopWatch
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -43,6 +45,10 @@ internal class WorkspaceImpl(
     private val subProjects: List<GradleProject>,
     private val projectSyncIssues: ProjectSyncIssues,
 ) : IWorkspace {
+
+  companion object {
+    private val log = LoggerFactory.getLogger(WorkspaceImpl::class.java)
+  }
 
   private val variantSelections = mutableMapOf<String, BuildVariantInfo>()
 
@@ -113,6 +119,26 @@ internal class WorkspaceImpl(
     return moduleWithLongestPath
   }
 
+
+  override fun ensureModuleActivated(module: ModuleProject) {
+    module.markUsedNow()
+    if (!module.isLazyCompositeBuildModule() || module.hasBeenIndexed()) {
+      return
+    }
+
+    if (module.isHeavyCompositeBuildModule()) {
+      if (!module.isBackgroundIndexingStarted()) {
+        log.info("Scheduling heavy composite module background activation: {}", module.path)
+        module.triggerBackgroundIndexing()
+      }
+      return
+    }
+
+    val watch = StopWatch("Activate module ${module.path}")
+    log.info("Activating lazy composite module on demand: {}", module.path)
+    module.ensureIndexed()
+    watch.log()
+  }
 
   override fun containsSourceFile(file: Path): Boolean {
     if (!Files.exists(file)) {

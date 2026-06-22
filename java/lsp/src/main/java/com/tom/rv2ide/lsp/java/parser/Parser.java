@@ -81,10 +81,13 @@ public class Parser {
    * Create a task that compiles a single file
    */
   private static JavacTask singleFileTask(JavaFileObject file) {
-    final var workspace = IProjectManager.getInstance().getWorkspace();
+final var workspace = IProjectManager.getInstance().getWorkspace();
     final var module = workspace != null
-      ? workspace.findModuleForFile(Paths.get(file.toUri()), false)
-      : null;
+        ? workspace.findModuleForFile(Paths.get(file.toUri()), false)
+        : null;
+    if (workspace != null && module != null) {
+      workspace.ensureModuleActivated(module);
+    }
 
     if (module != null) {
       FILE_MANAGER = SourceFileManager.forModule(module);

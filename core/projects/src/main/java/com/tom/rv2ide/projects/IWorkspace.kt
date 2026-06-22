@@ -95,6 +95,14 @@ interface IWorkspace {
   fun findModuleForFile(file: File, checkExistance: Boolean = false): ModuleProject?
 
   /**
+   * Ensures that the given [module] is activated for source-based operations.
+   *
+   * For regular workspace modules this is typically a no-op. For lazily registered composite-build
+   * modules, implementations may perform deferred indexing on first use.
+   */
+  fun ensureModuleActivated(module: ModuleProject)
+ 
+  /**
    * Check if any of the module projects contain the given [file] in their source folder.
    *
    * @param file The file to check.

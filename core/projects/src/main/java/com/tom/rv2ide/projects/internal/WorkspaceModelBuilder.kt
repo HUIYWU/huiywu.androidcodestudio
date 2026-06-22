@@ -167,7 +167,9 @@ internal object WorkspaceModelBuilder {
         dependencies = emptyList(),
         classesJar = null,
         inheritedBootClassPaths = rootJavaModule.inheritedBootClassPaths,
-      )
+      ).apply {
+        markLazyCompositeBuildModule(isHeavyCompositeBuildDep(depDir.name))
+      }
       projects.add(pseudoModule)
       existingDirs.add(canonicalDepDir)
       added.add("${pseudoModule.path} -> ${canonicalDepDir.path}")
@@ -179,6 +181,13 @@ internal object WorkspaceModelBuilder {
       added.size,
       added,
     )
+  }
+
+    private fun isHeavyCompositeBuildDep(moduleName: String): Boolean {
+    return moduleName == "jdk-compiler"
+      || moduleName == "java-compiler"
+      || moduleName == "jdk-jdeps"
+      || moduleName == "jaxp"
   }
 
   private fun transform(

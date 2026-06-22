@@ -63,6 +63,13 @@ public class JavaCompilerProvider {
     return newInstance;
   }
 
+  public synchronized void destroy(ModuleProject module) {
+    final JavaCompilerService compiler = mCompilers.remove(module);
+    if (compiler != null) {
+      compiler.destroy();
+    }
+  }
+
   // TODO This currently destroys all the compiler instances
   //  We must have a method to destroy only the required instance in
   //  JavaLanguageServer.handleFailure(LSPFailure)

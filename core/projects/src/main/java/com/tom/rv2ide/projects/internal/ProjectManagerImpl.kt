@@ -123,6 +123,10 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
       val jobs =
           modulesFlow.map { module ->
             indexerScope.async {
+              if (module.isLazyCompositeBuildModule()) {
+                log.info("Setup project: defer indexing lazy composite module {}", module.path)
+                return@async
+              }
               log.info("Setup project: start indexing module {}", module.path)
               module.indexSourcesAndClasspaths()
               if (module is AndroidModule) {

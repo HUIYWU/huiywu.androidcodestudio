@@ -25,6 +25,8 @@ import com.tom.rv2ide.javac.services.fs.CacheFSInfoSingleton
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.projects.classpath.ZipFileClasspathReader
+import com.tom.rv2ide.projects.events.LazyModuleActivatedEvent
+import com.tom.rv2ide.projects.events.LazyModuleEvictedEvent
 import com.tom.rv2ide.projects.util.BootClasspathProvider
 import com.tom.rv2ide.projects.util.RuntimeProbe
 import com.tom.rv2ide.tooling.api.models.GradleTask
@@ -36,6 +38,10 @@ import com.tom.rv2ide.utils.StopWatch
 import java.io.File
 import java.nio.file.Path
 import kotlin.io.path.pathString
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.greenrobot.eventbus.EventBus
 import org.slf4j.LoggerFactory
 
 /**
@@ -59,13 +65,20 @@ abstract class ModuleProject(
 
     private val log = LoggerFactory.getLogger(ModuleProject::class.java)
     private const val CLASSPATH_READER_MARKER = "ACS_MARKER_MODULEPROJECT_ZIP_READER_V1"
-
+    private val compositeIndexingScope =
+        CoroutineScope(Dispatchers.Default.limitedParallelism(2))
+ 
     @JvmStatic val COMPLETION_MODULE_KEY = Lookup.Key<ModuleProject>()
   }
 
   @JvmField val compileJavaSourceClasses = SourceClassTrie()
 
   @Volatile private var sourceIndexVersion: Long = 0
+  @Volatile private var indexedOnce: Boolean = false
+  @Volatile private var lazyCompositeBuildModule: Boolean = false
+  @Volatile private var heavyCompositeBuildModule: Boolean = false
+  @Volatile private var backgroundIndexingStarted: Boolean = false
+  @Volatile private var lastUsedAt: Long = 0L
 
   @JvmField val compileClasspathClasses = ClassTrie()
 
@@ -128,11 +141,102 @@ abstract class ModuleProject(
     RuntimeProbe.mark("ModuleProject.indexSourcesAndClasspaths path=$path")
     indexSources()
     indexClasspaths()
+    indexedOnce = true
+  }
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun markLazyCompositeBuildModule(heavy: Boolean = false) {
+    lazyCompositeBuildModule = true
+    heavyCompositeBuildModule = heavy
+  }
+
+  fun isLazyCompositeBuildModule(): Boolean = lazyCompositeBuildModule
+
+  fun isHeavyCompositeBuildModule(): Boolean = heavyCompositeBuildModule
+
+  fun hasBeenIndexed(): Boolean = indexedOnce
+
+  fun isBackgroundIndexingStarted(): Boolean = backgroundIndexingStarted
+
+  fun markUsedNow() {
+    lastUsedAt = System.currentTimeMillis()
+  }
+
+  fun getLastUsedAt(): Long = lastUsedAt
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun ensureIndexed() {
+    if (indexedOnce) {
+      return
+    }
+    synchronized(this) {
+      if (indexedOnce) {
+        return
+      }
+      indexSourcesAndClasspaths()
+    }
+  }
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun triggerBackgroundIndexing() {
+    if (indexedOnce || backgroundIndexingStarted) {
+      return
+    }
+    markUsedNow()
+    synchronized(this) {
+      if (indexedOnce || backgroundIndexingStarted) {
+        return
+      }
+      backgroundIndexingStarted = true
+    }
+
+    compositeIndexingScope.launch {
+      var activated = false
+      try {
+        ensureIndexed()
+        activated = indexedOnce
+      } finally {
+        backgroundIndexingStarted = false
+      }
+      if (activated) {
+        EventBus.getDefault().post(LazyModuleActivatedEvent(this@ModuleProject))
+      }
+    }
+  }
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun evictIfIdle(idleForMs: Long): Boolean {
+    if (!heavyCompositeBuildModule || !indexedOnce || backgroundIndexingStarted) {
+      return false
+    }
+    val lastUsed = lastUsedAt
+    if (lastUsed <= 0L) {
+      return false
+    }
+    if (System.currentTimeMillis() - lastUsed < idleForMs) {
+      return false
+    }
+
+    synchronized(this) {
+      if (!indexedOnce || backgroundIndexingStarted) {
+        return false
+      }
+      if (System.currentTimeMillis() - lastUsedAt < idleForMs) {
+        return false
+      }
+      compileJavaSourceClasses.clear()
+      compileClasspathClasses.clear()
+      indexedOnce = false
+      bumpSourceIndexVersion()
+    }
+    log.info("Evicted idle heavy composite module: {}", path)
+    EventBus.getDefault().post(LazyModuleEvictedEvent(this))
+    return true
   }
 
   @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
   fun indexClasspaths() {
-
+ 
     RuntimeProbe.mark("ModuleProject.indexClasspaths path=$path")
     if (IdeLogConfig.shouldLogIde()) {
       log.info("{} path={} reader=ZipFileClasspathReader", CLASSPATH_READER_MARKER, path)
