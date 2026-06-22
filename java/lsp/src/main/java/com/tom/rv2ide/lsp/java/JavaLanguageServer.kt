@@ -105,7 +105,7 @@ class JavaLanguageServer : ILanguageServer {
     const val SERVER_ID = "ide.lsp.java"
     private const val LARGE_CHANGE_DELTA_FOR_DIAGNOSTIC_DEBOUNCE = 2_000
     private const val LARGE_CHANGE_ANALYZE_INTERVAL_MS = 1_500L
-    private const val HEAVY_COMPOSITE_IDLE_EVICTION_MS = 30_000L
+    private const val HEAVY_COMPOSITE_IDLE_EVICTION_MS = 5 * 60_000L
     private val log = LoggerFactory.getLogger(JavaLanguageServer::class.java)
   }
 

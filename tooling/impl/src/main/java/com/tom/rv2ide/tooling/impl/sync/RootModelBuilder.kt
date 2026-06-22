@@ -36,7 +36,6 @@ import com.tom.rv2ide.tooling.impl.Main.finalizeLauncher
 import com.tom.rv2ide.tooling.impl.internal.CompositeBuildJavaProjectImpl
 import com.tom.rv2ide.tooling.impl.internal.ProjectImpl
 import java.io.File
-import java.io.Serializable
 import org.gradle.tooling.ConfigurableLauncher
 import org.gradle.tooling.model.idea.IdeaProject
 import org.slf4j.LoggerFactory
@@ -47,10 +46,7 @@ import org.slf4j.LoggerFactory
  * @author Akash Yadav
  */
 class RootModelBuilder(initializationParams: InitializeProjectParams) :
-    AbstractModelBuilder<RootProjectModelBuilderParams, IProject>(initializationParams),
-    Serializable {
-
-  private val serialVersionUID = 1L
+    AbstractModelBuilder<RootProjectModelBuilderParams, IProject>(initializationParams) {
 
   override fun build(param: RootProjectModelBuilderParams): IProject {
 
