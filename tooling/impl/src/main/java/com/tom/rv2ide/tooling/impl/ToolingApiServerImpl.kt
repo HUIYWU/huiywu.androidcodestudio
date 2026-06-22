@@ -247,10 +247,18 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
         notifyBuildSuccess(emptyList())
         return@runBuild InitializeResult(true)
       } catch (err: Throwable) {
-        log.error("Failed to initialize project", err)
+        log.error(
+          "Failed to initialize project: type={} message={} causeType={} causeMessage={}",
+          err.javaClass.name,
+          err.message,
+          err.cause?.javaClass?.name,
+          err.cause?.message,
+          err,
+        )
         notifyBuildFailure(emptyList())
         return@runBuild InitializeResult(false, getTaskFailureType(err))
       }
+
     }
   }
 

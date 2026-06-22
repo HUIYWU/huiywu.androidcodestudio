@@ -56,9 +56,12 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
 
     val executor =
         projectConnection.action { controller ->
+          logger.warn("RootModelBuilder: action entered")
           val ideaProject = controller.getModelAndLog(IdeaProject::class.java)
+          logger.warn("RootModelBuilder: IdeaProject model loaded")
 
           val ideaModules = ideaProject.modules
+
           val modulePaths =
               mapOf(*ideaModules.map { it.name to it.gradleProject.path }.toTypedArray())
           val rootModule =
@@ -77,9 +80,10 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
             val issue = it as? DefaultSyncIssue ?: AndroidModulePropertyCopier.copy(it)
             syncIssues.add(issue)
           }
-
+          logger.warn("RootModelBuilder: resolving root project model")
           val rootProject =
               if (rootProjectVersions != null) {
+
                 // Root project is an Android project
                 checkAgpVersion(rootProjectVersions, syncIssueReporter)
                 AndroidProjectModelBuilder(initializationParams)
@@ -94,9 +98,11 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
               } else {
                 GradleProjectModelBuilder(initializationParams).build(rootModule.gradleProject)
               }
-
+          logger.warn("RootModelBuilder: root project model resolved type={}", rootProject.javaClass.name)
+          logger.warn("RootModelBuilder: building module models count={}", ideaModules.size)
           val projects =
               ideaModules.map { ideaModule ->
+                logger.warn("RootModelBuilder: building module model name={} path={}", ideaModule.name, ideaModule.gradleProject.path)
                 ModuleProjectModelBuilder(initializationParams)
                     .build(
                         ModuleProjectModelBuilderParams(
@@ -106,7 +112,10 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
                             modulePaths,
                             syncIssueReporter,
                         )
-                    )
+                    ).also {
+                      logger.warn("RootModelBuilder: built module model name={} type={}", ideaModule.name, it.javaClass.name)
+                    }
+
               }.toMutableList<IGradleProject>()
           logger.warn("RootModelBuilder: base idea modules count={}", projects.size)
           logCompositeBuildDepsDiscovery(rootModule.gradleProject.projectDirectory, projects)
@@ -134,8 +143,18 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     if (clientRef != null) {
       clientRef.logOutput("Starting build...")
     }
+    return try {
+      executor.run().also { logger.debug("Build action executed. Result: {}", it) }
+    } catch (err: Throwable) {
+      logger.error(
+        "RootModelBuilder executor.run failed: type={} message={}",
+        err.javaClass.name,
+        err.message,
+        err,
+      )
+      throw err
+    }
 
-    return executor.run().also { logger.debug("Build action executed. Result: {}", it) }
   }
   private fun logCompositeBuildDepsDiscovery(
     workspaceDir: File,
