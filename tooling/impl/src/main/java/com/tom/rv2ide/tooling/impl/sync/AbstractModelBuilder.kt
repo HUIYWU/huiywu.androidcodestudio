@@ -27,6 +27,7 @@ import com.tom.rv2ide.utils.AndroidPluginVersion.Companion.MINIMUM_SUPPORTED
 import com.tom.rv2ide.utils.ILogger
 import com.tom.rv2ide.utils.LogUtils
 import com.tom.rv2ide.utils.StopWatch
+import java.io.Serializable
 import java.util.concurrent.atomic.AtomicBoolean
 import org.gradle.api.Action
 import org.gradle.tooling.BuildController
@@ -42,7 +43,9 @@ import org.gradle.tooling.model.Model
  */
 abstract class AbstractModelBuilder<P, R>(
     protected val initializationParams: InitializeProjectParams
-) : IModelBuilder<P, R> {
+) : IModelBuilder<P, R>, Serializable {
+
+  private val serialVersionUID = 1L
 
   companion object {
 
