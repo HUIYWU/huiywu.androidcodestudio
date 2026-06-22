@@ -27,7 +27,11 @@ import com.tom.rv2ide.tooling.api.IProject
 import com.tom.rv2ide.tooling.api.ProjectType
 import com.tom.rv2ide.tooling.api.models.AndroidProjectMetadata
 import com.tom.rv2ide.tooling.api.models.BasicProjectMetadata
+import com.tom.rv2ide.tooling.api.models.GradleTask
+import com.tom.rv2ide.tooling.api.models.JavaContentRoot
+import com.tom.rv2ide.tooling.api.models.JavaModuleCompilerSettings
 import com.tom.rv2ide.tooling.api.models.JavaProjectMetadata
+import com.tom.rv2ide.tooling.api.models.JavaSourceDirectory
 import com.tom.rv2ide.tooling.api.models.params.StringParameter
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -61,6 +65,7 @@ internal object WorkspaceModelBuilder {
         )
       }
       val transformedProjects = CopyOnWriteArrayList(transform(allProjects, project))
+      augmentWithCompositeBuildDeps(projectDir, transformedProjects)
       log.info(
         "WorkspaceModelBuilder.build workspaceDir={} rootProject={} allProjects={} transformedProjects={}",
         projectDir.canonicalPath,
@@ -68,7 +73,7 @@ internal object WorkspaceModelBuilder {
         allProjects.size,
         transformedProjects.size,
       )
-      transformedProjects.take(80).forEach { module ->
+      transformedProjects.take(120).forEach { module ->
         log.info(
           "WorkspaceModelBuilder.project path={} type={} projectDir={} buildDir={}",
           module.path,
@@ -103,6 +108,70 @@ internal object WorkspaceModelBuilder {
       // The list will never change, we could make these thread-safe with
       // CopyOnWriteArrayList
       tasks = CopyOnWriteArrayList(rootProject.getTasks().get() ?: listOf()),
+    )
+  }
+
+  private fun augmentWithCompositeBuildDeps(
+    workspaceDir: File,
+    projects: MutableList<GradleProject>,
+  ) {
+    val buildDepsDir = File(workspaceDir, "composite-builds/build-deps")
+    if (!buildDepsDir.isDirectory) {
+      log.info("WorkspaceModelBuilder.compositeBuildDeps skipped missingDir={}", buildDepsDir.path)
+      return
+    }
+
+    val rootJavaModule = projects.filterIsInstance<JavaModule>().find { it.path == ":" }
+    if (rootJavaModule == null) {
+      log.warn("WorkspaceModelBuilder.compositeBuildDeps skipped: root Java module not found")
+      return
+    }
+
+    val existingDirs = projects.map { it.projectDir.canonicalFile }.toHashSet()
+    val added = mutableListOf<String>()
+
+    buildDepsDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { depDir ->
+      val canonicalDepDir = depDir.canonicalFile
+      if (existingDirs.contains(canonicalDepDir)) {
+        return@forEach
+      }
+
+      val mainJavaDir = File(depDir, "src/main/java")
+      if (!mainJavaDir.isDirectory) {
+        return@forEach
+      }
+
+      val contentRoot = JavaContentRoot().apply {
+        (sourceDirectories as MutableList).add(JavaSourceDirectory(mainJavaDir, false))
+      }
+      val pseudoModule = JavaModule(
+        name = depDir.name,
+        description = "Composite build dependency module",
+        path = ":buildDeps:${depDir.name}",
+        projectDir = depDir,
+        buildDir = File(depDir, "build"),
+        buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
+          ?: File(depDir, "build.gradle"),
+        tasks = emptyList<GradleTask>(),
+        compilerSettings = JavaModuleCompilerSettings(
+          rootJavaModule.compilerSettings.javaSourceVersion,
+          rootJavaModule.compilerSettings.javaBytecodeVersion,
+        ),
+        contentRoots = listOf(contentRoot),
+        dependencies = emptyList(),
+        classesJar = null,
+        inheritedBootClassPaths = rootJavaModule.inheritedBootClassPaths,
+      )
+      projects.add(pseudoModule)
+      existingDirs.add(canonicalDepDir)
+      added.add("${pseudoModule.path} -> ${canonicalDepDir.path}")
+    }
+
+    log.info(
+      "WorkspaceModelBuilder.compositeBuildDeps scannedDir={} addedCount={} added={}",
+      buildDepsDir.canonicalPath,
+      added.size,
+      added,
     )
   }
 
