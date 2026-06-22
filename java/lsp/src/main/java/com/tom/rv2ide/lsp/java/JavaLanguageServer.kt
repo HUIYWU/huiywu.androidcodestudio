@@ -157,9 +157,13 @@ class JavaLanguageServer : ILanguageServer {
     // Clear cached module-specific compilers
     JavaCompilerProvider.getInstance().destroy()
 
-    // Cache classpath locations
+    // Cache classpath locations for eagerly active modules only.
     for (subModule in workspace.getSubProjects()) {
       if (subModule !is ModuleProject || subModule.path == workspace.getRootProject().path) {
+        continue
+      }
+      if (subModule.isLazyCompositeBuildModule()) {
+        log.info("Skipping SourceFileManager warm-up for lazy composite module: {}", subModule.path)
         continue
       }
       SourceFileManager.forModule(subModule)
