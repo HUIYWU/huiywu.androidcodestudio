@@ -132,7 +132,6 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       executor.withCancellationToken(cancellationToken)
     }
 
-    val logger = LoggerFactory.getLogger("RootModelBuilder")
     logger.warn("Starting build. See build output for more details...")
 
     val clientRef = Main.client
