@@ -49,6 +49,9 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     AbstractModelBuilder<RootProjectModelBuilderParams, IProject>(initializationParams) {
 
   override fun build(param: RootProjectModelBuilderParams): IProject {
+ 
+    val logger = LoggerFactory.getLogger("RootModelBuilder")
+    logger.warn("RootModelBuilder.build entered")
 
     val (projectConnection, cancellationToken) = param
 
@@ -110,7 +113,9 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
                     )
               }.toMutableList<IGradleProject>()
 
+          logger.warn("RootModelBuilder: base idea modules count={}", projects.size)
           augmentWithCompositeBuildDeps(rootModule.gradleProject.projectDirectory, projects)
+          logger.warn("RootModelBuilder: projects count after composite augmentation={}", projects.size)
 
           return@action ProjectImpl(
               rootProject,
@@ -142,8 +147,10 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     workspaceDir: File,
     projects: MutableList<IGradleProject>,
   ) {
+    val logger = LoggerFactory.getLogger("RootModelBuilder")
     val buildDepsDir = File(workspaceDir, "composite-builds/build-deps")
     if (!buildDepsDir.isDirectory) {
+      logger.warn("RootModelBuilder composite augmentation skipped missingDir={}", buildDepsDir.path)
       return
     }
 
@@ -151,7 +158,10 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     val rootJavaMetadata = projects
       .mapNotNull { it.getMetadata().get() as? JavaProjectMetadata }
       .find { it.projectPath == ":" }
-      ?: return
+      ?: run {
+        logger.warn("RootModelBuilder composite augmentation skipped: root Java metadata not found")
+        return
+      }
 
     buildDepsDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { depDir ->
       val canonicalDepDir = depDir.canonicalFile
@@ -189,6 +199,7 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
           dependencies = emptyList(),
         )
       )
+      logger.warn("RootModelBuilder composite augmentation added module={} dir={}", metadata.projectPath, canonicalDepDir.path)
       existingDirs.add(canonicalDepDir)
     }
   }
