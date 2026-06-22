@@ -147,9 +147,13 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       executor.run().also { logger.debug("Build action executed. Result: {}", it) }
     } catch (err: Throwable) {
       logger.error(
-        "RootModelBuilder executor.run failed: type={} message={}",
+        "RootModelBuilder executor.run failed: type={} message={} causeType={} causeMessage={} rootCauseType={} rootCauseMessage={}",
         err.javaClass.name,
         err.message,
+        err.cause?.javaClass?.name,
+        err.cause?.message,
+        generateSequence(err as Throwable?) { it.cause }.lastOrNull()?.javaClass?.name,
+        generateSequence(err as Throwable?) { it.cause }.lastOrNull()?.message,
         err,
       )
       throw err
