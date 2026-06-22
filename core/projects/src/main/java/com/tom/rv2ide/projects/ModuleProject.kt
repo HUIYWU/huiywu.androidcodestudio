@@ -191,14 +191,18 @@ abstract class ModuleProject(
     }
 
     compositeIndexingScope.launch {
+      log.info("Background indexing started for heavy composite module: {}", path)
       var activated = false
+      val watch = StopWatch("Background composite indexing ${path}")
       try {
         ensureIndexed()
         activated = indexedOnce
       } finally {
         backgroundIndexingStarted = false
+        watch.log()
       }
       if (activated) {
+        log.info("Background indexing completed for heavy composite module: {}", path)
         EventBus.getDefault().post(LazyModuleActivatedEvent(this@ModuleProject))
       }
     }

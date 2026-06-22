@@ -130,6 +130,8 @@ internal class WorkspaceImpl(
       if (!module.isBackgroundIndexingStarted()) {
         log.info("Scheduling heavy composite module background activation: {}", module.path)
         module.triggerBackgroundIndexing()
+      } else {
+        log.info("Heavy composite module background activation already in progress: {}", module.path)
       }
       return
     }

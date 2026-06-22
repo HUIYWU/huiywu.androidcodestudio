@@ -283,7 +283,10 @@ class JavaLanguageServer : ILanguageServer {
       .filterIsInstance<ModuleProject>()
       .filter { it.isHeavyCompositeBuildModule() }
       .forEach { module ->
-        module.evictIfIdle(5 * 60_000L)
+        val evicted = module.evictIfIdle(5 * 60_000L)
+        if (evicted) {
+          log.info("Idle heavy composite module eviction observed by JavaLanguageServer: {}", module.path)
+        }
       }
   }
 
@@ -370,6 +373,7 @@ class JavaLanguageServer : ILanguageServer {
     if (!event.module.isFromThisModule(fileToAnalyze)) {
       return
     }
+    log.info("Re-analyzing selected file after lazy module activation: module={} file={}", event.module.path, fileToAnalyze)
     analyzeSelected()
   }
 

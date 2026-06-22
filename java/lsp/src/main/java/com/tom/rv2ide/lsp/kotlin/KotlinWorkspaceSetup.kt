@@ -190,6 +190,13 @@ class KotlinWorkspaceSetup(
   }
 
   private fun createFwcdRuntimeConfig(): JsonObject {
+    val effectiveClassPaths = classpathProvider.getClasspathList()
+    val javaSourceRoots = classpathProvider.getJavaSourceRootsList()
+    val classpathArray = JsonArray()
+    val javaSourceRootsArray = JsonArray()
+    effectiveClassPaths.forEach { path -> classpathArray.add(path) }
+    javaSourceRoots.forEach { path -> javaSourceRootsArray.add(path) }
+
     return JsonObject().apply {
       add(
           "settings",
@@ -197,11 +204,18 @@ class KotlinWorkspaceSetup(
             add(
                 "kotlin",
                 JsonObject().apply {
+                  addProperty("usePredefinedClasspath", true)
+                  addProperty("disableDependencyResolution", true)
+                  add("classpath", classpathArray)
+                  add("javaSourceRoots", javaSourceRootsArray)
                   add(
                       "scripts",
                       JsonObject().apply {
                         addProperty("enabled", false)
                         addProperty("buildScriptsEnabled", false)
+                        // Keep legacy fwcd runtime compatibility: older parsing only reads
+                        // predefined classpath updates from settings.kotlin.scripts.classpath.
+                        add("classpath", classpathArray.deepCopy())
                       },
                   )
                   add(
