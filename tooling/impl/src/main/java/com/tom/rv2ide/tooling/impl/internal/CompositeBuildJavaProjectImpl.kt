@@ -3,6 +3,7 @@ package com.tom.rv2ide.tooling.impl.internal
 import com.tom.rv2ide.builder.model.IJavaCompilerSettings
 import com.tom.rv2ide.tooling.api.IJavaProject
 import com.tom.rv2ide.tooling.api.ProjectType
+import com.tom.rv2ide.tooling.api.models.GradleTask
 import com.tom.rv2ide.tooling.api.models.JavaContentRoot
 import com.tom.rv2ide.tooling.api.models.JavaModuleDependency
 import com.tom.rv2ide.tooling.api.models.JavaProjectMetadata
@@ -20,6 +21,10 @@ internal class CompositeBuildJavaProjectImpl(
 
   override fun getMetadata(): CompletableFuture<com.tom.rv2ide.tooling.api.models.ProjectMetadata> {
     return CompletableFuture.completedFuture(metadata)
+  }
+
+  override fun getTasks(): CompletableFuture<List<GradleTask>> {
+    return CompletableFuture.completedFuture(emptyList())
   }
 
   override fun getContentRoots(): CompletableFuture<List<JavaContentRoot>> {
