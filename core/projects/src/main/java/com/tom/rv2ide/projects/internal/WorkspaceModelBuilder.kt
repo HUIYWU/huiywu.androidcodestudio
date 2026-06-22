@@ -64,8 +64,10 @@ internal object WorkspaceModelBuilder {
           "Root project must be either an Android project or a Gradle project"
         )
       }
-      val transformedProjects = CopyOnWriteArrayList(transform(allProjects, project))
+    val transformedProjects = CopyOnWriteArrayList(transform(allProjects, projectDir))
+    if (transformedProjects.none { it.path.startsWith(":buildDeps:") }) {
       augmentWithCompositeBuildDeps(projectDir, transformedProjects)
+    }
       log.info(
         "WorkspaceModelBuilder.build workspaceDir={} rootProject={} allProjects={} transformedProjects={}",
         projectDir.canonicalPath,

@@ -20,13 +20,22 @@ package com.tom.rv2ide.tooling.impl.sync
 import com.tom.rv2ide.builder.model.DefaultProjectSyncIssues
 import com.tom.rv2ide.builder.model.DefaultSyncIssue
 import com.tom.rv2ide.builder.model.shouldBeIgnored
+import com.tom.rv2ide.builder.model.DefaultJavaCompileOptions
 import com.tom.rv2ide.tooling.api.IAndroidProject
+import com.tom.rv2ide.tooling.api.IGradleProject
 import com.tom.rv2ide.tooling.api.IProject
+import com.tom.rv2ide.tooling.api.ProjectType
 import com.tom.rv2ide.tooling.api.messages.InitializeProjectParams
+import com.tom.rv2ide.tooling.api.models.JavaContentRoot
+import com.tom.rv2ide.tooling.api.models.JavaModuleCompilerSettings
+import com.tom.rv2ide.tooling.api.models.JavaProjectMetadata
+import com.tom.rv2ide.tooling.api.models.JavaSourceDirectory
 import com.tom.rv2ide.tooling.api.util.AndroidModulePropertyCopier
 import com.tom.rv2ide.tooling.impl.Main
 import com.tom.rv2ide.tooling.impl.Main.finalizeLauncher
+import com.tom.rv2ide.tooling.impl.internal.CompositeBuildJavaProjectImpl
 import com.tom.rv2ide.tooling.impl.internal.ProjectImpl
+import java.io.File
 import java.io.Serializable
 import org.gradle.tooling.ConfigurableLauncher
 import org.gradle.tooling.model.idea.IdeaProject
@@ -103,7 +112,9 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
                             syncIssueReporter,
                         )
                     )
-              }
+              }.toMutableList<IGradleProject>()
+
+          augmentWithCompositeBuildDeps(rootModule.gradleProject.projectDirectory, projects)
 
           return@action ProjectImpl(
               rootProject,
@@ -129,6 +140,61 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     }
 
     return executor.run().also { logger.debug("Build action executed. Result: {}", it) }
+  }
+
+  private fun augmentWithCompositeBuildDeps(
+    workspaceDir: File,
+    projects: MutableList<IGradleProject>,
+  ) {
+    val buildDepsDir = File(workspaceDir, "composite-builds/build-deps")
+    if (!buildDepsDir.isDirectory) {
+      return
+    }
+
+    val existingDirs = projects.map { it.getMetadata().get().projectDir.canonicalFile }.toHashSet()
+    val rootJavaMetadata = projects
+      .mapNotNull { it.getMetadata().get() as? JavaProjectMetadata }
+      .find { it.projectPath == ":" }
+      ?: return
+
+    buildDepsDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { depDir ->
+      val canonicalDepDir = depDir.canonicalFile
+      if (existingDirs.contains(canonicalDepDir)) {
+        return@forEach
+      }
+      val mainJavaDir = File(depDir, "src/main/java")
+      if (!mainJavaDir.isDirectory) {
+        return@forEach
+      }
+
+      val buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
+        ?: File(depDir, "build.gradle")
+      val metadata = JavaProjectMetadata(
+        depDir.name,
+        ":buildDeps:${depDir.name}",
+        depDir,
+        File(depDir, "build"),
+        "Composite build dependency module",
+        buildScript,
+        ProjectType.Java,
+        JavaModuleCompilerSettings(
+          rootJavaMetadata.compilerSettings.javaSourceVersion,
+          rootJavaMetadata.compilerSettings.javaBytecodeVersion,
+        ),
+        null,
+      )
+      val contentRoot = JavaContentRoot().apply {
+        (sourceDirectories as MutableList).add(JavaSourceDirectory(mainJavaDir, false))
+      }
+      projects.add(
+        CompositeBuildJavaProjectImpl(
+          metadata = metadata,
+          contentRoots = listOf(contentRoot),
+          dependencies = emptyList(),
+        )
+      )
+      existingDirs.add(canonicalDepDir)
+    }
   }
 
   private fun applyAndroidModelBuilderProps(launcher: ConfigurableLauncher<*>) {
