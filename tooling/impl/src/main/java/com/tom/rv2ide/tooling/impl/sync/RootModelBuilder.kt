@@ -25,8 +25,11 @@ import com.tom.rv2ide.tooling.api.IAndroidProject
 import com.tom.rv2ide.tooling.api.IGradleProject
 import com.tom.rv2ide.tooling.api.IProject
 import com.tom.rv2ide.tooling.api.ProjectType
+import com.tom.rv2ide.tooling.api.IJavaProject
 import com.tom.rv2ide.tooling.api.messages.InitializeProjectParams
 import com.tom.rv2ide.tooling.api.models.CompositeBuildDescriptor
+import com.tom.rv2ide.tooling.api.models.JavaModuleCompilerSettings
+import com.tom.rv2ide.tooling.api.models.JavaProjectMetadata
 import com.tom.rv2ide.tooling.api.util.AndroidModulePropertyCopier
 import com.tom.rv2ide.tooling.impl.Main
 import com.tom.rv2ide.tooling.impl.Main.finalizeLauncher
@@ -182,6 +185,14 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     }
 
     val existingDirs = projects.map { it.getMetadata().get().projectDir.canonicalFile }.toHashSet()
+    val fallbackCompilerSettings = projects
+      .filterIsInstance<IJavaProject>()
+      .firstOrNull { it.getMetadata().get().projectPath == ":" }
+      ?.getMetadata()
+      ?.get()
+      ?.let { it as? JavaProjectMetadata }
+      ?.compilerSettings
+      ?: JavaModuleCompilerSettings()
     val discovered = mutableListOf<CompositeBuildDescriptor>()
     buildDepsDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { depDir ->
       val canonicalDepDir = depDir.canonicalFile
@@ -202,8 +213,8 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
           buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
             ?: File(depDir, "build.gradle").takeIf { it.isFile },
           sourceRoots = listOf(mainJavaDir),
-          javaSourceVersion = rootJavaProject.compilerSettings.javaSourceVersion,
-          javaBytecodeVersion = rootJavaProject.compilerSettings.javaBytecodeVersion,
+          javaSourceVersion = fallbackCompilerSettings.javaSourceVersion,
+          javaBytecodeVersion = fallbackCompilerSettings.javaBytecodeVersion,
           isHeavy = isHeavyCompositeBuildDep(depDir.name),
         )
       )
