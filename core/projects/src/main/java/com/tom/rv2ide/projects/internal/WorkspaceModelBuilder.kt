@@ -141,6 +141,12 @@ internal object WorkspaceModelBuilder {
       return
     }
 
+    val fallbackCompilerSettings = projects
+      .filterIsInstance<JavaModule>()
+      .firstOrNull { it.path == ":" }
+      ?.compilerSettings
+      ?: JavaModuleCompilerSettings()
+
     val descriptors = buildDepsDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.mapNotNull { depDir ->
       val mainJavaDir = File(depDir, "src/main/java")
       if (!mainJavaDir.isDirectory) {
@@ -155,8 +161,8 @@ internal object WorkspaceModelBuilder {
         buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
           ?: File(depDir, "build.gradle").takeIf { it.isFile },
         sourceRoots = listOf(mainJavaDir),
-        javaSourceVersion = rootJavaModule.compilerSettings.javaSourceVersion,
-        javaBytecodeVersion = rootJavaModule.compilerSettings.javaBytecodeVersion,
+        javaSourceVersion = fallbackCompilerSettings.javaSourceVersion,
+        javaBytecodeVersion = fallbackCompilerSettings.javaBytecodeVersion,
         isHeavy = isHeavyCompositeBuildDep(depDir.name),
       )
     } ?: emptyList()
