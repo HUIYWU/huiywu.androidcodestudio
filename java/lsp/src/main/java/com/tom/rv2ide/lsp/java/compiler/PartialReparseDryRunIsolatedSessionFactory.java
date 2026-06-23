@@ -257,15 +257,37 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
-    final PartialReparseDryRunIsolatedAttemptExecutorBridge attemptExecutorBridge =
-        createAttemptExecutorBridge(request, eligibility, attemptReport);
-    if (!attemptExecutorBridge.bridgeAttempted
-        && !attemptExecutorBridge.executionAttemptResult.preflightResult.session.isReady()) {
+    final PartialReparseDryRunIsolatedExecutionConsumerObservation observation =
+        createExecutionConsumerObservation(request, eligibility, attemptReport);
+    if (!observation.executionAttemptResult.preflightResult.session.isReady()) {
       return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.notConsumed(
-          attemptExecutorBridge.reason);
+          observation.reason);
     }
     return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.deferred(
-        attemptExecutorBridge.reason, attemptExecutorBridge);
+        observation.reason,
+        PartialReparseDryRunIsolatedAttemptExecutorBridge.deferred(
+            observation.reason, observation.executionAttemptResult));
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedExecutionConsumerObservation createExecutionConsumerObservation(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedExecutionAttemptResult executionAttemptResult =
+        createIsolatedExecutionAttemptResult(request, eligibility, attemptReport);
+    if (!executionAttemptResult.preflightResult.session.isReady()) {
+      return PartialReparseDryRunIsolatedExecutionConsumerObservation.notReady(
+          executionAttemptResult.reason);
+    }
+    return PartialReparseDryRunIsolatedExecutionConsumerObservation.deferred(
+        executionAttemptResult.reason,
+        executionAttemptResult,
+        executionAttemptResult.attemptStarted,
+        executionAttemptResult.attemptFailed,
+        false,
+        false,
+        true);
   }
 
   @NonNull
@@ -274,15 +296,38 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
       CompilerProvider liveCompiler) {
-    final PartialReparseDryRunIsolatedAttemptExecutorBridge attemptExecutorBridge =
-        createAttemptExecutorBridge(request, eligibility, attemptReport, liveCompiler);
-    if (!attemptExecutorBridge.bridgeAttempted
-        && !attemptExecutorBridge.executionAttemptResult.preflightResult.session.isReady()) {
+    final PartialReparseDryRunIsolatedExecutionConsumerObservation observation =
+        createExecutionConsumerObservation(request, eligibility, attemptReport, liveCompiler);
+    if (!observation.executionAttemptResult.preflightResult.session.isReady()) {
       return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.notConsumed(
-          attemptExecutorBridge.reason);
+          observation.reason);
     }
     return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.deferred(
-        attemptExecutorBridge.reason, attemptExecutorBridge);
+        observation.reason,
+        PartialReparseDryRunIsolatedAttemptExecutorBridge.deferred(
+            observation.reason, observation.executionAttemptResult));
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedExecutionConsumerObservation createExecutionConsumerObservation(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport,
+      CompilerProvider liveCompiler) {
+    final PartialReparseDryRunIsolatedExecutionAttemptResult executionAttemptResult =
+        createIsolatedExecutionAttemptResult(request, eligibility, attemptReport, liveCompiler);
+    if (!executionAttemptResult.preflightResult.session.isReady()) {
+      return PartialReparseDryRunIsolatedExecutionConsumerObservation.notReady(
+          executionAttemptResult.reason);
+    }
+    return PartialReparseDryRunIsolatedExecutionConsumerObservation.deferred(
+        executionAttemptResult.reason,
+        executionAttemptResult,
+        executionAttemptResult.attemptStarted,
+        executionAttemptResult.attemptFailed,
+        false,
+        false,
+        true);
   }
 
 

@@ -19,6 +19,7 @@ package com.tom.rv2ide.tooling.impl.sync
 
 import com.tom.rv2ide.builder.model.DefaultProjectSyncIssues
 import com.tom.rv2ide.builder.model.DefaultSyncIssue
+import com.tom.rv2ide.builder.model.IJavaCompilerSettings
 import com.tom.rv2ide.builder.model.shouldBeIgnored
 import com.tom.rv2ide.builder.model.DefaultJavaCompileOptions
 import com.tom.rv2ide.tooling.api.IAndroidProject
@@ -232,7 +233,7 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
   }
   private fun resolveCompositeCompilerSettings(
     buildScript: File?,
-    fallback: JavaModuleCompilerSettings,
+    fallback: IJavaCompilerSettings,
   ): JavaModuleCompilerSettings {
     val script = buildScript?.takeIf { it.isFile }?.readText() ?: return fallback
     val source = extractJavaVersion(script, "sourceCompatibility") ?: fallback.javaSourceVersion

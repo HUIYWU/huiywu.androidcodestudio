@@ -80,11 +80,28 @@ public class PartialReparseDryRunIsolatedCompilerCopyProvider {
   }
 
   @NonNull
+  PartialReparseDryRunIsolatedExecutionConsumerObservation createExecutionConsumerObservation(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    return sessionFactory.createExecutionConsumerObservation(request, eligibility, attemptReport);
+  }
+
+  @NonNull
   PartialReparseDryRunIsolatedAttemptExecutorConsumerResult createAttemptExecutorConsumerResult(
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
       CompilerProvider liveCompiler) {
     return sessionFactory.createAttemptExecutorConsumerResult(request, eligibility, attemptReport, liveCompiler);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedExecutionConsumerObservation createExecutionConsumerObservation(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport,
+      CompilerProvider liveCompiler) {
+    return sessionFactory.createExecutionConsumerObservation(request, eligibility, attemptReport, liveCompiler);
   }
 }
