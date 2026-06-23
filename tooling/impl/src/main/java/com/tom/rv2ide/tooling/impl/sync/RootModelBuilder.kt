@@ -119,6 +119,11 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
 
               }.toMutableList<IGradleProject>()
           logger.warn("RootModelBuilder: base idea modules count={}", projects.size)
+          // Keep composite build discovery as metadata-only at this stage.
+          // Returning lightweight descriptors avoids mixing new IJavaProject implementations into the
+          // existing tooling project list, which previously caused Tooling API compatibility and
+          // initialization stability issues. Workspace can consume these descriptors to materialize
+          // official module entries while preserving the legacy fallback as a safety net.
           val compositeBuildDescriptors =
               discoverCompositeBuildDeps(rootModule.gradleProject.projectDirectory, projects)
           logger.warn(
@@ -190,12 +195,15 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       discovered.add(
         CompositeBuildDescriptor(
           name = depDir.name,
+          buildName = "buildDeps",
           projectPath = ":buildDeps:${depDir.name}",
           projectDir = canonicalDepDir,
           buildDir = File(depDir, "build"),
           buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
             ?: File(depDir, "build.gradle").takeIf { it.isFile },
           sourceRoots = listOf(mainJavaDir),
+          javaSourceVersion = rootJavaProject.compilerSettings.javaSourceVersion,
+          javaBytecodeVersion = rootJavaProject.compilerSettings.javaBytecodeVersion,
           isHeavy = isHeavyCompositeBuildDep(depDir.name),
         )
       )

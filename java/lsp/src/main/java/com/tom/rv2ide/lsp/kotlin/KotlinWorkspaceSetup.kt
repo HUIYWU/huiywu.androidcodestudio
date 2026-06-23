@@ -29,6 +29,7 @@ import com.tom.rv2ide.projectdata.state.lsp.Index
 import com.tom.rv2ide.projectdata.logs.LogStream
 import java.io.File
 import java.nio.file.*
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
 
@@ -176,17 +177,179 @@ class KotlinWorkspaceSetup(
         summarizeJsonKeys(params.getAsJsonObject("capabilities")),
     )
   }
-
   private fun logDidChangeConfigurationSummary(source: String, params: JsonObject) {
     val settings = params.getAsJsonObject("settings")
     val settingsKeys = summarizeJsonKeys(settings)
     KslLogs.debug(
-        "KLS TRACE didChangeConfiguration.send backend={} source={} settingsKeys={} settingsEmpty={}",
+        "KLS TRACE didChangeConfiguration.send backend={} source={} settingsKeys={} settingsEmpty={}"
+        ,
         backendId.name.lowercase(),
         source,
         settingsKeys,
         settings == null || settings.entrySet().isEmpty(),
     )
+  }
+
+  private fun sha256Hex(lines: Collection<String>): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    val content = lines.map { it.trim() }.filter { it.isNotEmpty() }.sorted().joinToString("\n")
+    val hash = digest.digest(content.toByteArray())
+    return hash.joinToString("") { "%02x".format(it) }
+  }
+
+  private fun filePathsArray(files: Collection<File>): JsonArray {
+    val array = JsonArray()
+    files.map { it.absolutePath }.distinct().sorted().forEach { array.add(it) }
+    return array
+  }
+
+  private fun stringArray(values: Collection<String>): JsonArray {
+    val array = JsonArray()
+    values.distinct().sorted().forEach { array.add(it) }
+    return array
+  }
+
+  private fun inferGenerator(rootPath: String): String {
+    val normalized = rootPath.replace('\\', '/').lowercase()
+    return when {
+      "/ksp/" in normalized -> "ksp"
+      "/kapt/" in normalized -> "kapt"
+      "buildconfig" in normalized -> "buildConfig"
+      "data_binding" in normalized || "databinding" in normalized -> "databinding"
+      "/aidl/" in normalized -> "aidl"
+      "/renderscript/" in normalized -> "renderscript"
+      else -> "unknown"
+    }
+  }
+
+  private fun createAcsMetadata(
+      effectiveClassPaths: List<String>,
+      javaSourceRoots: List<String>,
+  ): JsonObject {
+    val workspaceRoot = workspace.getProjectDir().absolutePath
+    val modules = workspace.getSubProjects().filterIsInstance<ModuleProject>().sortedBy { it.path }
+    val variantSelections = workspace.getAndroidVariantSelections()
+    val androidModules = modules.filterIsInstance<AndroidModule>()
+
+    val workspaceSourceRootsEntries = mutableListOf<String>()
+    val generatedSourceRootsEntries = mutableListOf<String>()
+    val moduleEntries = mutableListOf<String>()
+
+    val modulesArray = JsonArray()
+    val sourceLayoutModulesArray = JsonArray()
+    val generatedSourcesArray = JsonArray()
+    val variantSelectionsObject = JsonObject()
+
+    variantSelections.toSortedMap().forEach { (modulePath, info) ->
+      variantSelectionsObject.addProperty(modulePath, info.selectedVariant)
+    }
+
+    modules.forEach { module ->
+      moduleEntries += listOf(module.path, module.name, module.projectDir.absolutePath, module.buildDir.absolutePath)
+
+      val moduleJson = JsonObject().apply {
+        addProperty("path", module.path)
+        addProperty("name", module.name)
+        addProperty("projectDir", module.projectDir.absolutePath)
+        addProperty("buildDir", module.buildDir.absolutePath)
+        addProperty("type", if (module is AndroidModule) "android" else "java")
+      }
+
+      val workspaceRoots = mutableSetOf<File>()
+      val generatedRoots = mutableSetOf<File>()
+      val resourceRoots = mutableSetOf<File>()
+      val javaRoots = mutableSetOf<File>()
+      val kotlinRoots = mutableSetOf<File>()
+
+      if (module is AndroidModule) {
+        val selectedVariant = module.getSelectedVariant()
+        moduleJson.addProperty("namespace", module.namespace)
+        moduleJson.addProperty("selectedVariant", selectedVariant?.name)
+        moduleJson.addProperty("isLibrary", module.isLibrary)
+        moduleJson.addProperty("isApplication", module.isApplication)
+
+        module.mainSourceSet?.sourceProvider?.javaDirectories?.forEach {
+          workspaceRoots += it
+          javaRoots += it
+        }
+        module.mainSourceSet?.sourceProvider?.kotlinDirectories?.forEach {
+          workspaceRoots += it
+          kotlinRoots += it
+        }
+        module.mainSourceSet?.sourceProvider?.resDirectories?.forEach { resourceRoots += it }
+        selectedVariant?.mainArtifact?.generatedSourceFolders?.forEach {
+          generatedRoots += it
+        }
+      } else {
+        module.getSourceDirectories().forEach { workspaceRoots += it }
+      }
+
+      workspaceRoots.forEach { workspaceSourceRootsEntries += "${module.path}:${it.absolutePath}" }
+      generatedRoots.forEach { generatedSourceRootsEntries += "${module.path}:${it.absolutePath}" }
+
+      modulesArray.add(moduleJson)
+
+      sourceLayoutModulesArray.add(
+          JsonObject().apply {
+            addProperty("path", module.path)
+            add("workspaceSourceRoots", filePathsArray(workspaceRoots))
+            add("generatedSourceRoots", filePathsArray(generatedRoots))
+            add("resourceRoots", filePathsArray(resourceRoots))
+            add("javaSourceRoots", filePathsArray(javaRoots))
+            add("kotlinSourceRoots", filePathsArray(kotlinRoots))
+          },
+      )
+
+      generatedRoots.sortedBy { it.absolutePath }.forEach { root ->
+        generatedSourcesArray.add(
+            JsonObject().apply {
+              addProperty("modulePath", module.path)
+              addProperty("variant", if (module is AndroidModule) module.getSelectedVariant()?.name else null)
+              addProperty("root", root.absolutePath)
+              addProperty("generator", inferGenerator(root.absolutePath))
+            },
+        )
+      }
+    }
+
+    val generatedRootsOnly = androidModules
+        .flatMap { module ->
+          module.getSelectedVariant()?.mainArtifact?.generatedSourceFolders.orEmpty().map { root ->
+            "${module.path}:${module.getSelectedVariant()?.name}:${root.absolutePath}"
+          }
+        }
+
+    val environmentFingerprint = JsonObject().apply {
+      addProperty("workspaceRoot", workspaceRoot)
+      addProperty("workspaceRootHash", sha256Hex(listOf(workspaceRoot)))
+      addProperty("classpathHash", sha256Hex(effectiveClassPaths))
+      addProperty("javaSourceRootsHash", sha256Hex(javaSourceRoots))
+      addProperty("generatedSourceRootsHash", sha256Hex(generatedRootsOnly))
+      addProperty(
+          "variantSelectionHash",
+          sha256Hex(
+              variantSelections.toSortedMap().map { (modulePath, info) -> "$modulePath=${info.selectedVariant}" },
+          ),
+      )
+      addProperty("moduleGraphHash", sha256Hex(moduleEntries))
+      addProperty("schemaVersion", 1)
+    }
+
+    return JsonObject().apply {
+      addProperty("schemaVersion", 1)
+      add("environmentFingerprint", environmentFingerprint)
+      add("variantSelections", variantSelectionsObject)
+      add("modules", modulesArray)
+      add(
+          "sourceLayout",
+          JsonObject().apply {
+            add("modules", sourceLayoutModulesArray)
+            add("workspaceSourceRoots", stringArray(workspaceSourceRootsEntries))
+            add("generatedSourceRoots", stringArray(generatedSourceRootsEntries))
+          },
+      )
+      add("generatedSources", generatedSourcesArray)
+    }
   }
 
   private fun createFwcdRuntimeConfig(): JsonObject {
@@ -196,6 +359,7 @@ class KotlinWorkspaceSetup(
     val javaSourceRootsArray = JsonArray()
     effectiveClassPaths.forEach { path -> classpathArray.add(path) }
     javaSourceRoots.forEach { path -> javaSourceRootsArray.add(path) }
+    val acsMetadata = createAcsMetadata(effectiveClassPaths, javaSourceRoots)
 
     return JsonObject().apply {
       add(
@@ -236,6 +400,7 @@ class KotlinWorkspaceSetup(
                       "indexing",
                       JsonObject().apply { addProperty("enabled", true) },
                   )
+                  add("acs", acsMetadata)
                 },
             )
           },
@@ -701,7 +866,7 @@ class KotlinWorkspaceSetup(
 
           effectiveClassPaths.forEach { path -> classpathArray.add(path) }
           javaSourceRoots.forEach { path -> javaSourceRootsArray.add(path) }
-
+          val acsMetadata = createAcsMetadata(effectiveClassPaths, javaSourceRoots)
           val initOptions =
               JsonObject().apply {
                 addProperty("storagePath", workspace.getProjectDir().resolve(".acside").absolutePath)
@@ -743,7 +908,9 @@ class KotlinWorkspaceSetup(
                 addProperty("disableDependencyResolution", true)
                 add("classpath", classpathArray)
                 add("javaSourceRoots", javaSourceRootsArray)
+                add("acs", acsMetadata)
               }
+
 
           add("initializationOptions", initOptions)
 

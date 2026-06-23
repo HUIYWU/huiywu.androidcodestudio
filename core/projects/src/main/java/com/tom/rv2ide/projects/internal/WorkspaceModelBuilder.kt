@@ -68,6 +68,10 @@ internal object WorkspaceModelBuilder {
 
       val transformedProjects = CopyOnWriteArrayList(transform(allProjects, project))
       if (transformedProjects.none { it.path.startsWith(":buildDeps:") }) {
+        // Prefer tooling-provided composite descriptors whenever available.
+        // This keeps discovery responsibility in tooling while still allowing workspace to preserve
+        // the existing pseudo-module materialization strategy. The filesystem scan remains as a
+        // compatibility fallback until composite build modeling is fully formalized end-to-end.
         val compositeDescriptors = project.getCompositeBuildDescriptors().get()
         if (compositeDescriptors.isNotEmpty()) {
           augmentWithCompositeBuildDescriptors(compositeDescriptors, transformedProjects)
@@ -144,12 +148,15 @@ internal object WorkspaceModelBuilder {
       }
       CompositeBuildDescriptor(
         name = depDir.name,
+        buildName = "buildDeps",
         projectPath = ":buildDeps:${depDir.name}",
         projectDir = depDir.canonicalFile,
         buildDir = File(depDir, "build"),
         buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
           ?: File(depDir, "build.gradle").takeIf { it.isFile },
         sourceRoots = listOf(mainJavaDir),
+        javaSourceVersion = rootJavaModule.compilerSettings.javaSourceVersion,
+        javaBytecodeVersion = rootJavaModule.compilerSettings.javaBytecodeVersion,
         isHeavy = isHeavyCompositeBuildDep(depDir.name),
       )
     } ?: emptyList()
@@ -157,7 +164,11 @@ internal object WorkspaceModelBuilder {
     augmentWithCompositeBuildDescriptors(descriptors, projects, logLabel = "compositeBuildDeps")
   }
 
-    private fun augmentWithCompositeBuildDescriptors(
+    // Materialize composite build descriptors as pseudo Java modules.
+  // At this stage we intentionally reuse the existing workspace-side JavaModule shape and root
+  // compiler settings so descriptor-based discovery can replace directory scanning without forcing
+  // a larger identity / dependency graph refactor in the same change.
+  private fun augmentWithCompositeBuildDescriptors(
     descriptors: List<CompositeBuildDescriptor>,
     projects: MutableList<GradleProject>,
     logLabel: String = "compositeBuildDescriptors",
@@ -193,8 +204,8 @@ internal object WorkspaceModelBuilder {
           ?: File(descriptor.projectDir, "build.gradle"),
         tasks = emptyList<GradleTask>(),
         compilerSettings = JavaModuleCompilerSettings(
-          rootJavaModule.compilerSettings.javaSourceVersion,
-          rootJavaModule.compilerSettings.javaBytecodeVersion,
+          descriptor.javaSourceVersion,
+          descriptor.javaBytecodeVersion,
         ),
         contentRoots = listOf(contentRoot),
         dependencies = emptyList(),

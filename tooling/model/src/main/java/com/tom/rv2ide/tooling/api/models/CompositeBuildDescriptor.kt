@@ -30,11 +30,14 @@ import java.io.Serializable
  */
 class CompositeBuildDescriptor(
     val name: String,
+    val buildName: String,
     val projectPath: String,
     val projectDir: File,
     val buildDir: File,
     val buildScript: File?,
     val sourceRoots: List<File>,
+    val javaSourceVersion: String,
+    val javaBytecodeVersion: String,
     val isHeavy: Boolean,
 ) : Serializable {
 
