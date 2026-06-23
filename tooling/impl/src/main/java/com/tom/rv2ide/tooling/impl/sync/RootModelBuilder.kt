@@ -26,6 +26,7 @@ import com.tom.rv2ide.tooling.api.IGradleProject
 import com.tom.rv2ide.tooling.api.IProject
 import com.tom.rv2ide.tooling.api.ProjectType
 import com.tom.rv2ide.tooling.api.messages.InitializeProjectParams
+import com.tom.rv2ide.tooling.api.models.CompositeBuildDescriptor
 import com.tom.rv2ide.tooling.api.util.AndroidModulePropertyCopier
 import com.tom.rv2ide.tooling.impl.Main
 import com.tom.rv2ide.tooling.impl.Main.finalizeLauncher
@@ -118,15 +119,19 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
 
               }.toMutableList<IGradleProject>()
           logger.warn("RootModelBuilder: base idea modules count={}", projects.size)
-          logCompositeBuildDepsDiscovery(rootModule.gradleProject.projectDirectory, projects)
-          logger.warn("RootModelBuilder: projects count after composite discovery={}", projects.size)
+          val compositeBuildDescriptors =
+              discoverCompositeBuildDeps(rootModule.gradleProject.projectDirectory, projects)
+          logger.warn(
+              "RootModelBuilder: composite descriptor count={}",
+              compositeBuildDescriptors.size,
+          )
 
           return@action ProjectImpl(
-
               rootProject,
               rootModule.gradleProject.path,
               projects,
               DefaultProjectSyncIssues(syncIssues),
+              compositeBuildDescriptors,
           )
         }
 
@@ -160,19 +165,19 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     }
 
   }
-  private fun logCompositeBuildDepsDiscovery(
+  private fun discoverCompositeBuildDeps(
     workspaceDir: File,
     projects: List<IGradleProject>,
-  ) {
+  ): List<CompositeBuildDescriptor> {
     val logger = LoggerFactory.getLogger("RootModelBuilder")
     val buildDepsDir = File(workspaceDir, "composite-builds/build-deps")
     if (!buildDepsDir.isDirectory) {
       logger.warn("RootModelBuilder composite discovery skipped missingDir={}", buildDepsDir.path)
-      return
+      return emptyList()
     }
 
     val existingDirs = projects.map { it.getMetadata().get().projectDir.canonicalFile }.toHashSet()
-    val discovered = mutableListOf<String>()
+    val discovered = mutableListOf<CompositeBuildDescriptor>()
     buildDepsDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { depDir ->
       val canonicalDepDir = depDir.canonicalFile
       if (existingDirs.contains(canonicalDepDir)) {
@@ -182,15 +187,34 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       if (!mainJavaDir.isDirectory) {
         return@forEach
       }
-      discovered.add(":buildDeps:${depDir.name} -> ${canonicalDepDir.path}")
+      discovered.add(
+        CompositeBuildDescriptor(
+          name = depDir.name,
+          projectPath = ":buildDeps:${depDir.name}",
+          projectDir = canonicalDepDir,
+          buildDir = File(depDir, "build"),
+          buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
+            ?: File(depDir, "build.gradle").takeIf { it.isFile },
+          sourceRoots = listOf(mainJavaDir),
+          isHeavy = isHeavyCompositeBuildDep(depDir.name),
+        )
+      )
     }
 
     logger.warn(
       "RootModelBuilder composite discovery scannedDir={} discoveredCount={} discovered={}",
       buildDepsDir.canonicalPath,
       discovered.size,
-      discovered,
+      discovered.map { "${it.projectPath} -> ${it.projectDir.path}" },
     )
+    return discovered
+  }
+
+  private fun isHeavyCompositeBuildDep(moduleName: String): Boolean {
+    return moduleName == "jdk-compiler"
+      || moduleName == "java-compiler"
+      || moduleName == "jdk-jdeps"
+      || moduleName == "jaxp"
   }
 
 

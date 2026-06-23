@@ -24,6 +24,7 @@ import com.tom.rv2ide.tooling.api.IJavaProject
 import com.tom.rv2ide.tooling.api.IProject
 import com.tom.rv2ide.tooling.api.ProjectType
 import com.tom.rv2ide.tooling.api.models.BasicProjectMetadata
+import com.tom.rv2ide.tooling.api.models.CompositeBuildDescriptor
 import com.tom.rv2ide.tooling.api.models.params.StringParameter
 import com.tom.rv2ide.tooling.api.models.result.SelectProjectResult
 import com.tom.rv2ide.tooling.impl.internal.forwarding.ForwardingProject
@@ -36,6 +37,7 @@ internal class ProjectImpl(
     var rootProjectPath: String? = null,
     var projects: List<IGradleProject> = emptyList(),
     var projectSyncIssues: DefaultProjectSyncIssues = DefaultProjectSyncIssues(emptyList()),
+    var compositeBuildDescriptors: List<CompositeBuildDescriptor> = emptyList(),
 ) : IProject, Serializable {
 
   private val serialVersionUID = 1L
@@ -58,6 +60,8 @@ internal class ProjectImpl(
     this.rootProjectPath = other.rootProjectPath
     this.projects = other.projects
     this.projectSyncIssues = other.projectSyncIssues
+    this.compositeBuildDescriptors = other.compositeBuildDescriptors
+
   }
 
   private fun getProject(path: String): IGradleProject? {
@@ -73,6 +77,10 @@ internal class ProjectImpl(
     return CompletableFuture.completedFuture(
         this.projectSyncIssues ?: DefaultProjectSyncIssues(emptyList())
     )
+  }
+
+  override fun getCompositeBuildDescriptors(): CompletableFuture<List<CompositeBuildDescriptor>> {
+    return CompletableFuture.completedFuture(compositeBuildDescriptors)
   }
 
   override fun selectProject(param: StringParameter): CompletableFuture<SelectProjectResult> {

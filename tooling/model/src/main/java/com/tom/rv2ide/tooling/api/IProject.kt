@@ -19,6 +19,7 @@ package com.tom.rv2ide.tooling.api
 
 import com.tom.rv2ide.builder.model.DefaultProjectSyncIssues
 import com.tom.rv2ide.tooling.api.models.BasicProjectMetadata
+import com.tom.rv2ide.tooling.api.models.CompositeBuildDescriptor
 import java.util.concurrent.CompletableFuture
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.jsonrpc.services.JsonSegment
@@ -35,9 +36,18 @@ interface IProject : IProjectQueries {
 
   /** Get all the projects included in this root project. */
   @JsonRequest fun getProjects(): CompletableFuture<List<BasicProjectMetadata>>
-
   /** Get the project sync issues. */
   @JsonRequest fun getProjectSyncIssues(): CompletableFuture<DefaultProjectSyncIssues>
+
+  /**
+   * Get tooling-discovered composite build descriptors.
+   *
+   * This complements [getProjects] without changing existing project identity semantics.
+   * Callers can consume this list to formally materialize composite build modules while
+   * retaining filesystem fallback when descriptors are absent.
+   */
+  @JsonRequest fun getCompositeBuildDescriptors(): CompletableFuture<List<CompositeBuildDescriptor>>
+
 
   companion object {
 
