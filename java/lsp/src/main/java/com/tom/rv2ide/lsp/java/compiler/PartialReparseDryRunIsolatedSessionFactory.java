@@ -94,7 +94,6 @@ public class PartialReparseDryRunIsolatedSessionFactory {
     }
     return PartialReparseDryRunIsolatedSessionReadinessResult.deferred(session.reason, session);
   }
-
   @NonNull
   PartialReparseDryRunIsolatedExecutablePreflightResult createExecutablePreflightResult(
       @NonNull CompilationRequest request,
@@ -108,6 +107,19 @@ public class PartialReparseDryRunIsolatedSessionFactory {
     }
     return PartialReparseDryRunIsolatedExecutablePreflightResult.deferred(
         sessionReadinessResult.reason, sessionReadinessResult);
+  }
+
+  @NonNull
+  PartialReparseDryRunIsolatedSessionExecutionPreflight createSessionExecutionPreflight(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport) {
+    final PartialReparseDryRunIsolatedSession session =
+        createSession(request, eligibility, attemptReport);
+    if (!session.isReady()) {
+      return PartialReparseDryRunIsolatedSessionExecutionPreflight.notReady(session.reason);
+    }
+    return PartialReparseDryRunIsolatedSessionExecutionPreflight.deferred(session.reason, session);
   }
 
   @NonNull
@@ -127,13 +139,27 @@ public class PartialReparseDryRunIsolatedSessionFactory {
   }
 
   @NonNull
+  PartialReparseDryRunIsolatedSessionExecutionPreflight createSessionExecutionPreflight(
+      @NonNull CompilationRequest request,
+      @NonNull PartialReparseEligibility eligibility,
+      @NonNull PartialReparseDryRunReport attemptReport,
+      CompilerProvider liveCompiler) {
+    final PartialReparseDryRunIsolatedSession session =
+        createSession(request, eligibility, attemptReport, liveCompiler);
+    if (!session.isReady()) {
+      return PartialReparseDryRunIsolatedSessionExecutionPreflight.notReady(session.reason);
+    }
+    return PartialReparseDryRunIsolatedSessionExecutionPreflight.deferred(session.reason, session);
+  }
+
+  @NonNull
   PartialReparseDryRunIsolatedExecutionAttemptResult createIsolatedExecutionAttemptResult(
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
-    final PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult =
-        createExecutablePreflightResult(request, eligibility, attemptReport);
-    if (!preflightResult.sessionReadinessResult.session.isReady()) {
+    final PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult =
+        createSessionExecutionPreflight(request, eligibility, attemptReport);
+    if (!preflightResult.session.isReady()) {
       return PartialReparseDryRunIsolatedExecutionAttemptResult.notStarted(preflightResult.reason);
     }
     return bridgeExecutionAttempt(request, eligibility, attemptReport, preflightResult);
@@ -145,9 +171,9 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
       CompilerProvider liveCompiler) {
-    final PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult =
-        createExecutablePreflightResult(request, eligibility, attemptReport, liveCompiler);
-    if (!preflightResult.sessionReadinessResult.session.isReady()) {
+    final PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult =
+        createSessionExecutionPreflight(request, eligibility, attemptReport, liveCompiler);
+    if (!preflightResult.session.isReady()) {
       return PartialReparseDryRunIsolatedExecutionAttemptResult.notStarted(preflightResult.reason);
     }
     return bridgeExecutionAttempt(request, eligibility, attemptReport, preflightResult, liveCompiler);
@@ -157,7 +183,7 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
-      @NonNull PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult) {
+      @NonNull PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult) {
     return bridgeExecutionAttempt(request, eligibility, attemptReport, preflightResult, null);
   }
 
@@ -166,7 +192,7 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
-      @NonNull PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult,
+      @NonNull PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult,
       CompilerProvider liveCompiler) {
     if (!allowsFutureCompilerCopyBridge(request, eligibility, attemptReport, preflightResult, liveCompiler)) {
       return PartialReparseDryRunIsolatedExecutionAttemptResult.deferred(
@@ -180,7 +206,7 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
-      @NonNull PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult) {
+      @NonNull PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult) {
     return allowsFutureCompilerCopyBridge(request, eligibility, attemptReport, preflightResult, null);
   }
 
@@ -188,10 +214,11 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
-      @NonNull PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult,
+      @NonNull PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult,
       CompilerProvider liveCompiler) {
     return false;
   }
+
 
 
   @NonNull
@@ -201,7 +228,7 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull PartialReparseDryRunReport attemptReport) {
     final PartialReparseDryRunIsolatedExecutionAttemptResult executionAttemptResult =
         createIsolatedExecutionAttemptResult(request, eligibility, attemptReport);
-    if (!executionAttemptResult.attemptStarted && !executionAttemptResult.preflightResult.sessionReadinessResult.session.isReady()) {
+    if (!executionAttemptResult.attemptStarted && !executionAttemptResult.preflightResult.session.isReady()) {
       return PartialReparseDryRunIsolatedAttemptExecutorBridge.notBridged(
           executionAttemptResult.reason);
     }
@@ -217,7 +244,7 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       CompilerProvider liveCompiler) {
     final PartialReparseDryRunIsolatedExecutionAttemptResult executionAttemptResult =
         createIsolatedExecutionAttemptResult(request, eligibility, attemptReport, liveCompiler);
-    if (!executionAttemptResult.attemptStarted && !executionAttemptResult.preflightResult.sessionReadinessResult.session.isReady()) {
+    if (!executionAttemptResult.attemptStarted && !executionAttemptResult.preflightResult.session.isReady()) {
       return PartialReparseDryRunIsolatedAttemptExecutorBridge.notBridged(
           executionAttemptResult.reason);
     }
@@ -233,7 +260,7 @@ public class PartialReparseDryRunIsolatedSessionFactory {
     final PartialReparseDryRunIsolatedAttemptExecutorBridge attemptExecutorBridge =
         createAttemptExecutorBridge(request, eligibility, attemptReport);
     if (!attemptExecutorBridge.bridgeAttempted
-        && !attemptExecutorBridge.executionAttemptResult.preflightResult.sessionReadinessResult.session.isReady()) {
+        && !attemptExecutorBridge.executionAttemptResult.preflightResult.session.isReady()) {
       return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.notConsumed(
           attemptExecutorBridge.reason);
     }
@@ -250,7 +277,7 @@ public class PartialReparseDryRunIsolatedSessionFactory {
     final PartialReparseDryRunIsolatedAttemptExecutorBridge attemptExecutorBridge =
         createAttemptExecutorBridge(request, eligibility, attemptReport, liveCompiler);
     if (!attemptExecutorBridge.bridgeAttempted
-        && !attemptExecutorBridge.executionAttemptResult.preflightResult.sessionReadinessResult.session.isReady()) {
+        && !attemptExecutorBridge.executionAttemptResult.preflightResult.session.isReady()) {
       return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.notConsumed(
           attemptExecutorBridge.reason);
     }

@@ -18,7 +18,8 @@ class PartialReparseDryRunIsolatedExecutionAttemptResultTest {
     assertFalse(result.attemptStarted)
     assertFalse(result.attemptFailed)
     assertTrue(result.nonExecutingStub)
-    assertFalse(result.preflightResult.sessionReadinessResult.session.isReady)
+    assertFalse(result.preflightResult.session.isReady)
+
   }
 
   @Test
@@ -31,15 +32,10 @@ class PartialReparseDryRunIsolatedExecutionAttemptResultTest {
             true,
             true,
         )
-    val readiness =
-        PartialReparseDryRunIsolatedSessionReadinessResult.deferred(
-            "session deferred",
-            session,
-        )
     val preflight =
-        PartialReparseDryRunIsolatedExecutablePreflightResult.deferred(
+        PartialReparseDryRunIsolatedSessionExecutionPreflight.deferred(
             "preflight deferred",
-            readiness,
+            session,
         )
 
     val result =
@@ -69,15 +65,10 @@ class PartialReparseDryRunIsolatedExecutionAttemptResultTest {
             true,
             true,
         )
-    val readiness =
-        PartialReparseDryRunIsolatedSessionReadinessResult.ready(
-            "session readiness ready",
-            session,
-        )
     val preflight =
-        PartialReparseDryRunIsolatedExecutablePreflightResult.ready(
+        PartialReparseDryRunIsolatedSessionExecutionPreflight.ready(
             "preflight ready",
-            readiness,
+            session,
         )
 
     val failed =

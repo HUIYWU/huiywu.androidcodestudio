@@ -476,7 +476,7 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
     val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
     val report = PartialReparseDryRunReport.notCreated()
     val factory = CandidateBackedSessionFactory()
-    val preflightResult = factory.createExecutablePreflightResult(request, eligibility, report)
+    val preflightResult = factory.createSessionExecutionPreflight(request, eligibility, report)
 
     assertFalse(factory.allowsFutureCompilerCopyBridge(request, eligibility, report, preflightResult))
   }
@@ -635,14 +635,14 @@ private class StartedAttemptSessionFactory : CandidateBackedSessionFactory() {
       request: CompilationRequest,
       eligibility: PartialReparseEligibility,
       attemptReport: PartialReparseDryRunReport,
-      preflightResult: PartialReparseDryRunIsolatedExecutablePreflightResult,
+      preflightResult: PartialReparseDryRunIsolatedSessionExecutionPreflight,
   ): Boolean = true
 
   override fun bridgeExecutionAttempt(
       request: CompilationRequest,
       eligibility: PartialReparseEligibility,
       attemptReport: PartialReparseDryRunReport,
-      preflightResult: PartialReparseDryRunIsolatedExecutablePreflightResult,
+      preflightResult: PartialReparseDryRunIsolatedSessionExecutionPreflight,
   ): PartialReparseDryRunIsolatedExecutionAttemptResult {
     return PartialReparseDryRunIsolatedExecutionAttemptResult.started(
         "attempt started",
@@ -675,7 +675,7 @@ private class ObservingBridgeSessionFactory : CandidateBackedSessionFactory() {
       request: CompilationRequest,
       eligibility: PartialReparseEligibility,
       attemptReport: PartialReparseDryRunReport,
-      preflightResult: PartialReparseDryRunIsolatedExecutablePreflightResult,
+      preflightResult: PartialReparseDryRunIsolatedSessionExecutionPreflight,
       liveCompiler: CompilerProvider?,
   ): Boolean {
     observedLiveCompiler = liveCompiler

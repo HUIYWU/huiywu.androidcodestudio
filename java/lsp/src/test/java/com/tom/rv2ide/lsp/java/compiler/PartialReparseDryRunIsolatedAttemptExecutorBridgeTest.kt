@@ -31,15 +31,10 @@ class PartialReparseDryRunIsolatedAttemptExecutorBridgeTest {
             true,
             true,
         )
-    val readiness =
-        PartialReparseDryRunIsolatedSessionReadinessResult.deferred(
-            "session deferred",
-            session,
-        )
     val preflight =
-        PartialReparseDryRunIsolatedExecutablePreflightResult.deferred(
+        PartialReparseDryRunIsolatedSessionExecutionPreflight.deferred(
             "preflight deferred",
-            readiness,
+            session,
         )
     val attempt =
         PartialReparseDryRunIsolatedExecutionAttemptResult.deferred(
@@ -74,15 +69,10 @@ class PartialReparseDryRunIsolatedAttemptExecutorBridgeTest {
             true,
             true,
         )
-    val readiness =
-        PartialReparseDryRunIsolatedSessionReadinessResult.ready(
-            "session readiness ready",
-            session,
-        )
     val preflight =
-        PartialReparseDryRunIsolatedExecutablePreflightResult.ready(
+        PartialReparseDryRunIsolatedSessionExecutionPreflight.ready(
             "preflight ready",
-            readiness,
+            session,
         )
     val attempt =
         PartialReparseDryRunIsolatedExecutionAttemptResult.started(

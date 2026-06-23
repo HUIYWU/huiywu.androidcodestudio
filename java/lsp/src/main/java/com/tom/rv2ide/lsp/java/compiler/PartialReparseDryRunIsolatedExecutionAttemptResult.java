@@ -32,18 +32,19 @@ public final class PartialReparseDryRunIsolatedExecutionAttemptResult {
 
   @NonNull public final State state;
   @NonNull public final String reason;
-  @NonNull public final PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult;
+  @NonNull public final PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult;
+
   public final boolean attemptStarted;
   public final boolean attemptFailed;
   public final boolean nonExecutingStub;
-
   private PartialReparseDryRunIsolatedExecutionAttemptResult(
       @NonNull State state,
       @NonNull String reason,
-      @NonNull PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult,
+      @NonNull PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult,
       boolean attemptStarted,
       boolean attemptFailed,
       boolean nonExecutingStub) {
+
     this.state = state;
     this.reason = reason;
     this.preflightResult = preflightResult;
@@ -58,7 +59,8 @@ public final class PartialReparseDryRunIsolatedExecutionAttemptResult {
     return new PartialReparseDryRunIsolatedExecutionAttemptResult(
         State.NOT_STARTED,
         reason,
-        PartialReparseDryRunIsolatedExecutablePreflightResult.notReady(reason),
+        PartialReparseDryRunIsolatedSessionExecutionPreflight.notReady(reason),
+
         false,
         false,
         true);
@@ -67,7 +69,8 @@ public final class PartialReparseDryRunIsolatedExecutionAttemptResult {
   @NonNull
   public static PartialReparseDryRunIsolatedExecutionAttemptResult deferred(
       @NonNull String reason,
-      @NonNull PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult) {
+      @NonNull PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult) {
+
     return new PartialReparseDryRunIsolatedExecutionAttemptResult(
         State.DEFERRED,
         reason,
@@ -80,8 +83,9 @@ public final class PartialReparseDryRunIsolatedExecutionAttemptResult {
   @NonNull
   public static PartialReparseDryRunIsolatedExecutionAttemptResult started(
       @NonNull String reason,
-      @NonNull PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult,
+      @NonNull PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult,
       boolean nonExecutingStub) {
+
     return new PartialReparseDryRunIsolatedExecutionAttemptResult(
         State.STARTED,
         reason,
@@ -94,7 +98,8 @@ public final class PartialReparseDryRunIsolatedExecutionAttemptResult {
   @NonNull
   public static PartialReparseDryRunIsolatedExecutionAttemptResult attemptFailed(
       @NonNull String reason,
-      @NonNull PartialReparseDryRunIsolatedExecutablePreflightResult preflightResult) {
+      @NonNull PartialReparseDryRunIsolatedSessionExecutionPreflight preflightResult) {
+
     return new PartialReparseDryRunIsolatedExecutionAttemptResult(
         State.ATTEMPT_FAILED,
         reason,

@@ -203,6 +203,9 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       if (!mainJavaDir.isDirectory) {
         return@forEach
       }
+      val buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
+        ?: File(depDir, "build.gradle").takeIf { it.isFile }
+      val resolvedCompilerSettings = resolveCompositeCompilerSettings(buildScript, fallbackCompilerSettings)
       discovered.add(
         CompositeBuildDescriptor(
           name = depDir.name,
@@ -210,11 +213,10 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
           projectPath = ":buildDeps:${depDir.name}",
           projectDir = canonicalDepDir,
           buildDir = File(depDir, "build"),
-          buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
-            ?: File(depDir, "build.gradle").takeIf { it.isFile },
+          buildScript = buildScript,
           sourceRoots = listOf(mainJavaDir),
-          javaSourceVersion = fallbackCompilerSettings.javaSourceVersion,
-          javaBytecodeVersion = fallbackCompilerSettings.javaBytecodeVersion,
+          javaSourceVersion = resolvedCompilerSettings.javaSourceVersion,
+          javaBytecodeVersion = resolvedCompilerSettings.javaBytecodeVersion,
           isHeavy = isHeavyCompositeBuildDep(depDir.name),
         )
       )
@@ -228,6 +230,27 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     )
     return discovered
   }
+  private fun resolveCompositeCompilerSettings(
+    buildScript: File?,
+    fallback: JavaModuleCompilerSettings,
+  ): JavaModuleCompilerSettings {
+    val script = buildScript?.takeIf { it.isFile }?.readText() ?: return fallback
+    val source = extractJavaVersion(script, "sourceCompatibility") ?: fallback.javaSourceVersion
+    val target = extractJavaVersion(script, "targetCompatibility") ?: fallback.javaBytecodeVersion
+    return JavaModuleCompilerSettings(source, target)
+  }
+
+  private fun extractJavaVersion(script: String, propertyName: String): String? {
+    val versionToken = Regex(propertyName + "\\s*(?:=)?\\s*JavaVersion\\.VERSION_([A-Z0-9_]+)")
+      .find(script)
+      ?.groupValues
+      ?.getOrNull(1)
+      ?: return null
+    return when (versionToken) {
+      "1_8" -> "RELEASE_8"
+      else -> versionToken.removePrefix("1_").let { "RELEASE_${it}" }
+    }
+  }
 
   private fun isHeavyCompositeBuildDep(moduleName: String): Boolean {
     return moduleName == "jdk-compiler"
@@ -235,6 +258,7 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       || moduleName == "jdk-jdeps"
       || moduleName == "jaxp"
   }
+
 
 
   private fun applyAndroidModelBuilderProps(launcher: ConfigurableLauncher<*>) {

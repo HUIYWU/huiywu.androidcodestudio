@@ -76,7 +76,7 @@ public class PartialReparseDryRunIsolatedPlanner {
     final PartialReparseDryRunIsolatedAttemptExecutorConsumerResult attemptExecutorConsumerResult =
         compilerCopyProvider.createAttemptExecutorConsumerResult(
             request, eligibility, attemptReport, liveCompiler);
-    if (!attemptExecutorConsumerResult.attemptExecutorBridge.executionAttemptResult.preflightResult.sessionReadinessResult.session.isReady()) {
+    if (!attemptExecutorConsumerResult.attemptExecutorBridge.executionAttemptResult.preflightResult.session.isReady()) {
       return PartialReparseDryRunIsolatedPlanConsumerReadinessResult.notReady(
           attemptExecutorConsumerResult.reason);
     }
