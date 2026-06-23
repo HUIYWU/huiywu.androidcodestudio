@@ -187,7 +187,10 @@ internal object WorkspaceModelBuilder {
         path = descriptor.projectPath,
         projectDir = descriptor.projectDir,
         buildDir = descriptor.buildDir,
-        buildScript = descriptor.buildScript,
+        buildScript = descriptor.buildScript
+          ?: File(descriptor.projectDir, "build.gradle.kts")
+            .takeIf { it.isFile }
+          ?: File(descriptor.projectDir, "build.gradle"),
         tasks = emptyList<GradleTask>(),
         compilerSettings = JavaModuleCompilerSettings(
           rootJavaModule.compilerSettings.javaSourceVersion,
