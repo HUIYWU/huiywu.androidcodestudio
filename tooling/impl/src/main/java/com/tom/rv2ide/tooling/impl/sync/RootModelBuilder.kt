@@ -235,7 +235,11 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     buildScript: File?,
     fallback: IJavaCompilerSettings,
   ): JavaModuleCompilerSettings {
-    val script = buildScript?.takeIf { it.isFile }?.readText() ?: return fallback
+    val fallbackSettings = JavaModuleCompilerSettings(
+      fallback.javaSourceVersion,
+      fallback.javaBytecodeVersion,
+    )
+    val script = buildScript?.takeIf { it.isFile }?.readText() ?: return fallbackSettings
     val source = extractJavaVersion(script, "sourceCompatibility") ?: fallback.javaSourceVersion
     val target = extractJavaVersion(script, "targetCompatibility") ?: fallback.javaBytecodeVersion
     return JavaModuleCompilerSettings(source, target)
