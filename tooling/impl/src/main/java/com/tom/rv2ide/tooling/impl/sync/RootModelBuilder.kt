@@ -246,15 +246,32 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
   }
 
   private fun extractJavaVersion(script: String, propertyName: String): String? {
-    val versionToken = Regex(propertyName + "\\s*(?:=)?\\s*JavaVersion\\.VERSION_([A-Z0-9_]+)")
-      .find(script)
-      ?.groupValues
-      ?.getOrNull(1)
-      ?: return null
-    return when (versionToken) {
-      "1_8" -> "RELEASE_8"
-      else -> versionToken.removePrefix("1_").let { "RELEASE_${it}" }
+    fun normalizeVersionToken(raw: String): String {
+      val cleaned = raw.trim().removeSurrounding("\"").removeSurrounding("'")
+      return when (cleaned) {
+        "1.8", "1_8", "8" -> "RELEASE_8"
+        else -> cleaned
+          .removePrefix("VERSION_")
+          .removePrefix("1.")
+          .removePrefix("1_")
+          .let { token -> if (token.startsWith("RELEASE_")) token else "RELEASE_${token}" }
+      }
     }
+
+    val patterns = listOf(
+      Regex(propertyName + "\\s*(?:=)?\\s*JavaVersion\\.VERSION_([A-Z0-9_]+)"),
+      Regex(propertyName + "\\s*(?:=)?\\s*JavaVersion\\.toVersion\\((?:\"([^\"]+)\"|'([^']+)')\\)"),
+      Regex(propertyName + "\\s*(?:=)?\\s*(?:\"([^\"]+)\"|'([^']+)')"),
+      Regex(propertyName + "\\s*(?:=)?\\s*([0-9]+(?:\\.[0-9]+)?)"),
+    )
+
+    patterns.forEach { pattern ->
+      val match = pattern.find(script) ?: return@forEach
+      val raw = match.groupValues.drop(1).firstOrNull { it.isNotBlank() } ?: return@forEach
+      return normalizeVersionToken(raw)
+    }
+
+    return null
   }
 
   private fun isHeavyCompositeBuildDep(moduleName: String): Boolean {

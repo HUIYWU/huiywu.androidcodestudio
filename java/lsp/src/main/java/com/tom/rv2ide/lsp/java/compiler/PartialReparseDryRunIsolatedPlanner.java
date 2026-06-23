@@ -60,34 +60,6 @@ public class PartialReparseDryRunIsolatedPlanner {
   }
 
   @NonNull
-  PartialReparseDryRunIsolatedPlanConsumerReadinessResult createPlanConsumerReadinessResult(
-      @NonNull CompilationRequest request,
-      @NonNull PartialReparseEligibility eligibility,
-      @NonNull PartialReparseDryRunReport attemptReport) {
-    return createPlanConsumerReadinessResult(request, eligibility, attemptReport, null);
-  }
-
-  @NonNull
-  PartialReparseDryRunIsolatedPlanConsumerReadinessResult createPlanConsumerReadinessResult(
-      @NonNull CompilationRequest request,
-      @NonNull PartialReparseEligibility eligibility,
-      @NonNull PartialReparseDryRunReport attemptReport,
-      CompilerProvider liveCompiler) {
-    final PartialReparseDryRunIsolatedExecutionConsumerObservation observation =
-        createExecutionConsumerObservation(request, eligibility, attemptReport, liveCompiler);
-    if (!observation.executionAttemptResult.preflightResult.session.isReady()) {
-      return PartialReparseDryRunIsolatedPlanConsumerReadinessResult.notReady(
-          observation.reason);
-    }
-    return PartialReparseDryRunIsolatedPlanConsumerReadinessResult.deferred(
-        observation.reason,
-        PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.deferred(
-            observation.reason,
-            PartialReparseDryRunIsolatedAttemptExecutorBridge.deferred(
-                observation.reason, observation.executionAttemptResult)));
-  }
-
-  @NonNull
   PartialReparseDryRunIsolatedExecutionConsumerObservation createExecutionConsumerObservation(
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,

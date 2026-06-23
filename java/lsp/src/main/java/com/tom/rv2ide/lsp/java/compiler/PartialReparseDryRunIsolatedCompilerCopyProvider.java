@@ -70,14 +70,16 @@ public class PartialReparseDryRunIsolatedCompilerCopyProvider {
     }
     return PartialReparseDryRunIsolatedPlan.ready(session.reason);
   }
-
   @NonNull
   PartialReparseDryRunIsolatedAttemptExecutorConsumerResult createAttemptExecutorConsumerResult(
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
+    // Legacy compatibility wrapper: prefer createExecutionConsumerObservation(...) for the
+    // observation-first mainline, and only materialize the older consumer shell at the boundary.
     return sessionFactory.createAttemptExecutorConsumerResult(request, eligibility, attemptReport);
   }
+
 
   @NonNull
   PartialReparseDryRunIsolatedExecutionConsumerObservation createExecutionConsumerObservation(
@@ -86,15 +88,18 @@ public class PartialReparseDryRunIsolatedCompilerCopyProvider {
       @NonNull PartialReparseDryRunReport attemptReport) {
     return sessionFactory.createExecutionConsumerObservation(request, eligibility, attemptReport);
   }
-
   @NonNull
   PartialReparseDryRunIsolatedAttemptExecutorConsumerResult createAttemptExecutorConsumerResult(
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
       CompilerProvider liveCompiler) {
-    return sessionFactory.createAttemptExecutorConsumerResult(request, eligibility, attemptReport, liveCompiler);
+    // Legacy compatibility wrapper: prefer createExecutionConsumerObservation(...) for the
+    // observation-first mainline, and only materialize the older consumer shell at the boundary.
+    return sessionFactory.createAttemptExecutorConsumerResult(
+        request, eligibility, attemptReport, liveCompiler);
   }
+
 
   @NonNull
   PartialReparseDryRunIsolatedExecutionConsumerObservation createExecutionConsumerObservation(

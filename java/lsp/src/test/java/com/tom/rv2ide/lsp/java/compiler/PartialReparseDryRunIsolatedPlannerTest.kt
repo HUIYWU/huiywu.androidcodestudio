@@ -20,14 +20,16 @@ class PartialReparseDryRunIsolatedPlannerTest {
 
     val planner = PartialReparseDryRunIsolatedPlanner()
     val plan = planner.plan(request, eligibility, report)
-    val planConsumerReadinessResult = planner.createPlanConsumerReadinessResult(request, eligibility, report)
+    val observation = planner.createExecutionConsumerObservation(request, eligibility, report, null)
 
     assertEquals(PartialReparseDryRunIsolatedPlan.State.NOT_AVAILABLE, plan.state)
     assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, plan.reason)
     assertTrue(plan.requiresCompilerCopy)
     assertFalse(plan.mayMutateLiveCompilerState)
     assertFalse(plan.isReady)
-    assertEquals(PartialReparseDryRunIsolatedPlanConsumerReadinessResult.State.NOT_READY, planConsumerReadinessResult.state)
+    assertEquals(PartialReparseDryRunIsolatedExecutionConsumerObservation.State.NOT_READY, observation.state)
+    assertFalse(observation.executionAttemptResult.preflightResult.session.isReady)
+    assertFalse(observation.bridgeAttempted)
   }
 
   private class FakeSourceFile :

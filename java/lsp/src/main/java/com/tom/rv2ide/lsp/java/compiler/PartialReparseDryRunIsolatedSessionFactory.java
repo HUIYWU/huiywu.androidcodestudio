@@ -259,14 +259,8 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull PartialReparseDryRunReport attemptReport) {
     final PartialReparseDryRunIsolatedExecutionConsumerObservation observation =
         createExecutionConsumerObservation(request, eligibility, attemptReport);
-    if (!observation.executionAttemptResult.preflightResult.session.isReady()) {
-      return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.notConsumed(
-          observation.reason);
-    }
-    return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.deferred(
-        observation.reason,
-        PartialReparseDryRunIsolatedAttemptExecutorBridge.deferred(
-            observation.reason, observation.executionAttemptResult));
+    return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.fromObservation(
+        observation);
   }
 
   @NonNull
@@ -298,14 +292,8 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       CompilerProvider liveCompiler) {
     final PartialReparseDryRunIsolatedExecutionConsumerObservation observation =
         createExecutionConsumerObservation(request, eligibility, attemptReport, liveCompiler);
-    if (!observation.executionAttemptResult.preflightResult.session.isReady()) {
-      return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.notConsumed(
-          observation.reason);
-    }
-    return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.deferred(
-        observation.reason,
-        PartialReparseDryRunIsolatedAttemptExecutorBridge.deferred(
-            observation.reason, observation.executionAttemptResult));
+    return PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.fromObservation(
+        observation);
   }
 
   @NonNull

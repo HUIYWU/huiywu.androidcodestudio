@@ -20,7 +20,12 @@ package com.tom.rv2ide.lsp.java.compiler;
 import androidx.annotation.NonNull;
 
 /**
- * Describes whether a future upper-layer consumer has accepted the attempt executor bridge.
+ * Legacy compatibility shell describing whether a future upper-layer consumer has accepted the
+ * attempt executor bridge.
+ *
+ * <p>The execution-side observation mainline now lives in
+ * {@link PartialReparseDryRunIsolatedExecutionConsumerObservation}. This type remains as a thin
+ * facade for older call sites and tests that still expect the nested bridge-shaped contract.
  */
 public final class PartialReparseDryRunIsolatedAttemptExecutorConsumerResult {
 
@@ -77,6 +82,18 @@ public final class PartialReparseDryRunIsolatedAttemptExecutorConsumerResult {
         false,
         false,
         true);
+  }
+
+  @NonNull
+  public static PartialReparseDryRunIsolatedAttemptExecutorConsumerResult fromObservation(
+      @NonNull PartialReparseDryRunIsolatedExecutionConsumerObservation observation) {
+    if (!observation.executionAttemptResult.preflightResult.session.isReady()) {
+      return notConsumed(observation.reason);
+    }
+    return deferred(
+        observation.reason,
+        PartialReparseDryRunIsolatedAttemptExecutorBridge.deferred(
+            observation.reason, observation.executionAttemptResult));
   }
 
   @NonNull
