@@ -27,6 +27,7 @@ import com.tom.rv2ide.tooling.api.IProject
 import com.tom.rv2ide.tooling.api.ProjectType
 import com.tom.rv2ide.tooling.api.models.AndroidProjectMetadata
 import com.tom.rv2ide.tooling.api.models.BasicProjectMetadata
+import com.tom.rv2ide.tooling.api.models.CompositeBuildDescriptor
 import com.tom.rv2ide.tooling.api.models.GradleTask
 import com.tom.rv2ide.tooling.api.models.JavaContentRoot
 import com.tom.rv2ide.tooling.api.models.JavaModuleCompilerSettings
@@ -67,7 +68,12 @@ internal object WorkspaceModelBuilder {
 
       val transformedProjects = CopyOnWriteArrayList(transform(allProjects, project))
       if (transformedProjects.none { it.path.startsWith(":buildDeps:") }) {
-        augmentWithCompositeBuildDeps(projectDir, transformedProjects)
+        val compositeDescriptors = project.getCompositeBuildDescriptors().get()
+        if (compositeDescriptors.isNotEmpty()) {
+          augmentWithCompositeBuildDescriptors(compositeDescriptors, transformedProjects)
+        } else {
+          augmentWithCompositeBuildDeps(projectDir, transformedProjects)
+        }
       }
 
       log.info(
@@ -131,37 +137,57 @@ internal object WorkspaceModelBuilder {
       return
     }
 
+    val descriptors = buildDepsDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.mapNotNull { depDir ->
+      val mainJavaDir = File(depDir, "src/main/java")
+      if (!mainJavaDir.isDirectory) {
+        return@mapNotNull null
+      }
+      CompositeBuildDescriptor(
+        name = depDir.name,
+        projectPath = ":buildDeps:${depDir.name}",
+        projectDir = depDir.canonicalFile,
+        buildDir = File(depDir, "build"),
+        buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
+          ?: File(depDir, "build.gradle").takeIf { it.isFile },
+        sourceRoots = listOf(mainJavaDir),
+        isHeavy = isHeavyCompositeBuildDep(depDir.name),
+      )
+    } ?: emptyList()
+
+    augmentWithCompositeBuildDescriptors(descriptors, projects, logLabel = "compositeBuildDeps")
+  }
+
+    private fun augmentWithCompositeBuildDescriptors(
+    descriptors: List<CompositeBuildDescriptor>,
+    projects: MutableList<GradleProject>,
+    logLabel: String = "compositeBuildDescriptors",
+  ) {
     val rootJavaModule = projects.filterIsInstance<JavaModule>().find { it.path == ":" }
     if (rootJavaModule == null) {
-      log.warn("WorkspaceModelBuilder.compositeBuildDeps skipped: root Java module not found")
+      log.warn("WorkspaceModelBuilder.${logLabel} skipped: root Java module not found")
       return
     }
 
     val existingDirs = projects.map { it.projectDir.canonicalFile }.toHashSet()
     val added = mutableListOf<String>()
-
-    buildDepsDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { depDir ->
-      val canonicalDepDir = depDir.canonicalFile
+    descriptors.forEach { descriptor ->
+      val canonicalDepDir = descriptor.projectDir.canonicalFile
       if (existingDirs.contains(canonicalDepDir)) {
         return@forEach
       }
 
-      val mainJavaDir = File(depDir, "src/main/java")
-      if (!mainJavaDir.isDirectory) {
-        return@forEach
-      }
-
       val contentRoot = JavaContentRoot().apply {
-        (sourceDirectories as MutableList).add(JavaSourceDirectory(mainJavaDir, false))
+        (sourceDirectories as MutableList).addAll(
+          descriptor.sourceRoots.map { JavaSourceDirectory(it, false) }
+        )
       }
       val pseudoModule = JavaModule(
-        name = depDir.name,
+        name = descriptor.name,
         description = "Composite build dependency module",
-        path = ":buildDeps:${depDir.name}",
-        projectDir = depDir,
-        buildDir = File(depDir, "build"),
-        buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
-          ?: File(depDir, "build.gradle"),
+        path = descriptor.projectPath,
+        projectDir = descriptor.projectDir,
+        buildDir = descriptor.buildDir,
+        buildScript = descriptor.buildScript,
         tasks = emptyList<GradleTask>(),
         compilerSettings = JavaModuleCompilerSettings(
           rootJavaModule.compilerSettings.javaSourceVersion,
@@ -172,7 +198,7 @@ internal object WorkspaceModelBuilder {
         classesJar = null,
         inheritedBootClassPaths = rootJavaModule.inheritedBootClassPaths,
       ).apply {
-        markLazyCompositeBuildModule(isHeavyCompositeBuildDep(depDir.name))
+        markLazyCompositeBuildModule(descriptor.isHeavy)
       }
       projects.add(pseudoModule)
       existingDirs.add(canonicalDepDir)
@@ -180,14 +206,13 @@ internal object WorkspaceModelBuilder {
     }
 
     log.info(
-      "WorkspaceModelBuilder.compositeBuildDeps scannedDir={} addedCount={} added={}",
-      buildDepsDir.canonicalPath,
+      "WorkspaceModelBuilder.${logLabel} addedCount={} added={}",
       added.size,
       added,
     )
   }
 
-    private fun isHeavyCompositeBuildDep(moduleName: String): Boolean {
+  private fun isHeavyCompositeBuildDep(moduleName: String): Boolean {
     return moduleName == "jdk-compiler"
       || moduleName == "java-compiler"
       || moduleName == "jdk-jdeps"
