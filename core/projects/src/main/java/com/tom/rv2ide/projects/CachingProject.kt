@@ -26,6 +26,7 @@ import com.tom.rv2ide.tooling.api.IJavaProject
 import com.tom.rv2ide.tooling.api.IProject
 import com.tom.rv2ide.tooling.api.ProjectType
 import com.tom.rv2ide.tooling.api.models.BasicProjectMetadata
+import com.tom.rv2ide.tooling.api.models.CompositeBuildDescriptor
 import com.tom.rv2ide.tooling.api.models.params.StringParameter
 import com.tom.rv2ide.tooling.api.models.result.SelectProjectResult
 import java.util.concurrent.CompletableFuture
@@ -41,6 +42,7 @@ open class CachingProject(val project: IProject) : IProject {
 
   private val projects = mutableListOf<BasicProjectMetadata>()
   private var syncIssues: DefaultProjectSyncIssues? = null
+  private var compositeBuildDescriptors: List<CompositeBuildDescriptor>? = null
 
   companion object {
 
@@ -85,6 +87,21 @@ open class CachingProject(val project: IProject) : IProject {
       }
 
       this.syncIssues = projectSyncIssues
+    }
+  }
+
+  override fun getCompositeBuildDescriptors(): CompletableFuture<List<CompositeBuildDescriptor>> {
+    this.compositeBuildDescriptors?.also {
+      return CompletableFuture.completedFuture(it)
+    }
+
+    return this.project.getCompositeBuildDescriptors().whenComplete { descriptors, err ->
+      if (err != null || descriptors == null) {
+        log.debug("Unable to fetch composite build descriptors from tooling server", err)
+        return@whenComplete
+      }
+
+      this.compositeBuildDescriptors = descriptors
     }
   }
 
