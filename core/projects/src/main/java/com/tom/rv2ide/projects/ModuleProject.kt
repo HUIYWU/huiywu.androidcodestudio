@@ -64,7 +64,6 @@ abstract class ModuleProject(
   companion object {
 
     private val log = LoggerFactory.getLogger(ModuleProject::class.java)
-    private const val CLASSPATH_READER_MARKER = "ACS_MARKER_MODULEPROJECT_ZIP_READER_V1"
     private val compositeIndexingScope =
         CoroutineScope(Dispatchers.Default.limitedParallelism(2))
  
@@ -242,9 +241,6 @@ abstract class ModuleProject(
   fun indexClasspaths() {
  
     RuntimeProbe.mark("ModuleProject.indexClasspaths path=$path")
-    if (IdeLogConfig.shouldLogIde()) {
-      log.info("{} path={} reader=ZipFileClasspathReader", CLASSPATH_READER_MARKER, path)
-    }
 
     this.compileClasspathClasses.clear()
 

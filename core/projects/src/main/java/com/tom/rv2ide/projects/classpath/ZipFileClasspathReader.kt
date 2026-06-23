@@ -31,11 +31,9 @@ class ZipFileClasspathReader : IClasspathReader {
 
   companion object {
     private val log = LoggerFactory.getLogger(ZipFileClasspathReader::class.java)
-    private const val MARKER = "ACS_MARKER_ZIP_READER_V1"
   }
 
   override fun listClasses(files: Collection<File>): ImmutableSet<ClassInfo> {
-    log.info("{} files={}", MARKER, files.size)
     val classes = ImmutableSet.builder<ClassInfo>()
     files.forEach {
       if (!it.exists()) {

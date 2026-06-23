@@ -207,6 +207,13 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       val buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
         ?: File(depDir, "build.gradle").takeIf { it.isFile }
       val resolvedCompilerSettings = resolveCompositeCompilerSettings(buildScript, fallbackCompilerSettings)
+      logger.warn(
+        "RootModelBuilder composite compiler settings module={} source={} target={} buildScript={}",
+        ":buildDeps:${depDir.name}",
+        resolvedCompilerSettings.javaSourceVersion,
+        resolvedCompilerSettings.javaBytecodeVersion,
+        buildScript?.path,
+      )
       discovered.add(
         CompositeBuildDescriptor(
           name = depDir.name,
@@ -240,23 +247,19 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       fallback.javaBytecodeVersion,
     )
     val script = buildScript?.takeIf { it.isFile }?.readText() ?: return fallbackSettings
-    val source = extractJavaVersion(script, "sourceCompatibility") ?: fallback.javaSourceVersion
-    val target = extractJavaVersion(script, "targetCompatibility") ?: fallback.javaBytecodeVersion
+    val source = extractJavaVersion(script, "sourceCompatibility")
+      ?: extractToolchainJavaVersion(script)
+      ?: extractJvmTargetVersion(script)
+      ?: fallback.javaSourceVersion
+    val target = extractJavaVersion(script, "targetCompatibility")
+      ?: extractToolchainJavaVersion(script)
+      ?: extractJvmTargetVersion(script)
+      ?: fallback.javaBytecodeVersion
     return JavaModuleCompilerSettings(source, target)
   }
 
   private fun extractJavaVersion(script: String, propertyName: String): String? {
-    fun normalizeVersionToken(raw: String): String {
-      val cleaned = raw.trim().removeSurrounding("\"").removeSurrounding("'")
-      return when (cleaned) {
-        "1.8", "1_8", "8" -> "RELEASE_8"
-        else -> cleaned
-          .removePrefix("VERSION_")
-          .removePrefix("1.")
-          .removePrefix("1_")
-          .let { token -> if (token.startsWith("RELEASE_")) token else "RELEASE_${token}" }
-      }
-    }
+    fun normalizeVersionToken(raw: String): String = normalizeJavaRelease(raw)
 
     val patterns = listOf(
       Regex(propertyName + "\\s*(?:=)?\\s*JavaVersion\\.VERSION_([A-Z0-9_]+)"),
@@ -272,6 +275,46 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     }
 
     return null
+  }
+
+  private fun extractToolchainJavaVersion(script: String): String? {
+    val patterns = listOf(
+      Regex("languageVersion\\s*(?:=)?\\s*JavaLanguageVersion\\.of\\((\\d+)\\)"),
+      Regex("languageVersion\\s*(?:=)?\\s*JavaLanguageVersion\\.of\\((?:\"([^\"]+)\"|'([^']+)')\\)"),
+    )
+    patterns.forEach { pattern ->
+      val match = pattern.find(script) ?: return@forEach
+      val raw = match.groupValues.drop(1).firstOrNull { it.isNotBlank() } ?: return@forEach
+      return normalizeJavaRelease(raw)
+    }
+    return null
+  }
+
+  private fun extractJvmTargetVersion(script: String): String? {
+    val patterns = listOf(
+      Regex("jvmTarget\\s*(?:\\.set\\()??\\s*(?:org\\.jetbrains\\.kotlin\\.gradle\\.dsl\\.)?JvmTarget\\.JVM_([0-9_]+)"),
+      Regex("jvmTarget\\s*(?:=|\\.set\\()\\s*(?:org\\.jetbrains\\.kotlin\\.gradle\\.dsl\\.)?JvmTarget\\.fromTarget\\((?:\"([^\"]+)\"|'([^']+)')\\)"),
+      Regex("jvmTarget\\s*(?:=|\\.set\\()\\s*(?:\"([^\"]+)\"|'([^']+)')"),
+    )
+    patterns.forEach { pattern ->
+      val match = pattern.find(script) ?: return@forEach
+      val raw = match.groupValues.drop(1).firstOrNull { it.isNotBlank() } ?: return@forEach
+      return normalizeJavaRelease(raw)
+    }
+    return null
+  }
+
+  private fun normalizeJavaRelease(raw: String): String {
+    val cleaned = raw.trim().removeSurrounding("\"").removeSurrounding("'")
+    return when (cleaned) {
+      "1.8", "1_8", "8" -> "RELEASE_8"
+      else -> cleaned
+        .removePrefix("VERSION_")
+        .removePrefix("JVM_")
+        .removePrefix("1.")
+        .removePrefix("1_")
+        .let { token -> if (token.startsWith("RELEASE_")) token else "RELEASE_${token}" }
+    }
   }
 
   private fun isHeavyCompositeBuildDep(moduleName: String): Boolean {
