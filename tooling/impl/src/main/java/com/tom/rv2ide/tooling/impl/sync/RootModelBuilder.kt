@@ -28,6 +28,7 @@ import com.tom.rv2ide.tooling.api.IProject
 import com.tom.rv2ide.tooling.api.ProjectType
 import com.tom.rv2ide.tooling.api.IJavaProject
 import com.tom.rv2ide.tooling.api.messages.InitializeProjectParams
+import com.tom.rv2ide.tooling.api.messages.LogMessageParams
 import com.tom.rv2ide.tooling.api.models.CompositeBuildDescriptor
 import com.tom.rv2ide.tooling.api.models.JavaModuleCompilerSettings
 import com.tom.rv2ide.tooling.api.models.JavaProjectMetadata
@@ -122,8 +123,24 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
                     }
 
               }.toMutableList<IGradleProject>()
-          logger.warn("RootModelBuilder: base idea modules count={}", projects.size)
-          // Keep composite build discovery as metadata-only at this stage.
+      logger.warn("RootModelBuilder: base idea modules count={}", projects.size)
+      val rootCompilerSettings = projects
+        .filterIsInstance<IJavaProject>()
+        .firstOrNull { it.getMetadata().get().projectPath == ":" }
+        ?.getMetadata()
+        ?.get()
+        ?.let { it as? JavaProjectMetadata }
+        ?.compilerSettings
+      rootCompilerSettings?.let {
+        Main.client?.logMessage(
+          LogMessageParams(
+            'W',
+            "RootModelBuilder",
+            "ROOT_COMPILER_SETTINGS module=: source=${it.javaSourceVersion} target=${it.javaBytecodeVersion}",
+          )
+        )
+      }
+      // Keep composite build discovery as metadata-only at this stage.
           // Returning lightweight descriptors avoids mixing new IJavaProject implementations into the
           // existing tooling project list, which previously caused Tooling API compatibility and
           // initialization stability issues. Workspace can consume these descriptors to materialize
@@ -222,8 +239,12 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
         resolvedCompilerSettings.javaBytecodeVersion,
         buildScript?.path,
       )
-      Main.client?.logOutput(
-        "COMPOSITE_COMPILER_SETTINGS module=${modulePath} source=${resolvedCompilerSettings.javaSourceVersion} target=${resolvedCompilerSettings.javaBytecodeVersion} buildScript=${buildScript?.path}\n"
+      Main.client?.logMessage(
+        LogMessageParams(
+          'W',
+          "RootModelBuilder",
+          "COMPOSITE_COMPILER_SETTINGS module=${modulePath} source=${resolvedCompilerSettings.javaSourceVersion} target=${resolvedCompilerSettings.javaBytecodeVersion} buildScript=${buildScript?.path}",
+        )
       )
       discovered.add(
 
