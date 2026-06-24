@@ -21,18 +21,11 @@ class PartialReparseDryRunIsolatedSessionFactoryTest {
     val report = PartialReparseDryRunReport.notCreated()
 val session =
         PartialReparseDryRunIsolatedSessionFactory().createSession(request, eligibility, report)
-    val candidateReadyResult =
-        PartialReparseDryRunIsolatedSessionFactory()
-            .createSessionCandidateReadyResult(request, eligibility, report)
-    val sessionReadinessResult =
-        PartialReparseDryRunIsolatedSessionFactory()
-            .createIsolatedSessionReadinessResult(request, eligibility, report)
-    val executablePreflightResult =
-        PartialReparseDryRunIsolatedSessionFactory()
-            .createExecutablePreflightResult(request, eligibility, report)
     val executionAttemptResult =
         PartialReparseDryRunIsolatedSessionFactory()
             .createIsolatedExecutionAttemptResult(request, eligibility, report)
+
+    val executablePreflightResult = executionAttemptResult.preflightResult
     val attemptExecutorBridge =
         PartialReparseDryRunIsolatedSessionFactory()
             .createAttemptExecutorBridge(request, eligibility, report)
@@ -51,12 +44,10 @@ val session =
     assertTrue(session.requiresFreshReusableCompiler)
     assertTrue(session.cachedCompileMustStartEmpty)
     assertFalse(session.isReady)
-    assertEquals(PartialReparseDryRunIsolatedSessionCandidateReadyResult.State.NOT_READY, candidateReadyResult.state)
-    assertEquals(PartialReparseDryRunIsolatedSessionReadinessResult.State.NOT_READY, sessionReadinessResult.state)
-    assertEquals(PartialReparseDryRunIsolatedExecutablePreflightResult.State.NOT_READY, executablePreflightResult.state)
     assertEquals(PartialReparseDryRunIsolatedExecutionAttemptResult.State.NOT_STARTED, executionAttemptResult.state)
     assertEquals(PartialReparseDryRunIsolatedAttemptExecutorBridge.State.NOT_BRIDGED, attemptExecutorBridge.state)
     assertEquals(PartialReparseDryRunIsolatedExecutionConsumerObservation.State.NOT_READY, observation.state)
+    assertFalse(executionAttemptResult.preflightResult.session.isReady)
     assertFalse(observation.executionAttemptResult.preflightResult.session.isReady)
     assertFalse(observation.bridgeAttempted)
 
@@ -436,22 +427,19 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
     val factory = CandidateBackedSessionFactory()
 
     val session = factory.createSession(request, eligibility, report)
-    val candidateReadyResult = factory.createSessionCandidateReadyResult(request, eligibility, report)
-    val sessionReadinessResult = factory.createIsolatedSessionReadinessResult(request, eligibility, report)
-    val executablePreflightResult = factory.createExecutablePreflightResult(request, eligibility, report)
     val executionAttemptResult = factory.createIsolatedExecutionAttemptResult(request, eligibility, report)
+
+    val executablePreflightResult = executionAttemptResult.preflightResult
     val attemptExecutorBridge = factory.createAttemptExecutorBridge(request, eligibility, report)
     val observation = factory.createExecutionConsumerObservation(request, eligibility, report)
 
     assertEquals(PartialReparseDryRunIsolatedSession.State.READY, session.state)
 
     assertEquals("candidate created", session.reason)
-    assertEquals(PartialReparseDryRunIsolatedSessionCandidateReadyResult.State.DEFERRED, candidateReadyResult.state)
-    assertEquals(PartialReparseDryRunIsolatedSessionReadinessResult.State.DEFERRED, sessionReadinessResult.state)
-    assertEquals(PartialReparseDryRunIsolatedExecutablePreflightResult.State.DEFERRED, executablePreflightResult.state)
     assertEquals(PartialReparseDryRunIsolatedExecutionAttemptResult.State.DEFERRED, executionAttemptResult.state)
     assertEquals(PartialReparseDryRunIsolatedAttemptExecutorBridge.State.DEFERRED, attemptExecutorBridge.state)
     assertEquals(PartialReparseDryRunIsolatedExecutionConsumerObservation.State.DEFERRED, observation.state)
+    assertTrue(executionAttemptResult.preflightResult.session.isReady)
     assertTrue(observation.executionAttemptResult.preflightResult.session.isReady)
     assertFalse(observation.bridgeAttempted)
     assertTrue(session.requiresCompilerCopy)
