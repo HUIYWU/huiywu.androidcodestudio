@@ -79,23 +79,14 @@ internal object WorkspaceModelBuilder {
           augmentWithCompositeBuildDeps(projectDir, transformedProjects)
         }
       }
+    log.info(
+      "WorkspaceModelBuilder.build workspaceDir={} rootProject={} allProjects={} transformedProjects={}",
+      projectDir.canonicalPath,
+      rootProject.path,
+      allProjects.size,
+      transformedProjects.size,
+    )
 
-      log.info(
-        "WorkspaceModelBuilder.build workspaceDir={} rootProject={} allProjects={} transformedProjects={}",
-        projectDir.canonicalPath,
-        rootProject.path,
-        allProjects.size,
-        transformedProjects.size,
-      )
-      transformedProjects.take(120).forEach { module ->
-        log.info(
-          "WorkspaceModelBuilder.project path={} type={} projectDir={} buildDir={}",
-          module.path,
-          module.javaClass.simpleName,
-          module.projectDir.canonicalPath,
-          module.buildDir.canonicalPath,
-        )
-      }
       return WorkspaceImpl(
         projectDir,
         rootProject,
@@ -148,8 +139,10 @@ internal object WorkspaceModelBuilder {
       ?: JavaModuleCompilerSettings()
 
     val descriptors = buildDepsDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.mapNotNull { depDir ->
-      val mainJavaDir = File(depDir, "src/main/java")
-      if (!mainJavaDir.isDirectory) {
+      val buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
+        ?: File(depDir, "build.gradle").takeIf { it.isFile }
+      val sourceRoots = discoverCompositeSourceRoots(depDir, buildScript)
+      if (sourceRoots.isEmpty()) {
         return@mapNotNull null
       }
       CompositeBuildDescriptor(
@@ -158,9 +151,8 @@ internal object WorkspaceModelBuilder {
         projectPath = ":buildDeps:${depDir.name}",
         projectDir = depDir.canonicalFile,
         buildDir = File(depDir, "build"),
-        buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
-          ?: File(depDir, "build.gradle").takeIf { it.isFile },
-        sourceRoots = listOf(mainJavaDir),
+        buildScript = buildScript,
+        sourceRoots = sourceRoots,
         javaSourceVersion = fallbackCompilerSettings.javaSourceVersion,
         javaBytecodeVersion = fallbackCompilerSettings.javaBytecodeVersion,
         isHeavy = isHeavyCompositeBuildDep(depDir.name),
@@ -195,7 +187,9 @@ internal object WorkspaceModelBuilder {
 
       val contentRoot = JavaContentRoot().apply {
         (sourceDirectories as MutableList).addAll(
-          descriptor.sourceRoots.map { JavaSourceDirectory(it, false) }
+          descriptor.sourceRoots.map { sourceRoot ->
+            JavaSourceDirectory(sourceRoot, isGeneratedCompositeSourceRoot(sourceRoot, descriptor.projectDir))
+          }
         )
       }
       val pseudoModule = JavaModule(
@@ -231,6 +225,117 @@ internal object WorkspaceModelBuilder {
       added,
     )
   }
+  private fun discoverCompositeSourceRoots(depDir: File, buildScript: File?): List<File> {
+    val roots = linkedSetOf<File>()
+
+    listOf(
+      File(depDir, "src/main/java"),
+      File(depDir, "src/main/kotlin"),
+    ).filterTo(roots) { it.isDirectory }
+
+    val generatedBase = File(depDir, "build/generated")
+    if (generatedBase.isDirectory) {
+      generatedBase.walkTopDown()
+        .maxDepth(4)
+        .filter { it.isDirectory }
+        .filter {
+          val path = it.path.replace('\\', '/')
+          path.contains("/build/generated/") &&
+            (path.endsWith("/java") || path.endsWith("/kotlin") || path.contains("/ksp/") || path.contains("/kapt/") || path.contains("/annotationProcessor/"))
+        }
+        .forEach { roots.add(it) }
+    }
+
+    roots.addAll(extractCompositeSourceRootsFromScript(depDir, buildScript))
+    return roots.toList()
+  }
+
+  private fun extractCompositeSourceRootsFromScript(depDir: File, buildScript: File?): List<File> {
+    val script = buildScript?.takeIf { it.isFile }?.readText() ?: return emptyList()
+    val resolvedVars = mutableMapOf<String, File>()
+
+    Regex("""val\s+(\w+)\s*=\s*([^\n]+)""")
+      .findAll(script)
+      .forEach { match ->
+        val varName = match.groupValues[1]
+        val expr = match.groupValues[2].trim()
+        resolveCompositeSourceRootToken(depDir, expr, resolvedVars)?.let { resolvedVars[varName] = it }
+      }
+
+    val roots = linkedSetOf<File>()
+    Regex("""(?:java|kotlin)\.(?:srcDir|srcDirs|setSrcDirs)\(([^\n]+)\)""")
+      .findAll(script)
+      .forEach { match ->
+        match.groupValues[1]
+          .removePrefix("listOf(")
+          .removeSuffix(")")
+          .split(',')
+          .map { it.trim() }
+          .forEach { token ->
+            resolveCompositeSourceRootToken(depDir, token, resolvedVars)
+              ?.takeIf { it.isDirectory }
+              ?.let { roots.add(it) }
+          }
+      }
+
+    return roots.toList()
+  }
+
+  private fun resolveCompositeSourceRootToken(
+    depDir: File,
+    token: String,
+    resolvedVars: Map<String, File>,
+  ): File? {
+    val normalized = token.trim().removeSuffix(")").trim()
+    resolvedVars[normalized]?.let { return it }
+
+    fun extractSingleArg(pattern: Regex): String? {
+      val match = pattern.find(normalized) ?: return null
+      return match.groupValues[1].ifBlank { match.groupValues[2] }
+    }
+
+    val rootProjectResolve = extractSingleArg(
+      Regex("""rootProject\.projectDir\.resolve\((?:\"([^\"]+)\"|'([^']+)')\)""")
+    )
+    if (!rootProjectResolve.isNullOrBlank()) {
+      return depDir.resolve(rootProjectResolve).canonicalFile
+    }
+
+    val rootProjectFile = extractSingleArg(
+      Regex("""rootProject\.file\((?:\"([^\"]+)\"|'([^']+)')\)""")
+    )
+    if (!rootProjectFile.isNullOrBlank()) {
+      return depDir.resolve(rootProjectFile).canonicalFile
+    }
+
+    val projectFile = extractSingleArg(
+      Regex("""project\.file\((?:\"([^\"]+)\"|'([^']+)')\)""")
+    )
+    if (!projectFile.isNullOrBlank()) {
+      return File(depDir, projectFile).canonicalFile
+    }
+
+    val localFile = extractSingleArg(
+      Regex("""file\((?:\"([^\"]+)\"|'([^']+)')\)""")
+    )
+    if (!localFile.isNullOrBlank()) {
+      return File(depDir, localFile).canonicalFile
+    }
+
+    val directLiteral = Regex("""^(?:\"([^\"]+)\"|'([^']+)')$""").find(normalized)
+    val literalPath = directLiteral?.groupValues?.get(1).orEmpty().ifBlank { directLiteral?.groupValues?.get(2).orEmpty() }
+    if (literalPath.isNotBlank()) {
+      return File(depDir, literalPath).canonicalFile
+    }
+
+    return null
+  }
+
+  private fun isGeneratedCompositeSourceRoot(sourceRoot: File, projectDir: File): Boolean {
+    val normalized = sourceRoot.canonicalPath.replace('\\', '/')
+    val projectPath = projectDir.canonicalPath.replace('\\', '/')
+    return normalized.startsWith("${projectPath}/build/generated/")
+  }
 
   private fun isHeavyCompositeBuildDep(moduleName: String): Boolean {
     return moduleName == "jdk-compiler"
@@ -238,6 +343,7 @@ internal object WorkspaceModelBuilder {
       || moduleName == "jdk-jdeps"
       || moduleName == "jaxp"
   }
+
 
   private fun transform(
     project: IAndroidProject

@@ -191,12 +191,6 @@ public class CompileBatch implements AutoCloseable {
 
   protected void setupCompileOptions(final ModuleProject module, final List<String> options) {
     if (module == null) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        LOG.warn(
-            "FINAL_COMPILE_OPTIONS module=<null> source={} target={}",
-            DEFAULT_COMPILER_SOURCE_AND_TARGET_VERSION,
-            DEFAULT_COMPILER_SOURCE_AND_TARGET_VERSION);
-      }
       Collections.addAll(
           options,
           "-source",
@@ -205,15 +199,7 @@ public class CompileBatch implements AutoCloseable {
           DEFAULT_COMPILER_SOURCE_AND_TARGET_VERSION);
       return;
     }
- 
     final IJavaCompilerSettings compilerSettings = module.getCompilerSettings();
-    if (IdeLogConfig.shouldLogWarn()) {
-      LOG.warn(
-          "FINAL_COMPILE_OPTIONS module={} source={} target={}",
-          module.getPath(),
-          compilerSettings.getJavaSourceVersion(),
-          compilerSettings.getJavaBytecodeVersion());
-    }
     options.add("-source");
     options.add(compilerSettings.getJavaSourceVersion());
     options.add("-target");

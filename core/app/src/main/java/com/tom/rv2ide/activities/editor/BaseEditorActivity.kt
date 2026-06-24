@@ -1344,9 +1344,6 @@ override fun onApplySystemBarInsets(insets: Insets) {
   }
 
   private fun onBuildStatusChanged() {
-    log.debug(
-        "onBuildStatusChanged: isInitializing: ${editorViewModel.isInitializing}, isBuildInProgress: ${editorViewModel.isBuildInProgress}"
-    )
     Initialization.setInitializing(editorViewModel.isInitializing)
     val visible = editorViewModel.isBuildInProgress || editorViewModel.isInitializing
     content.progressIndicator.visibility = if (visible) View.VISIBLE else View.GONE

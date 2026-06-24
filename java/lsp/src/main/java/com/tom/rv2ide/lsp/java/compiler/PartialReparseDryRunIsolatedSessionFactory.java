@@ -248,18 +248,18 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
-    final PartialReparseDryRunIsolatedCompilerHandleReadyResult handleReadyResult =
-        createCompilerHandleReadyResult(request, eligibility, attemptReport);
-    if (!handleReadyResult.handle.isCreated()) {
-      return PartialReparseDryRunIsolatedSessionCandidate.notAvailable(handleReadyResult.reason);
+    final PartialReparseDryRunIsolatedCompilerHandle handle =
+        createCompilerHandle(request, eligibility, attemptReport);
+    if (!handle.isCreated()) {
+      return PartialReparseDryRunIsolatedSessionCandidate.notAvailable(handle.reason);
     }
     return PartialReparseDryRunIsolatedSessionCandidate.created(
-        handleReadyResult.handle.cleanupPlan.reason,
-        handleReadyResult.handle.cleanupPlan.requiresDestroy,
-        handleReadyResult.handle.cleanupPlan.requiresClose,
-        handleReadyResult.handle.sharesSourceFileManagerWithLiveCompiler,
-        handleReadyResult.handle.requiresFreshReusableCompiler,
-        handleReadyResult.handle.cachedCompileMustStartEmpty);
+        handle.cleanupPlan.reason,
+        handle.cleanupPlan.requiresDestroy,
+        handle.cleanupPlan.requiresClose,
+        handle.sharesSourceFileManagerWithLiveCompiler,
+        handle.requiresFreshReusableCompiler,
+        handle.cachedCompileMustStartEmpty);
   }
 
   @NonNull
@@ -268,45 +268,18 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
       CompilerProvider liveCompiler) {
-    final PartialReparseDryRunIsolatedCompilerHandleReadyResult handleReadyResult =
-        createCompilerHandleReadyResult(request, eligibility, attemptReport, liveCompiler);
-    if (!handleReadyResult.handle.isCreated()) {
-      return PartialReparseDryRunIsolatedSessionCandidate.notAvailable(handleReadyResult.reason);
-    }
-    return PartialReparseDryRunIsolatedSessionCandidate.created(
-        handleReadyResult.handle.cleanupPlan.reason,
-        handleReadyResult.handle.cleanupPlan.requiresDestroy,
-        handleReadyResult.handle.cleanupPlan.requiresClose,
-        handleReadyResult.handle.sharesSourceFileManagerWithLiveCompiler,
-        handleReadyResult.handle.requiresFreshReusableCompiler,
-        handleReadyResult.handle.cachedCompileMustStartEmpty);
-  }
-
-  @NonNull
-  PartialReparseDryRunIsolatedCompilerHandleReadyResult createCompilerHandleReadyResult(
-      @NonNull CompilationRequest request,
-      @NonNull PartialReparseEligibility eligibility,
-      @NonNull PartialReparseDryRunReport attemptReport) {
-    final PartialReparseDryRunIsolatedCompilerHandle handle =
-        createCompilerHandle(request, eligibility, attemptReport);
-    if (!handle.isCreated()) {
-      return PartialReparseDryRunIsolatedCompilerHandleReadyResult.notReady(handle.reason);
-    }
-    return PartialReparseDryRunIsolatedCompilerHandleReadyResult.deferred(handle.reason, handle);
-  }
-
-  @NonNull
-  PartialReparseDryRunIsolatedCompilerHandleReadyResult createCompilerHandleReadyResult(
-      @NonNull CompilationRequest request,
-      @NonNull PartialReparseEligibility eligibility,
-      @NonNull PartialReparseDryRunReport attemptReport,
-      CompilerProvider liveCompiler) {
     final PartialReparseDryRunIsolatedCompilerHandle handle =
         createCompilerHandle(request, eligibility, attemptReport, liveCompiler);
     if (!handle.isCreated()) {
-      return PartialReparseDryRunIsolatedCompilerHandleReadyResult.notReady(handle.reason);
+      return PartialReparseDryRunIsolatedSessionCandidate.notAvailable(handle.reason);
     }
-    return PartialReparseDryRunIsolatedCompilerHandleReadyResult.deferred(handle.reason, handle);
+    return PartialReparseDryRunIsolatedSessionCandidate.created(
+        handle.cleanupPlan.reason,
+        handle.cleanupPlan.requiresDestroy,
+        handle.cleanupPlan.requiresClose,
+        handle.sharesSourceFileManagerWithLiveCompiler,
+        handle.requiresFreshReusableCompiler,
+        handle.cachedCompileMustStartEmpty);
   }
 
   @NonNull
@@ -353,9 +326,9 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull CompilationRequest request,
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport) {
-    final PartialReparseDryRunIsolatedCompilerReferenceReadyResult readyResult =
-        createCompilerReferenceReadyResult(request, eligibility, attemptReport);
-    return readyResult.reference;
+    final PartialReparseDryRunIsolatedCompilerBindingResult bindingResult =
+        createCompilerBindingResult(request, eligibility, attemptReport);
+    return bindingResult.reference;
   }
 
   @NonNull
@@ -364,37 +337,9 @@ public class PartialReparseDryRunIsolatedSessionFactory {
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
       CompilerProvider liveCompiler) {
-    final PartialReparseDryRunIsolatedCompilerReferenceReadyResult readyResult =
-        createCompilerReferenceReadyResult(request, eligibility, attemptReport, liveCompiler);
-    return readyResult.reference;
-  }
-
-  @NonNull
-  PartialReparseDryRunIsolatedCompilerReferenceReadyResult createCompilerReferenceReadyResult(
-      @NonNull CompilationRequest request,
-      @NonNull PartialReparseEligibility eligibility,
-      @NonNull PartialReparseDryRunReport attemptReport) {
-    return createCompilerReferenceReadyResult(request, eligibility, attemptReport, null);
-  }
-
-  @NonNull
-  PartialReparseDryRunIsolatedCompilerReferenceReadyResult createCompilerReferenceReadyResult(
-      @NonNull CompilationRequest request,
-      @NonNull PartialReparseEligibility eligibility,
-      @NonNull PartialReparseDryRunReport attemptReport,
-      CompilerProvider liveCompiler) {
     final PartialReparseDryRunIsolatedCompilerBindingResult bindingResult =
         createCompilerBindingResult(request, eligibility, attemptReport, liveCompiler);
-    if (!bindingResult.reference.isCreated()) {
-      return PartialReparseDryRunIsolatedCompilerReferenceReadyResult.notReady(
-          bindingResult.reason);
-    }
-    if (bindingResult.isBound() && bindingResult.reference.hasCompilerReference) {
-      return PartialReparseDryRunIsolatedCompilerReferenceReadyResult.ready(
-          bindingResult.reason, bindingResult, bindingResult.reference);
-    }
-    return PartialReparseDryRunIsolatedCompilerReferenceReadyResult.deferred(
-        bindingResult.reason, bindingResult, bindingResult.reference);
+    return bindingResult.reference;
   }
 
   @NonNull
