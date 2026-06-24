@@ -222,6 +222,9 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
         resolvedCompilerSettings.javaBytecodeVersion,
         buildScript?.path,
       )
+      Main.client?.logOutput(
+        "COMPOSITE_COMPILER_SETTINGS module=${modulePath} source=${resolvedCompilerSettings.javaSourceVersion} target=${resolvedCompilerSettings.javaBytecodeVersion} buildScript=${buildScript?.path}\n"
+      )
       discovered.add(
 
         CompositeBuildDescriptor(

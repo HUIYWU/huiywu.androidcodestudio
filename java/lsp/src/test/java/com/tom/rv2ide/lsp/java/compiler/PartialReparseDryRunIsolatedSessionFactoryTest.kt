@@ -39,10 +39,9 @@ val session =
     val observation =
         PartialReparseDryRunIsolatedSessionFactory()
             .createExecutionConsumerObservation(request, eligibility, report)
-    val attemptExecutorConsumerResult =
-        PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.fromObservation(observation)
 
     assertEquals(PartialReparseDryRunIsolatedSession.State.NOT_AVAILABLE, session.state)
+
     assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, session.reason)
     assertTrue(session.requiresCompilerCopy)
     assertFalse(session.requiresClose)
@@ -60,9 +59,6 @@ val session =
     assertEquals(PartialReparseDryRunIsolatedExecutionConsumerObservation.State.NOT_READY, observation.state)
     assertFalse(observation.executionAttemptResult.preflightResult.session.isReady)
     assertFalse(observation.bridgeAttempted)
-    // Legacy compatibility mapping only: observation-first mainline remains authoritative.
-    assertEquals(PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.State.NOT_CONSUMED, attemptExecutorConsumerResult.state)
-    assertFalse(attemptExecutorConsumerResult.attemptExecutorBridge.bridgeAttempted)
 
   }
   @Test
@@ -446,10 +442,9 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
     val executionAttemptResult = factory.createIsolatedExecutionAttemptResult(request, eligibility, report)
     val attemptExecutorBridge = factory.createAttemptExecutorBridge(request, eligibility, report)
     val observation = factory.createExecutionConsumerObservation(request, eligibility, report)
-    val attemptExecutorConsumerResult =
-        PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.fromObservation(observation)
 
     assertEquals(PartialReparseDryRunIsolatedSession.State.READY, session.state)
+
     assertEquals("candidate created", session.reason)
     assertEquals(PartialReparseDryRunIsolatedSessionCandidateReadyResult.State.DEFERRED, candidateReadyResult.state)
     assertEquals(PartialReparseDryRunIsolatedSessionReadinessResult.State.DEFERRED, sessionReadinessResult.state)
@@ -459,9 +454,6 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
     assertEquals(PartialReparseDryRunIsolatedExecutionConsumerObservation.State.DEFERRED, observation.state)
     assertTrue(observation.executionAttemptResult.preflightResult.session.isReady)
     assertFalse(observation.bridgeAttempted)
-    // Legacy compatibility mapping only: observation-first mainline remains authoritative.
-    assertEquals(PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.State.DEFERRED, attemptExecutorConsumerResult.state)
-    assertTrue(attemptExecutorConsumerResult.attemptExecutorBridge.isDeferred)
     assertTrue(session.requiresCompilerCopy)
 
     assertTrue(session.requiresClose)

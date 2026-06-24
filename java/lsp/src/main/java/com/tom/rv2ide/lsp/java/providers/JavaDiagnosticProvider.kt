@@ -152,6 +152,15 @@ class JavaDiagnosticProvider {
                 } else {
                   if (IdeLogConfig.shouldLogWarn()) {
                     log.warn("Unable to analyze file", err)
+                    log.warn(
+                      "JAVA_ANALYZE_FAILURE file={} type={} message={} causeType={} causeMessage={}",
+                      file,
+                      err.javaClass.name,
+                      err.message,
+                      err.cause?.javaClass?.name,
+                      err.cause?.message,
+                    )
+                    log.warn("JAVA_ANALYZE_FAILURE_STACKTRACE\n{}", err.stackTraceToString())
                   }
                 }
                 DiagnosticResult.NO_UPDATE
