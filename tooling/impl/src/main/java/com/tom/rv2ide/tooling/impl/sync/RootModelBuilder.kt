@@ -207,14 +207,23 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       val buildScript = File(depDir, "build.gradle.kts").takeIf { it.isFile }
         ?: File(depDir, "build.gradle").takeIf { it.isFile }
       val resolvedCompilerSettings = resolveCompositeCompilerSettings(buildScript, fallbackCompilerSettings)
+      val modulePath = ":buildDeps:${depDir.name}"
       logger.warn(
         "RootModelBuilder composite compiler settings module={} source={} target={} buildScript={}",
-        ":buildDeps:${depDir.name}",
+        modulePath,
+        resolvedCompilerSettings.javaSourceVersion,
+        resolvedCompilerSettings.javaBytecodeVersion,
+        buildScript?.path,
+      )
+      logger.error(
+        "COMPOSITE_COMPILER_SETTINGS module={} source={} target={} buildScript={}",
+        modulePath,
         resolvedCompilerSettings.javaSourceVersion,
         resolvedCompilerSettings.javaBytecodeVersion,
         buildScript?.path,
       )
       discovered.add(
+
         CompositeBuildDescriptor(
           name = depDir.name,
           buildName = "buildDeps",

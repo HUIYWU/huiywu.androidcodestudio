@@ -36,12 +36,11 @@ val session =
     val attemptExecutorBridge =
         PartialReparseDryRunIsolatedSessionFactory()
             .createAttemptExecutorBridge(request, eligibility, report)
-    val attemptExecutorConsumerResult =
-        PartialReparseDryRunIsolatedSessionFactory()
-            .createAttemptExecutorConsumerResult(request, eligibility, report)
     val observation =
         PartialReparseDryRunIsolatedSessionFactory()
             .createExecutionConsumerObservation(request, eligibility, report)
+    val attemptExecutorConsumerResult =
+        PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.fromObservation(observation)
 
     assertEquals(PartialReparseDryRunIsolatedSession.State.NOT_AVAILABLE, session.state)
     assertEquals(PartialReparseDryRunIsolatedSessionFactory.DEFAULT_NOT_AVAILABLE_REASON, session.reason)
@@ -446,8 +445,9 @@ assertEquals(PartialReparseDryRunIsolatedCompilerAcquisition.State.RESERVED, acq
     val executablePreflightResult = factory.createExecutablePreflightResult(request, eligibility, report)
     val executionAttemptResult = factory.createIsolatedExecutionAttemptResult(request, eligibility, report)
     val attemptExecutorBridge = factory.createAttemptExecutorBridge(request, eligibility, report)
-    val attemptExecutorConsumerResult = factory.createAttemptExecutorConsumerResult(request, eligibility, report)
     val observation = factory.createExecutionConsumerObservation(request, eligibility, report)
+    val attemptExecutorConsumerResult =
+        PartialReparseDryRunIsolatedAttemptExecutorConsumerResult.fromObservation(observation)
 
     assertEquals(PartialReparseDryRunIsolatedSession.State.READY, session.state)
     assertEquals("candidate created", session.reason)
