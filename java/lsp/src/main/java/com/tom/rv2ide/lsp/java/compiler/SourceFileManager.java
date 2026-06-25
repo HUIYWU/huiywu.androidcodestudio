@@ -26,9 +26,11 @@ import com.tom.rv2ide.javac.config.JavacConfigProvider;
 import com.tom.rv2ide.javac.services.fs.AndroidFsProviderImpl;
 import com.tom.rv2ide.projects.android.AndroidModule;
 import com.tom.rv2ide.projects.ModuleProject;
+import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.projects.util.StringSearch;
 import com.tom.rv2ide.utils.ClassTrie;
 import com.tom.rv2ide.utils.Environment;
+
 import com.tom.rv2ide.utils.SourceClassTrie;
 import java.io.File;
 import java.io.IOException;

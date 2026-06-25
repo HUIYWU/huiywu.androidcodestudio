@@ -216,7 +216,7 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
           buildDir = File(depDir, "build"),
           buildScript = buildScript,
           sourceRoots = sourceRoots,
-          classesJar = null,
+          classesJar = discoverCompositeClassesJar(depDir, File(depDir, "build")),
           javaSourceVersion = resolvedCompilerSettings.javaSourceVersion,
           javaBytecodeVersion = resolvedCompilerSettings.javaBytecodeVersion,
           isHeavy = isHeavyCompositeBuildDep(depDir.name),

@@ -153,7 +153,7 @@ internal object WorkspaceModelBuilder {
         buildDir = File(depDir, "build"),
         buildScript = buildScript,
         sourceRoots = sourceRoots,
-        classesJar = null,
+        classesJar = discoverCompositeClassesJar(depDir, File(depDir, "build")),
         javaSourceVersion = fallbackCompilerSettings.javaSourceVersion,
         javaBytecodeVersion = fallbackCompilerSettings.javaBytecodeVersion,
         isHeavy = isHeavyCompositeBuildDep(depDir.name),
@@ -210,7 +210,7 @@ internal object WorkspaceModelBuilder {
         ),
         contentRoots = listOf(contentRoot),
         dependencies = emptyList(),
-        classesJar = null,
+        classesJar = descriptor.classesJar,
         inheritedBootClassPaths = rootJavaModule.inheritedBootClassPaths,
       ).apply {
         markLazyCompositeBuildModule(descriptor.isHeavy)
