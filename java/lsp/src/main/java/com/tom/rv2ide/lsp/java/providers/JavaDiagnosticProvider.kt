@@ -155,7 +155,6 @@ class JavaDiagnosticProvider {
                                 )
                             ),
                             null,
-                            DiagnosticCompilationTaskProcessor(),
                         )
                     )
                     .get { task -> doAnalyze(file, task) }

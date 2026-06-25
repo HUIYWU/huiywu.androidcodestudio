@@ -45,18 +45,14 @@ import openjdk.source.tree.MethodTree
 import openjdk.source.tree.VariableTree
 import openjdk.source.util.TreePath
 import openjdk.source.util.Trees
-import org.slf4j.LoggerFactory
 
 /**
  * Finds errors and warnings from a compilation task.
  *
  * @author Akash Yadav
  */
-private object DiagnosticsProviderLogHolder {
-  val log = LoggerFactory.getLogger(DiagnosticsProvider::class.java)
-}
-
 object DiagnosticsProvider {
+
   /**
    * Finds diagnostics from the given task (only the diagnostics for the given file). The task
    * should be a valid task.
@@ -90,24 +86,9 @@ object DiagnosticsProvider {
     }
     addCompilerErrors(task, root, result)
     abortIfCancelled()
-    try {
-      addDiagnosticsByVisiting(task, root, result)
-    } catch (err: Throwable) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        val fileForLog = try {
-          Paths.get(root.sourceFile.toUri())
-        } catch (_: Throwable) {
-          file
-        }
-        com.tom.rv2ide.lsp.java.providers.DiagnosticsProviderLogHolder.log.warn(
-            "Skipping Java visitor diagnostics after compiler diagnostics due to visitor failure. file={} existingDiagnostics={}",
-            fileForLog,
-            result.size,
-            err,
-        )
-      }
-    }
+    addDiagnosticsByVisiting(task, root, result)
     abortIfCancelled()
+
     return result
 
   }
