@@ -32,12 +32,29 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
 
   override fun process(task: JavacTaskImpl, processCompilationUnit: Consumer<CompilationUnitTree>) {
     val watch = StopWatch("Process compilation task")
-    val trees = task.parse()
-    if (IdeLogConfig.shouldLogDebug()) {
-      watch.lapFromLast("Parsed treees")
+    val trees = try {
+      task.parse().also {
+        if (IdeLogConfig.shouldLogDebug()) {
+          watch.lapFromLast("Parsed treees")
+        }
+      }
+    } catch (err: Throwable) {
+      if (IdeLogConfig.shouldLogWarn()) {
+        log.warn(
+            "DefaultCompilationTaskProcessor.parse failed taskClass={} contextPresent={}",
+            task.javaClass.name,
+            task.context != null,
+            err,
+        )
+      }
+      throw err
     }
 
-    trees.forEach(processCompilationUnit::accept)
+    var treeCount = 0
+    trees.forEach {
+      treeCount++
+      processCompilationUnit.accept(it)
+    }
     if (IdeLogConfig.shouldLogDebug()) {
       watch.lapFromLast("Processed trees")
     }
@@ -46,9 +63,26 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     //    watch.lapFromLast("Entered trees")
     //
     //    val analyzed = JavacTaskUtil.analyze(task, entered)
-    task.analyze()
-    if (IdeLogConfig.shouldLogDebug()) {
-      watch.lapFromLast("Analyzed all trees")
+    try {
+      task.analyze()
+      if (IdeLogConfig.shouldLogDebug()) {
+        watch.lapFromLast("Analyzed all trees")
+      }
+    } catch (err: Throwable) {
+      if (IdeLogConfig.shouldLogWarn()) {
+        log.warn(
+            "DefaultCompilationTaskProcessor.analyze failed taskClass={} contextPresent={} treeCount={}",
+            task.javaClass.name,
+            task.context != null,
+            treeCount,
+            err,
+        )
+      }
+      throw err
     }
+  }
+
+  companion object {
+    private val log = org.slf4j.LoggerFactory.getLogger(DefaultCompilationTaskProcessor::class.java)
   }
 }
