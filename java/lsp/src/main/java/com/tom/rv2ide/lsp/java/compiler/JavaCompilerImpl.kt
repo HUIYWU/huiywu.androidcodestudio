@@ -58,29 +58,8 @@ class JavaCompilerImpl(context: Context?) : ReusableJavaCompiler(context) {
     if (compilerConfig.completionInfo == null && FileManager.isActive(filename.toUri())) {
       return super.parse(filename, content)
     }
+    return super.parse(filename, content)
 
-    val watch =
-        StopWatch("${if(file is SourceFileObject) "[${file.path.name}] " else ""}Prune method bodies")
-    val pruned =
-        run {
-          val contentBuilder = StringBuilder(content)
-
-          TSJavaParser.parse(file).use { parseResult ->
-            prune(
-                contentBuilder,
-                parseResult.tree,
-                compilerConfig.completionInfo?.cursor?.index ?: -1,
-            )
-
-            if (IdeLogConfig.shouldLogDebug()) {
-              watch.log()
-            }
-
-            contentBuilder
-          }
-        }
-
-    return super.parse(filename, pruned)
   }
 
   companion object {

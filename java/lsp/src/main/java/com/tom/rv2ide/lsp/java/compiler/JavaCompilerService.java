@@ -654,11 +654,12 @@ public class JavaCompilerService implements CompilerProvider {
     final Collection<? extends JavaFileObject> sources = expandedRequest.sources;
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
-          "performCompilation requestHash={} expandedSources={} currentContextPresent={} fileManagerClass={}",
+          "performCompilation requestHash={} expandedSources={} currentContextPresent={} fileManagerClass={} sourcesDetail={}",
           System.identityHashCode(request),
           sources == null ? -1 : sources.size(),
           compiler.currentContext != null,
-          fileManager == null ? null : fileManager.getClass().getName());
+          fileManager == null ? null : fileManager.getClass().getName(),
+          sources == null ? null : CompileBatch.describeSources(sources));
     }
     if (sources.isEmpty()) {
       throw new RuntimeException("empty sources");

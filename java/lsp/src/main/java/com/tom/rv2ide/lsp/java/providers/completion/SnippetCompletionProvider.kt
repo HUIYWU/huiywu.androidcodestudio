@@ -53,11 +53,18 @@ class SnippetCompletionProvider(
       endsWithParen: Boolean,
   ): CompletionResult {
     val scope = findSnippetScope(path) ?: return CompletionResult.EMPTY
-    val indent = spacesBeforeCursor(task.root().sourceFile.getCharContent(true))
+    val indent = spacesBeforeCursor(task.root(file).sourceFile.getCharContent(true))
     val snippets = mutableListOf<ISnippet>()
 
+    val repository = try {
+      JavaSnippetRepository.snippets
+    } catch (t: Throwable) {
+      log.error("Snippet repository unavailable", t)
+      return CompletionResult.EMPTY
+    }
+
     // add global snippets, if any
-    JavaSnippetRepository.snippets[JavaSnippetScope.GLOBAL]?.let { snippets.addAll(it) }
+    repository[JavaSnippetScope.GLOBAL]?.toList()?.let { snippets.addAll(it) }
 
     val snippetScope =
         when (scope.leaf) {
@@ -68,7 +75,7 @@ class SnippetCompletionProvider(
         }
 
     // add snippets for the current scope
-    snippetScope?.let { JavaSnippetRepository.snippets[it]?.let { list -> snippets.addAll(list) } }
+    snippetScope?.let { repository[it]?.toList()?.let { list -> snippets.addAll(list) } }
 
     val items = mutableListOf<CompletionItem>()
 

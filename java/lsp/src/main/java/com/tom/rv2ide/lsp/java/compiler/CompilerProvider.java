@@ -55,7 +55,15 @@ public interface CompilerProvider {
   ParseTask parse(JavaFileObject file);
 
   default SynchronizedTask compile(Path... files) {
-    return compile(Arrays.stream(files).map(SourceFileObject::new).collect(Collectors.toList()));
+    return compile(
+        Arrays.stream(files)
+            .map(
+                file ->
+                    new SourceFileObject(
+                        file,
+                        com.tom.rv2ide.projects.FileManager.INSTANCE.getDocumentContents(file),
+                        com.tom.rv2ide.projects.FileManager.INSTANCE.getLastModified(file)))
+            .collect(Collectors.toList()));
   }
 
   default SynchronizedTask compile(Collection<? extends JavaFileObject> sources) {

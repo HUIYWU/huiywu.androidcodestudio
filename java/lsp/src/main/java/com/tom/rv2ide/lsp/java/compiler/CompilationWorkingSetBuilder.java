@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
+import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.projects.ModuleProject;
 import com.tom.rv2ide.utils.SourceClassTrie;
 import java.nio.file.Path;
@@ -99,7 +100,11 @@ final class CompilationWorkingSetBuilder {
 
     final List<JavaFileObject> cachedSources = new ArrayList<>(cacheEntry.sourcePaths.size());
     for (Path path : cacheEntry.sourcePaths) {
-      cachedSources.add(new SourceFileObject(path));
+      if (path.equals(primaryPath)) {
+        cachedSources.add(primary);
+      } else {
+        cachedSources.add(snapshotSource(path));
+      }
     }
 
     return new CompilationRequest(
@@ -128,7 +133,7 @@ final class CompilationWorkingSetBuilder {
         continue;
       }
 
-      if (putIfAbsent(expanded, path, new SourceFileObject(path))) {
+      if (putIfAbsent(expanded, path, snapshotSource(path))) {
         added++;
       }
     }
@@ -165,7 +170,7 @@ final class CompilationWorkingSetBuilder {
         continue;
       }
 
-      if (putIfAbsent(expanded, path, new SourceFileObject(path))) {
+      if (putIfAbsent(expanded, path, snapshotSource(path))) {
         added++;
       }
     }
@@ -194,13 +199,20 @@ final class CompilationWorkingSetBuilder {
       if (path == null || path.equals(primaryPath)) {
         continue;
       }
-
-      if (putIfAbsent(expanded, path, new SourceFileObject(path))) {
+      if (putIfAbsent(expanded, path, snapshotSource(path))) {
         added++;
       }
     }
 
     return added;
+  }
+
+  @NonNull
+  private JavaFileObject snapshotSource(@NonNull final Path path) {
+    return new SourceFileObject(
+        path,
+        FileManager.INSTANCE.getDocumentContents(path),
+        FileManager.INSTANCE.getLastModified(path));
   }
 
   private boolean putIfAbsent(

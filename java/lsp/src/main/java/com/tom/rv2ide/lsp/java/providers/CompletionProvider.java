@@ -309,20 +309,27 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       if (IdeLogConfig.shouldLogIde()) {
         LOG.debug("...compiled in {}ms", Duration.between(started, Instant.now()).toMillis());
       }
-
-      TreePath path = new FindCompletionsAt(task.task).scan(task.root(), cursor);
+      final var completionRoot = task.root(file);
+      TreePath path = new FindCompletionsAt(task.task).scan(completionRoot, cursor);
       if (path == null || path.getLeaf() == null) {
         LOG.warn(
             "Completion scan returned null path file={} cursor={} rootPresent={} diagnosticsCountUnknown=true",
             file,
             cursor,
-            task.root() != null);
+            completionRoot != null);
         return CompletionResult.EMPTY;
       }
+      LOG.warn(
+          "Completion path resolved file={} cursor={} leafKind={} leafClass={}",
+          file,
+          cursor,
+          path.getLeaf().getKind(),
+          path.getLeaf().getClass().getName());
  
       abortIfCancelled();
       abortCompletionIfCancelled();
       String newPartial = partial;
+
       if (path.getLeaf().getKind() == Tree.Kind.IMPORT) {
         newPartial = qualifiedPartialIdentifier(contents, (int) cursor);
         if (newPartial.endsWith(ASTFixer.IDENT)) {
@@ -382,7 +389,28 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
     abortIfCancelled();
     abortCompletionIfCancelled();
-    return provider.complete(task, path, partial, endsWithParen);
+    try {
+      LOG.warn(
+          "Completion provider start file={} cursor={} leafKind={} provider={} partial={} endsWithParen={}",
+          file,
+          cursor,
+          path.getLeaf().getKind(),
+          klass.getName(),
+          partial,
+          endsWithParen);
+      return provider.complete(task, path, partial, endsWithParen);
+    } catch (Throwable err) {
+      LOG.error(
+          "Completion provider failed file={} cursor={} leafKind={} provider={} partial={} endsWithParen={}",
+          file,
+          cursor,
+          path.getLeaf().getKind(),
+          klass.getName(),
+          partial,
+          endsWithParen,
+          err);
+      throw err;
+    }
   }
 
   private boolean endsWithParen(@NonNull String contents, int cursor) {

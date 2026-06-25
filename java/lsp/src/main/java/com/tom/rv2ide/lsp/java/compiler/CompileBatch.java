@@ -85,10 +85,21 @@ public class CompileBatch implements AutoCloseable {
     this.borrow = batchTask(parent, files);
     this.task = borrow.task;
     this.roots = new ArrayList<>();
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug(
+          "CompileBatch init parentHash={} fileCount={} files={}",
+          System.identityHashCode(parent),
+          files.size(),
+          describeSources(files));
+    }
   
     final var context = task.getContext();
     final var config = JavaCompilerConfig.instance(context);
     config.setFiles(files);
+    if (compilationRequest.compilationTaskProcessor instanceof DefaultCompilationTaskProcessor) {
+      ((DefaultCompilationTaskProcessor) compilationRequest.compilationTaskProcessor).debugSourceSummary =
+          describeSources(files);
+    }
     
     if (compilationRequest.configureContext != null) {
       compilationRequest.configureContext.accept(context);
@@ -133,9 +144,29 @@ public class CompileBatch implements AutoCloseable {
 
   }
 
+  @NonNull
+  static String describeSources(@NonNull Collection<? extends JavaFileObject> sources) {
+    final List<String> entries = new ArrayList<>();
+    for (JavaFileObject source : sources) {
+      if (source == null) {
+        entries.add("<null-source>");
+        continue;
+      }
+      entries.add(
+          source.getClass().getName()
+              + "|kind="
+              + source.getKind()
+              + "|name="
+              + source.getName()
+              + "|uri="
+              + source.toUri());
+    }
+    return entries.toString();
+  }
+
   private ReusableBorrow batchTask(
       @NonNull JavaCompilerService parent, @NonNull Collection<? extends JavaFileObject> sources) {
-
+ 
     parent.diagnostics.clear();
     final Iterable<String> options = options();
 

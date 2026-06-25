@@ -47,20 +47,56 @@ class IdentifierCompletionProvider(
     abortCompletionIfCancelled()
 
     val snippets =
-        SnippetCompletionProvider(cursor, file, compiler, settings)
-            .complete(task, path, partial, endsWithParen)
+        try {
+          log.warn("Identifier provider stage start stage=snippets partial={}", partial)
+          SnippetCompletionProvider(cursor, file, compiler, settings)
+              .complete(task, path, partial, endsWithParen)
+              .also {
+                log.warn(
+                    "Identifier provider stage done stage=snippets partial={} itemCount={}",
+                    partial,
+                    it.items.size)
+              }
+        } catch (t: Throwable) {
+          log.error("Identifier provider stage failed stage=snippets partial={}", partial, t)
+          CompletionResult.EMPTY
+        }
     list.addAll(snippets.items)
 
     val scopeMembers =
-        ScopeCompletionProvider(file, cursor, compiler, settings)
-            .complete(task, path, partial, endsWithParen)
+        try {
+          log.warn("Identifier provider stage start stage=scope partial={}", partial)
+          ScopeCompletionProvider(file, cursor, compiler, settings)
+              .complete(task, path, partial, endsWithParen)
+              .also {
+                log.warn(
+                    "Identifier provider stage done stage=scope partial={} itemCount={}",
+                    partial,
+                    it.items.size)
+              }
+        } catch (t: Throwable) {
+          log.error("Identifier provider stage failed stage=scope partial={}", partial, t)
+          throw t
+        }
     list.addAll(scopeMembers.items)
 
     abortIfCancelled()
     abortCompletionIfCancelled()
     val staticImports =
-        StaticImportCompletionProvider(file, cursor, compiler, settings, path.compilationUnit)
-            .complete(task, path, partial, endsWithParen)
+        try {
+          log.warn("Identifier provider stage start stage=staticImports partial={}", partial)
+          StaticImportCompletionProvider(file, cursor, compiler, settings, path.compilationUnit)
+              .complete(task, path, partial, endsWithParen)
+              .also {
+                log.warn(
+                    "Identifier provider stage done stage=staticImports partial={} itemCount={}",
+                    partial,
+                    it.items.size)
+              }
+        } catch (t: Throwable) {
+          log.error("Identifier provider stage failed stage=staticImports partial={}", partial, t)
+          throw t
+        }
     list.addAll(staticImports.items)
     if (IdeLogConfig.shouldLogInfo()) {
       log.info(
@@ -80,8 +116,20 @@ class IdentifierCompletionProvider(
         abortIfCancelled()
         abortCompletionIfCancelled()
         val classNames =
-            ClassNamesCompletionProvider(file, cursor, compiler, settings, path.compilationUnit)
-                .complete(task, path, partial, endsWithParen)
+            try {
+              log.warn("Identifier provider stage start stage=classNames partial={}", partial)
+              ClassNamesCompletionProvider(file, cursor, compiler, settings, path.compilationUnit)
+                  .complete(task, path, partial, endsWithParen)
+                  .also {
+                    log.warn(
+                        "Identifier provider stage done stage=classNames partial={} itemCount={}",
+                        partial,
+                        it.items.size)
+                  }
+            } catch (t: Throwable) {
+              log.error("Identifier provider stage failed stage=classNames partial={}", partial, t)
+              throw t
+            }
         list.addAll(classNames.items)
       }
     }
@@ -89,8 +137,20 @@ class IdentifierCompletionProvider(
     abortIfCancelled()
     abortCompletionIfCancelled()
     val keywords =
-        KeywordCompletionProvider(file, cursor, compiler, settings)
-            .complete(task, path, partial, endsWithParen)
+        try {
+          log.warn("Identifier provider stage start stage=keywords partial={}", partial)
+          KeywordCompletionProvider(file, cursor, compiler, settings)
+              .complete(task, path, partial, endsWithParen)
+              .also {
+                log.warn(
+                    "Identifier provider stage done stage=keywords partial={} itemCount={}",
+                    partial,
+                    it.items.size)
+              }
+        } catch (t: Throwable) {
+          log.error("Identifier provider stage failed stage=keywords partial={}", partial, t)
+          throw t
+        }
     list.addAll(keywords.items)
 
     return CompletionResult(list)
