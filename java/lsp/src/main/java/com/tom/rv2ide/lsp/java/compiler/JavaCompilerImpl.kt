@@ -71,14 +71,14 @@ class JavaCompilerImpl(context: Context?) : ReusableJavaCompiler(context) {
       super.parse(filename, pruned)
     } catch (err: Throwable) {
       if (IdeLogConfig.shouldLogWarn()) {
-        log.warn("Failed to prune method bodies; falling back to full parse for {}", filename.toUri(), err)
+        pruneLog.warn("Failed to prune method bodies; falling back to full parse for {}", filename.toUri(), err)
       }
       super.parse(filename, content)
     }
   }
 
   companion object {
-    private val log = LoggerFactory.getLogger(JavaCompilerImpl::class.java)
+    private val pruneLog = LoggerFactory.getLogger(JavaCompilerImpl::class.java)
 
     @JvmStatic
     fun preRegister(context: ReusableContext, replace: Boolean = false) {
