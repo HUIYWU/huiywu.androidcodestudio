@@ -319,13 +319,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
             completionRoot != null);
         return CompletionResult.EMPTY;
       }
-      LOG.warn(
-          "Completion path resolved file={} cursor={} leafKind={} leafClass={}",
-          file,
-          cursor,
-          path.getLeaf().getKind(),
-          path.getLeaf().getClass().getName());
- 
+
       abortIfCancelled();
       abortCompletionIfCancelled();
       String newPartial = partial;

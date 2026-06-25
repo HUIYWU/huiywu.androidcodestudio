@@ -30,7 +30,7 @@ import openjdk.tools.javac.api.JavacTaskImpl
  */
 class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
 
-  @JvmField @Volatile var debugSourceSummary: String? = null
+  // working-set debugSourceSummary removed
 
   override fun process(task: JavacTaskImpl, processCompilationUnit: Consumer<CompilationUnitTree>) {
     val watch = StopWatch("Process compilation task")
@@ -48,13 +48,6 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
             task.context != null,
             err,
         )
-        debugSourceSummary
-            ?.removePrefix("[")
-            ?.removeSuffix("]")
-            ?.split(", ")
-            ?.forEachIndexed { index, source ->
-              log.warn("DefaultCompilationTaskProcessor.parse source[{}]={}", index, source)
-            }
       }
       throw err
     }

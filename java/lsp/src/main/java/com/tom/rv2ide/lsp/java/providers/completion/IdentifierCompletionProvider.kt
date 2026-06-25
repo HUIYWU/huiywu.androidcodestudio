@@ -48,15 +48,8 @@ class IdentifierCompletionProvider(
 
     val snippets =
         try {
-          log.warn("Identifier provider stage start stage=snippets partial={}", partial)
           SnippetCompletionProvider(cursor, file, compiler, settings)
               .complete(task, path, partial, endsWithParen)
-              .also {
-                log.warn(
-                    "Identifier provider stage done stage=snippets partial={} itemCount={}",
-                    partial,
-                    it.items.size)
-              }
         } catch (t: Throwable) {
           log.error("Identifier provider stage failed stage=snippets partial={}", partial, t)
           CompletionResult.EMPTY
@@ -65,15 +58,8 @@ class IdentifierCompletionProvider(
 
     val scopeMembers =
         try {
-          log.warn("Identifier provider stage start stage=scope partial={}", partial)
           ScopeCompletionProvider(file, cursor, compiler, settings)
               .complete(task, path, partial, endsWithParen)
-              .also {
-                log.warn(
-                    "Identifier provider stage done stage=scope partial={} itemCount={}",
-                    partial,
-                    it.items.size)
-              }
         } catch (t: Throwable) {
           log.error("Identifier provider stage failed stage=scope partial={}", partial, t)
           throw t
@@ -84,15 +70,8 @@ class IdentifierCompletionProvider(
     abortCompletionIfCancelled()
     val staticImports =
         try {
-          log.warn("Identifier provider stage start stage=staticImports partial={}", partial)
           StaticImportCompletionProvider(file, cursor, compiler, settings, path.compilationUnit)
               .complete(task, path, partial, endsWithParen)
-              .also {
-                log.warn(
-                    "Identifier provider stage done stage=staticImports partial={} itemCount={}",
-                    partial,
-                    it.items.size)
-              }
         } catch (t: Throwable) {
           log.error("Identifier provider stage failed stage=staticImports partial={}", partial, t)
           throw t
@@ -100,8 +79,7 @@ class IdentifierCompletionProvider(
     list.addAll(staticImports.items)
     if (IdeLogConfig.shouldLogInfo()) {
       log.info(
-          "identifier completion partial='{}' preClassItems={} trimToMax={} maxItems={} allLower={} startsUpper={}"
-          ,
+          "identifier completion partial='{}' preClassItems={} trimToMax={} maxItems={} allLower={} startsUpper={}",
           partial,
           list.size,
           CompletionResult.TRIM_TO_MAX,
@@ -117,15 +95,8 @@ class IdentifierCompletionProvider(
         abortCompletionIfCancelled()
         val classNames =
             try {
-              log.warn("Identifier provider stage start stage=classNames partial={}", partial)
               ClassNamesCompletionProvider(file, cursor, compiler, settings, path.compilationUnit)
                   .complete(task, path, partial, endsWithParen)
-                  .also {
-                    log.warn(
-                        "Identifier provider stage done stage=classNames partial={} itemCount={}",
-                        partial,
-                        it.items.size)
-                  }
             } catch (t: Throwable) {
               log.error("Identifier provider stage failed stage=classNames partial={}", partial, t)
               throw t
@@ -138,15 +109,8 @@ class IdentifierCompletionProvider(
     abortCompletionIfCancelled()
     val keywords =
         try {
-          log.warn("Identifier provider stage start stage=keywords partial={}", partial)
           KeywordCompletionProvider(file, cursor, compiler, settings)
               .complete(task, path, partial, endsWithParen)
-              .also {
-                log.warn(
-                    "Identifier provider stage done stage=keywords partial={} itemCount={}",
-                    partial,
-                    it.items.size)
-              }
         } catch (t: Throwable) {
           log.error("Identifier provider stage failed stage=keywords partial={}", partial, t)
           throw t

@@ -245,8 +245,10 @@ public class SourceFileManager extends ForwardingJavaFileManager<JavacFileManage
   }
 
   private static SourceFileManager createForModule(@NonNull ModuleProject project) {
-    LOG.info("Creating source file manager instance for module: {}", project);
-    
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug("Creating source file manager instance for module: {}", project);
+    }
+
     // Set indexing flag to show banner
     com.tom.rv2ide.projectdata.state.lsp.Index.INSTANCE.setIsIndexing(true);
     

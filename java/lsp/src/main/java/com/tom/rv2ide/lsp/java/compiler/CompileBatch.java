@@ -96,11 +96,7 @@ public class CompileBatch implements AutoCloseable {
     final var context = task.getContext();
     final var config = JavaCompilerConfig.instance(context);
     config.setFiles(files);
-    if (compilationRequest.compilationTaskProcessor instanceof DefaultCompilationTaskProcessor) {
-      ((DefaultCompilationTaskProcessor) compilationRequest.compilationTaskProcessor).debugSourceSummary =
-          describeSources(files);
-    }
-    
+
     if (compilationRequest.configureContext != null) {
       compilationRequest.configureContext.accept(context);
     }

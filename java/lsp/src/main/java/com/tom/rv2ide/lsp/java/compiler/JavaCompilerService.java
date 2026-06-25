@@ -207,8 +207,8 @@ public class JavaCompilerService implements CompilerProvider {
     final int bootClassPathCount = bootClasspathClasses.size();
     all.addAll(classPathClasses);
     all.addAll(bootClasspathClasses);
-    if (IdeLogConfig.shouldLogIde()) {
-      LOG.info(
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug(
           "publicTopLevelTypes source={} classpath={} boot={} total={} hasString={} hasInteger={} hasDouble={}",
           sourceCount,
           classPathCount,
@@ -342,8 +342,8 @@ public class JavaCompilerService implements CompilerProvider {
           if (needsCompilation(request.sources)) {
             reparseOrRecompile(request);
           } else {
-            if (IdeLogConfig.shouldLogIde()) {
-              LOG.info("...using cached compile");
+            if (IdeLogConfig.shouldLogDebug()) {
+              LOG.debug("...using cached compile");
             }
           }
           synchronizedTask.setTask(new CompileTask(cachedCompile, diagnostics));

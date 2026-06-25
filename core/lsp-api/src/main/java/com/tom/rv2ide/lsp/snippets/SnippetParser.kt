@@ -49,13 +49,13 @@ object SnippetParser {
 
     return ConcurrentHashMap<S, List<ISnippet>>().apply {
       for (scope in scopes) {
-        this[scope] =
-            mutableListOf<ISnippet>().apply {
-              readSnippets(lang, scope.filename, snippetFactory, this)
-            }
+        this[scope] = mutableListOf<ISnippet>().apply {
+          readSnippets(lang, scope.filename, snippetFactory, this)
+        }
       }
     }
   }
+
   private fun readSnippets(
       lang: String,
       type: String,
