@@ -99,6 +99,13 @@ public class CompileBatch implements AutoCloseable {
     try {
       compilationRequest.compilationTaskProcessor.process(borrow.task, this::processCompilationUnit);
     } catch (Throwable e) {
+      LOG.error(
+          "CompileBatch processing failed parentHash={} files={} contextPresent={} firstSource={}",
+          System.identityHashCode(parent),
+          files.size(),
+          context != null,
+          files.iterator().hasNext() ? files.iterator().next().toUri() : null,
+          e);
       throw new RuntimeException(e);
     }
     
@@ -135,14 +142,37 @@ public class CompileBatch implements AutoCloseable {
     diagnosticListener =
         new DiagnosticListenerWrapper(parent.diagnostics::add, sources.iterator().next());
 
-    final ReusableBorrow borrow =
-        parent.compiler.getTask(
-            parent.fileManager, diagnosticListener, options, Collections.emptyList(), sources);
-
-    if (parent.fileManager != null) {
-      parent.fileManager.setContext(borrow.task.getContext());
+    final ReusableBorrow borrow;
+    try {
+      borrow =
+          parent.compiler.getTask(
+              parent.fileManager, diagnosticListener, options, Collections.emptyList(), sources);
+    } catch (Throwable err) {
+      LOG.error(
+          "CompileBatch batchTask getTask failed parentHash={} sources={} fileManagerClass={} optionsCount={} firstSource={}",
+          System.identityHashCode(parent),
+          sources.size(),
+          parent.fileManager == null ? null : parent.fileManager.getClass().getName(),
+          options.size(),
+          sources.iterator().hasNext() ? sources.iterator().next().toUri() : null,
+          err);
+      throw err;
     }
-
+ 
+    if (parent.fileManager != null) {
+      try {
+        parent.fileManager.setContext(borrow.task.getContext());
+      } catch (Throwable err) {
+        LOG.error(
+            "CompileBatch setContext failed parentHash={} sourceCount={} contextPresent={}",
+            System.identityHashCode(parent),
+            sources.size(),
+            borrow.task != null && borrow.task.getContext() != null,
+            err);
+        throw err;
+      }
+    }
+ 
     return borrow;
   }
 

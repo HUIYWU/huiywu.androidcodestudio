@@ -330,6 +330,15 @@ public class JavaCompilerService implements CompilerProvider {
   private SynchronizedTask compileBatch(CompilationRequest request) {
     synchronizedTask.post(
         () -> {
+          if (IdeLogConfig.shouldLogDebug()) {
+            LOG.debug(
+                "compileBatch start requestHash={} sources={} needsCompilation={} cachedCompilePresent={} currentContextPresent={}",
+                System.identityHashCode(request),
+                request.sources == null ? -1 : request.sources.size(),
+                needsCompilation(request.sources),
+                cachedCompile != null,
+                compiler.currentContext != null);
+          }
           if (needsCompilation(request.sources)) {
             reparseOrRecompile(request);
           } else {
@@ -365,6 +374,15 @@ public class JavaCompilerService implements CompilerProvider {
         PartialReparseEligibility.from(request, needsRecompilation(request), incrementalState);
     final PartialReparseDecision decision = partialReparseDecider.decide(eligibility);
     logPartialReparseDecision(eligibility, decision);
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug(
+          "reparseOrRecompile requestHash={} action={} sourceCount={} needsRecompilation={} currentContextPresent={}",
+          System.identityHashCode(request),
+          decision.action,
+          eligibility.sourceCount,
+          eligibility.needsRecompilation,
+          compiler.currentContext != null);
+    }
 
     partialReparseRouter.route(
         decision,
@@ -603,6 +621,14 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   private synchronized void recompile(CompilationRequest request) {
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug(
+          "recompile start requestHash={} sources={} cachedCompilePresentBeforeClose={} currentContextPresentBeforeClose={}",
+          System.identityHashCode(request),
+          request.sources == null ? -1 : request.sources.size(),
+          cachedCompile != null,
+          compiler.currentContext != null);
+    }
     close();
     this.cachedCompile = performCompilation(request);
     this.incrementalState.resetAfterFullRecompile();
@@ -626,11 +652,31 @@ public class JavaCompilerService implements CompilerProvider {
     final CompilationRequest expandedRequest =
         compilationWorkingSetBuilder.expand(this, request);
     final Collection<? extends JavaFileObject> sources = expandedRequest.sources;
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug(
+          "performCompilation requestHash={} expandedSources={} currentContextPresent={} fileManagerClass={}",
+          System.identityHashCode(request),
+          sources == null ? -1 : sources.size(),
+          compiler.currentContext != null,
+          fileManager == null ? null : fileManager.getClass().getName());
+    }
     if (sources.isEmpty()) {
       throw new RuntimeException("empty sources");
     }
 
-    CompileBatch firstAttempt = new CompileBatch(this, sources, expandedRequest);
+    CompileBatch firstAttempt;
+    try {
+      firstAttempt = new CompileBatch(this, sources, expandedRequest);
+    } catch (Throwable err) {
+      LOG.error(
+          "performCompilation failed requestHash={} expandedSources={} currentContextPresent={} firstSource={} ",
+          System.identityHashCode(request),
+          sources.size(),
+          compiler.currentContext != null,
+          sources.iterator().hasNext() ? sources.iterator().next().toUri() : null,
+          err);
+      throw err;
+    }
     Set<Path> addFiles = firstAttempt.needsAdditionalSources();
 
 

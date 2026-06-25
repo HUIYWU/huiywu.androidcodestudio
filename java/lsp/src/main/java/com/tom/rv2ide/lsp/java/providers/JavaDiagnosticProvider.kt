@@ -153,7 +153,7 @@ class JavaDiagnosticProvider {
                   if (IdeLogConfig.shouldLogWarn()) {
                     log.warn("Unable to analyze file", err)
                     log.warn(
-                      "Java analyze failure file={} type={} message={} causeType={} causeMessage={} thread={} compilerHash={} currentContextPresent={} cachedCompilePresent={}",
+                      "Java analyze failure file={} type={} message={} causeType={} causeMessage={} thread={} compilerHash={} currentContextPresent={} synchronizedTaskPresent={}",
                       file,
                       err.javaClass.name,
                       err.message,
