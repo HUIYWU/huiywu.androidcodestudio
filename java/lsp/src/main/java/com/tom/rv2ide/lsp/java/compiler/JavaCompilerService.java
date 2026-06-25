@@ -101,6 +101,7 @@ public class JavaCompilerService implements CompilerProvider {
   private final PartialReparseDryRunVerifier partialReparseDryRunVerifier = new PartialReparseDryRunVerifier();
   private final PartialReparseDryRunAttemptProvider partialReparseDryRunAttemptProvider =
       new PartialReparseDryRunAttemptProvider();
+
   private final PartialReparseDryRunSnapshotCollector partialReparseDryRunSnapshotCollector =
       new PartialReparseDryRunSnapshotCollector();
   private final PartialReparseDryRunPartialSnapshotProvider partialReparseDryRunPartialSnapshotProvider =
@@ -419,7 +420,6 @@ public class JavaCompilerService implements CompilerProvider {
                           request, eligibility, attemptReport, this));
     logPartialReparseDryRunReport(reportWithComparison);
   }
-
   @Nullable
   private PartialReparseDryRunSnapshot collectDryRunFullRecompileSnapshot() {
     if (cachedCompile == null) {
@@ -430,6 +430,7 @@ public class JavaCompilerService implements CompilerProvider {
 
   private void logPartialReparseDryRun(
       @Nullable final PartialReparseAttemptResult result, @Nullable final Throwable err) {
+
     if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogDebug()) {
       return;
     }
@@ -442,6 +443,7 @@ public class JavaCompilerService implements CompilerProvider {
       return;
     }
     LOG.debug("Partial reparse dry-run requested; using full recompile until isolated dry-run is available");
+
   }
 
   private void logPartialReparseDryRunReport(@NonNull final PartialReparseDryRunReport report) {

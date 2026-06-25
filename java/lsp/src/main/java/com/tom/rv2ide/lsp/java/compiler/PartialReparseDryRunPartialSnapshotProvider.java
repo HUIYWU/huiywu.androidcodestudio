@@ -48,7 +48,6 @@ public final class PartialReparseDryRunPartialSnapshotProvider {
       @NonNull PartialReparseDryRunReport attemptReport) {
     return createPartialSnapshot(request, eligibility, attemptReport, null);
   }
-
   @Nullable
   public PartialReparseDryRunSnapshot createPartialSnapshot(
       @NonNull CompilationRequest request,

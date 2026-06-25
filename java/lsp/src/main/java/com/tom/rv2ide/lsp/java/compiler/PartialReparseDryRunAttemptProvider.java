@@ -31,9 +31,26 @@ import com.tom.rv2ide.lsp.java.models.CompilationRequest;
  */
 public final class PartialReparseDryRunAttemptProvider {
 
+  @FunctionalInterface
+  public interface AttemptFactory {
+    @Nullable
+    PartialReparseDryRunVerifier.Attempt create(
+        @NonNull CompilationRequest request, @NonNull PartialReparseEligibility eligibility);
+  }
+
+  private final AttemptFactory attemptFactory;
+
+  public PartialReparseDryRunAttemptProvider() {
+    this((request, eligibility) -> null);
+  }
+
+  PartialReparseDryRunAttemptProvider(@NonNull AttemptFactory attemptFactory) {
+    this.attemptFactory = attemptFactory;
+  }
+
   @Nullable
   public PartialReparseDryRunVerifier.Attempt createAttempt(
       @NonNull CompilationRequest request, @NonNull PartialReparseEligibility eligibility) {
-    return null;
+    return attemptFactory.create(request, eligibility);
   }
 }

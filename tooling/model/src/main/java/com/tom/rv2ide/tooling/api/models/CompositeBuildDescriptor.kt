@@ -36,6 +36,7 @@ class CompositeBuildDescriptor(
     val buildDir: File,
     val buildScript: File?,
     val sourceRoots: List<File>,
+    val classesJar: File?,
     val javaSourceVersion: String,
     val javaBytecodeVersion: String,
     val isHeavy: Boolean,

@@ -111,7 +111,22 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
           LOG.info("Completion request cancelled");
         }
       } else {
-        LOG.error("An error occurred while computing completions", err);
+        final Path file = params.getFile();
+        final int line = params.getPosition().getLine();
+        final int column = params.getPosition().getColumn();
+        final long index = params.getPosition().getIndex();
+        final String prefix = params.getPrefix();
+        LOG.error(
+            "An error occurred while computing completions file={} line={} column={} index={} prefix={} compilerHash={} currentContextPresent={} synchronizedTaskBusy={}",
+            file,
+            line,
+            column,
+            index,
+            prefix,
+            System.identityHashCode(compiler),
+            compiler != null && compiler.compiler.currentContext != null,
+            synchronizedTask.isBusy(),
+            err);
       }
       throw err;
     } finally {
@@ -194,9 +209,18 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final String contentString = contents.toString();
     final PartialReparseRequest partialRequest = new PartialReparseRequest(
         cursor - params.requirePrefix().length(), contentString);
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug(
+          "Completion compile request file={} cursor={} prefixLength={} contentLength={} currentContextPresent={}",
+          file,
+          cursor,
+          params.requirePrefix().length(),
+          contentString.length(),
+          context != null);
+    }
     abortIfCancelled();
     abortCompletionIfCancelled();
-
+ 
     CompletionResult result = compileAndComplete(contentString, params, partialRequest);
     if (result == null) {
       result = CompletionResult.EMPTY;
@@ -271,7 +295,13 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     SynchronizedTask synchronizedTask = compiler.compile(request);
     return synchronizedTask.get(task -> {
       if (task == null || task.task == null || task.task.getContext() == null) {
-        LOG.warn("Compilation resulted in an invalid JavacTask");
+        LOG.warn(
+            "Compilation resulted in an invalid JavacTask file={} cursor={} taskPresent={} javacTaskPresent={} contextPresent={}",
+            file,
+            cursor,
+            task != null,
+            task != null && task.task != null,
+            task != null && task.task != null && task.task.getContext() != null);
         return CompletionResult.EMPTY;
       }
       abortIfCancelled();
@@ -281,7 +311,15 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       }
 
       TreePath path = new FindCompletionsAt(task.task).scan(task.root(), cursor);
-
+      if (path == null || path.getLeaf() == null) {
+        LOG.warn(
+            "Completion scan returned null path file={} cursor={} rootPresent={} diagnosticsCountUnknown=true",
+            file,
+            cursor,
+            task.root() != null);
+        return CompletionResult.EMPTY;
+      }
+ 
       abortIfCancelled();
       abortCompletionIfCancelled();
       String newPartial = partial;

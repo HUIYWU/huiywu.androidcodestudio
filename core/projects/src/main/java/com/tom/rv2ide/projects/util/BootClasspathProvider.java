@@ -37,10 +37,9 @@ import org.slf4j.LoggerFactory;
  * @author Akash Yadav
  */
 public class BootClasspathProvider {
-
   private static final Map<String, ClassTrie> bootClasspathClasses = new ConcurrentHashMap<>();
   private static final Logger LOG = LoggerFactory.getLogger(BootClasspathProvider.class);
-  private static final String MARKER = "ACS_MARKER_BOOTCLASSPATH_ZIP_V1";
+
 
   /**
    * Updates the boot classpath cache. If a classpath is already indexed, it is skipped.
@@ -60,13 +59,12 @@ public class BootClasspathProvider {
         }
         continue;
       }
-
       if (IdeLogConfig.shouldLogIde()) {
         LOG.debug("Indexing boot classpath: {}", classpath);
       }
-      LOG.info("{} path={} reader=ZipFileClasspathReader", MARKER, classpath);
       final var classes =
           new ZipFileClasspathReader().listClasses(Collections.singleton(new File(classpath)));
+
       final var trie = new ClassTrie();
       for (final var info : classes) {
         if (!info.isTopLevel()) {

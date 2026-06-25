@@ -104,7 +104,15 @@ class SynchronizedTask {
       action()
     } catch (err: Throwable) {
       if (!isCancelled(err)) {
-        log.error("An error occurred", err)
+        log.error(
+            "An error occurred thread={} isCompiling={} queuedLength={} taskPresent={} taskClass={}",
+            Thread.currentThread().name,
+            isCompiling,
+            semaphore.queueLength,
+            task != null,
+            task?.javaClass?.name,
+            err,
+        )
       }
       throw err
     } finally {

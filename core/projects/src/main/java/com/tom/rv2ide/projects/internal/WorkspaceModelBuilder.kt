@@ -153,6 +153,7 @@ internal object WorkspaceModelBuilder {
         buildDir = File(depDir, "build"),
         buildScript = buildScript,
         sourceRoots = sourceRoots,
+        classesJar = discoverCompositeClassesJar(depDir, File(depDir, "build")),
         javaSourceVersion = fallbackCompilerSettings.javaSourceVersion,
         javaBytecodeVersion = fallbackCompilerSettings.javaBytecodeVersion,
         isHeavy = isHeavyCompositeBuildDep(depDir.name),
@@ -209,7 +210,7 @@ internal object WorkspaceModelBuilder {
         ),
         contentRoots = listOf(contentRoot),
         dependencies = emptyList(),
-        classesJar = null,
+        classesJar = descriptor.classesJar,
         inheritedBootClassPaths = rootJavaModule.inheritedBootClassPaths,
       ).apply {
         markLazyCompositeBuildModule(descriptor.isHeavy)
@@ -225,6 +226,28 @@ internal object WorkspaceModelBuilder {
       added,
     )
   }
+  private fun discoverCompositeClassesJar(depDir: File, buildDir: File): File? {
+    val directJar = File(buildDir, "libs/${depDir.name}.jar")
+    if (directJar.isFile) {
+      return directJar.canonicalFile
+    }
+
+    File(buildDir, "libs")
+      .listFiles()
+      ?.filter { it.isFile && it.extension == "jar" }
+      ?.sortedBy { it.name }
+      ?.firstOrNull { it.nameWithoutExtension == depDir.name || it.name.startsWith("${depDir.name}-") }
+      ?.let { return it.canonicalFile }
+
+    buildDir.walkTopDown()
+      .maxDepth(5)
+      .filter { it.isFile && it.name == "classes.jar" && it.path.replace('\\', '/').contains("/intermediates/") }
+      .firstOrNull()
+      ?.let { return it.canonicalFile }
+
+    return null
+  }
+
   private fun discoverCompositeSourceRoots(depDir: File, buildScript: File?): List<File> {
     val roots = linkedSetOf<File>()
 
