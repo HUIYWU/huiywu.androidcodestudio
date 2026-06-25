@@ -149,11 +149,11 @@ public class CompileBatch implements AutoCloseable {
               parent.fileManager, diagnosticListener, options, Collections.emptyList(), sources);
     } catch (Throwable err) {
       LOG.error(
-          "CompileBatch batchTask getTask failed parentHash={} sources={} fileManagerClass={} optionsCount={} firstSource={}",
+          "CompileBatch batchTask getTask failed parentHash={} sources={} fileManagerClass={} optionsClass={} firstSource={}",
           System.identityHashCode(parent),
           sources.size(),
           parent.fileManager == null ? null : parent.fileManager.getClass().getName(),
-          options.size(),
+          options == null ? null : options.getClass().getName(),
           sources.iterator().hasNext() ? sources.iterator().next().toUri() : null,
           err);
       throw err;
