@@ -20,7 +20,6 @@ package com.tom.rv2ide.lsp.snippets
 import com.google.gson.JsonParseException
 import com.google.gson.stream.JsonReader
 import com.tom.rv2ide.app.BaseApplication
-import com.tom.rv2ide.tasks.executeAsyncProvideError
 import com.tom.rv2ide.utils.VMUtils
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -57,36 +56,36 @@ object SnippetParser {
       }
     }
   }
-
   private fun readSnippets(
       lang: String,
       type: String,
       snippetFactory: (String, String, List<String>) -> ISnippet,
       snippets: MutableList<ISnippet>,
   ) {
-    executeAsyncProvideError({
-      val content =
-          try {
-            BaseApplication.getBaseInstance().assets.open(assetsPath(lang, type)).reader()
-          } catch (e: IOException) {
-            // snippet file probably does not exist
-            return@executeAsyncProvideError
-          }
-
-      JsonReader(content).use {
-        it.beginObject()
-        while (it.hasNext()) {
-          val prefix = it.nextName()
-          readSnippet(prefix, it, snippetFactory, snippets)
+    val content =
+        try {
+          BaseApplication.getBaseInstance().assets.open(assetsPath(lang, type)).reader()
+        } catch (e: IOException) {
+          // snippet file probably does not exist
+          return
         }
-        it.endObject()
+
+    try {
+      content.use { reader ->
+        JsonReader(reader).use {
+          it.beginObject()
+          while (it.hasNext()) {
+            val prefix = it.nextName()
+            readSnippet(prefix, it, snippetFactory, snippets)
+          }
+          it.endObject()
+        }
       }
-    }) { result, err ->
-      if (result == null || err != null) {
-        log.error("Failed to load '{}' snippets", type, err)
-      }
+    } catch (err: Throwable) {
+      log.error("Failed to load '{}' snippets", type, err)
     }
   }
+
 
   fun assetsPath(lang: String, type: String) = "data/editor/${lang}/snippets.${type}.json"
 

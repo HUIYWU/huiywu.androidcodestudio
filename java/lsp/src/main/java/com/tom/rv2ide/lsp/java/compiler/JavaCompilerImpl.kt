@@ -22,15 +22,14 @@ import com.tom.rv2ide.javac.services.compiler.ReusableContext
 import com.tom.rv2ide.javac.services.compiler.ReusableJavaCompiler
 import com.tom.rv2ide.lsp.java.parser.ts.TSJavaParser
 import com.tom.rv2ide.lsp.java.parser.ts.TSMethodPruner.prune
-import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.utils.VMUtils
 import com.tom.rv2ide.utils.StopWatch
 import jdkx.tools.JavaFileObject
 import jdkx.tools.JavaFileObject.Kind.SOURCE
-import kotlin.io.path.name
 import openjdk.tools.javac.api.ClientCodeWrapper
 import openjdk.tools.javac.tree.JCTree.JCCompilationUnit
 import openjdk.tools.javac.util.Context
+import org.slf4j.LoggerFactory
 
 class JavaCompilerImpl(context: Context?) : ReusableJavaCompiler(context) {
 
@@ -53,16 +52,34 @@ class JavaCompilerImpl(context: Context?) : ReusableJavaCompiler(context) {
       return super.parse(filename, content)
     }
 
-    // If the file is NOT being parsed for a completion request,
-    // we should not prune method bodies of active documents
-    if (compilerConfig.completionInfo == null && FileManager.isActive(filename.toUri())) {
+    // Restore pruning conservatively: only completion reparses use the Tree-sitter path.
+    val completionInfo = compilerConfig.completionInfo ?: return super.parse(filename, content)
+    if (completionInfo.cursor.index < 0 || file == null) {
       return super.parse(filename, content)
     }
-    return super.parse(filename, content)
 
+    return try {
+      val watch = StopWatch("Prune method bodies")
+      val pruned = StringBuilder(content.toString())
+      synchronized(TSJavaParser) {
+        val parseResult = TSJavaParser.parse(file)
+        prune(pruned, parseResult.tree, completionInfo.cursor.index)
+      }
+      if (IdeLogConfig.shouldLogDebug()) {
+        watch.log()
+      }
+      super.parse(filename, pruned)
+    } catch (err: Throwable) {
+      if (IdeLogConfig.shouldLogWarn()) {
+        log.warn("Failed to prune method bodies; falling back to full parse for {}", filename.toUri(), err)
+      }
+      super.parse(filename, content)
+    }
   }
 
   companion object {
+    private val log = LoggerFactory.getLogger(JavaCompilerImpl::class.java)
+
     @JvmStatic
     fun preRegister(context: ReusableContext, replace: Boolean = false) {
       if (replace) {

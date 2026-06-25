@@ -27,10 +27,19 @@ import com.tom.rv2ide.lsp.snippets.SnippetParser
  */
 object JavaSnippetRepository {
 
-  lateinit var snippets: Map<JavaSnippetScope, List<ISnippet>>
-    private set
+  @Volatile private var cachedSnippets: Map<JavaSnippetScope, List<ISnippet>>? = null
+
+  val snippets: Map<JavaSnippetScope, List<ISnippet>>
+    get() =
+        cachedSnippets
+            ?: synchronized(this) {
+              cachedSnippets
+                  ?: SnippetParser.parse("java", JavaSnippetScope.values()).also {
+                    cachedSnippets = it
+                  }
+            }
 
   fun init() {
-    this.snippets = SnippetParser.parse("java", JavaSnippetScope.values())
+    snippets
   }
 }

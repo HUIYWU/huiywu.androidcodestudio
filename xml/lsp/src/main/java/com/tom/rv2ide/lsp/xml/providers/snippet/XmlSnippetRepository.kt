@@ -27,10 +27,19 @@ import com.tom.rv2ide.lsp.snippets.SnippetParser
  */
 object XmlSnippetRepository {
 
-  lateinit var snippets: Map<IXmlSnippetScope, List<ISnippet>>
-    private set
+  @Volatile private var cachedSnippets: Map<IXmlSnippetScope, List<ISnippet>>? = null
+
+  val snippets: Map<IXmlSnippetScope, List<ISnippet>>
+    get() =
+        cachedSnippets
+            ?: synchronized(this) {
+              cachedSnippets
+                  ?: SnippetParser.parse("xml", XML_SNIPPET_SCOPES).also {
+                    cachedSnippets = it
+                  }
+            }
 
   fun init() {
-    this.snippets = SnippetParser.parse("xml", XML_SNIPPET_SCOPES)
+    snippets
   }
 }

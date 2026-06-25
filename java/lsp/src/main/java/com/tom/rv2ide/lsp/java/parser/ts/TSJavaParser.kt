@@ -52,11 +52,13 @@ object TSJavaParser : IJavaParser<TSParseResult> {
     EventBus.getDefault().register(this)
   }
 
+  @Synchronized
   @Subscribe(threadMode = ThreadMode.ASYNC)
   fun onFileDeleted(event: FileDeletionEvent) {
     synchronized(this.cache) { this.cache.remove(event.file.toPath().toAbsolutePath().toUri()) }
   }
 
+  @Synchronized
   @Subscribe(threadMode = ThreadMode.ASYNC)
   fun onFileRenamed(event: FileRenameEvent) {
     synchronized(this.cache) {
@@ -67,6 +69,7 @@ object TSJavaParser : IJavaParser<TSParseResult> {
     }
   }
 
+  @Synchronized
   override fun parse(file: JavaFileObject): TSParseResult {
     check(file.kind == JavaFileObject.Kind.SOURCE) { "File must a source file object" }
 
@@ -103,6 +106,7 @@ object TSJavaParser : IJavaParser<TSParseResult> {
     return result
   }
 
+  @Synchronized
   override fun close() {
     synchronized(this.cache) { this.cache.evictAll() }
     parser.close()
