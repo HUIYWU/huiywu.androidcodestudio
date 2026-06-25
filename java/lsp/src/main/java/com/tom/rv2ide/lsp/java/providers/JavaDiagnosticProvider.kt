@@ -41,7 +41,7 @@ import org.slf4j.LoggerFactory
 class JavaDiagnosticProvider {
 
   private val analyzeTimestamps = mutableMapOf<Path, Instant>()
-  private var cachedDiagnostics = DiagnosticResult.NO_UPDATE
+  private val cachedDiagnostics = mutableMapOf<Path, DiagnosticResult>()
   private var analyzing = AtomicBoolean(false)
   private var analyzingThread: AnalyzingThread? = null
 
@@ -70,7 +70,7 @@ class JavaDiagnosticProvider {
       if (IdeLogConfig.shouldLogDebug()) {
         log.debug("Using cached analyze results...")
       }
-      return cachedDiagnostics
+      return cachedDiagnostics[file] ?: DiagnosticResult.NO_UPDATE
     }
 
     analyzingThread?.let { analyzingThread ->
@@ -105,6 +105,7 @@ class JavaDiagnosticProvider {
 
   fun clearTimestamp(file: Path) {
     analyzeTimestamps.remove(file)
+    cachedDiagnostics.remove(file)
   }
 
   private fun doAnalyze(file: Path, task: CompileTask): DiagnosticResult {
@@ -116,7 +117,7 @@ class JavaDiagnosticProvider {
           if (IdeLogConfig.shouldLogInfo()) {
             log.info("Using cached diagnostics")
           }
-          cachedDiagnostics
+          cachedDiagnostics[file] ?: DiagnosticResult.NO_UPDATE
         } else DiagnosticResult(file, findDiagnostics(task, file).sortedBy { it.range })
     return result.also {
       if (IdeLogConfig.shouldLogDebug()) {
@@ -143,7 +144,21 @@ class JavaDiagnosticProvider {
       Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
       result =
           try {
-                compiler.compile(file).get { task -> doAnalyze(file, task) }
+                compiler
+                    .compile(
+                        com.tom.rv2ide.lsp.java.models.CompilationRequest(
+                            listOf(
+                                com.tom.rv2ide.lsp.java.compiler.SourceFileObject(
+                                    file,
+                                    com.tom.rv2ide.projects.FileManager.getDocumentContents(file),
+                                    com.tom.rv2ide.projects.FileManager.getLastModified(file),
+                                )
+                            ),
+                            null,
+                            DiagnosticCompilationTaskProcessor(),
+                        )
+                    )
+                    .get { task -> doAnalyze(file, task) }
               } catch (err: Throwable) {
                 if (CancelChecker.isCancelled(err)) {
                   if (IdeLogConfig.shouldLogWarn()) {
@@ -172,7 +187,7 @@ class JavaDiagnosticProvider {
                 analyzing.set(false)
               }
               .also {
-                cachedDiagnostics = it
+                cachedDiagnostics[file] = it
                 analyzeTimestamps[file] = Instant.now()
               }
     }

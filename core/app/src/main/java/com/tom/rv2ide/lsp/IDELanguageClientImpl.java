@@ -227,7 +227,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
         }
 
         final long applyToEditorStartMs = android.os.SystemClock.elapsedRealtime();
-        editor.setDiagnostics(container);
+        activity.runOnUiThread(() -> editor.setDiagnostics(container));
         applyToEditorCostMs = android.os.SystemClock.elapsedRealtime() - applyToEditorStartMs;
         if (IdeLogConfig.shouldLogIde()) {
           LOG.info(

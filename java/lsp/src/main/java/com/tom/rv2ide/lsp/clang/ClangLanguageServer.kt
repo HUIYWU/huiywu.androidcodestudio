@@ -41,7 +41,9 @@ class ClangLanguageServer(private val context: Context) : ILanguageServer {
     }
     processManager.setNotificationHandler(ClangNotificationHandler(documentManager))
     processManager.setDiagnosticsCallback { diagnostics ->
-      _client?.publishDiagnostics(diagnostics)
+      CoroutineScope(Dispatchers.Main).launch {
+        _client?.publishDiagnostics(diagnostics)
+      }
     }
     ClangLogs.debug("ClangLanguageServer initialization complete")
   }

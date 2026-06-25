@@ -16,8 +16,10 @@
  */
 package com.tom.rv2ide.lsp.java.providers
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.java.compiler.CompileTask
 import com.tom.rv2ide.lsp.java.models.DiagnosticCode
+
 import com.tom.rv2ide.lsp.java.models.DiagnosticCode.EMPTY_BLOCK
 import com.tom.rv2ide.lsp.java.models.DiagnosticCode.UNUSED_THROWS
 import com.tom.rv2ide.lsp.java.visitors.DiagnosticVisitor
@@ -43,12 +45,17 @@ import openjdk.source.tree.MethodTree
 import openjdk.source.tree.VariableTree
 import openjdk.source.util.TreePath
 import openjdk.source.util.Trees
+import org.slf4j.LoggerFactory
 
 /**
  * Finds errors and warnings from a compilation task.
  *
  * @author Akash Yadav
  */
+private object DiagnosticsProviderLogHolder {
+  val log = LoggerFactory.getLogger(DiagnosticsProvider::class.java)
+}
+
 object DiagnosticsProvider {
   /**
    * Finds diagnostics from the given task (only the diagnostics for the given file). The task
@@ -81,12 +88,28 @@ object DiagnosticsProvider {
       // Can't do anything...
       return result
     }
-
     addCompilerErrors(task, root, result)
     abortIfCancelled()
-    addDiagnosticsByVisiting(task, root, result)
+    try {
+      addDiagnosticsByVisiting(task, root, result)
+    } catch (err: Throwable) {
+      if (IdeLogConfig.shouldLogWarn()) {
+        val fileForLog = try {
+          Paths.get(root.sourceFile.toUri())
+        } catch (_: Throwable) {
+          file
+        }
+        com.tom.rv2ide.lsp.java.providers.DiagnosticsProviderLogHolder.log.warn(
+            "Skipping Java visitor diagnostics after compiler diagnostics due to visitor failure. file={} existingDiagnostics={}",
+            fileForLog,
+            result.size,
+            err,
+        )
+      }
+    }
     abortIfCancelled()
     return result
+
   }
 
   private fun addDiagnosticsByVisiting(
