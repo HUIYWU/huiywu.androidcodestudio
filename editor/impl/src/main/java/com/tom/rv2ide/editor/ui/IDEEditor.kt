@@ -927,7 +927,7 @@ constructor(
   }
 
   override fun onCreateRenderer(): EditorRenderer {
-    return TracingEditorRenderer(editor = this)
+    return TracingEditorRenderer(tracingEditor = this)
   }
 
   override fun setDiagnostics(diagnostics: DiagnosticsContainer?) {
