@@ -51,7 +51,13 @@ jobs:
       #     key: ${{ runner.os }}-gradle-v2-${{ hashFiles('**/*.gradle*') }}
       #     restore-keys: |
       #       ${{ runner.os }}-gradle-
-
+      - name: Clear Gradle and project caches
+        run: |
+          rm -rf ~/.gradle/caches
+          rm -rf ~/.gradle/daemon
+          rm -rf ~/.gradle/native
+          find . \( -path './core/app/src/main/java/com/tom/rv2ide/actions/build' -o -path './core/app/src/main/java/com/tom/rv2ide/actions/build/*' -o -path './composite-builds/build-logic/common/src/main/java/com/tom/rv2ide/build' -o -path './composite-builds/build-logic/common/src/main/java/com/tom/rv2ide/build/*' -o -path './composite-builds/build-logic/properties-parser/src/main/java/com/tom/rv2ide/build' -o -path './composite-builds/build-logic/properties-parser/src/main/java/com/tom/rv2ide/build/*' -o -path './tooling/builder-model-impl/src/main/java/com/android/build' -o -path './tooling/builder-model-impl/src/main/java/com/android/build/*' \) -prune -o \
+            -type d \( -name build -o -name .gradle -o -name .kotlin \) -prune -exec rm -rf {} +
       - name: Create local.properties
         run: |
           echo "signing.storeFile=signing/signing-key.jks" >> local.properties
