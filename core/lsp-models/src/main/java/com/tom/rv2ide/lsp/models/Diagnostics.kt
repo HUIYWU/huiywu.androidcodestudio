@@ -14,7 +14,6 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.lsp.models
 
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity.ERROR
@@ -29,6 +28,8 @@ import io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion.SEVERITY_TYPO
 import io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion.SEVERITY_WARNING
 import java.nio.file.Path
 import java.nio.file.Paths
+import org.slf4j.LoggerFactory
+
 
 data class DiagnosticItem(
     var message: String,
@@ -39,11 +40,15 @@ data class DiagnosticItem(
 ) {
 
   var extra: Any = Any()
-
   companion object {
     @JvmField
     val START_COMPARATOR: Comparator<in DiagnosticItem> =
         Comparator.comparing(DiagnosticItem::range)
+
+    private val log = LoggerFactory.getLogger("DiagnosticRegionMapping")
+    private const val TRACE_FILE_NAME = "BattleActionConfig.java"
+    private const val TRACE_MIN_LINE = 53
+    private const val TRACE_MAX_LINE = 55
 
     private fun mapSeverity(severity: DiagnosticSeverity): Short {
       return when (severity) {
@@ -55,22 +60,68 @@ data class DiagnosticItem(
     }
   }
 
+
   fun asDiagnosticRegion(content: CharSequence): DiagnosticRegion {
     return asDiagnosticRegion(LineIndex.from(content))
   }
-
   fun asDiagnosticRegion(lineIndex: LineIndex): DiagnosticRegion {
     return try {
       val startIndex = lineIndex.lineColumnToIndex(range.start.line, range.start.column)
       val endIndex = lineIndex.lineColumnToIndex(range.end.line, range.end.column)
 
+      if (shouldTraceDiagnostic()) {
+        log.warn(
+            "DIAG_TRACE region-map code={} severity={} rawRange=({}:{})-({}:{}) mapped=({},{})",
+            code,
+            severity,
+            range.start.line,
+            range.start.column,
+            range.end.line,
+            range.end.column,
+            startIndex,
+            endIndex,
+        )
+      }
+      if (startIndex >= endIndex) {
+        log.warn(
+            "DIAG_TRACE suspicious-region code={} severity={} rawRange=({}:{})-({}:{}) mapped=({},{})",
+            code,
+            severity,
+            range.start.line,
+            range.start.column,
+            range.end.line,
+            range.end.column,
+            startIndex,
+            endIndex,
+        )
+      }
+
       DiagnosticRegion(startIndex, endIndex, mapSeverity(severity))
     } catch (e: Exception) {
       // Keep diagnostics publishing fail-soft. A single malformed diagnostic range must not prevent
       // the editor from receiving the rest of the diagnostics batch.
+      log.warn(
+          "DIAG_TRACE fallback-region code={} severity={} rawRange=({}:{})-({}:{}) fallback=(0,1)",
+          code,
+          severity,
+          range.start.line,
+          range.start.column,
+          range.end.line,
+          range.end.column,
+          e,
+      )
       DiagnosticRegion(0, 1, mapSeverity(severity))
     }
   }
+
+  private fun shouldTraceDiagnostic(): Boolean {
+    val startLine = range.start.line
+    val endLine = range.end.line
+    val sourceValue = source
+    return (startLine in TRACE_MIN_LINE..TRACE_MAX_LINE || endLine in TRACE_MIN_LINE..TRACE_MAX_LINE) &&
+        sourceValue.contains(TRACE_FILE_NAME)
+  }
+
 }
 
 class LineIndex private constructor(

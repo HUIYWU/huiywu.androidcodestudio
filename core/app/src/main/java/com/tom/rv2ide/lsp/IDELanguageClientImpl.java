@@ -84,8 +84,12 @@ public class IDELanguageClientImpl implements ILanguageClient {
   private static final int MAX_LARGE_FILE_EDITOR_DIAGNOSTIC_REGIONS = 80;
   private static final long LARGE_FILE_DIAGNOSTIC_BYTES = 512L * 1024L;
   protected static final Logger LOG = LoggerFactory.getLogger(IDELanguageClientImpl.class);
+  private static final String DIAG_TRACE_FILE_NAME = "BattleActionConfig.java";
+  private static final int DIAG_TRACE_MIN_LINE = 53;
+  private static final int DIAG_TRACE_MAX_LINE = 55;
   private static IDELanguageClientImpl mInstance;
   private static final String DIAGNOSTIC_CHANNEL_DEFAULT = DiagnosticResult.DEFAULT_CHANNEL;
+
   private final Map<File, Map<String, List<DiagnosticItem>>> diagnosticsByChannel = new HashMap<>();
   protected EditorHandlerActivity activity;
 
@@ -203,16 +207,58 @@ public class IDELanguageClientImpl implements ILanguageClient {
               mergedDiagnostics,
               file,
               contentLength);
-
           final long mapRegionsStartMs = android.os.SystemClock.elapsedRealtime();
           final LineIndex lineIndex = LineIndex.from(content);
           final var regions = new ArrayList<io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion>(
               editorDiagnostics.size());
+          int traceNearbySelectedCount = 0;
+          int traceNearbyErrorCount = 0;
+          int traceNearbyWarningCount = 0;
+          int traceSuspiciousRegionCount = 0;
           for (DiagnosticItem diagnostic : editorDiagnostics) {
-            regions.add(diagnostic.asDiagnosticRegion(lineIndex));
+            final var region = diagnostic.asDiagnosticRegion(lineIndex);
+            regions.add(region);
+            if (shouldTraceDiagnosticFile(file) && isNearTraceLines(diagnostic)) {
+              traceNearbySelectedCount++;
+              if (diagnostic.getSeverity() == DiagnosticSeverity.ERROR) {
+                traceNearbyErrorCount++;
+              } else if (diagnostic.getSeverity() == DiagnosticSeverity.WARNING) {
+                traceNearbyWarningCount++;
+              }
+              if (region.endIndex <= region.startIndex || (region.startIndex == 0 && region.endIndex == 1)) {
+                traceSuspiciousRegionCount++;
+              }
+              LOG.warn(
+                  "DIAG_TRACE item file={} severity={} code={} rawRange=({}:{})-({}:{}) mapped=({},{}) msg={}",
+                  file.getAbsolutePath(),
+                  diagnostic.getSeverity(),
+                  diagnostic.getCode(),
+                  diagnostic.getRange().getStart().getLine(),
+                  diagnostic.getRange().getStart().getColumn(),
+                  diagnostic.getRange().getEnd().getLine(),
+                  diagnostic.getRange().getEnd().getColumn(),
+                  region.startIndex,
+                  region.endIndex,
+                  diagnostic.getMessage());
+            }
           }
           container.addDiagnostics(regions);
           mapRegionsCostMs = android.os.SystemClock.elapsedRealtime() - mapRegionsStartMs;
+          if (shouldTraceDiagnosticFile(file)) {
+            LOG.warn(
+                "DIAG_TRACE summary file={} incoming={} merged={} selected={} mapped={} nearSelected={} nearError={} nearWarning={} suspicious={} contentLength={} channel={}",
+                file.getAbsolutePath(),
+                incomingDiagnosticCount,
+                mergedDiagnostics.size(),
+                editorDiagnostics.size(),
+                regions.size(),
+                traceNearbySelectedCount,
+                traceNearbyErrorCount,
+                traceNearbyWarningCount,
+                traceSuspiciousRegionCount,
+                contentLength,
+                channel);
+          }
           if (IdeLogConfig.shouldLogIde()) {
             LOG.info(
                 "publishDiagnostics mapped {} of {} diagnostic regions for file={} (mapRegionsCostMs={}, contentLength={})",
@@ -222,6 +268,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
                 mapRegionsCostMs,
                 contentLength);
           }
+
         } catch (Throwable err) {
           LOG.error("Unable to map DiagnosticItem to DiagnosticRegion", err);
         }
@@ -354,8 +401,26 @@ public class IDELanguageClientImpl implements ILanguageClient {
         file.getName());
     return selected;
   }
+  private static boolean shouldTraceDiagnosticFile(@Nullable final File file) {
+    return file != null && file.getAbsolutePath().contains(DIAG_TRACE_FILE_NAME);
+  }
+
+  private static boolean isNearTraceLines(@Nullable final DiagnosticItem diagnostic) {
+    if (diagnostic == null || diagnostic.getRange() == null) {
+      return false;
+    }
+    final Range range = diagnostic.getRange();
+    if (range.getStart() == null || range.getEnd() == null) {
+      return false;
+    }
+    final int startLine = range.getStart().getLine();
+    final int endLine = range.getEnd().getLine();
+    return (startLine >= DIAG_TRACE_MIN_LINE && startLine <= DIAG_TRACE_MAX_LINE)
+        || (endLine >= DIAG_TRACE_MIN_LINE && endLine <= DIAG_TRACE_MAX_LINE);
+  }
 
   private List<DiagnosticItem> getMergedDiagnostics(@NonNull final File file) {
+
     final var byChannel = diagnosticsByChannel.get(file);
     if (byChannel == null || byChannel.isEmpty()) {
       return Collections.emptyList();
