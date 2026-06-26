@@ -64,6 +64,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicLong;
 import kotlin.Unit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,6 +88,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
   private static final String DIAG_TRACE_FILE_NAME = "BattleActionConfig.java";
   private static final int DIAG_TRACE_MIN_LINE = 53;
   private static final int DIAG_TRACE_MAX_LINE = 60;
+  private static final AtomicLong DIAG_TRACE_BATCH_COUNTER = new AtomicLong();
   private static IDELanguageClientImpl mInstance;
   private static final String DIAGNOSTIC_CHANNEL_DEFAULT = DiagnosticResult.DEFAULT_CHANNEL;
 
@@ -137,6 +139,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
     final long totalStartMs = android.os.SystemClock.elapsedRealtime();
     final String threadName = Thread.currentThread().getName();
     final boolean isMainThread = android.os.Looper.myLooper() == android.os.Looper.getMainLooper();
+    final long traceBatchId = DIAG_TRACE_BATCH_COUNTER.incrementAndGet();
 
     if (result == DiagnosticResult.NO_UPDATE || !canUseActivity()) {
       if (result == DiagnosticResult.NO_UPDATE) {
@@ -203,6 +206,23 @@ public class IDELanguageClientImpl implements ILanguageClient {
         try {
           final var content = editor.getText();
           contentLength = content.length();
+          if (shouldTraceDiagnosticFile(file)) {
+            LOG.warn(
+                "DIAG_TRACE batch={} content-snapshot file={} contentLength={} lines={}"
+                    + " |53={} |54={} |55={} |56={} |57={} |58={} |59={} |60={}",
+                traceBatchId,
+                file.getAbsolutePath(),
+                contentLength,
+                content.getLineCount(),
+                safeLineText(content, 53),
+                safeLineText(content, 54),
+                safeLineText(content, 55),
+                safeLineText(content, 56),
+                safeLineText(content, 57),
+                safeLineText(content, 58),
+                safeLineText(content, 59),
+                safeLineText(content, 60));
+          }
           final List<DiagnosticItem> editorDiagnostics = selectDiagnosticsForEditor(
               mergedDiagnostics,
               file,
@@ -223,7 +243,8 @@ public class IDELanguageClientImpl implements ILanguageClient {
             if (shouldTraceDiagnosticFile(file) && zeroLength) {
               traceZeroLengthCount++;
               LOG.warn(
-                  "DIAG_TRACE zero-length file={} severity={} code={} rawRange=({}:{})-({}:{}) mapped=({},{}) msg={}",
+                  "DIAG_TRACE batch={} zero-length file={} severity={} code={} rawRange=({}:{})-({}:{}) mapped=({},{}) msg={}",
+                  traceBatchId,
                   file.getAbsolutePath(),
                   diagnostic.getSeverity(),
                   diagnostic.getCode(),
@@ -246,7 +267,8 @@ public class IDELanguageClientImpl implements ILanguageClient {
                 traceSuspiciousRegionCount++;
               }
               LOG.warn(
-                  "DIAG_TRACE item file={} severity={} code={} rawRange=({}:{})-({}:{}) mapped=({},{}) msg={}",
+                  "DIAG_TRACE batch={} item file={} severity={} code={} rawRange=({}:{})-({}:{}) mapped=({},{}) msg={}",
+                  traceBatchId,
                   file.getAbsolutePath(),
                   diagnostic.getSeverity(),
                   diagnostic.getCode(),
@@ -263,7 +285,8 @@ public class IDELanguageClientImpl implements ILanguageClient {
             for (DiagnosticItem diagnostic : mergedDiagnostics) {
               if (isNearTraceLines(diagnostic)) {
                 LOG.warn(
-                    "DIAG_TRACE merged file={} severity={} code={} rawRange=({}:{})-({}:{}) msg={}",
+                    "DIAG_TRACE batch={} merged file={} severity={} code={} rawRange=({}:{})-({}:{}) msg={}",
+                    traceBatchId,
                     file.getAbsolutePath(),
                     diagnostic.getSeverity(),
                     diagnostic.getCode(),
@@ -279,7 +302,8 @@ public class IDELanguageClientImpl implements ILanguageClient {
           mapRegionsCostMs = android.os.SystemClock.elapsedRealtime() - mapRegionsStartMs;
           if (shouldTraceDiagnosticFile(file)) {
             LOG.warn(
-                "DIAG_TRACE summary file={} incoming={} merged={} selected={} mapped={} nearSelected={} nearError={} nearWarning={} suspicious={} zeroLength={} contentLength={} channel={}",
+                "DIAG_TRACE batch={} summary file={} incoming={} merged={} selected={} mapped={} nearSelected={} nearError={} nearWarning={} suspicious={} zeroLength={} contentLength={} channel={}",
+                traceBatchId,
                 file.getAbsolutePath(),
                 incomingDiagnosticCount,
                 mergedDiagnostics.size(),
@@ -308,7 +332,29 @@ public class IDELanguageClientImpl implements ILanguageClient {
         }
 
         final long applyToEditorStartMs = android.os.SystemClock.elapsedRealtime();
-        activity.runOnUiThread(() -> editor.setDiagnostics(container));
+        activity.runOnUiThread(() -> {
+          if (shouldTraceDiagnosticFile(file)) {
+            final var beforeDiagnostics = editor.getDiagnostics();
+            LOG.warn(
+                "DIAG_TRACE batch={} before-set file={} editorDiagnosticsNull={} editorDiagnosticsId={} containerId={}",
+                traceBatchId,
+                file.getAbsolutePath(),
+                beforeDiagnostics == null,
+                beforeDiagnostics == null ? -1 : System.identityHashCode(beforeDiagnostics),
+                System.identityHashCode(container));
+          }
+          editor.setDiagnostics(container);
+          if (shouldTraceDiagnosticFile(file)) {
+            final var afterDiagnostics = editor.getDiagnostics();
+            LOG.warn(
+                "DIAG_TRACE batch={} after-set file={} editorDiagnosticsNull={} editorDiagnosticsId={} sameContainer={}",
+                traceBatchId,
+                file.getAbsolutePath(),
+                afterDiagnostics == null,
+                afterDiagnostics == null ? -1 : System.identityHashCode(afterDiagnostics),
+                afterDiagnostics == container);
+          }
+        });
         applyToEditorCostMs = android.os.SystemClock.elapsedRealtime() - applyToEditorStartMs;
         if (IdeLogConfig.shouldLogIde()) {
           LOG.info(
@@ -437,6 +483,18 @@ public class IDELanguageClientImpl implements ILanguageClient {
   }
   private static boolean shouldTraceDiagnosticFile(@Nullable final File file) {
     return file != null && file.getAbsolutePath().contains(DIAG_TRACE_FILE_NAME);
+  }
+
+  private static String safeLineText(@NonNull final Content content, final int oneBasedLine) {
+    final int zeroBasedLine = oneBasedLine - 1;
+    if (zeroBasedLine < 0 || zeroBasedLine >= content.getLineCount()) {
+      return "<out-of-range>";
+    }
+    try {
+      return content.getLine(zeroBasedLine).toString().replace("\n", "\\n").replace("\r", "\\r");
+    } catch (Throwable err) {
+      return "<line-read-failed:" + err.getClass().getSimpleName() + ">";
+    }
   }
 
   private static boolean isNearTraceLines(@Nullable final DiagnosticItem diagnostic) {

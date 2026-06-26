@@ -97,6 +97,7 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.slf4j.LoggerFactory
+import java.nio.file.Path
 
 /**
  * [CodeEditor] implementation for the IDE.
@@ -910,12 +911,26 @@ constructor(
     eventDispatcher.dispatch(openEvent)
   }
 
+  private fun shouldTraceBattleActionConfig(path: Path): Boolean {
+    return path.toString().contains("BattleActionConfig.java")
+  }
+
+  private fun safeTraceLine(oneBasedLine: Int): String {
+    val zeroBasedLine = oneBasedLine - 1
+    return if (zeroBasedLine < 0 || zeroBasedLine >= text.lineCount) {
+      "<out-of-range>"
+    } else {
+      text.getLine(zeroBasedLine).toString().replace("\n", "\\n").replace("\r", "\\r")
+    }
+  }
+
   protected open fun dispatchDocumentChangeEvent(event: ContentChangeEvent) {
     if (isReleased) {
       return
     }
 
     val file = file?.toPath() ?: return
+    val shouldTraceBattleAction = shouldTraceBattleActionConfig(file)
     var type = ChangeType.INSERT
     if (event.action == ContentChangeEvent.ACTION_DELETE) {
       type = ChangeType.DELETE
@@ -944,17 +959,40 @@ constructor(
           null
         }
     val newText = if (fullTextProvider == null) text.toString() else null
+    val nextVersion = ++fileVersion
     val changeEvent =
         DocumentChangeEvent(
             file,
             changedText,
             newText,
-            ++fileVersion,
+            nextVersion,
             type,
             changeDelta,
             changeRange,
             fullTextProvider,
         )
+    if (shouldTraceBattleAction) {
+      log.warn(
+          "DIAG_TRACE doc-change file={} version={} type={} delta={} range=({}:{})-({}:{}) changedText={} line53={} line54={} line55={} line56={} line57={} line58={} line59={} line60={}",
+          file,
+          nextVersion,
+          type,
+          changeDelta,
+          changeRange.start.line,
+          changeRange.start.column,
+          changeRange.end.line,
+          changeRange.end.column,
+          changedText.replace("\n", "\\n").replace("\r", "\\r"),
+          safeTraceLine(53),
+          safeTraceLine(54),
+          safeTraceLine(55),
+          safeTraceLine(56),
+          safeTraceLine(57),
+          safeTraceLine(58),
+          safeTraceLine(59),
+          safeTraceLine(60),
+      )
+    }
 
     eventDispatcher.dispatch(changeEvent)
   }
