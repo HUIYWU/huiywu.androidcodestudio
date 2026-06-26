@@ -759,7 +759,6 @@ measureEditorInitStage("subscribeSelectionChange") {
         }
       }
     }
-  }
 
     measureEditorInitStage("eventBusRegister") {
       EventBus.getDefault().register(this)
