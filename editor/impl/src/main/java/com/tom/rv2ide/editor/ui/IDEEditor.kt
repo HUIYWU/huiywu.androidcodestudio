@@ -78,7 +78,9 @@ import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.lang.Language
+import io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer
 import io.github.rosemoe.sora.widget.CodeEditor
+import io.github.rosemoe.sora.widget.EditorRenderer
 import io.github.rosemoe.sora.widget.EditorSearcher
 import io.github.rosemoe.sora.widget.IDEEditorSearcher
 import io.github.rosemoe.sora.widget.component.EditorAutoCompletion
@@ -921,6 +923,38 @@ constructor(
       "<out-of-range>"
     } else {
       text.getLine(zeroBasedLine).toString().replace("\n", "\\n").replace("\r", "\\r")
+    }
+  }
+
+  override fun onCreateRenderer(): EditorRenderer {
+    return TracingEditorRenderer(editor = this)
+  }
+
+  override fun setDiagnostics(diagnostics: DiagnosticsContainer?) {
+    if (_file?.absolutePath?.contains("BattleActionConfig.java") == true) {
+      log.warn(
+          "DIAG_TRACE editor-setDiagnostics file={} diagnosticsNull={} diagnosticsId={} line53={} line54={} line55={} line56={} line57={} line58={} line59={} line60={}",
+          _file?.absolutePath,
+          diagnostics == null,
+          if (diagnostics == null) -1 else System.identityHashCode(diagnostics),
+          safeTraceLine(53),
+          safeTraceLine(54),
+          safeTraceLine(55),
+          safeTraceLine(56),
+          safeTraceLine(57),
+          safeTraceLine(58),
+          safeTraceLine(59),
+          safeTraceLine(60),
+      )
+    }
+    super.setDiagnostics(diagnostics)
+    if (_file?.absolutePath?.contains("BattleActionConfig.java") == true) {
+      log.warn(
+          "DIAG_TRACE editor-setDiagnostics-done file={} currentDiagnosticsNull={} currentDiagnosticsId={}",
+          _file?.absolutePath,
+          diagnostics == null,
+          if (getDiagnostics() == null) -1 else System.identityHashCode(getDiagnostics()),
+      )
     }
   }
 
