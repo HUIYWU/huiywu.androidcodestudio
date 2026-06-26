@@ -14,7 +14,6 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.editor.ui
 
 import android.graphics.Canvas
@@ -32,6 +31,9 @@ import io.github.rosemoe.sora.util.LongArrayList
 import io.github.rosemoe.sora.util.MutableInt
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.EditorRenderer
+import java.lang.reflect.Field
+import org.slf4j.LoggerFactory
+
 
 /**
  * An implementation of [EditorRenderer] which traces the whole drawing process for [IDEEditor].
@@ -42,6 +44,64 @@ class TracingEditorRenderer(
     private val enabled: Boolean = BuildConfig.DEBUG,
     editor: CodeEditor,
 ) : EditorRenderer(editor) {
+
+  companion object {
+    private val log = LoggerFactory.getLogger("TracingEditorRenderer")
+    private const val TRACE_FILE_NAME = "BattleActionConfig.java"
+    private const val TARGET_EXPECTED_INDEX = 1454
+    private const val TARGET_ILLEGAL_EXPR_INDEX = 1520
+    private val collectedDiagnosticsField: Field? = runCatching {
+      EditorRenderer::class.java.getDeclaredField("collectedDiagnostics").apply { isAccessible = true }
+    }.getOrNull()
+  }
+
+  private fun shouldTrace(): Boolean {
+    val ideEditor = editor as? IDEEditor ?: return false
+    return ideEditor.file.absolutePath?.contains(TRACE_FILE_NAME) == true
+  }
+
+  @Suppress("UNCHECKED_CAST")
+  private fun snapshotCollectedDiagnostics(): List<Any> {
+    val field = collectedDiagnosticsField ?: return emptyList()
+    return runCatching { field.get(this) as? List<Any> ?: emptyList() }.getOrElse { emptyList() }
+  }
+
+  private fun readIntField(target: Any, fieldName: String): Int? {
+    return runCatching {
+      val field = target.javaClass.getDeclaredField(fieldName)
+      field.isAccessible = true
+      field.getInt(target)
+    }.getOrNull()
+  }
+
+  private fun diagSummary(diagnostic: Any): String {
+    val startIndex = readIntField(diagnostic, "startIndex")
+    val endIndex = readIntField(diagnostic, "endIndex")
+    val severity = readIntField(diagnostic, "severity")
+    return "(${startIndex},${endIndex},sev=${severity})"
+  }
+
+  private fun traceCollectedDiagnostics(stage: String) {
+    if (!shouldTrace()) {
+      return
+    }
+    val diagnostics = snapshotCollectedDiagnostics()
+    val targetExpected = diagnostics.firstOrNull {
+      readIntField(it, "startIndex") == TARGET_EXPECTED_INDEX && readIntField(it, "endIndex") == TARGET_EXPECTED_INDEX
+    }
+    val targetIllegalExpr = diagnostics.firstOrNull {
+      readIntField(it, "startIndex") == TARGET_ILLEGAL_EXPR_INDEX && readIntField(it, "endIndex") == TARGET_ILLEGAL_EXPR_INDEX
+    }
+    log.warn(
+      "DIAG_TRACE renderer-{} file={} diagnosticsSize={} has1454={} has1520={} sample={}",
+      stage,
+      (editor as? IDEEditor)?.file?.absolutePath,
+      diagnostics.size,
+      targetExpected != null,
+      targetIllegalExpr != null,
+      diagnostics.take(6).joinToString(prefix = "[", postfix = "]") { diagSummary(it) },
+    )
+  }
 
   override fun draw(canvas: Canvas) = trace("draw") { super.draw(canvas) }
 
@@ -139,9 +199,13 @@ class TracingEditorRenderer(
             requiredFirstLn,
         )
       }
-
   override fun drawDiagnosticIndicators(canvas: Canvas?, offset: Float) =
-      trace("drawDiagnosticIndicators") { super.drawDiagnosticIndicators(canvas, offset) }
+      trace("drawDiagnosticIndicators") {
+        traceCollectedDiagnostics("before-draw")
+        super.drawDiagnosticIndicators(canvas, offset)
+        traceCollectedDiagnostics("after-draw")
+      }
+
 
   override fun drawWhitespaces(
       canvas: Canvas?,
