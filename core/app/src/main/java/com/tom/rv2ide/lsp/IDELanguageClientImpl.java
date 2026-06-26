@@ -85,10 +85,6 @@ public class IDELanguageClientImpl implements ILanguageClient {
   private static final int MAX_LARGE_FILE_EDITOR_DIAGNOSTIC_REGIONS = 80;
   private static final long LARGE_FILE_DIAGNOSTIC_BYTES = 512L * 1024L;
   protected static final Logger LOG = LoggerFactory.getLogger(IDELanguageClientImpl.class);
-  private static final String DIAG_TRACE_FILE_NAME = "BattleActionConfig.java";
-  private static final int DIAG_TRACE_MIN_LINE = 53;
-  private static final int DIAG_TRACE_MAX_LINE = 60;
-  private static final AtomicLong DIAG_TRACE_BATCH_COUNTER = new AtomicLong();
   private static IDELanguageClientImpl mInstance;
   private static final String DIAGNOSTIC_CHANNEL_DEFAULT = DiagnosticResult.DEFAULT_CHANNEL;
 
@@ -139,7 +135,6 @@ public class IDELanguageClientImpl implements ILanguageClient {
     final long totalStartMs = android.os.SystemClock.elapsedRealtime();
     final String threadName = Thread.currentThread().getName();
     final boolean isMainThread = android.os.Looper.myLooper() == android.os.Looper.getMainLooper();
-    final long traceBatchId = DIAG_TRACE_BATCH_COUNTER.incrementAndGet();
 
     if (result == DiagnosticResult.NO_UPDATE || !canUseActivity()) {
       if (result == DiagnosticResult.NO_UPDATE) {
@@ -206,23 +201,6 @@ public class IDELanguageClientImpl implements ILanguageClient {
         try {
           final var content = editor.getText();
           contentLength = content.length();
-          if (shouldTraceDiagnosticFile(file)) {
-            LOG.warn(
-                "DIAG_TRACE batch={} content-snapshot file={} contentLength={} lines={}"
-                    + " |53={} |54={} |55={} |56={} |57={} |58={} |59={} |60={}",
-                traceBatchId,
-                file.getAbsolutePath(),
-                contentLength,
-                content.getLineCount(),
-                safeLineText(content, 53),
-                safeLineText(content, 54),
-                safeLineText(content, 55),
-                safeLineText(content, 56),
-                safeLineText(content, 57),
-                safeLineText(content, 58),
-                safeLineText(content, 59),
-                safeLineText(content, 60));
-          }
           final List<DiagnosticItem> editorDiagnostics = selectDiagnosticsForEditor(
               mergedDiagnostics,
               file,
@@ -231,119 +209,11 @@ public class IDELanguageClientImpl implements ILanguageClient {
           final LineIndex lineIndex = LineIndex.from(content);
           final var regions = new ArrayList<io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion>(
               editorDiagnostics.size());
-          int traceNearbySelectedCount = 0;
-          int traceNearbyErrorCount = 0;
-          int traceNearbyWarningCount = 0;
-          int traceSuspiciousRegionCount = 0;
-          int traceZeroLengthCount = 0;
           for (DiagnosticItem diagnostic : editorDiagnostics) {
-            final var region = diagnostic.asDiagnosticRegion(lineIndex);
-            regions.add(region);
-            final boolean zeroLength = region.endIndex == region.startIndex;
-            if (shouldTraceDiagnosticFile(file) && zeroLength) {
-              traceZeroLengthCount++;
-              LOG.warn(
-                  "DIAG_TRACE batch={} zero-length file={} severity={} code={} rawRange=({}:{})-({}:{}) mapped=({},{}) msg={}",
-                  traceBatchId,
-                  file.getAbsolutePath(),
-                  diagnostic.getSeverity(),
-                  diagnostic.getCode(),
-                  diagnostic.getRange().getStart().getLine(),
-                  diagnostic.getRange().getStart().getColumn(),
-                  diagnostic.getRange().getEnd().getLine(),
-                  diagnostic.getRange().getEnd().getColumn(),
-                  region.startIndex,
-                  region.endIndex,
-                  diagnostic.getMessage());
-            }
-            if (shouldTraceDiagnosticFile(file) && isNearTraceLines(diagnostic)) {
-              traceNearbySelectedCount++;
-              if (diagnostic.getSeverity() == DiagnosticSeverity.ERROR) {
-                traceNearbyErrorCount++;
-              } else if (diagnostic.getSeverity() == DiagnosticSeverity.WARNING) {
-                traceNearbyWarningCount++;
-              }
-              if (region.endIndex <= region.startIndex || (region.startIndex == 0 && region.endIndex == 1)) {
-                traceSuspiciousRegionCount++;
-              }
-              LOG.warn(
-                  "DIAG_TRACE batch={} item file={} severity={} code={} rawRange=({}:{})-({}:{}) mapped=({},{}) msg={}",
-                  traceBatchId,
-                  file.getAbsolutePath(),
-                  diagnostic.getSeverity(),
-                  diagnostic.getCode(),
-                  diagnostic.getRange().getStart().getLine(),
-                  diagnostic.getRange().getStart().getColumn(),
-                  diagnostic.getRange().getEnd().getLine(),
-                  diagnostic.getRange().getEnd().getColumn(),
-                  region.startIndex,
-                  region.endIndex,
-                  diagnostic.getMessage());
-            }
-          }
-          if (shouldTraceDiagnosticFile(file)) {
-            for (DiagnosticItem diagnostic : mergedDiagnostics) {
-              if (isNearTraceLines(diagnostic)) {
-                LOG.warn(
-                    "DIAG_TRACE batch={} merged file={} severity={} code={} rawRange=({}:{})-({}:{}) msg={}",
-                    traceBatchId,
-                    file.getAbsolutePath(),
-                    diagnostic.getSeverity(),
-                    diagnostic.getCode(),
-                    diagnostic.getRange().getStart().getLine(),
-                    diagnostic.getRange().getStart().getColumn(),
-                    diagnostic.getRange().getEnd().getLine(),
-                    diagnostic.getRange().getEnd().getColumn(),
-                    diagnostic.getMessage());
-              }
-            }
+            regions.add(diagnostic.asDiagnosticRegion(lineIndex));
           }
           container.addDiagnostics(regions);
-          if (shouldTraceDiagnosticFile(file)) {
-            final var queriedAll = new ArrayList<io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion>();
-            container.queryInRegion(queriedAll, 0, Math.max(contentLength, 0));
-            boolean has1454 = false;
-            boolean has1520 = false;
-            int queriedZeroLength = 0;
-            for (var queried : queriedAll) {
-              if (queried.startIndex == queried.endIndex) {
-                queriedZeroLength++;
-              }
-              if (queried.startIndex == 1454 && queried.endIndex == 1454) {
-                has1454 = true;
-              }
-              if (queried.startIndex == 1520 && queried.endIndex == 1520) {
-                has1520 = true;
-              }
-            }
-            LOG.warn(
-                "DIAG_TRACE batch={} container-after-add file={} added={} queriedAll={} queriedZeroLength={} has1454={} has1520={}",
-                traceBatchId,
-                file.getAbsolutePath(),
-                regions.size(),
-                queriedAll.size(),
-                queriedZeroLength,
-                has1454,
-                has1520);
-          }
           mapRegionsCostMs = android.os.SystemClock.elapsedRealtime() - mapRegionsStartMs;
-          if (shouldTraceDiagnosticFile(file)) {
-            LOG.warn(
-                "DIAG_TRACE batch={} summary file={} incoming={} merged={} selected={} mapped={} nearSelected={} nearError={} nearWarning={} suspicious={} zeroLength={} contentLength={} channel={}",
-                traceBatchId,
-                file.getAbsolutePath(),
-                incomingDiagnosticCount,
-                mergedDiagnostics.size(),
-                editorDiagnostics.size(),
-                regions.size(),
-                traceNearbySelectedCount,
-                traceNearbyErrorCount,
-                traceNearbyWarningCount,
-                traceSuspiciousRegionCount,
-                traceZeroLengthCount,
-                contentLength,
-                channel);
-          }
           if (IdeLogConfig.shouldLogIde()) {
             LOG.info(
                 "publishDiagnostics mapped {} of {} diagnostic regions for file={} (mapRegionsCostMs={}, contentLength={})",
@@ -359,29 +229,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
         }
 
         final long applyToEditorStartMs = android.os.SystemClock.elapsedRealtime();
-        activity.runOnUiThread(() -> {
-          if (shouldTraceDiagnosticFile(file)) {
-            final var beforeDiagnostics = editor.getDiagnostics();
-            LOG.warn(
-                "DIAG_TRACE batch={} before-set file={} editorDiagnosticsNull={} editorDiagnosticsId={} containerId={}",
-                traceBatchId,
-                file.getAbsolutePath(),
-                beforeDiagnostics == null,
-                beforeDiagnostics == null ? -1 : System.identityHashCode(beforeDiagnostics),
-                System.identityHashCode(container));
-          }
-          editor.setDiagnostics(container);
-          if (shouldTraceDiagnosticFile(file)) {
-            final var afterDiagnostics = editor.getDiagnostics();
-            LOG.warn(
-                "DIAG_TRACE batch={} after-set file={} editorDiagnosticsNull={} editorDiagnosticsId={} sameContainer={}",
-                traceBatchId,
-                file.getAbsolutePath(),
-                afterDiagnostics == null,
-                afterDiagnostics == null ? -1 : System.identityHashCode(afterDiagnostics),
-                afterDiagnostics == container);
-          }
-        });
+        activity.runOnUiThread(() -> editor.setDiagnostics(container));
         applyToEditorCostMs = android.os.SystemClock.elapsedRealtime() - applyToEditorStartMs;
         if (IdeLogConfig.shouldLogIde()) {
           LOG.info(
@@ -508,36 +356,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
         file.getName());
     return selected;
   }
-  private static boolean shouldTraceDiagnosticFile(@Nullable final File file) {
-    return file != null && file.getAbsolutePath().contains(DIAG_TRACE_FILE_NAME);
-  }
-
-  private static String safeLineText(@NonNull final Content content, final int oneBasedLine) {
-    final int zeroBasedLine = oneBasedLine - 1;
-    if (zeroBasedLine < 0 || zeroBasedLine >= content.getLineCount()) {
-      return "<out-of-range>";
-    }
-    try {
-      return content.getLine(zeroBasedLine).toString().replace("\n", "\\n").replace("\r", "\\r");
-    } catch (Throwable err) {
-      return "<line-read-failed:" + err.getClass().getSimpleName() + ">";
-    }
-  }
-
-  private static boolean isNearTraceLines(@Nullable final DiagnosticItem diagnostic) {
-    if (diagnostic == null || diagnostic.getRange() == null) {
-      return false;
-    }
-    final Range range = diagnostic.getRange();
-    if (range.getStart() == null || range.getEnd() == null) {
-      return false;
-    }
-    final int startLine = range.getStart().getLine();
-    final int endLine = range.getEnd().getLine();
-    return (startLine >= DIAG_TRACE_MIN_LINE && startLine <= DIAG_TRACE_MAX_LINE)
-        || (endLine >= DIAG_TRACE_MIN_LINE && endLine <= DIAG_TRACE_MAX_LINE);
-  }
-
+ 
   private List<DiagnosticItem> getMergedDiagnostics(@NonNull final File file) {
 
     final var byChannel = diagnosticsByChannel.get(file);

@@ -46,9 +46,6 @@ data class DiagnosticItem(
         Comparator.comparing(DiagnosticItem::range)
 
     private val log = LoggerFactory.getLogger("DiagnosticRegionMapping")
-    private const val TRACE_FILE_NAME = "BattleActionConfig.java"
-    private const val TRACE_MIN_LINE = 53
-    private const val TRACE_MAX_LINE = 60
 
     private fun mapSeverity(severity: DiagnosticSeverity): Short {
       return when (severity) {
@@ -69,39 +66,12 @@ data class DiagnosticItem(
       val startIndex = lineIndex.lineColumnToIndex(range.start.line, range.start.column)
       val endIndex = lineIndex.lineColumnToIndex(range.end.line, range.end.column)
 
-      if (shouldTraceDiagnostic()) {
-        log.warn(
-            "DIAG_TRACE region-map code={} severity={} rawRange=({}:{})-({}:{}) mapped=({},{})",
-            code,
-            severity,
-            range.start.line,
-            range.start.column,
-            range.end.line,
-            range.end.column,
-            startIndex,
-            endIndex,
-        )
-      }
-      if (startIndex >= endIndex) {
-        log.warn(
-            "DIAG_TRACE suspicious-region code={} severity={} rawRange=({}:{})-({}:{}) mapped=({},{})",
-            code,
-            severity,
-            range.start.line,
-            range.start.column,
-            range.end.line,
-            range.end.column,
-            startIndex,
-            endIndex,
-        )
-      }
-
       DiagnosticRegion(startIndex, endIndex, mapSeverity(severity))
     } catch (e: Exception) {
       // Keep diagnostics publishing fail-soft. A single malformed diagnostic range must not prevent
       // the editor from receiving the rest of the diagnostics batch.
       log.warn(
-          "DIAG_TRACE fallback-region code={} severity={} rawRange=({}:{})-({}:{}) fallback=(0,1)",
+          "Failed to map diagnostic region code={} severity={} rawRange=({}:{})-({}:{})",
           code,
           severity,
           range.start.line,
@@ -112,14 +82,6 @@ data class DiagnosticItem(
       )
       DiagnosticRegion(0, 1, mapSeverity(severity))
     }
-  }
-
-  private fun shouldTraceDiagnostic(): Boolean {
-    val startLine = range.start.line
-    val endLine = range.end.line
-    val sourceValue = source
-    return (startLine in TRACE_MIN_LINE..TRACE_MAX_LINE || endLine in TRACE_MIN_LINE..TRACE_MAX_LINE) &&
-        sourceValue.contains(TRACE_FILE_NAME)
   }
 
 }

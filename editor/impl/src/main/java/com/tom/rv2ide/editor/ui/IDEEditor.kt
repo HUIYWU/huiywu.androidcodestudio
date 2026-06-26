@@ -78,6 +78,8 @@ import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.lang.Language
+import io.github.rosemoe.sora.lang.diagnostic.DiagnosticDetail
+import io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion
 import io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.EditorRenderer
@@ -183,7 +185,9 @@ constructor(
     private const val LARGE_DOCUMENT_EVENT_TEXT_THRESHOLD = 256 * 1024
 
     internal val log = LoggerFactory.getLogger(IDEEditor::class.java)
-
+    private val diagnosticsRegionsField: Field? = runCatching {
+      DiagnosticsContainer::class.java.getDeclaredField("regions").apply { isAccessible = true }
+    }.getOrNull()
 
     /** Create input type flags for the editor. */
     fun createInputTypeFlags(): Int {
@@ -928,12 +932,6 @@ measureEditorInitStage("subscribeSelectionChange") {
     }
   }
 
-  companion object {
-    private val diagnosticsRegionsField: Field? = runCatching {
-      DiagnosticsContainer::class.java.getDeclaredField("regions").apply { isAccessible = true }
-    }.getOrNull()
-  }
-
   @Suppress("UNCHECKED_CAST")
   private fun diagnosticsRegionSnapshot(diagnostics: DiagnosticsContainer?): List<Any> {
     if (diagnostics == null) {
@@ -943,58 +941,47 @@ measureEditorInitStage("subscribeSelectionChange") {
     return runCatching { field.get(diagnostics) as? List<Any> ?: emptyList() }.getOrElse { emptyList() }
   }
 
-  private fun diagnosticsRegionSummary(diagnostics: DiagnosticsContainer?): String {
+  private fun filterDiagnosticsForRendering(diagnostics: DiagnosticsContainer?): DiagnosticsContainer? {
+    if (diagnostics == null) {
+      return null
+    }
     val regions = diagnosticsRegionSnapshot(diagnostics)
-    val has1454 = regions.any {
-      runCatching {
-        val startField = it.javaClass.getDeclaredField("startIndex").apply { isAccessible = true }
-        val endField = it.javaClass.getDeclaredField("endIndex").apply { isAccessible = true }
-        startField.getInt(it) == 1454 && endField.getInt(it) == 1454
-      }.getOrDefault(false)
+    if (regions.isEmpty()) {
+      return diagnostics
     }
-    val has1520 = regions.any {
-      runCatching {
-        val startField = it.javaClass.getDeclaredField("startIndex").apply { isAccessible = true }
-        val endField = it.javaClass.getDeclaredField("endIndex").apply { isAccessible = true }
-        startField.getInt(it) == 1520 && endField.getInt(it) == 1520
-      }.getOrDefault(false)
+    val filtered = DiagnosticsContainer()
+    var changed = false
+    for (region in regions) {
+      val copied = runCatching {
+        val clazz = region.javaClass
+        val startIndex = clazz.getDeclaredField("startIndex").apply { isAccessible = true }.getInt(region)
+        val endIndex = clazz.getDeclaredField("endIndex").apply { isAccessible = true }.getInt(region)
+        val severity = clazz.getDeclaredField("severity").apply { isAccessible = true }.getShort(region)
+        if (severity.toInt() == 0) {
+          changed = true
+          null
+        } else {
+          val id = clazz.getDeclaredField("id").apply { isAccessible = true }.getLong(region)
+          val detail = clazz.getDeclaredField("detail").apply { isAccessible = true }.get(region) as? DiagnosticDetail
+          DiagnosticRegion(startIndex, endIndex, severity, id, detail)
+        }
+      }.getOrNull()
+      if (copied != null) {
+        filtered.addDiagnostic(copied)
+      }
     }
-    return "size=${regions.size},has1454=${has1454},has1520=${has1520}"
+    // Sora's diagnostic indicator renderer stops iterating when a diagnostic maps to colorId=0.
+    // Severity NONE diagnostics use that color slot, so leaving them in the render container can
+    // suppress later warning/error indicators. Filter them out before handing diagnostics to editor rendering.
+    return if (changed) filtered else diagnostics
   }
 
-
   override fun onCreateRenderer(): EditorRenderer {
-    return TracingEditorRenderer(tracingEditor = this)
+    return EditorRenderer(this)
   }
 
   override fun setDiagnostics(diagnostics: DiagnosticsContainer?) {
-    if (_file?.absolutePath?.contains("BattleActionConfig.java") == true) {
-      log.warn(
-          "DIAG_TRACE editor-setDiagnostics file={} diagnosticsNull={} diagnosticsId={} regions={} line53={} line54={} line55={} line56={} line57={} line58={} line59={} line60={}",
-          _file?.absolutePath,
-          diagnostics == null,
-          if (diagnostics == null) -1 else System.identityHashCode(diagnostics),
-          diagnosticsRegionSummary(diagnostics),
-          safeTraceLine(53),
-          safeTraceLine(54),
-          safeTraceLine(55),
-          safeTraceLine(56),
-          safeTraceLine(57),
-          safeTraceLine(58),
-          safeTraceLine(59),
-          safeTraceLine(60),
-      )
-    }
-    super.setDiagnostics(diagnostics)
-    if (_file?.absolutePath?.contains("BattleActionConfig.java") == true) {
-      log.warn(
-          "DIAG_TRACE editor-setDiagnostics-done file={} currentDiagnosticsNull={} currentDiagnosticsId={} currentRegions={}",
-          _file?.absolutePath,
-          diagnostics == null,
-          if (getDiagnostics() == null) -1 else System.identityHashCode(getDiagnostics()),
-          diagnosticsRegionSummary(getDiagnostics()),
-      )
-    }
+    super.setDiagnostics(filterDiagnosticsForRendering(diagnostics))
   }
 
   protected open fun dispatchDocumentChangeEvent(event: ContentChangeEvent) {
@@ -1044,29 +1031,6 @@ measureEditorInitStage("subscribeSelectionChange") {
             changeRange,
             fullTextProvider,
         )
-    if (shouldTraceBattleAction) {
-      log.warn(
-          "DIAG_TRACE doc-change file={} version={} type={} delta={} range=({}:{})-({}:{}) changedText={} line53={} line54={} line55={} line56={} line57={} line58={} line59={} line60={}",
-          file,
-          nextVersion,
-          type,
-          changeDelta,
-          changeRange.start.line,
-          changeRange.start.column,
-          changeRange.end.line,
-          changeRange.end.column,
-          changedText.replace("\n", "\\n").replace("\r", "\\r"),
-          safeTraceLine(53),
-          safeTraceLine(54),
-          safeTraceLine(55),
-          safeTraceLine(56),
-          safeTraceLine(57),
-          safeTraceLine(58),
-          safeTraceLine(59),
-          safeTraceLine(60),
-      )
-    }
-
     eventDispatcher.dispatch(changeEvent)
   }
 
