@@ -42,8 +42,8 @@ import org.slf4j.LoggerFactory
  */
 class TracingEditorRenderer(
     private val enabled: Boolean = BuildConfig.DEBUG,
-    editor: CodeEditor,
-) : EditorRenderer(editor) {
+    private val tracingEditor: CodeEditor,
+) : EditorRenderer(tracingEditor) {
 
   companion object {
     private val log = LoggerFactory.getLogger("TracingEditorRenderer")
@@ -56,8 +56,8 @@ class TracingEditorRenderer(
   }
 
   private fun shouldTrace(): Boolean {
-    val ideEditor = editor as? IDEEditor ?: return false
-    return ideEditor.file.absolutePath?.contains(TRACE_FILE_NAME) == true
+    val ideEditor = tracingEditor as? IDEEditor ?: return false
+    return ideEditor.file?.absolutePath?.contains(TRACE_FILE_NAME) == true
   }
 
   @Suppress("UNCHECKED_CAST")
@@ -95,7 +95,7 @@ class TracingEditorRenderer(
     log.warn(
       "DIAG_TRACE renderer-{} file={} diagnosticsSize={} has1454={} has1520={} sample={}",
       stage,
-      (editor as? IDEEditor)?.file?.absolutePath,
+      (tracingEditor as? IDEEditor)?.file?.absolutePath,
       diagnostics.size,
       targetExpected != null,
       targetIllegalExpr != null,
