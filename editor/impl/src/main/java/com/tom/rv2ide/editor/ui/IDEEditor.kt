@@ -75,6 +75,7 @@ import com.tom.rv2ide.utils.DocumentUtils
 import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.flashInfo
 import io.github.rosemoe.sora.event.ContentChangeEvent
+import io.github.rosemoe.sora.event.PublishDiagnosticsEvent
 import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.lang.Language
@@ -721,8 +722,7 @@ constructor(
         }
       }
     }
-
-    measureEditorInitStage("subscribeSelectionChange") {
+measureEditorInitStage("subscribeSelectionChange") {
       subscribeEvent(SelectionChangeEvent::class.java) { _, _ ->
         if (isReleased) {
           return@subscribeEvent
@@ -738,6 +738,28 @@ constructor(
         }
       }
     }
+
+    measureEditorInitStage("subscribePublishDiagnostics") {
+      subscribeEvent(PublishDiagnosticsEvent::class.java) { event, _ ->
+        if (isReleased) {
+          return@subscribeEvent
+        }
+        if (_file?.absolutePath?.contains("BattleActionConfig.java") == true) {
+          log.warn(
+            "DIAG_TRACE publish-diagnostics-event file={} currentDiagnosticsId={} oldSize={} newSize={} oldHas1454={} oldHas1520={} newHas1454={} newHas1520={}",
+            _file?.absolutePath,
+            if (getDiagnostics() == null) -1 else System.identityHashCode(getDiagnostics()),
+            event.oldDiagnostics.size,
+            event.newDiagnosticsEvent.size,
+            event.oldDiagnostics.any { it.startIndex == 1454 && it.endIndex == 1454 },
+            event.oldDiagnostics.any { it.startIndex == 1520 && it.endIndex == 1520 },
+            event.newDiagnosticsEvent.any { it.startIndex == 1454 && it.endIndex == 1454 },
+            event.newDiagnosticsEvent.any { it.startIndex == 1520 && it.endIndex == 1520 },
+          )
+        }
+      }
+    }
+  }
 
     measureEditorInitStage("eventBusRegister") {
       EventBus.getDefault().register(this)
