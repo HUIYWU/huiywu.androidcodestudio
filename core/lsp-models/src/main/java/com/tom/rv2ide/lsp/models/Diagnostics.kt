@@ -48,7 +48,7 @@ data class DiagnosticItem(
     private val log = LoggerFactory.getLogger("DiagnosticRegionMapping")
     private const val TRACE_FILE_NAME = "BattleActionConfig.java"
     private const val TRACE_MIN_LINE = 53
-    private const val TRACE_MAX_LINE = 55
+    private const val TRACE_MAX_LINE = 60
 
     private fun mapSeverity(severity: DiagnosticSeverity): Short {
       return when (severity) {

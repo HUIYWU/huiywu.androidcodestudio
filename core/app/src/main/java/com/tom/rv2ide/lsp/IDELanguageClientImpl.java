@@ -86,7 +86,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
   protected static final Logger LOG = LoggerFactory.getLogger(IDELanguageClientImpl.class);
   private static final String DIAG_TRACE_FILE_NAME = "BattleActionConfig.java";
   private static final int DIAG_TRACE_MIN_LINE = 53;
-  private static final int DIAG_TRACE_MAX_LINE = 55;
+  private static final int DIAG_TRACE_MAX_LINE = 60;
   private static IDELanguageClientImpl mInstance;
   private static final String DIAGNOSTIC_CHANNEL_DEFAULT = DiagnosticResult.DEFAULT_CHANNEL;
 
@@ -215,9 +215,26 @@ public class IDELanguageClientImpl implements ILanguageClient {
           int traceNearbyErrorCount = 0;
           int traceNearbyWarningCount = 0;
           int traceSuspiciousRegionCount = 0;
+          int traceZeroLengthCount = 0;
           for (DiagnosticItem diagnostic : editorDiagnostics) {
             final var region = diagnostic.asDiagnosticRegion(lineIndex);
             regions.add(region);
+            final boolean zeroLength = region.endIndex == region.startIndex;
+            if (shouldTraceDiagnosticFile(file) && zeroLength) {
+              traceZeroLengthCount++;
+              LOG.warn(
+                  "DIAG_TRACE zero-length file={} severity={} code={} rawRange=({}:{})-({}:{}) mapped=({},{}) msg={}",
+                  file.getAbsolutePath(),
+                  diagnostic.getSeverity(),
+                  diagnostic.getCode(),
+                  diagnostic.getRange().getStart().getLine(),
+                  diagnostic.getRange().getStart().getColumn(),
+                  diagnostic.getRange().getEnd().getLine(),
+                  diagnostic.getRange().getEnd().getColumn(),
+                  region.startIndex,
+                  region.endIndex,
+                  diagnostic.getMessage());
+            }
             if (shouldTraceDiagnosticFile(file) && isNearTraceLines(diagnostic)) {
               traceNearbySelectedCount++;
               if (diagnostic.getSeverity() == DiagnosticSeverity.ERROR) {
@@ -242,11 +259,27 @@ public class IDELanguageClientImpl implements ILanguageClient {
                   diagnostic.getMessage());
             }
           }
+          if (shouldTraceDiagnosticFile(file)) {
+            for (DiagnosticItem diagnostic : mergedDiagnostics) {
+              if (isNearTraceLines(diagnostic)) {
+                LOG.warn(
+                    "DIAG_TRACE merged file={} severity={} code={} rawRange=({}:{})-({}:{}) msg={}",
+                    file.getAbsolutePath(),
+                    diagnostic.getSeverity(),
+                    diagnostic.getCode(),
+                    diagnostic.getRange().getStart().getLine(),
+                    diagnostic.getRange().getStart().getColumn(),
+                    diagnostic.getRange().getEnd().getLine(),
+                    diagnostic.getRange().getEnd().getColumn(),
+                    diagnostic.getMessage());
+              }
+            }
+          }
           container.addDiagnostics(regions);
           mapRegionsCostMs = android.os.SystemClock.elapsedRealtime() - mapRegionsStartMs;
           if (shouldTraceDiagnosticFile(file)) {
             LOG.warn(
-                "DIAG_TRACE summary file={} incoming={} merged={} selected={} mapped={} nearSelected={} nearError={} nearWarning={} suspicious={} contentLength={} channel={}",
+                "DIAG_TRACE summary file={} incoming={} merged={} selected={} mapped={} nearSelected={} nearError={} nearWarning={} suspicious={} zeroLength={} contentLength={} channel={}",
                 file.getAbsolutePath(),
                 incomingDiagnosticCount,
                 mergedDiagnostics.size(),
@@ -256,6 +289,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
                 traceNearbyErrorCount,
                 traceNearbyWarningCount,
                 traceSuspiciousRegionCount,
+                traceZeroLengthCount,
                 contentLength,
                 channel);
           }
