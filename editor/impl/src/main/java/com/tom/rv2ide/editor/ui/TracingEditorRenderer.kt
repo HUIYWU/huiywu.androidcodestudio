@@ -53,6 +53,11 @@ class TracingEditorRenderer(
     private val collectedDiagnosticsField: Field? = runCatching {
       EditorRenderer::class.java.getDeclaredField("collectedDiagnostics").apply { isAccessible = true }
     }.getOrNull()
+    private val diagnosticsRegionsField: Field? = runCatching {
+      Class.forName("io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer")
+        .getDeclaredField("regions")
+        .apply { isAccessible = true }
+    }.getOrNull()
   }
 
   private fun shouldTrace(): Boolean {
@@ -105,13 +110,29 @@ class TracingEditorRenderer(
     val targetIllegalExpr = diagnostics.firstOrNull {
       readIntField(it, "startIndex") == TARGET_ILLEGAL_EXPR_INDEX && readIntField(it, "endIndex") == TARGET_ILLEGAL_EXPR_INDEX
     }
+    val diagnosticsContainer = tracingEditor.diagnostics
+    val containerRegions = runCatching {
+      val field = diagnosticsRegionsField
+      if (field == null || diagnosticsContainer == null) emptyList<Any>()
+      else field.get(diagnosticsContainer) as? List<Any> ?: emptyList()
+    }.getOrElse { emptyList() }
+    val containerHas1454 = containerRegions.any {
+      readIntField(it, "startIndex") == TARGET_EXPECTED_INDEX && readIntField(it, "endIndex") == TARGET_EXPECTED_INDEX
+    }
+    val containerHas1520 = containerRegions.any {
+      readIntField(it, "startIndex") == TARGET_ILLEGAL_EXPR_INDEX && readIntField(it, "endIndex") == TARGET_ILLEGAL_EXPR_INDEX
+    }
     log.warn(
-      "DIAG_TRACE renderer-{} file={} diagnosticsSize={} has1454={} has1520={} firstVisibleLine={} lastVisibleLine={} firstIndex={} lastIndex={} covers1454={} covers1520={} textLength={} lineCount={} sample={}",
+      "DIAG_TRACE renderer-{} file={} diagnosticsSize={} has1454={} has1520={} containerId={} containerRegionSize={} containerHas1454={} containerHas1520={} firstVisibleLine={} lastVisibleLine={} firstIndex={} lastIndex={} covers1454={} covers1520={} textLength={} lineCount={} sample={}",
       stage,
       (tracingEditor as? IDEEditor)?.file?.absolutePath,
       diagnostics.size,
       targetExpected != null,
       targetIllegalExpr != null,
+      if (diagnosticsContainer == null) -1 else System.identityHashCode(diagnosticsContainer),
+      containerRegions.size,
+      containerHas1454,
+      containerHas1520,
       firstVisibleLine,
       lastVisibleLine,
       firstIndex,

@@ -87,6 +87,7 @@ import io.github.rosemoe.sora.widget.component.EditorAutoCompletion
 import io.github.rosemoe.sora.widget.component.EditorBuiltinComponent
 import io.github.rosemoe.sora.widget.component.EditorTextActionWindow
 import java.io.File
+import java.lang.reflect.Field
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -918,7 +919,6 @@ measureEditorInitStage("subscribeSelectionChange") {
   private fun shouldTraceBattleActionConfig(path: Path): Boolean {
     return path.toString().contains("BattleActionConfig.java")
   }
-
   private fun safeTraceLine(oneBasedLine: Int): String {
     val zeroBasedLine = oneBasedLine - 1
     return if (zeroBasedLine < 0 || zeroBasedLine >= text.lineCount) {
@@ -928,6 +928,41 @@ measureEditorInitStage("subscribeSelectionChange") {
     }
   }
 
+  companion object {
+    private val diagnosticsRegionsField: Field? = runCatching {
+      DiagnosticsContainer::class.java.getDeclaredField("regions").apply { isAccessible = true }
+    }.getOrNull()
+  }
+
+  @Suppress("UNCHECKED_CAST")
+  private fun diagnosticsRegionSnapshot(diagnostics: DiagnosticsContainer?): List<Any> {
+    if (diagnostics == null) {
+      return emptyList()
+    }
+    val field = diagnosticsRegionsField ?: return emptyList()
+    return runCatching { field.get(diagnostics) as? List<Any> ?: emptyList() }.getOrElse { emptyList() }
+  }
+
+  private fun diagnosticsRegionSummary(diagnostics: DiagnosticsContainer?): String {
+    val regions = diagnosticsRegionSnapshot(diagnostics)
+    val has1454 = regions.any {
+      runCatching {
+        val startField = it.javaClass.getDeclaredField("startIndex").apply { isAccessible = true }
+        val endField = it.javaClass.getDeclaredField("endIndex").apply { isAccessible = true }
+        startField.getInt(it) == 1454 && endField.getInt(it) == 1454
+      }.getOrDefault(false)
+    }
+    val has1520 = regions.any {
+      runCatching {
+        val startField = it.javaClass.getDeclaredField("startIndex").apply { isAccessible = true }
+        val endField = it.javaClass.getDeclaredField("endIndex").apply { isAccessible = true }
+        startField.getInt(it) == 1520 && endField.getInt(it) == 1520
+      }.getOrDefault(false)
+    }
+    return "size=${regions.size},has1454=${has1454},has1520=${has1520}"
+  }
+
+
   override fun onCreateRenderer(): EditorRenderer {
     return TracingEditorRenderer(tracingEditor = this)
   }
@@ -935,10 +970,11 @@ measureEditorInitStage("subscribeSelectionChange") {
   override fun setDiagnostics(diagnostics: DiagnosticsContainer?) {
     if (_file?.absolutePath?.contains("BattleActionConfig.java") == true) {
       log.warn(
-          "DIAG_TRACE editor-setDiagnostics file={} diagnosticsNull={} diagnosticsId={} line53={} line54={} line55={} line56={} line57={} line58={} line59={} line60={}",
+          "DIAG_TRACE editor-setDiagnostics file={} diagnosticsNull={} diagnosticsId={} regions={} line53={} line54={} line55={} line56={} line57={} line58={} line59={} line60={}",
           _file?.absolutePath,
           diagnostics == null,
           if (diagnostics == null) -1 else System.identityHashCode(diagnostics),
+          diagnosticsRegionSummary(diagnostics),
           safeTraceLine(53),
           safeTraceLine(54),
           safeTraceLine(55),
@@ -952,10 +988,11 @@ measureEditorInitStage("subscribeSelectionChange") {
     super.setDiagnostics(diagnostics)
     if (_file?.absolutePath?.contains("BattleActionConfig.java") == true) {
       log.warn(
-          "DIAG_TRACE editor-setDiagnostics-done file={} currentDiagnosticsNull={} currentDiagnosticsId={}",
+          "DIAG_TRACE editor-setDiagnostics-done file={} currentDiagnosticsNull={} currentDiagnosticsId={} currentRegions={}",
           _file?.absolutePath,
           diagnostics == null,
           if (getDiagnostics() == null) -1 else System.identityHashCode(getDiagnostics()),
+          diagnosticsRegionSummary(getDiagnostics()),
       )
     }
   }
