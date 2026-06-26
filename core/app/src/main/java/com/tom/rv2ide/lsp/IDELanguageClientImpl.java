@@ -299,6 +299,33 @@ public class IDELanguageClientImpl implements ILanguageClient {
             }
           }
           container.addDiagnostics(regions);
+          if (shouldTraceDiagnosticFile(file)) {
+            final var queriedAll = new ArrayList<io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion>();
+            container.queryInRegion(queriedAll, 0, Math.max(contentLength, 0));
+            boolean has1454 = false;
+            boolean has1520 = false;
+            int queriedZeroLength = 0;
+            for (var queried : queriedAll) {
+              if (queried.startIndex == queried.endIndex) {
+                queriedZeroLength++;
+              }
+              if (queried.startIndex == 1454 && queried.endIndex == 1454) {
+                has1454 = true;
+              }
+              if (queried.startIndex == 1520 && queried.endIndex == 1520) {
+                has1520 = true;
+              }
+            }
+            LOG.warn(
+                "DIAG_TRACE batch={} container-after-add file={} added={} queriedAll={} queriedZeroLength={} has1454={} has1520={}",
+                traceBatchId,
+                file.getAbsolutePath(),
+                regions.size(),
+                queriedAll.size(),
+                queriedZeroLength,
+                has1454,
+                has1520);
+          }
           mapRegionsCostMs = android.os.SystemClock.elapsedRealtime() - mapRegionsStartMs;
           if (shouldTraceDiagnosticFile(file)) {
             LOG.warn(
