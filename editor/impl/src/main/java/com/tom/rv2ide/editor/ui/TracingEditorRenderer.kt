@@ -85,6 +85,19 @@ class TracingEditorRenderer(
     if (!shouldTrace()) {
       return
     }
+    val text = tracingEditor.text
+    val firstVisibleLine = tracingEditor.firstVisibleLine
+    val lastVisibleLine = tracingEditor.lastVisibleLine
+    val safeFirstVisibleLine = firstVisibleLine.coerceIn(0, (text.lineCount - 1).coerceAtLeast(0))
+    val safeLastVisibleBase = lastVisibleLine.coerceIn(0, (text.lineCount - 1).coerceAtLeast(0))
+    val safeLastQueryLine = (safeLastVisibleBase + 1).coerceIn(0, (text.lineCount - 1).coerceAtLeast(0))
+    val firstIndex = if (text.lineCount <= 0) 0 else text.getCharIndex(safeFirstVisibleLine, 0)
+    val lastIndex =
+      if (text.lineCount <= 0) {
+        0
+      } else {
+        text.getCharIndex(safeLastQueryLine, 0) + text.getColumnCount(safeLastQueryLine)
+      }
     val diagnostics = snapshotCollectedDiagnostics()
     val targetExpected = diagnostics.firstOrNull {
       readIntField(it, "startIndex") == TARGET_EXPECTED_INDEX && readIntField(it, "endIndex") == TARGET_EXPECTED_INDEX
@@ -93,12 +106,20 @@ class TracingEditorRenderer(
       readIntField(it, "startIndex") == TARGET_ILLEGAL_EXPR_INDEX && readIntField(it, "endIndex") == TARGET_ILLEGAL_EXPR_INDEX
     }
     log.warn(
-      "DIAG_TRACE renderer-{} file={} diagnosticsSize={} has1454={} has1520={} sample={}",
+      "DIAG_TRACE renderer-{} file={} diagnosticsSize={} has1454={} has1520={} firstVisibleLine={} lastVisibleLine={} firstIndex={} lastIndex={} covers1454={} covers1520={} textLength={} lineCount={} sample={}",
       stage,
       (tracingEditor as? IDEEditor)?.file?.absolutePath,
       diagnostics.size,
       targetExpected != null,
       targetIllegalExpr != null,
+      firstVisibleLine,
+      lastVisibleLine,
+      firstIndex,
+      lastIndex,
+      TARGET_EXPECTED_INDEX in firstIndex..lastIndex,
+      TARGET_ILLEGAL_EXPR_INDEX in firstIndex..lastIndex,
+      text.length,
+      text.lineCount,
       diagnostics.take(6).joinToString(prefix = "[", postfix = "]") { diagSummary(it) },
     )
   }
