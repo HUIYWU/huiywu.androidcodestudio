@@ -32,7 +32,7 @@ public final class JavaLspFeatureFlags {
    * Enable partial reparse experiment logging path without changing user-visible compilation result.
    * Default: off.
    */
-  public static final boolean ENABLE_PARTIAL_REPARSE_DRY_RUN = false;
+  public static final boolean ENABLE_PARTIAL_REPARSE_DRY_RUN = true;
 
   /** Emit decision/fallback logs for partial reparse routing. */
   public static final boolean ENABLE_PARTIAL_REPARSE_LOGGING = true;

@@ -149,8 +149,12 @@ class JavaDiagnosticProvider {
                 val contents = com.tom.rv2ide.projects.FileManager.getDocumentContents(file)
                 val partialRequest =
                     compiler.getIncrementalState().newCursorPosition?.let { position ->
-                      val cursor = position.requireIndex()
-                      if (cursor >= 0) PartialReparseRequest(cursor.toLong(), contents) else null
+                      try {
+                        val cursor = position.requireIndex()
+                        if (cursor >= 0) PartialReparseRequest(cursor.toLong(), contents) else null
+                      } catch (_: IllegalArgumentException) {
+                        null
+                      }
                     }
                 compiler
                     .compile(
