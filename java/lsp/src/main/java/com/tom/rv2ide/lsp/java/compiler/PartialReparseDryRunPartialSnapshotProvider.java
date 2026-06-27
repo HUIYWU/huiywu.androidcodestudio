@@ -72,7 +72,7 @@ public final class PartialReparseDryRunPartialSnapshotProvider {
               return null;
             }
             return new PartialReparseDryRunSnapshotCollector()
-                .collect(copiedCompiler.diagnostics, task.task.methodPositions);
+                .collect(copiedCompiler.diagnostics, task.compileBatch.methodPositions);
           });
     } finally {
       copiedCompiler.destroy();
