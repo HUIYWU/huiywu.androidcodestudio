@@ -776,6 +776,11 @@ public class JavaCompilerService implements CompilerProvider {
     return synchronizedTask;
   }
 
+  @NonNull
+  public JavaIncrementalState getIncrementalState() {
+    return incrementalState;
+  }
+
   public void onDocumentChange(@NonNull DocumentChangeEvent event) {
     this.incrementalState.onDocumentChange(event);
   }

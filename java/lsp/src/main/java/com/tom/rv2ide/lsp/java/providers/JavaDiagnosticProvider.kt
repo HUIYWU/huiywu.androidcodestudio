@@ -22,6 +22,7 @@ import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.java.JavaCompilerProvider
 import com.tom.rv2ide.lsp.java.compiler.CompileTask
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
+import com.tom.rv2ide.lsp.java.models.PartialReparseRequest
 import com.tom.rv2ide.lsp.java.providers.DiagnosticsProvider.findDiagnostics
 import com.tom.rv2ide.lsp.java.utils.CancelChecker
 import com.tom.rv2ide.lsp.models.DiagnosticResult
@@ -145,17 +146,23 @@ class JavaDiagnosticProvider {
       Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
       result =
           try {
+                val contents = com.tom.rv2ide.projects.FileManager.getDocumentContents(file)
+                val partialRequest =
+                    compiler.getIncrementalState().newCursorPosition?.let { position ->
+                      val cursor = position.requireIndex()
+                      if (cursor >= 0) PartialReparseRequest(cursor.toLong(), contents) else null
+                    }
                 compiler
                     .compile(
                         com.tom.rv2ide.lsp.java.models.CompilationRequest(
                             listOf(
                                 com.tom.rv2ide.lsp.java.compiler.SourceFileObject(
                                     file,
-                                    com.tom.rv2ide.projects.FileManager.getDocumentContents(file),
+                                    contents,
                                     com.tom.rv2ide.projects.FileManager.getLastModified(file),
                                 )
                             ),
-                            null,
+                            partialRequest,
                         )
                     )
                     .get { task -> doAnalyze(file, task) }
