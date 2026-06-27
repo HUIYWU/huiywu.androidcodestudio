@@ -23,7 +23,7 @@ on:
 
 jobs:
   build_release_apk:
-    name: Build Debug APK
+    name: Build Release APK
     runs-on: ubuntu-latest
     steps:
       - name: Cancel previous runs

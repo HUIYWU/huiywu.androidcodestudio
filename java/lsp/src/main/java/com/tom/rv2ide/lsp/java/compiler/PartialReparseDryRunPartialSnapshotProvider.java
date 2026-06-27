@@ -55,27 +55,27 @@ public final class PartialReparseDryRunPartialSnapshotProvider {
       @NonNull PartialReparseEligibility eligibility,
       @NonNull PartialReparseDryRunReport attemptReport,
       @Nullable CompilerProvider liveCompiler) {
+    if (liveCompiler instanceof JavaCompilerService) {
+      final JavaCompilerService copiedCompiler = ((JavaCompilerService) liveCompiler).copy();
+      try {
+        final SynchronizedTask synchronizedTask = copiedCompiler.compile(request);
+        return synchronizedTask.get(
+            task -> {
+              if (task == null || task.task == null || task.roots == null || task.roots.isEmpty()) {
+                return null;
+              }
+              return new PartialReparseDryRunSnapshotCollector()
+                  .collect(copiedCompiler.diagnostics, task.compileBatch.methodPositions);
+            });
+      } finally {
+        copiedCompiler.destroy();
+      }
+    }
     final PartialReparseDryRunIsolatedPlan plan =
         isolatedPlanner.plan(request, eligibility, attemptReport, liveCompiler);
     if (!plan.isReady()) {
       return null;
     }
-    if (!(liveCompiler instanceof JavaCompilerService)) {
-      return null;
-    }
-    final JavaCompilerService copiedCompiler = ((JavaCompilerService) liveCompiler).copy();
-    try {
-      final SynchronizedTask synchronizedTask = copiedCompiler.compile(request);
-      return synchronizedTask.get(
-          task -> {
-            if (task == null || task.task == null || task.roots == null || task.roots.isEmpty()) {
-              return null;
-            }
-            return new PartialReparseDryRunSnapshotCollector()
-                .collect(copiedCompiler.diagnostics, task.compileBatch.methodPositions);
-          });
-    } finally {
-      copiedCompiler.destroy();
-    }
+    return null;
   }
 }
