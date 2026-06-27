@@ -21,6 +21,7 @@ import com.tom.rv2ide.common.logging.IdeLogConfig
 
 import com.tom.rv2ide.lsp.java.JavaCompilerProvider
 import com.tom.rv2ide.lsp.java.compiler.CompileTask
+import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.lsp.java.providers.DiagnosticsProvider.findDiagnostics
 import com.tom.rv2ide.lsp.java.utils.CancelChecker
 import com.tom.rv2ide.lsp.models.DiagnosticResult
@@ -182,7 +183,6 @@ class JavaDiagnosticProvider {
                 }
                 DiagnosticResult.NO_UPDATE
               } finally {
-                compiler.destroy()
                 analyzing.set(false)
               }
               .also {
