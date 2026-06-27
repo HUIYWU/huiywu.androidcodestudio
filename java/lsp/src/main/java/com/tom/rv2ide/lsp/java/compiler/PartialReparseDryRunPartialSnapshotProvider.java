@@ -20,6 +20,7 @@ package com.tom.rv2ide.lsp.java.compiler;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
+import jdkx.tools.JavaFileObject;
 
 /**
  * Provides an optional isolated partial snapshot for dry-run correctness comparison.
@@ -59,6 +60,22 @@ public final class PartialReparseDryRunPartialSnapshotProvider {
     if (!plan.isReady()) {
       return null;
     }
-    return null;
+    if (!(liveCompiler instanceof JavaCompilerService)) {
+      return null;
+    }
+    final JavaCompilerService copiedCompiler = ((JavaCompilerService) liveCompiler).copy();
+    try {
+      final SynchronizedTask synchronizedTask = copiedCompiler.compile(request);
+      return synchronizedTask.get(
+          task -> {
+            if (task == null || task.task == null || task.roots == null || task.roots.isEmpty()) {
+              return null;
+            }
+            return new PartialReparseDryRunSnapshotCollector()
+                .collect(copiedCompiler.diagnostics, task.task.methodPositions);
+          });
+    } finally {
+      copiedCompiler.destroy();
+    }
   }
 }
