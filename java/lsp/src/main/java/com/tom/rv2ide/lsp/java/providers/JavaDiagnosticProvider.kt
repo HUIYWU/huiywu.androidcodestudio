@@ -19,8 +19,8 @@ import android.os.Process
 import com.tom.rv2ide.common.logging.IdeLogConfig
 
 
+import com.tom.rv2ide.lsp.java.JavaCompilerProvider
 import com.tom.rv2ide.lsp.java.compiler.CompileTask
-import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.lsp.java.providers.DiagnosticsProvider.findDiagnostics
 import com.tom.rv2ide.lsp.java.utils.CancelChecker
 import com.tom.rv2ide.lsp.models.DiagnosticResult
@@ -55,7 +55,7 @@ class JavaDiagnosticProvider {
     val module =
         IProjectManager.getInstance().getWorkspace()?.findModuleForFile(file, false)
             ?: return DiagnosticResult.NO_UPDATE
-    val compiler = JavaCompilerService(module)
+    val compiler = JavaCompilerProvider.get(module)
 
     abortIfCancelled()
 
