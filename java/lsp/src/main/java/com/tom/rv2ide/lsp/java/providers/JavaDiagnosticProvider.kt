@@ -33,6 +33,7 @@ import com.tom.rv2ide.projects.IProjectManager
 import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import org.slf4j.LoggerFactory
 
 /**
@@ -44,6 +45,7 @@ class JavaDiagnosticProvider {
 
   private val analyzeTimestamps = mutableMapOf<Path, Instant>()
   private val cachedDiagnostics = mutableMapOf<Path, DiagnosticResult>()
+  private val analyzeGeneration = AtomicLong(0)
   private var analyzing = AtomicBoolean(false)
   private var analyzingThread: AnalyzingThread? = null
 
@@ -85,16 +87,33 @@ class JavaDiagnosticProvider {
       }
     }
 
+    val requestedGeneration = analyzeGeneration.incrementAndGet()
+    if (IdeLogConfig.shouldLogInfo()) {
+      log.info("Analyze request scheduled generation={} file={}", requestedGeneration, file)
+    }
     analyzing.set(true)
 
     val analyzingThread =
-        AnalyzingThread(compiler, file).also {
+        AnalyzingThread(compiler, file, requestedGeneration).also {
           analyzingThread = it
           it.start()
           it.join()
         }
 
-    return analyzingThread.result.also { this.analyzingThread = null }
+    return analyzingThread.result.also {
+      this.analyzingThread = null
+      if (requestedGeneration == analyzeGeneration.get()) {
+        cachedDiagnostics[file] = it
+        analyzeTimestamps[file] = Instant.now()
+      } else if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+          "Analyze cache update skipped due to newer request requestedGeneration={} currentGeneration={} file={}",
+          requestedGeneration,
+          analyzeGeneration.get(),
+          file,
+        )
+      }
+    }
   }
 
   fun isAnalyzing(): Boolean {
@@ -133,8 +152,11 @@ class JavaDiagnosticProvider {
     return task?.task != null && task.roots != null && task.roots.size > 0
   }
 
-  inner class AnalyzingThread(val compiler: JavaCompilerService, val file: Path) :
-      Thread("JavaAnalyzerThread") {
+  inner class AnalyzingThread(
+      val compiler: JavaCompilerService,
+      val file: Path,
+      val requestedGeneration: Long,
+  ) : Thread("JavaAnalyzerThread") {
 
     var result: DiagnosticResult = DiagnosticResult.NO_UPDATE
 
@@ -146,6 +168,17 @@ class JavaDiagnosticProvider {
       Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
       result =
           try {
+                if (requestedGeneration != analyzeGeneration.get()) {
+                  if (IdeLogConfig.shouldLogInfo()) {
+                    log.info(
+                      "Analyze skipped before compile due to newer request requestedGeneration={} currentGeneration={} file={}",
+                      requestedGeneration,
+                      analyzeGeneration.get(),
+                      file,
+                    )
+                  }
+                  return
+                }
                 val contents = com.tom.rv2ide.projects.FileManager.getDocumentContents(file)
                 val partialRequest =
                     compiler.getIncrementalState().newCursorPosition?.let { position ->
@@ -156,6 +189,17 @@ class JavaDiagnosticProvider {
                         null
                       }
                     }
+                if (requestedGeneration != analyzeGeneration.get()) {
+                  if (IdeLogConfig.shouldLogInfo()) {
+                    log.info(
+                      "Analyze skipped after snapshot due to newer request requestedGeneration={} currentGeneration={} file={}",
+                      requestedGeneration,
+                      analyzeGeneration.get(),
+                      file,
+                    )
+                  }
+                  return
+                }
                 compiler
                     .compile(
                         com.tom.rv2ide.lsp.java.models.CompilationRequest(
@@ -169,7 +213,21 @@ class JavaDiagnosticProvider {
                             partialRequest,
                         )
                     )
-                    .get { task -> doAnalyze(file, task) }
+                    .get { task ->
+                      if (requestedGeneration != analyzeGeneration.get()) {
+                        if (IdeLogConfig.shouldLogInfo()) {
+                          log.info(
+                            "Analyze skipped after compile due to newer request requestedGeneration={} currentGeneration={} file={}",
+                            requestedGeneration,
+                            analyzeGeneration.get(),
+                            file,
+                          )
+                        }
+                        DiagnosticResult.NO_UPDATE
+                      } else {
+                        doAnalyze(file, task)
+                      }
+                    }
               } catch (err: Throwable) {
                 if (CancelChecker.isCancelled(err)) {
                   if (IdeLogConfig.shouldLogWarn()) {
@@ -179,7 +237,7 @@ class JavaDiagnosticProvider {
                   if (IdeLogConfig.shouldLogWarn()) {
                     log.warn("Unable to analyze file", err)
                     log.warn(
-                      "Java analyze failure file={} type={} message={} causeType={} causeMessage={} thread={} compilerHash={} currentContextPresent={} synchronizedTaskPresent={}",
+                      "Java analyze failure file={} type={} message={} causeType={} causeMessage={} thread={} compilerHash={} currentContextPresent={} synchronizedTaskPresent={} requestedGeneration={} currentGeneration={}",
                       file,
                       err.javaClass.name,
                       err.message,
@@ -189,16 +247,14 @@ class JavaDiagnosticProvider {
                       System.identityHashCode(compiler),
                       compiler.compiler.currentContext != null,
                       compiler.getSynchronizedTask() != null,
+                      requestedGeneration,
+                      analyzeGeneration.get(),
                     )
                   }
                 }
                 DiagnosticResult.NO_UPDATE
               } finally {
                 analyzing.set(false)
-              }
-              .also {
-                cachedDiagnostics[file] = it
-                analyzeTimestamps[file] = Instant.now()
               }
     }
   }
