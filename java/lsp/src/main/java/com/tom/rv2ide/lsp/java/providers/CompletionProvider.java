@@ -20,6 +20,7 @@ import static com.tom.rv2ide.lsp.api.HelpersKt.describeSnippet;
 import static com.tom.rv2ide.progress.ProgressManager.abortIfCancelled;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.blankj.utilcode.util.ReflectUtils;
 import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.lsp.api.AbstractServiceProvider;
@@ -154,7 +155,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
     final String partial = params.getPrefix() == null ? "" : partialIdentifier(params.requirePrefix(), params.requirePrefix().length());
     if (this.cache.canUseCache(params)) {
-      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.getResult(), partial, item -> {
+      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.result, partial, item -> {
         final var description = item.getSnippetDescription();
         var deleteSelected = true;
         var allowCommands = false;
@@ -170,9 +171,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       return result;
     }
 
-    if (this.cache.getParams() != null
-        && DocumentUtils.isSameFile(this.cache.getParams().getFile(), params.getFile())) {
-      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.getResult(), partial, item -> {
+    if (this.cache.params != null
+        && DocumentUtils.isSameFile(this.cache.params.getFile(), params.getFile())) {
+      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.result, partial, item -> {
         final var description = item.getSnippetDescription();
         var deleteSelected = true;
         var allowCommands = false;
@@ -205,7 +206,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     if (this.cache != null && this.cache.canUseCache(params)) {
       final String prefix = params.requirePrefix();
       final String partial = partialIdentifier(prefix, prefix.length());
-      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.getResult(), partial,
+      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.result, partial,
           item -> {
             final var description = item.getSnippetDescription();
             var deleteSelected = true;
