@@ -262,11 +262,32 @@ public class CompileBatch implements AutoCloseable {
     options.add("-target");
     options.add(compilerSettings.getJavaBytecodeVersion());
   }
-
   @Override
   public void close() {
+    final Runtime runtimeBefore = Runtime.getRuntime();
+    final long usedBefore = runtimeBefore.totalMemory() - runtimeBefore.freeMemory();
+    LOG.info(
+        "CompileBatch.close start batchHash={} roots={} methodPositions={} diagnosticListenerPresent={} usedMemoryBytes={}",
+        System.identityHashCode(this),
+        roots == null ? -1 : roots.size(),
+        methodPositions == null ? -1 : methodPositions.size(),
+        diagnosticListener != null,
+        usedBefore);
     closed = true;
+    methodPositions.clear();
+    roots.clear();
+    diagnosticListener = null;
+    final Runtime runtimeAfter = Runtime.getRuntime();
+    final long usedAfter = runtimeAfter.totalMemory() - runtimeAfter.freeMemory();
+    LOG.info(
+        "CompileBatch.close end batchHash={} roots={} methodPositions={} diagnosticListenerPresent={} usedMemoryBytes={}",
+        System.identityHashCode(this),
+        roots == null ? -1 : roots.size(),
+        methodPositions == null ? -1 : methodPositions.size(),
+        diagnosticListener != null,
+        usedAfter);
   }
+
 
   /**
    * If the compilation failed because javac didn't find some package-private files in source files

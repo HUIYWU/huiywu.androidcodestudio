@@ -14,10 +14,10 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.lsp.java.compiler;
 
 import androidx.annotation.NonNull;
+import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.javac.services.partial.DiagnosticListenerImpl;
 import java.nio.file.Path;
 import java.util.List;
@@ -25,10 +25,15 @@ import jdkx.tools.Diagnostic;
 import jdkx.tools.JavaFileObject;
 import openjdk.source.tree.CompilationUnitTree;
 import openjdk.tools.javac.api.JavacTaskImpl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class CompileTask implements AutoCloseable {
 
+  private static final Logger LOG = LoggerFactory.getLogger(CompileTask.class);
+
   public final JavacTaskImpl task;
+
   public final List<CompilationUnitTree> roots;
   public final List<Diagnostic<? extends JavaFileObject>> diagnostics;
   public final CompileBatch compileBatch;
@@ -67,7 +72,28 @@ public class CompileTask implements AutoCloseable {
     }
     throw new RuntimeException("Compilation unit not found");
   }
-
   @Override
-  public void close() {}
+  public void close() {
+    final Runtime runtimeBefore = Runtime.getRuntime();
+    final long usedBefore = runtimeBefore.totalMemory() - runtimeBefore.freeMemory();
+    LOG.info(
+        "CompileTask.close start taskHash={} compileBatchPresent={} roots={} diagnostics={} usedMemoryBytes={}",
+        System.identityHashCode(this),
+        compileBatch != null,
+        roots == null ? -1 : roots.size(),
+        diagnostics == null ? -1 : diagnostics.size(),
+        usedBefore);
+
+    if (compileBatch != null) {
+      compileBatch.close();
+    }
+    final Runtime runtimeAfter = Runtime.getRuntime();
+    final long usedAfter = runtimeAfter.totalMemory() - runtimeAfter.freeMemory();
+    LOG.info(
+        "CompileTask.close end taskHash={} usedMemoryBytes={}",
+        System.identityHashCode(this),
+        usedAfter);
+
+  }
 }
+

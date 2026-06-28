@@ -83,9 +83,26 @@ class SynchronizedTask {
     isCompiling = true
     try {
       if (task != null) {
+        val runtimeBefore = Runtime.getRuntime()
+        val usedBefore = runtimeBefore.totalMemory() - runtimeBefore.freeMemory()
+        log.info(
+            "SynchronizedTask.post closing previous task taskHash={} usedMemoryBytes={}",
+            System.identityHashCode(task),
+            usedBefore,
+        )
+
         task!!.close()
+        val runtimeAfter = Runtime.getRuntime()
+        val usedAfter = runtimeAfter.totalMemory() - runtimeAfter.freeMemory()
+        log.info(
+            "SynchronizedTask.post closed previous task taskHash={} usedMemoryBytes={}",
+            System.identityHashCode(task),
+            usedAfter,
+        )
+
       }
       action()
+
     } catch (err: Throwable) {
       if (!isCancelled(err)) {
         log.error(

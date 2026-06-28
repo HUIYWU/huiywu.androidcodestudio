@@ -34,6 +34,10 @@ final class CompilationWorkingSetBuilder {
       return request;
     }
 
+    if (request.allowPartialReparse) {
+      return request;
+    }
+ 
     final Collection<JavaFileObject> originalSources = request.sources;
     if (originalSources.isEmpty() || originalSources.size() != 1) {
       return request;

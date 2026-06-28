@@ -31,8 +31,8 @@ import org.slf4j.LoggerFactory
  */
 class CachedCompletion
 private constructor(
-    val params: CompletionParams,
-    val result: com.tom.rv2ide.lsp.models.CompletionResult,
+    @JvmField val params: CompletionParams,
+    @JvmField val result: com.tom.rv2ide.lsp.models.CompletionResult,
 ) {
 
   companion object {

@@ -95,11 +95,23 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
   public CompletionResult complete(@NonNull CompletionParams params) {
     final var synchronizedTask = compiler.getSynchronizedTask();
     if (synchronizedTask.isBusy()) {
-      LOG.error("Cannot complete, a compilation task is already in progress");
-      synchronizedTask.logStats();
+      final CompletionResult busyFallback = tryServeBusyFallback(params);
+      if (busyFallback != null) {
+        if (IdeLogConfig.shouldLogInfo()) {
+          LOG.info("Completion busy; serving fallback result itemCount={} incomplete={} cached={}",
+              busyFallback.getItems().size(),
+              busyFallback.isIncomplete(),
+              busyFallback.isCached());
+        }
+        return busyFallback;
+      }
+      if (IdeLogConfig.shouldLogWarn()) {
+        LOG.warn("Completion busy and no fallback result is available");
+        synchronizedTask.logStats();
+      }
       return CompletionResult.EMPTY;
     }
-
+ 
     completing.set(true);
     try {
       abortIfCancelled();
@@ -132,6 +144,51 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     } finally {
       completing.set(false);
     }
+  }
+
+  @Nullable
+  private CompletionResult tryServeBusyFallback(@NonNull final CompletionParams params) {
+    if (this.cache == null) {
+      return null;
+    }
+
+    final String partial = params.getPrefix() == null ? "" : partialIdentifier(params.requirePrefix(), params.requirePrefix().length());
+    if (this.cache.canUseCache(params)) {
+      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.getResult(), partial, item -> {
+        final var description = item.getSnippetDescription();
+        var deleteSelected = true;
+        var allowCommands = false;
+        CodeSnippet snippet = null;
+        if (description != null) {
+          deleteSelected = description.getDeleteSelected();
+          allowCommands = description.getAllowCommandExecution();
+          snippet = description.getSnippet();
+        }
+        item.setSnippetDescription(describeSnippet(partial, deleteSelected, snippet, allowCommands));
+      });
+      result.markCached();
+      return result;
+    }
+
+    if (this.cache.getParams() != null
+        && DocumentUtils.isSameFile(this.cache.getParams().getFile(), params.getFile())) {
+      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.getResult(), partial, item -> {
+        final var description = item.getSnippetDescription();
+        var deleteSelected = true;
+        var allowCommands = false;
+        CodeSnippet snippet = null;
+        if (description != null) {
+          deleteSelected = description.getDeleteSelected();
+          allowCommands = description.getAllowCommandExecution();
+          snippet = description.getSnippet();
+        }
+        item.setSnippetDescription(describeSnippet(partial, deleteSelected, snippet, allowCommands));
+      });
+      result.markCached();
+      return result;
+    }
+
+    return null;
   }
 
   @NonNull
@@ -373,8 +430,14 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         klass = MemberSelectCompletionProvider.class;
         break;
       case MEMBER_REFERENCE:
-        klass = MemberReferenceCompletionProvider.class;
-        break;
+        LOG.warn(
+            "Skipping member reference completion file={} cursor={} leafKind={} partial={} endsWithParen={} reason=temporarily disabled to avoid repeated full fallback and memory pressure",
+            file,
+            cursor,
+            path.getLeaf().getKind(),
+            partial,
+            endsWithParen);
+        return CompletionResult.EMPTY;
       case SWITCH:
         klass = SwitchConstantCompletionProvider.class;
         break;

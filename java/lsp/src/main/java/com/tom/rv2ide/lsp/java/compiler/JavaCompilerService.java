@@ -986,28 +986,62 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
     this.incrementalState.markReparseSucceeded();
     return PartialReparseAttemptResult.success("method body reparsed");
   }
-
   private synchronized void recompile(CompilationRequest request) {
-    if (IdeLogConfig.shouldLogDebug()) {
-      LOG.debug(
-          "recompile start requestHash={} sources={} cachedCompilePresentBeforeClose={} currentContextPresentBeforeClose={}",
-          System.identityHashCode(request),
-          request.sources == null ? -1 : request.sources.size(),
-          cachedCompile != null,
-          compiler.currentContext != null);
-    }
+    final Runtime runtimeBefore = Runtime.getRuntime();
+    final long usedBefore = runtimeBefore.totalMemory() - runtimeBefore.freeMemory();
+    LOG.info(
+        "recompile start requestHash={} sources={} cachedCompilePresentBeforeClose={} currentContextPresentBeforeClose={} usedMemoryBytes={}",
+        System.identityHashCode(request),
+        request.sources == null ? -1 : request.sources.size(),
+        cachedCompile != null,
+        compiler.currentContext != null,
+        usedBefore);
+
     close();
     this.cachedCompile = performCompilation(request);
+    final Runtime runtimeAfterCompile = Runtime.getRuntime();
+    final long usedAfterCompile = runtimeAfterCompile.totalMemory() - runtimeAfterCompile.freeMemory();
+    LOG.info(
+        "recompile finish requestHash={} cachedCompilePresentAfterCompile={} currentContextPresentAfterCompile={} usedMemoryBytes={}",
+        System.identityHashCode(request),
+        cachedCompile != null,
+        compiler.currentContext != null,
+        usedAfterCompile);
+
     this.incrementalState.resetAfterFullRecompile();
     updateModificationCache(request);
   }
 
   public synchronized void close() {
+    final Runtime runtimeBeforeClose = Runtime.getRuntime();
+    final long usedBeforeClose = runtimeBeforeClose.totalMemory() - runtimeBeforeClose.freeMemory();
+    LOG.info(
+        "JavaCompilerService.close start cachedCompilePresent={} currentContextPresent={} usedMemoryBytes={}",
+        cachedCompile != null,
+        compiler.currentContext != null,
+        usedBeforeClose);
+
+    boolean recreatedReusableCompiler = false;
     if (cachedCompile != null) {
       cachedCompile.close();
       cachedCompile.borrow.close();
+      cachedCompile = null;
     }
+    if (compiler != null && compiler.currentContext != null) {
+      compiler = new ReusableCompiler();
+      recreatedReusableCompiler = true;
+    }
+    final Runtime runtimeAfterClose = Runtime.getRuntime();
+    final long usedAfterClose = runtimeAfterClose.totalMemory() - runtimeAfterClose.freeMemory();
+    LOG.info(
+        "JavaCompilerService.close end cachedCompilePresent={} currentContextPresent={} recreatedReusableCompiler={} usedMemoryBytes={}",
+        cachedCompile != null,
+        compiler.currentContext != null,
+        recreatedReusableCompiler,
+        usedAfterClose);
+
   }
+
 
   private void updateModificationCache(final CompilationRequest request) {
     cachedModified.clear();
