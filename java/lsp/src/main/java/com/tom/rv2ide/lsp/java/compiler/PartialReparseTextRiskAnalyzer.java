@@ -131,7 +131,7 @@ public final class PartialReparseTextRiskAnalyzer {
       return false;
     }
     final String beforeEquals = prefix.substring(0, equals);
-    if (!beforeEquals.matches("(?s).*(String|char\s*\[\s*\]|Object|var)?\s+[A-Za-z_$][A-Za-z0-9_$]*\s*$")) {
+    if (!beforeEquals.matches("(?s).*(String|char\\s*\\[\\s*\\]|Object|var)?\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*$")) {
       return false;
     }
     int quoteCount = 0;
