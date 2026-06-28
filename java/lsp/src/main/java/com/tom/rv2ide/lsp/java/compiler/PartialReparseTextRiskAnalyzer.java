@@ -205,7 +205,7 @@ public final class PartialReparseTextRiskAnalyzer {
     if (!changedLine.contains("=")) {
       return false;
     }
-    return changedLine.matches(".*=\s*(\".*|new\s+.*|[A-Za-z_$][A-Za-z0-9_$.]*\s*)");
+    return changedLine.matches(".*=\\s*(\".*|new\\s+.*|[A-Za-z_$][A-Za-z0-9_$.]*\\s*)");
   }
 
   private boolean looksLikeIncompleteStatement(
