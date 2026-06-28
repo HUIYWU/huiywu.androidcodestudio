@@ -35,6 +35,7 @@ data class CompilationRequest
 constructor(
     @JvmField val sources: Collection<JavaFileObject>,
     @JvmField val partialRequest: PartialReparseRequest? = null,
+    @JvmField val allowPartialReparse: Boolean = false,
     @JvmField
     val compilationTaskProcessor: CompilationTaskProcessor = DefaultCompilationTaskProcessor(),
     @JvmField var configureContext: Consumer<Context>? = null,

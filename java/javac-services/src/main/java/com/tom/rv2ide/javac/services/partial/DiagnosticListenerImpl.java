@@ -149,12 +149,29 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
     }
     return result;
   }
-
   public final void endPartialReparse(final int delta) {
     this.currentDelta += delta;
+    final Diagnostics errors = getErrors(jfo);
+    if (partialReparseErrors != null) {
+      for (Diagnostic<? extends JavaFileObject> diagnostic : partialReparseErrors) {
+        errors.add((int) diagnostic.getPosition(), diagnostic);
+      }
+    }
+    if (affectedErrors != null) {
+      for (Diagnostic<? extends JavaFileObject> diagnostic : affectedErrors) {
+        final Diagnostic<? extends JavaFileObject> translated =
+            currentDelta == 0 ? diagnostic : new DeltaDiagnostic(diagnostic, currentDelta);
+        errors.add((int) translated.getPosition(), translated);
+      }
+    }
+    partialReparseErrors = null;
+    affectedErrors = null;
+    currentDelta = 0;
+    partialReparseRealErrors = false;
   }
 
   private static final class D implements Diagnostic {
+
 
     private final JCDiagnostic delegate;
 
@@ -208,8 +225,68 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
       return this.delegate.getMessage(locale);
     }
   }
+  private static final class DeltaDiagnostic implements Diagnostic<JavaFileObject> {
+
+    private final Diagnostic<? extends JavaFileObject> delegate;
+    private final int delta;
+
+    private DeltaDiagnostic(Diagnostic<? extends JavaFileObject> delegate, int delta) {
+      this.delegate = delegate;
+      this.delta = delta;
+    }
+
+    @Override
+    public Kind getKind() {
+      return delegate.getKind();
+    }
+
+    @Override
+    public JavaFileObject getSource() {
+      return delegate.getSource();
+    }
+
+    @Override
+    public long getPosition() {
+      return translate(delegate.getPosition());
+    }
+
+    @Override
+    public long getStartPosition() {
+      return translate(delegate.getStartPosition());
+    }
+
+    @Override
+    public long getEndPosition() {
+      return translate(delegate.getEndPosition());
+    }
+
+    @Override
+    public long getLineNumber() {
+      return delegate.getLineNumber();
+    }
+
+    @Override
+    public long getColumnNumber() {
+      return delegate.getColumnNumber();
+    }
+
+    @Override
+    public String getCode() {
+      return delegate.getCode();
+    }
+
+    @Override
+    public String getMessage(Locale locale) {
+      return delegate.getMessage(locale);
+    }
+
+    private long translate(long pos) {
+      return pos < 0 ? pos : pos + delta;
+    }
+  }
 
   private static final class IncompleteClassPath implements Diagnostic<JavaFileObject> {
+
 
     private final JavaFileObject file;
 

@@ -383,13 +383,19 @@ public class JavaCompilerService implements CompilerProvider {
           eligibility.needsRecompilation,
           compiler.currentContext != null);
     }
-
     partialReparseRouter.route(
         decision,
         () -> recompile(request),
         () -> dryRunPartialReparseThenFullRecompile(request, eligibility),
-        () -> tryPartialReparseWithFallback(request));
+        () -> {
+          if (request.allowPartialReparse) {
+            tryPartialReparseWithFallback(request);
+          } else {
+            recompile(request);
+          }
+        });
   }
+
 
   private void logPartialReparseDecision(
       @NonNull final PartialReparseEligibility eligibility,
@@ -433,9 +439,13 @@ public class JavaCompilerService implements CompilerProvider {
         partialReparseDryRunComparisonRunner.attachComparison(
             report,
             fullSnapshot[0],
-            attemptReport ->
-                      partialReparseDryRunPartialSnapshotProvider.createPartialSnapshot(
-                          request, eligibility, attemptReport, this));
+            attemptReport -> {
+              final PartialReparseDryRunSnapshot partialSnapshot =
+                  partialReparseDryRunPartialSnapshotProvider.createPartialSnapshot(
+                      request, eligibility, attemptReport, this);
+              return PartialReparseDryRunComparisonRunner.PartialSnapshotResult.of(
+                  partialSnapshot, partialReparseDryRunPartialSnapshotProvider.getLastSnapshotReason());
+            });
     logPartialReparseDryRunReport(reportWithComparison);
   }
   @Nullable
@@ -469,11 +479,12 @@ public class JavaCompilerService implements CompilerProvider {
       return;
     }
     LOG.debug(
-        "Partial reparse dry-run report: attemptState={} reason={} fullRecompileExecuted={} "
+        "Partial reparse dry-run report: attemptState={} reason={} partialSnapshotReason={} fullRecompileExecuted={} "
             + "partialResultCommitted={} diagnosticsComparison={} methodPositionsComparison={} "
             + "sourcePositionsComparison={} comparisonReason={}",
         report.attemptState,
         report.reason,
+        report.partialSnapshotReason,
         report.fullRecompileExecuted,
         report.partialResultCommitted,
         report.comparison.diagnosticsComparison,
@@ -481,16 +492,334 @@ public class JavaCompilerService implements CompilerProvider {
         report.comparison.sourcePositionsComparison,
         report.comparison.reason);
   }
+  private void tryPartialReparseThenVerifyFullRecompile(
+      @NonNull final CompilationRequest request) {
+    PartialReparseAttemptResult partialResult = null;
+    Throwable partialError = null;
+    PartialReparseDryRunSnapshot partialSnapshot = null;
+    PartialVerifyContext partialContext = null;
+
+    try {
+      partialContext = buildPartialVerifyContext(request);
+      partialResult = tryReparse(request);
+      if (partialResult != null && partialResult.isSuccess() && cachedCompile != null) {
+        partialSnapshot =
+            partialReparseDryRunSnapshotCollector.collect(
+                diagnostics, cachedCompile.methodPositions);
+      }
+    } catch (Throwable t) {
+      partialError = t;
+    }
+
+    logPartialVerifyCandidate(request, partialResult, partialError);
+
+    final CompilationRequest verifyRequest = createVerifyCompilationRequest(request);
+    recompile(verifyRequest);
+
+    final PartialReparseDryRunSnapshot fullSnapshot =
+        cachedCompile == null
+            ? null
+            : partialReparseDryRunSnapshotCollector.collect(
+                diagnostics, cachedCompile.methodPositions);
+    final PartialReparseDryRunComparison comparison =
+        new PartialReparseDryRunComparator().compare(partialSnapshot, fullSnapshot);
+
+    logPartialVerifyComparison(request, partialResult, comparison);
+    logPartialVerifyContext(request, partialResult, comparison, partialContext);
+    logPartialVerifyDiagnosticsDiff(request, partialSnapshot, fullSnapshot, comparison);
+    logPartialVerifyPublishDecision(request, partialResult, partialError);
+  }
+
+  @NonNull
+  private CompilationRequest createVerifyCompilationRequest(
+      @NonNull final CompilationRequest request) {
+    return new CompilationRequest(
+        request.sources,
+        null,
+        request.compilationTaskProcessor,
+        request.configureContext);
+  }
 
   private void tryPartialReparseWithFallback(@NonNull final CompilationRequest request) {
-    partialReparseFallbackHandler.handle(
-        () -> tryReparse(request),
-        () -> recompile(request),
-        (result, err) -> logPartialReparseFallback(result, err));
+    final PartialReparseFallbackHandler.Outcome outcome =
+        partialReparseFallbackHandler.handle(
+            () -> tryReparse(request),
+            () -> recompile(request),
+            (result, err) -> logPartialReparseFallback(result, err));
+    logPartialReparseOutcome(request, outcome);
+  }
+
+  private void logPartialReparseOutcome(
+      @NonNull final CompilationRequest request,
+      @NonNull final PartialReparseFallbackHandler.Outcome outcome) {
+    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogDebug()) {
+      return;
+    }
+    LOG.debug(
+        "Partial reparse live outcome: outcome={} requestHash={} sources={} currentContextPresent={}",
+        outcome,
+        System.identityHashCode(request),
+        request.sources == null ? -1 : request.sources.size(),
+        compiler.currentContext != null);
+  }
+
+  private void logPartialVerifyCandidate(
+      @NonNull final CompilationRequest request,
+      @Nullable final PartialReparseAttemptResult result,
+      @Nullable final Throwable err) {
+    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogDebug()) {
+      return;
+    }
+    if (err != null) {
+      LOG.debug(
+          "Partial verify candidate failed with exception: requestHash={} sources={}",
+          System.identityHashCode(request),
+          request.sources == null ? -1 : request.sources.size(),
+          err);
+      return;
+    }
+    LOG.debug(
+        "Partial verify candidate result: requestHash={} status={} reason={}",
+        System.identityHashCode(request),
+        result == null ? null : result.status,
+        result == null ? null : result.reason);
+  }
+
+  private void logPartialVerifyComparison(
+      @NonNull final CompilationRequest request,
+      @Nullable final PartialReparseAttemptResult result,
+      @NonNull final PartialReparseDryRunComparison comparison) {
+    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogDebug()) {
+      return;
+    }
+    LOG.debug(
+        "Partial verify comparison: requestHash={} candidateStatus={} diagnosticsComparison={} methodPositionsComparison={} sourcePositionsComparison={} reason={}",
+        System.identityHashCode(request),
+        result == null ? null : result.status,
+        comparison.diagnosticsComparison,
+        comparison.methodPositionsComparison,
+        comparison.sourcePositionsComparison,
+        comparison.reason);
+  }
+
+  private void logPartialVerifyContext(
+      @NonNull final CompilationRequest request,
+      @Nullable final PartialReparseAttemptResult result,
+      @NonNull final PartialReparseDryRunComparison comparison,
+      @Nullable final PartialVerifyContext context) {
+    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogDebug()) {
+      return;
+    }
+    if (result == null || !result.isSuccess()) {
+      return;
+    }
+    if (comparison.diagnosticsComparison
+        != PartialReparseDryRunComparison.ComparisonState.MISMATCH) {
+      return;
+    }
+    LOG.debug(
+        "Partial verify context: requestHash={} file={} method={} cursor={} latestChangeRange={} changeDelta={} methodBodyStart={} methodBodyEnd={} methodBodyLength={} cursorInMethodOffset={} cursorToMethodEnd={} contentLength={} previewTruncated={} cursorWindowStart={} cursorWindowEnd={} cursorWindowPreview={} newBodyPreview={}",
+        System.identityHashCode(request),
+        context == null ? null : context.file,
+        context == null ? null : context.method,
+        context == null ? null : context.cursor,
+        context == null ? null : context.latestChangeRange,
+        context == null ? null : context.changeDelta,
+        context == null ? null : context.methodBodyStart,
+        context == null ? null : context.methodBodyEnd,
+        context == null ? null : context.methodBodyLength,
+        context == null ? null : context.cursorInMethodOffset,
+        context == null ? null : context.cursorToMethodEnd,
+        context == null ? null : context.contentLength,
+        context != null && context.previewTruncated,
+        context == null ? null : context.cursorWindowStart,
+        context == null ? null : context.cursorWindowEnd,
+        context == null ? null : context.cursorWindowPreview,
+        context == null ? null : context.newBodyPreview);
+  }
+
+  private void logPartialVerifyDiagnosticsDiff(
+      @NonNull final CompilationRequest request,
+      @Nullable final PartialReparseDryRunSnapshot partialSnapshot,
+      @Nullable final PartialReparseDryRunSnapshot fullSnapshot,
+      @NonNull final PartialReparseDryRunComparison comparison) {
+    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogDebug()) {
+      return;
+    }
+    if (comparison.diagnosticsComparison
+        != PartialReparseDryRunComparison.ComparisonState.MISMATCH) {
+      return;
+    }
+    final List<String> partialDiagnostics =
+        partialSnapshot == null ? Collections.emptyList() : partialSnapshot.diagnostics;
+    final List<String> fullDiagnostics =
+        fullSnapshot == null ? Collections.emptyList() : fullSnapshot.diagnostics;
+    final List<String> partialOnly = new ArrayList<>(partialDiagnostics);
+    partialOnly.removeAll(fullDiagnostics);
+    final List<String> fullOnly = new ArrayList<>(fullDiagnostics);
+    fullOnly.removeAll(partialDiagnostics);
+    final int sampleLimit = 3;
+    final String primarySourceKey =
+        request.sources == null || request.sources.isEmpty()
+            ? null
+            : String.valueOf(request.sources.iterator().next().toUri());
+    final List<String> partialOnlyCurrentFile = new ArrayList<>();
+    final List<String> partialOnlyOtherFiles = new ArrayList<>();
+    for (final String key : partialOnly) {
+      if (primarySourceKey != null && key.startsWith(primarySourceKey + "|")) {
+        partialOnlyCurrentFile.add(key);
+      } else {
+        partialOnlyOtherFiles.add(key);
+      }
+    }
+    final List<String> fullOnlyCurrentFile = new ArrayList<>();
+    final List<String> fullOnlyOtherFiles = new ArrayList<>();
+    for (final String key : fullOnly) {
+      if (primarySourceKey != null && key.startsWith(primarySourceKey + "|")) {
+        fullOnlyCurrentFile.add(key);
+      } else {
+        fullOnlyOtherFiles.add(key);
+      }
+    }
+    LOG.debug(
+        "Partial verify diagnostics diff: requestHash={} partialDiagnosticsCount={} fullDiagnosticsCount={} partialOnlyCount={} fullOnlyCount={} partialOnlyCurrentFileCount={} partialOnlyOtherFilesCount={} fullOnlyCurrentFileCount={} fullOnlyOtherFilesCount={}",
+        System.identityHashCode(request),
+        partialDiagnostics.size(),
+        fullDiagnostics.size(),
+        partialOnly.size(),
+        fullOnly.size(),
+        partialOnlyCurrentFile.size(),
+        partialOnlyOtherFiles.size(),
+        fullOnlyCurrentFile.size(),
+        fullOnlyOtherFiles.size());
+    for (int i = 0; i < Math.min(sampleLimit, partialOnlyCurrentFile.size()); i++) {
+      LOG.debug(
+          "Partial verify diagnostics diff: requestHash={} partialOnlyCurrentFile[{}]={}",
+          System.identityHashCode(request),
+          i,
+          partialOnlyCurrentFile.get(i));
+    }
+    for (int i = 0; i < Math.min(sampleLimit, partialOnlyOtherFiles.size()); i++) {
+      LOG.debug(
+          "Partial verify diagnostics diff: requestHash={} partialOnlyOtherFile[{}]={}",
+          System.identityHashCode(request),
+          i,
+          partialOnlyOtherFiles.get(i));
+    }
+    for (int i = 0; i < Math.min(sampleLimit, fullOnlyCurrentFile.size()); i++) {
+      LOG.debug(
+          "Partial verify diagnostics diff: requestHash={} fullOnlyCurrentFile[{}]={}",
+          System.identityHashCode(request),
+          i,
+          fullOnlyCurrentFile.get(i));
+    }
+for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
+      LOG.debug(
+          "Partial verify diagnostics diff: requestHash={} fullOnlyOtherFile[{}]={}",
+          System.identityHashCode(request),
+          i,
+          fullOnlyOtherFiles.get(i));
+    }
+    LOG.debug(
+        "Partial verify diagnostics code summary: requestHash={} partialOnlyCurrentFileCodes={} fullOnlyCurrentFileCodes={}",
+        System.identityHashCode(request),
+        summarizeDiagnosticCodes(partialOnlyCurrentFile),
+        summarizeDiagnosticCodes(fullOnlyCurrentFile));
+  }
+
+  @NonNull
+  private Map<String, Integer> summarizeDiagnosticCodes(@NonNull final List<String> diagnosticKeys) {
+    final Map<String, Integer> counts = new HashMap<>();
+    for (final String key : diagnosticKeys) {
+      final String[] parts = key.split("\\|", 4);
+      final String code = parts.length >= 3 ? parts[2] : "<unknown-code>";
+      counts.put(code, counts.getOrDefault(code, 0) + 1);
+    }
+    return counts;
+  }
+
+  @Nullable
+  private PartialVerifyContext buildPartialVerifyContext(@NonNull final CompilationRequest request) {
+    if (request.partialRequest == null || cachedCompile == null || cachedCompile.methodPositions == null) {
+      return null;
+    }
+    final PartialReparseRequest partialRequest = request.partialRequest;
+    final File file = new File(request.sources.iterator().next().toUri());
+    final String path = file.getAbsolutePath();
+    final List<Pair<Range, TreePath>> positions = cachedCompile.methodPositions.get(path);
+    if (positions == null) {
+      return null;
+    }
+    final Pair<Range, TreePath> currentMethod =
+        partialReparseMethodLocator.findCurrentMethod(positions, partialRequest.cursor);
+    if (currentMethod == null || !(currentMethod.second.getLeaf() instanceof MethodTree)) {
+      return null;
+    }
+    final MethodTree methodTree = (MethodTree) currentMethod.second.getLeaf();
+    final CompilationInfo info =
+        new CompilationInfo(
+            cachedCompile.task, cachedCompile.diagnosticListener, cachedCompile.roots.get(0));
+    final SourcePositions sourcePositions = Trees.instance(cachedCompile.task).getSourcePositions();
+    final int start = (int) sourcePositions.getStartPosition(info.cu, methodTree.getBody());
+    final int end =
+        (int) sourcePositions.getEndPosition(info.cu, methodTree.getBody())
+            + this.incrementalState.getChangeDelta()
+            - 1;
+    final int previewEnd = Math.min(end, start + 160);
+    final boolean inRange =
+        start >= 0 && start <= previewEnd && previewEnd <= partialRequest.contents.length();
+    final String preview =
+        inRange
+            ? partialRequest.contents.substring(start, previewEnd)
+            : "<out-of-range>";
+    final int safeCursor = (int) partialRequest.cursor;
+    final int cursorWindowRadius = 60;
+    final int cursorWindowStart = Math.max(0, safeCursor - cursorWindowRadius);
+    final int cursorWindowEnd =
+        Math.min(partialRequest.contents.length(), safeCursor + cursorWindowRadius);
+    final String cursorWindowPreview =
+        cursorWindowStart <= cursorWindowEnd
+            ? partialRequest.contents.substring(cursorWindowStart, cursorWindowEnd)
+            : "<out-of-range>";
+    return new PartialVerifyContext(
+        path,
+        String.valueOf(methodTree.getName()),
+        partialRequest.cursor,
+        String.valueOf(this.incrementalState.getLatestChangeRange()),
+        this.incrementalState.getChangeDelta(),
+        start,
+        end,
+        Math.max(0, end - start),
+        safeCursor - start,
+        end - safeCursor,
+        partialRequest.contents.length(),
+        end > start + 160,
+        cursorWindowStart,
+        cursorWindowEnd,
+        cursorWindowPreview.replace('\n', ' ').replace('\r', ' '),
+        preview.replace('\n', ' ').replace('\r', ' '));
+  }
+
+  private void logPartialVerifyPublishDecision(
+      @NonNull final CompilationRequest request,
+      @Nullable final PartialReparseAttemptResult result,
+      @Nullable final Throwable err) {
+    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogDebug()) {
+      return;
+    }
+    LOG.debug(
+        "Partial verify publish decision: decision=VERIFY_FULL_ACCEPTED requestHash={} candidateStatus={} candidateReason={} candidateError={} cachedCompilePresent={} currentContextPresent={}",
+        System.identityHashCode(request),
+        result == null ? null : result.status,
+        result == null ? null : result.reason,
+        err != null,
+        cachedCompile != null,
+        compiler.currentContext != null);
   }
 
   private void logPartialReparseFallback(
       @Nullable final PartialReparseAttemptResult result, @Nullable final Throwable err) {
+
     if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogWarn()) {
       return;
     }
@@ -564,7 +893,8 @@ public class JavaCompilerService implements CompilerProvider {
     final int start = (int) sourcePositions.getStartPosition(info.cu, methodTree.getBody());
     final int end =
         (int) sourcePositions.getEndPosition(info.cu, methodTree.getBody())
-            + this.incrementalState.getChangeDelta();
+            + this.incrementalState.getChangeDelta()
+            - 1;
 
     final PartialReparseAttemptResult rangePreflight =
         partialReparsePreflight.validateRanges(
@@ -593,8 +923,44 @@ public class JavaCompilerService implements CompilerProvider {
       return rangePreflight;
     }
 
+    final PartialReparseAttemptResult textRiskPreflight =
+        partialReparsePreflight.validateTextRisk(
+            partialRequest.contents,
+            partialRequest.cursor,
+            this.incrementalState.getLatestChangeRange(),
+            start,
+            end);
+    if (textRiskPreflight != null) {
+      if (IdeLogConfig.shouldLogWarn()) {
+        LOG.warn(
+            "Cannot reparse. {}. methodBodyStart: {} methodBodyEnd: {} changeRange: {} cursor={}",
+            textRiskPreflight.reason,
+            start,
+            end,
+            this.incrementalState.getLatestChangeRange(),
+            partialRequest.cursor);
+      }
+      return textRiskPreflight;
+    }
+
     if (IdeLogConfig.shouldLogDebug()) {
       watch.lapFromLast("Found start and end positions of current method");
+      final int previewEnd = Math.min(end, start + 160);
+      final String newBodyPreview =
+          start >= 0 && start <= previewEnd && previewEnd <= partialRequest.contents.length()
+              ? partialRequest.contents.substring(start, previewEnd)
+              : "<out-of-range>";
+      LOG.debug(
+          "Partial reparse execute request file={} method={} cursor={} methodBodyStart={} methodBodyEnd={} changeDelta={} contentLength={} latestChangeRange={} newBodyPreview={}",
+          path,
+          methodTree.getName(),
+          partialRequest.cursor,
+          start,
+          end,
+          this.incrementalState.getChangeDelta(),
+          partialRequest.contents.length(),
+          this.incrementalState.getLatestChangeRange(),
+          newBodyPreview.replace('\n', ' ').replace('\r', ' '));
     }
     final PartialReparser reparser = new PartialReparserImpl();
     final PartialReparseAttemptResult executeResult =
@@ -827,5 +1193,59 @@ public class JavaCompilerService implements CompilerProvider {
       return NOT_FOUND;
     }
     return file;
+  }
+
+  private static final class PartialVerifyContext {
+    private final String file;
+    private final String method;
+    private final long cursor;
+    private final String latestChangeRange;
+    private final int changeDelta;
+    private final int methodBodyStart;
+    private final int methodBodyEnd;
+    private final int methodBodyLength;
+    private final int cursorInMethodOffset;
+    private final int cursorToMethodEnd;
+    private final int contentLength;
+    private final boolean previewTruncated;
+    private final int cursorWindowStart;
+    private final int cursorWindowEnd;
+    private final String cursorWindowPreview;
+    private final String newBodyPreview;
+
+    private PartialVerifyContext(
+        @NonNull final String file,
+        @NonNull final String method,
+        final long cursor,
+        @NonNull final String latestChangeRange,
+        final int changeDelta,
+        final int methodBodyStart,
+        final int methodBodyEnd,
+        final int methodBodyLength,
+        final int cursorInMethodOffset,
+        final int cursorToMethodEnd,
+        final int contentLength,
+        final boolean previewTruncated,
+        final int cursorWindowStart,
+        final int cursorWindowEnd,
+        @NonNull final String cursorWindowPreview,
+        @NonNull final String newBodyPreview) {
+      this.file = file;
+      this.method = method;
+      this.cursor = cursor;
+      this.latestChangeRange = latestChangeRange;
+      this.changeDelta = changeDelta;
+      this.methodBodyStart = methodBodyStart;
+      this.methodBodyEnd = methodBodyEnd;
+      this.methodBodyLength = methodBodyLength;
+      this.cursorInMethodOffset = cursorInMethodOffset;
+      this.cursorToMethodEnd = cursorToMethodEnd;
+      this.contentLength = contentLength;
+      this.previewTruncated = previewTruncated;
+      this.cursorWindowStart = cursorWindowStart;
+      this.cursorWindowEnd = cursorWindowEnd;
+      this.cursorWindowPreview = cursorWindowPreview;
+      this.newBodyPreview = newBodyPreview;
+    }
   }
 }

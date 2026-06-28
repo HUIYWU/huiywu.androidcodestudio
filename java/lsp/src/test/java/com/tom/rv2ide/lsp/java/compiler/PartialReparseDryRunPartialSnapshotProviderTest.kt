@@ -6,9 +6,11 @@ import java.net.URI
 import jdkx.tools.JavaFileObject
 import jdkx.tools.SimpleJavaFileObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PartialReparseDryRunPartialSnapshotProviderTest {
@@ -41,19 +43,21 @@ class PartialReparseDryRunPartialSnapshotProviderTest {
     assertSame(eligibility, planner.eligibility)
     assertSame(report, planner.report)
   }
-
   @Test
-  fun createPartialSnapshotStillReturnsNullWhenPlanIsReadyUntilSnapshotExecutionIsImplemented() {
+  fun createPartialSnapshotStillReturnsNullWhenPlanIsReadyWithoutJavaCompilerServiceCopyPath() {
     val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
     val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
     val report = PartialReparseDryRunReport.notCreated()
     val planner = RecordingPlanner(PartialReparseDryRunIsolatedPlan.ready("ready"))
+    val liveCompiler = FakeCompilerProvider()
 
     val snapshot =
-        PartialReparseDryRunPartialSnapshotProvider(planner).createPartialSnapshot(request, eligibility, report)
+        PartialReparseDryRunPartialSnapshotProvider(planner)
+            .createPartialSnapshot(request, eligibility, report, liveCompiler)
 
     assertNull(snapshot)
     assertEquals(1, planner.calls)
+    assertSame(liveCompiler, planner.liveCompiler)
   }
 
   @Test
@@ -73,6 +77,121 @@ class PartialReparseDryRunPartialSnapshotProviderTest {
     assertNotNull(planner.liveCompiler)
     assertSame(liveCompiler, planner.liveCompiler)
   }
+
+  @Test
+  fun createPartialSnapshotReturnsCopySnapshotBeforeConsultingPlanner() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val planner = RecordingPlanner(PartialReparseDryRunIsolatedPlan.notAvailable("not available"))
+    val expectedSnapshot =
+        PartialReparseDryRunSnapshot(listOf("d"), listOf("m"), listOf("s"))
+    val provider =
+        object : PartialReparseDryRunPartialSnapshotProvider(planner) {
+          var copyPathInvoked = false
+
+          override fun createSnapshotFromLiveCompilerCopy(
+              request: CompilationRequest,
+              liveCompiler: CompilerProvider?,
+          ): PartialReparseDryRunSnapshot? {
+            copyPathInvoked = true
+            return expectedSnapshot
+          }
+        }
+
+    val snapshot =
+        provider.createPartialSnapshot(request, eligibility, report, FakeCompilerProvider())
+
+    assertTrue(provider.copyPathInvoked)
+    assertSame(expectedSnapshot, snapshot)
+    assertEquals(0, planner.calls)
+  }
+
+  @Test
+  fun createPartialSnapshotFallsBackToPlannerWhenCopySnapshotIsNull() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val planner = RecordingPlanner(PartialReparseDryRunIsolatedPlan.notAvailable("not available"))
+    val liveCompiler = FakeCompilerProvider()
+    val provider =
+        object : PartialReparseDryRunPartialSnapshotProvider(planner) {
+          var copyPathInvoked = false
+
+          override fun createSnapshotFromLiveCompilerCopy(
+              request: CompilationRequest,
+              liveCompiler: CompilerProvider?,
+          ): PartialReparseDryRunSnapshot? {
+            copyPathInvoked = true
+            return null
+          }
+        }
+
+    val snapshot = provider.createPartialSnapshot(request, eligibility, report, liveCompiler)
+
+    assertTrue(provider.copyPathInvoked)
+    assertNull(snapshot)
+    assertEquals(1, planner.calls)
+    assertNotNull(planner.liveCompiler)
+    assertSame(liveCompiler, planner.liveCompiler)
+  }
+
+  @Test
+  fun createPartialSnapshotWithoutLiveCompilerSkipsCopyPathAndConsultsPlanner() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val planner = RecordingPlanner(PartialReparseDryRunIsolatedPlan.notAvailable("not available"))
+    val provider =
+        object : PartialReparseDryRunPartialSnapshotProvider(planner) {
+          var copyPathInvoked = false
+
+          override fun createSnapshotFromLiveCompilerCopy(
+              request: CompilationRequest,
+              liveCompiler: CompilerProvider?,
+          ): PartialReparseDryRunSnapshot? {
+            copyPathInvoked = true
+            return super.createSnapshotFromLiveCompilerCopy(request, liveCompiler)
+          }
+        }
+
+    val snapshot = provider.createPartialSnapshot(request, eligibility, report)
+
+    assertTrue(provider.copyPathInvoked)
+    assertNull(snapshot)
+    assertEquals(1, planner.calls)
+    assertNull(planner.liveCompiler)
+  }
+
+  @Test
+  fun createPartialSnapshotFallsBackToPlannerWhenCopyPathReturnsNullAfterAttempt() {
+    val request = CompilationRequest(listOf(FakeSourceFile()), PartialReparseRequest(1L, "class A {}"))
+    val eligibility = PartialReparseEligibility.from(request, false, JavaIncrementalState())
+    val report = PartialReparseDryRunReport.notCreated()
+    val planner = RecordingPlanner(PartialReparseDryRunIsolatedPlan.notAvailable("not available"))
+    val liveCompiler = FakeCompilerProvider()
+    val provider =
+        object : PartialReparseDryRunPartialSnapshotProvider(planner) {
+          var copyPathInvoked = false
+
+          override fun createSnapshotFromLiveCompilerCopy(
+              request: CompilationRequest,
+              liveCompiler: CompilerProvider?,
+          ): PartialReparseDryRunSnapshot? {
+            copyPathInvoked = true
+            return null
+          }
+        }
+
+    val snapshot = provider.createPartialSnapshot(request, eligibility, report, liveCompiler)
+
+    assertTrue(provider.copyPathInvoked)
+    assertNull(snapshot)
+    assertEquals(1, planner.calls)
+    assertNotNull(planner.liveCompiler)
+    assertSame(liveCompiler, planner.liveCompiler)
+  }
+
 
   private class RecordingPlanner(private val plan: PartialReparseDryRunIsolatedPlan) :
       PartialReparseDryRunIsolatedPlanner() {

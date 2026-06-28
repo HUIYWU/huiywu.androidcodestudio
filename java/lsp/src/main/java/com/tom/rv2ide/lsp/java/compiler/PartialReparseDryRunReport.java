@@ -39,6 +39,7 @@ public final class PartialReparseDryRunReport {
 
   @NonNull public final AttemptState attemptState;
   @Nullable public final String reason;
+  @Nullable public final String partialSnapshotReason;
   public final boolean fullRecompileExecuted;
   public final boolean partialResultCommitted;
   @NonNull public final PartialReparseDryRunComparison comparison;
@@ -46,11 +47,13 @@ public final class PartialReparseDryRunReport {
   private PartialReparseDryRunReport(
       @NonNull AttemptState attemptState,
       @Nullable String reason,
+      @Nullable String partialSnapshotReason,
       boolean fullRecompileExecuted,
       boolean partialResultCommitted,
       @NonNull PartialReparseDryRunComparison comparison) {
     this.attemptState = attemptState;
     this.reason = reason;
+    this.partialSnapshotReason = partialSnapshotReason;
     this.fullRecompileExecuted = fullRecompileExecuted;
     this.partialResultCommitted = partialResultCommitted;
     this.comparison = comparison;
@@ -59,7 +62,7 @@ public final class PartialReparseDryRunReport {
   @NonNull
   public static PartialReparseDryRunReport notCreated() {
     return new PartialReparseDryRunReport(
-        AttemptState.NOT_CREATED, null, true, false, PartialReparseDryRunComparison.notRun());
+        AttemptState.NOT_CREATED, null, null, true, false, PartialReparseDryRunComparison.notRun());
   }
 
   @NonNull
@@ -74,19 +77,25 @@ public final class PartialReparseDryRunReport {
       state = AttemptState.FAILED;
     }
     return new PartialReparseDryRunReport(
-        state, result.reason, true, false, PartialReparseDryRunComparison.notRun());
+        state, result.reason, null, true, false, PartialReparseDryRunComparison.notRun());
   }
 
   @NonNull
   public static PartialReparseDryRunReport exception(@NonNull Throwable error) {
     return new PartialReparseDryRunReport(
-        AttemptState.EXCEPTION, error.getMessage(), true, false, PartialReparseDryRunComparison.notRun());
+        AttemptState.EXCEPTION, error.getMessage(), null, true, false, PartialReparseDryRunComparison.notRun());
   }
 
   @NonNull
   public PartialReparseDryRunReport withComparison(
       @NonNull PartialReparseDryRunComparison comparison) {
     return new PartialReparseDryRunReport(
-        attemptState, reason, fullRecompileExecuted, partialResultCommitted, comparison);
+        attemptState, reason, partialSnapshotReason, fullRecompileExecuted, partialResultCommitted, comparison);
+  }
+
+  @NonNull
+  public PartialReparseDryRunReport withPartialSnapshotReason(@Nullable String partialSnapshotReason) {
+    return new PartialReparseDryRunReport(
+        attemptState, reason, partialSnapshotReason, fullRecompileExecuted, partialResultCommitted, comparison);
   }
 }

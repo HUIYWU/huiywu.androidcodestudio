@@ -118,11 +118,11 @@ public class CompileBatch implements AutoCloseable {
     
     config.setFiles(null);
   }
-
   private void processCompilationUnit(final CompilationUnitTree root) {
     roots.add(root);
-//    updatePositions(root, false);
+    updatePositions(root, false);
   }
+
 
   void updatePositions(CompilationUnitTree tree, boolean allowDuplicate) {
     final StopWatch watch = new StopWatch("Scan method positions");
@@ -227,7 +227,7 @@ public class CompileBatch implements AutoCloseable {
         "-XDcompilePolicy=byfile",
         "-XD-Xprefer=source",
         "-XDide",
-        "-XDkeepCommentsOverride=ignore",
+        "-XDkeepCommentsOverride=keep",
         "-XDsuppressAbortOnBadClassFile",
         "-XDshould-stop.at=GENERATE",
         "-XDdiags.formatterOptions=-source",

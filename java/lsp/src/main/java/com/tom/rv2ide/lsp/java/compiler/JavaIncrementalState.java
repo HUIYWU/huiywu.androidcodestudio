@@ -69,6 +69,9 @@ public final class JavaIncrementalState {
 
   public void resetAfterFullRecompile() {
     this.changeDelta = 0;
+    this.lastReparsePosition = Position.NONE;
+    this.newCursorPosition = Position.NONE;
+    this.latestChangeRange = null;
   }
 
   public void resetForCopy() {

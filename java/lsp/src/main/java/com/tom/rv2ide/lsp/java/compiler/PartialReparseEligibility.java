@@ -40,6 +40,7 @@ public final class PartialReparseEligibility {
   public final boolean changeDeltaWithinLimit;
   public final int sourceCount;
   public final boolean hasPartialRequest;
+  public final boolean allowPartialReparse;
   public final long cursor;
   public final int contentsLength;
   public final int changeDelta;
@@ -53,6 +54,7 @@ public final class PartialReparseEligibility {
       boolean changeDeltaWithinLimit,
       int sourceCount,
       boolean hasPartialRequest,
+      boolean allowPartialReparse,
       long cursor,
       int contentsLength,
       int changeDelta,
@@ -64,6 +66,7 @@ public final class PartialReparseEligibility {
     this.changeDeltaWithinLimit = changeDeltaWithinLimit;
     this.sourceCount = sourceCount;
     this.hasPartialRequest = hasPartialRequest;
+    this.allowPartialReparse = allowPartialReparse;
     this.cursor = cursor;
     this.contentsLength = contentsLength;
     this.changeDelta = changeDelta;
@@ -94,6 +97,7 @@ public final class PartialReparseEligibility {
         changeDeltaWithinLimit,
         sourceCount,
         partialRequest != null,
+        request != null && request.allowPartialReparse,
         cursor,
         contentsLength,
         changeDelta,

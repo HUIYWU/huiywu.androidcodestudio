@@ -23,10 +23,27 @@ import androidx.annotation.Nullable;
 /** Attaches dry-run partial-vs-full snapshot comparison data to a dry-run report. */
 public final class PartialReparseDryRunComparisonRunner {
 
+  public static final class PartialSnapshotResult {
+    @Nullable public final PartialReparseDryRunSnapshot snapshot;
+    @Nullable public final String reason;
+
+    private PartialSnapshotResult(
+        @Nullable PartialReparseDryRunSnapshot snapshot, @Nullable String reason) {
+      this.snapshot = snapshot;
+      this.reason = reason;
+    }
+
+    @NonNull
+    public static PartialSnapshotResult of(
+        @Nullable PartialReparseDryRunSnapshot snapshot, @Nullable String reason) {
+      return new PartialSnapshotResult(snapshot, reason);
+    }
+  }
+
   @FunctionalInterface
   public interface PartialSnapshotSupplier {
-    @Nullable
-    PartialReparseDryRunSnapshot create(@NonNull PartialReparseDryRunReport attemptReport);
+    @NonNull
+    PartialSnapshotResult create(@NonNull PartialReparseDryRunReport attemptReport);
   }
 
   private final PartialReparseDryRunComparator comparator;
@@ -44,8 +61,11 @@ public final class PartialReparseDryRunComparisonRunner {
       @NonNull PartialReparseDryRunReport attemptReport,
       @Nullable PartialReparseDryRunSnapshot fullSnapshot,
       @NonNull PartialSnapshotSupplier partialSnapshotSupplier) {
-    final PartialReparseDryRunSnapshot partialSnapshot = partialSnapshotSupplier.create(attemptReport);
-    final PartialReparseDryRunComparison comparison = comparator.compare(partialSnapshot, fullSnapshot);
-    return attemptReport.withComparison(comparison);
+    final PartialSnapshotResult partialSnapshotResult = partialSnapshotSupplier.create(attemptReport);
+    final PartialReparseDryRunComparison comparison =
+        comparator.compare(partialSnapshotResult.snapshot, fullSnapshot);
+    return attemptReport
+        .withPartialSnapshotReason(partialSnapshotResult.reason)
+        .withComparison(comparison);
   }
 }

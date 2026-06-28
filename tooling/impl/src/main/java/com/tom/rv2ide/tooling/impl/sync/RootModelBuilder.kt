@@ -204,10 +204,10 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       if (sourceRoots.isEmpty()) {
         return@forEach
       }
+      val sourceRootKinds = sourceRoots.associate { it.canonicalPath to classifyCompositeSourceRoot(it, canonicalDepDir, buildScript) }
       val resolvedCompilerSettings = resolveCompositeCompilerSettings(buildScript, fallbackCompilerSettings)
       val modulePath = ":buildDeps:${depDir.name}"
       discovered.add(
-
         CompositeBuildDescriptor(
           name = depDir.name,
           buildName = "buildDeps",
@@ -216,6 +216,7 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
           buildDir = File(depDir, "build"),
           buildScript = buildScript,
           sourceRoots = sourceRoots,
+          sourceRootKinds = sourceRootKinds,
           classesJar = discoverCompositeClassesJar(depDir, File(depDir, "build")),
           javaSourceVersion = resolvedCompilerSettings.javaSourceVersion,
           javaBytecodeVersion = resolvedCompilerSettings.javaBytecodeVersion,
@@ -224,12 +225,33 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       )
     }
 
+    val discoveredWithClassesJar = discovered.filter { it.classesJar?.isFile == true }
+    val sourceRootKindCounts = discovered.flatMap { it.sourceRootKinds.values }.groupingBy { it }.eachCount()
+    val sourceRootKindSamples = discovered
+      .flatMap { descriptor -> descriptor.sourceRootKinds.entries.map { entry -> "${descriptor.projectPath} -> ${entry.value} -> ${entry.key}" } }
+      .take(20)
+    val scriptMappedSamples = discovered
+      .flatMap { descriptor -> descriptor.sourceRootKinds.entries.map { entry -> "${descriptor.projectPath} -> ${entry.value} -> ${entry.key}" } }
+      .filter { it.contains(" -> SCRIPT_MAPPED -> ") }
+      .take(20)
     logger.warn(
       "RootModelBuilder composite discovery scannedDir={} discoveredCount={} discovered={}",
       buildDepsDir.canonicalPath,
       discovered.size,
       discovered.map { "${it.projectPath} -> ${it.projectDir.path}" },
     )
+    logger.warn(
+      "RootModelBuilder composite classesJarSummary count={} hits={}",
+      discoveredWithClassesJar.size,
+      discoveredWithClassesJar.take(20).map { "${it.projectPath} -> ${it.classesJar?.path}" },
+    )
+    logger.warn(
+      "RootModelBuilder composite sourceRootKindSummary counts={} samples={} scriptMappedSamples={}",
+      sourceRootKindCounts,
+      sourceRootKindSamples,
+      scriptMappedSamples,
+    )
+    // logback-core temporary debug removed after SCRIPT_MAPPED verification
     return discovered
   }
   private fun resolveCompositeCompilerSettings(
@@ -332,8 +354,8 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
 
     return null
   }
-
   private fun discoverCompositeSourceRoots(depDir: File, buildScript: File?): List<File> {
+
     val roots = linkedSetOf<File>()
 
     listOf(
@@ -357,28 +379,56 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     roots.addAll(extractCompositeSourceRootsFromScript(depDir, buildScript))
     return roots.toList()
   }
-
   private fun extractCompositeSourceRootsFromScript(depDir: File, buildScript: File?): List<File> {
+
     val script = buildScript?.takeIf { it.isFile }?.readText() ?: return emptyList()
     val resolvedVars = mutableMapOf<String, File>()
 
-    Regex("""val\s+(\w+)\s*=\s*([^\n]+)""")
-      .findAll(script)
-      .forEach { match ->
+    val scriptLines = script.lineSequence().toList()
+    var lineIndex = 0
+    while (lineIndex < scriptLines.size) {
+      val line = scriptLines[lineIndex]
+      val match = Regex("""^\s*val\s+(\w+)\s*=\s*(.*)$""").find(line)
+      if (match != null) {
         val varName = match.groupValues[1]
-        val expr = match.groupValues[2].trim()
+        val exprParts = mutableListOf<String>()
+        val firstExpr = match.groupValues[2].trim()
+        if (firstExpr.isNotBlank()) {
+          exprParts.add(firstExpr)
+        }
+
+        var nextIndex = lineIndex + 1
+        while (nextIndex < scriptLines.size) {
+          val nextLineRaw = scriptLines[nextIndex]
+          val nextLine = nextLineRaw.trim()
+          if (nextLine.isBlank()) break
+          if (Regex("""^(val\s+\w+\s*=|(?:java|kotlin)\.(?:srcDir|srcDirs|setSrcDirs)\(|if\s*\(|else\b|for\s*\(|while\s*\(|when\s*\(|[A-Za-z_][\w.]*\s*=|//)""").containsMatchIn(nextLine)) {
+            break
+          }
+          exprParts.add(nextLine)
+          nextIndex++
+        }
+
+        val expr = exprParts.joinToString(" ").trim()
         resolveCompositeSourceRootToken(depDir, expr, resolvedVars)?.let { resolvedVars[varName] = it }
       }
+      lineIndex++
+    }
 
     val roots = linkedSetOf<File>()
-    Regex("""(?:java|kotlin)\.(?:srcDir|srcDirs|setSrcDirs)\(([^\n]+)\)""")
+    Regex("""(?:java|kotlin)\.(?:srcDir|srcDirs|setSrcDirs)\((.*?)\)(?=\R\s*val\s+|\R\s*(?:java|kotlin)\.(?:srcDir|srcDirs|setSrcDirs)\(|\R\s*}|$)""", setOf(RegexOption.DOT_MATCHES_ALL))
       .findAll(script)
       .forEach { match ->
         match.groupValues[1]
+          .lineSequence()
+          .map { it.trim() }
+          .filter { it.isNotBlank() }
+          .joinToString(" ")
           .removePrefix("listOf(")
           .removeSuffix(")")
           .split(',')
           .map { it.trim() }
+          .filter { it.isNotBlank() }
           .forEach { token ->
             resolveCompositeSourceRootToken(depDir, token, resolvedVars)
               ?.takeIf { it.isDirectory }
@@ -388,14 +438,14 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
 
     return roots.toList()
   }
-
   private fun resolveCompositeSourceRootToken(
     depDir: File,
     token: String,
     resolvedVars: Map<String, File>,
   ): File? {
-    val normalized = token.trim().removeSuffix(")").trim()
+    val normalized = token.trim()
     resolvedVars[normalized]?.let { return it }
+    val compositeRootDir = depDir.parentFile?.canonicalFile ?: depDir.canonicalFile
 
     fun extractSingleArg(pattern: Regex): String? {
       val match = pattern.find(normalized) ?: return null
@@ -406,15 +456,16 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
       Regex("""rootProject\.projectDir\.resolve\((?:\"([^\"]+)\"|'([^']+)')\)""")
     )
     if (!rootProjectResolve.isNullOrBlank()) {
-      return depDir.resolve(rootProjectResolve).canonicalFile
+      return compositeRootDir.resolve(rootProjectResolve).canonicalFile
     }
 
     val rootProjectFile = extractSingleArg(
       Regex("""rootProject\.file\((?:\"([^\"]+)\"|'([^']+)')\)""")
     )
     if (!rootProjectFile.isNullOrBlank()) {
-      return depDir.resolve(rootProjectFile).canonicalFile
+      return compositeRootDir.resolve(rootProjectFile).canonicalFile
     }
+
 
     val projectFile = extractSingleArg(
       Regex("""project\.file\((?:\"([^\"]+)\"|'([^']+)')\)""")
@@ -437,6 +488,24 @@ class RootModelBuilder(initializationParams: InitializeProjectParams) :
     }
 
     return null
+  }
+
+  private fun classifyCompositeSourceRoot(sourceRoot: File, projectDir: File, buildScript: File?): String {
+    if (isGeneratedCompositeSourceRoot(sourceRoot, projectDir)) {
+      return "GENERATED"
+    }
+    val projectPath = projectDir.canonicalPath.replace('\\', '/') + "/"
+    val sourcePath = sourceRoot.canonicalPath.replace('\\', '/')
+    if (!sourcePath.startsWith(projectPath)) {
+      return "SCRIPT_MAPPED"
+    }
+    return if (buildScript != null) "LOCAL" else "LOCAL"
+  }
+
+  private fun isGeneratedCompositeSourceRoot(sourceRoot: File, projectDir: File): Boolean {
+    val normalized = sourceRoot.canonicalPath.replace('\\', '/')
+    val projectPath = projectDir.canonicalPath.replace('\\', '/')
+    return normalized.startsWith("${projectPath}/build/generated/")
   }
 
   private fun isHeavyCompositeBuildDep(moduleName: String): Boolean {

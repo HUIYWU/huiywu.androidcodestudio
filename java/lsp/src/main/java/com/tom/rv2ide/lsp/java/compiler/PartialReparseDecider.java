@@ -36,6 +36,10 @@ public class PartialReparseDecider {
       return PartialReparseDecision.fullRecompile("cached compile is missing or closed");
     }
 
+    if (!eligibility.allowPartialReparse) {
+      return PartialReparseDecision.fullRecompile("partial reparse not allowed for this request");
+    }
+
     if (!eligibility.hasPartialRequest) {
       return PartialReparseDecision.fullRecompile("no partial request");
     }

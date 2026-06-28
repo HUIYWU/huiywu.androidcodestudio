@@ -25,14 +25,22 @@ package com.tom.rv2ide.lsp.java.compiler;
  */
 public final class JavaLspFeatureFlags {
 
-  /** Enable real partial reparse result usage. Default: off. */
-  public static final boolean ENABLE_PARTIAL_REPARSE = false;
+  /**
+   * Enable real partial reparse result usage.
+   *
+   * <p>Keep this off until diagnostics-grade correctness is considered production-ready for the
+   * shared incremental path. Completion currently participates in the same routing/observation chain
+   * but still carries completion-specific input adaptation noise.
+   */
+  public static final boolean ENABLE_PARTIAL_REPARSE = true;
 
   /**
    * Enable partial reparse experiment logging path without changing user-visible compilation result.
-   * Default: off.
+   *
+   * <p>This remains the recommended default while validating diagnostics and completion together
+   * before promoting the shared path to real partial-result usage.
    */
-  public static final boolean ENABLE_PARTIAL_REPARSE_DRY_RUN = true;
+  public static final boolean ENABLE_PARTIAL_REPARSE_DRY_RUN = false;
 
   /** Emit decision/fallback logs for partial reparse routing. */
   public static final boolean ENABLE_PARTIAL_REPARSE_LOGGING = true;

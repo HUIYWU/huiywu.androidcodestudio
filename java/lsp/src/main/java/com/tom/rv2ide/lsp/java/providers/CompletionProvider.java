@@ -191,7 +191,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortCompletionIfCancelled();
     final long cursor = params.getPosition().requireIndex();
     final var sourceObject = new SourceFileObject(file);
-    final var contentBuilder = new StringBuilder(sourceObject.getCharContent(true));
+    final String originalContents = sourceObject.getCharContent(true).toString();
+    final var contentBuilder = new StringBuilder(originalContents);
 
     int endOfLine = endOfLine(contentBuilder, (int) cursor);
     contentBuilder.insert(endOfLine, ';');
@@ -205,19 +206,30 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     } else {
       contents = contentBuilder;
     }
-
     final String contentString = contents.toString();
+    final boolean astFixerApplied = context != null;
+    final boolean astFixerChangedContents = astFixerApplied && !contentString.contentEquals(contentBuilder);
+    final int prefixLength = params.requirePrefix().length();
+    final long partialRequestCursor = cursor - prefixLength;
+    final int injectedCharCount = contentString.length() - originalContents.length();
     final PartialReparseRequest partialRequest = new PartialReparseRequest(
-        cursor - params.requirePrefix().length(), contentString);
+        partialRequestCursor, contentString);
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
-          "Completion compile request file={} cursor={} prefixLength={} contentLength={} currentContextPresent={}",
+          "Completion compile request file={} cursor={} prefixLength={} partialRequestCursor={} contentLength={} originalContentLength={} injectedCharCount={} semicolonInserted={} astFixerApplied={} astFixerChangedContents={} currentContextPresent={}",
           file,
           cursor,
-          params.requirePrefix().length(),
+          prefixLength,
+          partialRequestCursor,
           contentString.length(),
+          originalContents.length(),
+          injectedCharCount,
+          true,
+          astFixerApplied,
+          astFixerChangedContents,
           context != null);
     }
+
     abortIfCancelled();
     abortCompletionIfCancelled();
  
@@ -285,8 +297,10 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
 
-    final CompilationRequest request = new CompilationRequest(Collections.singletonList(source),
-        partialRequest);
+    final CompilationRequest request = new CompilationRequest(
+        Collections.singletonList(source),
+        partialRequest,
+        true);
     request.configureContext = ctx -> {
       final var config = JavaCompilerConfig.instance(ctx);
       config.setCompletionInfo(new CompletionInfo(params.getPosition()));

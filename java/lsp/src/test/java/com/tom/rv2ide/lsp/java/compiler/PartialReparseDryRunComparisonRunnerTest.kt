@@ -15,13 +15,17 @@ class PartialReparseDryRunComparisonRunnerTest {
         PartialReparseDryRunComparisonRunner()
             .attachComparison(attemptReport, fullSnapshot) { observedReport ->
               assertSame(attemptReport, observedReport)
-              null
+              PartialReparseDryRunComparisonRunner.PartialSnapshotResult.of(
+                  null,
+                  "copy path unavailable",
+              )
             }
 
     assertEquals(PartialReparseDryRunComparison.ComparisonState.INCOMPLETE, report.comparison.diagnosticsComparison)
     assertEquals(PartialReparseDryRunComparison.ComparisonState.INCOMPLETE, report.comparison.methodPositionsComparison)
     assertEquals(PartialReparseDryRunComparison.ComparisonState.INCOMPLETE, report.comparison.sourcePositionsComparison)
     assertEquals("partial dry-run snapshot is missing", report.comparison.reason)
+    assertEquals("copy path unavailable", report.partialSnapshotReason)
   }
 
   @Test
@@ -32,7 +36,10 @@ class PartialReparseDryRunComparisonRunnerTest {
 
     val report =
         PartialReparseDryRunComparisonRunner()
-            .attachComparison(attemptReport, fullSnapshot) { partialSnapshot }
+            .attachComparison(attemptReport, fullSnapshot) {
+              PartialReparseDryRunComparisonRunner.PartialSnapshotResult.of(partialSnapshot, null)
+            }
+
 
     assertEquals(PartialReparseDryRunReport.AttemptState.SUCCESS, report.attemptState)
     assertEquals("ok", report.reason)
@@ -49,7 +56,9 @@ class PartialReparseDryRunComparisonRunnerTest {
 
     val report =
         PartialReparseDryRunComparisonRunner()
-            .attachComparison(attemptReport, fullSnapshot) { partialSnapshot }
+            .attachComparison(attemptReport, fullSnapshot) {
+              PartialReparseDryRunComparisonRunner.PartialSnapshotResult.of(partialSnapshot, null)
+            }
 
     assertEquals(PartialReparseDryRunComparison.ComparisonState.MISMATCH, report.comparison.diagnosticsComparison)
     assertEquals(PartialReparseDryRunComparison.ComparisonState.MATCH, report.comparison.methodPositionsComparison)
@@ -63,7 +72,9 @@ class PartialReparseDryRunComparisonRunnerTest {
 
     val report =
         PartialReparseDryRunComparisonRunner()
-            .attachComparison(attemptReport, null) { partialSnapshot }
+            .attachComparison(attemptReport, null) {
+              PartialReparseDryRunComparisonRunner.PartialSnapshotResult.of(partialSnapshot, null)
+            }
 
     assertEquals(PartialReparseDryRunComparison.ComparisonState.INCOMPLETE, report.comparison.diagnosticsComparison)
     assertEquals(PartialReparseDryRunComparison.ComparisonState.INCOMPLETE, report.comparison.methodPositionsComparison)

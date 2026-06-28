@@ -123,10 +123,36 @@ class PartialReparserImpl : PartialReparser {
 
       try {
         val dl = ci.diagnosticListener as DiagnosticListenerImpl
-        dl.startPartialReparse(origStartPos, origEndPos)
+        try {
+          dl.startPartialReparse(origStartPos, origEndPos)
+        } catch (err: Throwable) {
+          log.error(
+              "Partial reparse stage failed: stage=diagnostic-begin method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              method.name,
+              origStartPos,
+              origEndPos,
+              newBody.length,
+              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+              err,
+          )
+          return false
+        }
         val docComments = HashMap<JCTree, Entry>()
         log.debug("Reparse method...")
-        block = reparseMethodBody(context, cu, method, newBody, docComments)
+        block = try {
+          reparseMethodBody(context, cu, method, newBody, docComments)
+        } catch (err: Throwable) {
+          log.error(
+              "Partial reparse stage failed: stage=parse method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              method.name,
+              origStartPos,
+              origEndPos,
+              newBody.length,
+              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+              err,
+          )
+          return false
+        }
         val endPosTable = (cu as JCCompilationUnit).endPositions
         if (block == null) {
           log.debug("Skipped reparse method. Invalid position, newBody: {}", newBody)
@@ -136,7 +162,16 @@ class PartialReparserImpl : PartialReparser {
         val sourcePositions = jt.sourcePositions
         val newEndPos = sourcePositions.getEndPosition(cu, block).toInt()
         if (newEndPos != origStartPos + newBody.length) {
-          log.warn("Invalid position in reparsed method")
+          log.warn(
+              "Invalid position in reparsed method method={} origStartPos={} origEndPos={} newEndPos={} newBodyLength={} expectedEndPos={} newBodyPreview={}",
+              method.name,
+              origStartPos,
+              origEndPos,
+              newEndPos,
+              newBody.length,
+              origStartPos + newBody.length,
+              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+          )
           return false
         }
 
@@ -148,18 +183,124 @@ class PartialReparserImpl : PartialReparser {
           log.debug("Skipped method reparse (new local class): {}", fo)
           return false
         }
-
-        val docCommentsTable = getLazyDocCommentsTable(cu)
-        docCommentsTable.keys.removeAll(fav.docOwners)
-        docCommentsTable.putAll(docComments)
+        val cuDocComments = cu.docComments
+        if (cuDocComments == null) {
+          log.debug(
+              "Skipping doc-comments update because compilation unit has no docComments table method={} origStartPos={} origEndPos={} newBodyLength={} addedDocComments={} removedOwners={}",
+              method.name,
+              origStartPos,
+              origEndPos,
+              newBody.length,
+              docComments.size,
+              fav.docOwners.size,
+          )
+        } else {
+          val docCommentsTable = try {
+            getLazyDocCommentsTable(cuDocComments)
+          } catch (err: Throwable) {
+            log.error(
+                "Partial reparse stage failed: stage=doc-comments-get-table method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} addedDocComments={} removedOwners={} errorType={} errorMessage={}",
+                method.name,
+                origStartPos,
+                origEndPos,
+                newBody.length,
+                newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+                docComments.size,
+                fav.docOwners.size,
+                err.javaClass.name,
+                err.message,
+                err,
+            )
+            return false
+          }
+          try {
+            docCommentsTable.keys.removeAll(fav.docOwners)
+          } catch (err: Throwable) {
+            log.error(
+                "Partial reparse stage failed: stage=doc-comments-remove method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} tableSize={} addedDocComments={} removedOwners={} errorType={} errorMessage={}",
+                method.name,
+                origStartPos,
+                origEndPos,
+                newBody.length,
+                newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+                docCommentsTable.size,
+                docComments.size,
+                fav.docOwners.size,
+                err.javaClass.name,
+                err.message,
+                err,
+            )
+            return false
+          }
+          try {
+            docCommentsTable.putAll(docComments)
+          } catch (err: Throwable) {
+            log.error(
+                "Partial reparse stage failed: stage=doc-comments-put method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} tableSize={} addedDocComments={} removedOwners={} errorType={} errorMessage={}",
+                method.name,
+                origStartPos,
+                origEndPos,
+                newBody.length,
+                newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+                docCommentsTable.size,
+                docComments.size,
+                fav.docOwners.size,
+                err.javaClass.name,
+                err.message,
+                err,
+            )
+            return false
+          }
+        }
         val delta = newEndPos - origEndPos
-        val tpv = TranslateMethodPositionsVisitor(method, endPosTable, delta)
-        tpv.scan(cu, null)
-        doUnenter(context, cu, method)
+        try {
+          val tpv = TranslateMethodPositionsVisitor(method, endPosTable, delta)
+          tpv.scan(cu, null)
+        } catch (err: Throwable) {
+          log.error(
+              "Partial reparse stage failed: stage=translate-positions method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} delta={}",
+              method.name,
+              origStartPos,
+              origEndPos,
+              newBody.length,
+              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+              delta,
+              err,
+          )
+          return false
+        }
+        try {
+          doUnenter(context, cu, method)
+        } catch (err: Throwable) {
+          log.error(
+              "Partial reparse stage failed: stage=unenter method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              method.name,
+              origStartPos,
+              origEndPos,
+              newBody.length,
+              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+              err,
+          )
+          return false
+        }
         method.body = block
 
+
         log.debug("ReAttr method...")
-        reAttrMethodBody(context, methodScope, method, block)
+        try {
+          reAttrMethodBody(context, methodScope, method, block)
+        } catch (err: Throwable) {
+          log.error(
+              "Partial reparse stage failed: stage=reattr method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              method.name,
+              origStartPos,
+              origEndPos,
+              newBody.length,
+              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+              err,
+          )
+          return false
+        }
 
         if (!dl.hasPartialReparseErrors()) {
           val fl = JavacFlowListener.instance(context)
@@ -167,7 +308,20 @@ class PartialReparserImpl : PartialReparser {
             log.debug("Reflow method...")
             val tp = TreePath.getPath(cu, method)
             val t = tp.parentPath.leaf as ClassTree
-            reflowMethodBody(context, t, method)
+            try {
+              reflowMethodBody(context, t, method)
+            } catch (err: Throwable) {
+              log.error(
+                  "Partial reparse stage failed: stage=reflow method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+                  method.name,
+                  origStartPos,
+                  origEndPos,
+                  newBody.length,
+                  newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+                  err,
+              )
+              return false
+            }
           }
         }
 
@@ -176,14 +330,49 @@ class PartialReparserImpl : PartialReparser {
           arr[index] = fileContents[index]
         }
 
-        buildLineMap(cu, arr)
-        dl.endPartialReparse(delta)
+        try {
+          buildLineMap(cu, arr)
+        } catch (err: Throwable) {
+          log.error(
+              "Partial reparse stage failed: stage=line-map method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              method.name,
+              origStartPos,
+              origEndPos,
+              newBody.length,
+              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+              err,
+          )
+          return false
+        }
+        try {
+          dl.endPartialReparse(delta)
+        } catch (err: Throwable) {
+          log.error(
+              "Partial reparse stage failed: stage=diagnostic-end method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} delta={}",
+              method.name,
+              origStartPos,
+              origEndPos,
+              newBody.length,
+              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+              delta,
+              err,
+          )
+          return false
+        }
       } finally {
         l.endPartialReparse(cu.sourceFile)
         l.useSource(prevLogged)
       }
     } catch (err: Throwable) {
-      log.error("An error occurred while reparsing method", err)
+      log.error(
+          "An error occurred while reparsing method method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+          method.name,
+          origStartPos,
+          origEndPos,
+          newBody.length,
+          newBody.take(160).replace('\n', ' ').replace('\r', ' '),
+          err,
+      )
       return false
     }
 

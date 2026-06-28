@@ -75,6 +75,7 @@ final class CompilationWorkingSetBuilder {
     return new CompilationRequest(
         expanded.values(),
         request.partialRequest,
+        request.allowPartialReparse,
         request.compilationTaskProcessor,
         request.configureContext);
   }
@@ -110,6 +111,7 @@ final class CompilationWorkingSetBuilder {
     return new CompilationRequest(
         cachedSources,
         request.partialRequest,
+        request.allowPartialReparse,
         request.compilationTaskProcessor,
         request.configureContext);
   }

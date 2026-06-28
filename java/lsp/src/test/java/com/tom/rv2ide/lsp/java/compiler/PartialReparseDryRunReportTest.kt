@@ -15,6 +15,7 @@ class PartialReparseDryRunReportTest {
 
     assertEquals(PartialReparseDryRunReport.AttemptState.NOT_CREATED, report.attemptState)
     assertNull(report.reason)
+    assertNull(report.partialSnapshotReason)
     assertBaseInvariant(report)
     assertDefaultComparisonNotRun(report)
   }
@@ -65,13 +66,28 @@ class PartialReparseDryRunReportTest {
   fun withComparisonKeepsAttemptFieldsAndReplacesComparison() {
     val comparison = PartialReparseDryRunComparison.incomplete("missing snapshot")
 
-    val report = PartialReparseDryRunReport.fromAttemptResult(PartialReparseAttemptResult.success("ok"))
+    val report =
+        PartialReparseDryRunReport.fromAttemptResult(PartialReparseAttemptResult.success("ok"))
+            .withPartialSnapshotReason("copy path unavailable")
     val updated = report.withComparison(comparison)
 
     assertEquals(PartialReparseDryRunReport.AttemptState.SUCCESS, updated.attemptState)
     assertEquals("ok", updated.reason)
+    assertEquals("copy path unavailable", updated.partialSnapshotReason)
     assertBaseInvariant(updated)
     assertSame(comparison, updated.comparison)
+  }
+
+  @Test
+  fun withPartialSnapshotReasonKeepsAttemptFieldsAndComparison() {
+    val report = PartialReparseDryRunReport.fromAttemptResult(PartialReparseAttemptResult.success("ok"))
+    val updated = report.withPartialSnapshotReason("copied compiler snapshot was not produced")
+
+    assertEquals(PartialReparseDryRunReport.AttemptState.SUCCESS, updated.attemptState)
+    assertEquals("ok", updated.reason)
+    assertEquals("copied compiler snapshot was not produced", updated.partialSnapshotReason)
+    assertBaseInvariant(updated)
+    assertSame(report.comparison, updated.comparison)
   }
 
   private fun assertBaseInvariant(report: PartialReparseDryRunReport) {
