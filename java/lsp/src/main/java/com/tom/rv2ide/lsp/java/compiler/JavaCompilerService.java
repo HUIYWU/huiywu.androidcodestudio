@@ -109,8 +109,10 @@ public class JavaCompilerService implements CompilerProvider {
   private final PartialReparseDryRunComparisonRunner partialReparseDryRunComparisonRunner =
       new PartialReparseDryRunComparisonRunner();
   private final JavaIncrementalState incrementalState = new JavaIncrementalState();
+  private static final long RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES = 160L * 1024L * 1024L;
   private final CompilationWorkingSetBuilder compilationWorkingSetBuilder =
       new CompilationWorkingSetBuilder();
+  private volatile int lastExpandedSourceCount = -1;
 
   // The module project must not be null
   // It is marked as nullable just for some special cases like tests
@@ -1027,17 +1029,26 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
       cachedCompile.borrow.close();
       cachedCompile = null;
     }
-    if (compiler != null && compiler.currentContext != null) {
+    final boolean shouldRecreateForExpandedSources = lastExpandedSourceCount > 1;
+    final boolean shouldRecreateForMemoryPressure = usedBeforeClose >= RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES;
+    final boolean shouldRecreateCompiler =
+        compiler != null
+            && compiler.currentContext != null
+            && (shouldRecreateForExpandedSources || shouldRecreateForMemoryPressure);
+    if (shouldRecreateCompiler) {
       compiler = new ReusableCompiler();
       recreatedReusableCompiler = true;
     }
     final Runtime runtimeAfterClose = Runtime.getRuntime();
     final long usedAfterClose = runtimeAfterClose.totalMemory() - runtimeAfterClose.freeMemory();
     LOG.info(
-        "JavaCompilerService.close end cachedCompilePresent={} currentContextPresent={} recreatedReusableCompiler={} usedMemoryBytes={}",
+        "JavaCompilerService.close end cachedCompilePresent={} currentContextPresent={} recreatedReusableCompiler={} lastExpandedSourceCount={} recreateForExpandedSources={} recreateForMemoryPressure={} usedMemoryBytes={}",
         cachedCompile != null,
         compiler.currentContext != null,
         recreatedReusableCompiler,
+        lastExpandedSourceCount,
+        shouldRecreateForExpandedSources,
+        shouldRecreateForMemoryPressure,
         usedAfterClose);
 
   }
@@ -1053,12 +1064,13 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
     final CompilationRequest expandedRequest =
         compilationWorkingSetBuilder.expand(this, request);
     final Collection<? extends JavaFileObject> sources = expandedRequest.sources;
+    lastExpandedSourceCount = sources == null ? -1 : sources.size();
     LOG.info(
         "performCompilation requestHash={} allowPartialReparse={} originalSources={} expandedSources={} currentContextPresent={} fileManagerClass={} firstSource={}",
         System.identityHashCode(request),
         request.allowPartialReparse,
         request.sources == null ? -1 : request.sources.size(),
-        sources == null ? -1 : sources.size(),
+        lastExpandedSourceCount,
         compiler.currentContext != null,
         fileManager == null ? null : fileManager.getClass().getName(),
         sources != null && sources.iterator().hasNext() ? sources.iterator().next().toUri() : null);
@@ -1176,6 +1188,7 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
           close();
           cachedCompile = null;
           cachedModified.clear();
+          lastExpandedSourceCount = -1;
           compiler = new ReusableCompiler();
         });
   }
@@ -1199,6 +1212,7 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
             this.module, this.fileManager, this.bootClasspathClasses, this.classPathClasses);
     compiler.cachedCompile = null;
     compiler.incrementalState.resetForCopy();
+    compiler.lastExpandedSourceCount = -1;
     compiler.compiler = new ReusableCompiler();
     compiler.diagnostics.clear();
     compiler.cachedModified.clear();
