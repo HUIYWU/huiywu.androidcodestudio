@@ -536,6 +536,7 @@ public class JavaCompilerService implements CompilerProvider {
     return new CompilationRequest(
         request.sources,
         null,
+        false,
         request.compilationTaskProcessor,
         request.configureContext);
   }
