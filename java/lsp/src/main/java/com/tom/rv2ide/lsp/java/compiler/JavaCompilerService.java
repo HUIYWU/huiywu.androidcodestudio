@@ -1053,15 +1053,22 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
     final CompilationRequest expandedRequest =
         compilationWorkingSetBuilder.expand(this, request);
     final Collection<? extends JavaFileObject> sources = expandedRequest.sources;
+    LOG.info(
+        "performCompilation requestHash={} allowPartialReparse={} originalSources={} expandedSources={} currentContextPresent={} fileManagerClass={} firstSource={}",
+        System.identityHashCode(request),
+        request.allowPartialReparse,
+        request.sources == null ? -1 : request.sources.size(),
+        sources == null ? -1 : sources.size(),
+        compiler.currentContext != null,
+        fileManager == null ? null : fileManager.getClass().getName(),
+        sources != null && sources.iterator().hasNext() ? sources.iterator().next().toUri() : null);
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
-          "performCompilation requestHash={} expandedSources={} currentContextPresent={} fileManagerClass={} sourcesDetail={}",
+          "performCompilation sourcesDetail requestHash={} sourcesDetail={}",
           System.identityHashCode(request),
-          sources == null ? -1 : sources.size(),
-          compiler.currentContext != null,
-          fileManager == null ? null : fileManager.getClass().getName(),
           sources == null ? null : CompileBatch.describeSources(sources));
     }
+
     if (sources.isEmpty()) {
       throw new RuntimeException("empty sources");
     }
