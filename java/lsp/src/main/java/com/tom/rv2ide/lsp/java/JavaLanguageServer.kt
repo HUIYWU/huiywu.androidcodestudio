@@ -92,6 +92,8 @@ class JavaLanguageServer : ILanguageServer {
   private var selectedFile: Path? = null
   private val timer = AnalyzeTimer { analyzeSelected() }
   private val analyzeGeneration = AtomicLong(0)
+  private val analyzeLaunchInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+  private val analyzeRerunRequested = java.util.concurrent.atomic.AtomicBoolean(false)
   private var cachedCompletion: CachedCompletion
   private var lastJavaChangeDelta = 0
 
@@ -412,56 +414,82 @@ class JavaLanguageServer : ILanguageServer {
       return
     }
     val requestedGeneration = analyzeGeneration.get()
+    if (!analyzeLaunchInFlight.compareAndSet(false, true)) {
+      analyzeRerunRequested.set(true)
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+          "Analyze coalesced while in flight requestedGeneration={} currentGeneration={} file={}",
+          requestedGeneration,
+          analyzeGeneration.get(),
+          fileToAnalyze,
+        )
+      }
+      return
+    }
 
     CoroutineScope(Dispatchers.Default).launch {
-      if (requestedGeneration != analyzeGeneration.get()) {
-        if (IdeLogConfig.shouldLogInfo()) {
-          log.info(
-            "Analyze skipped before start due to newer request requestedGeneration={} currentGeneration={} file={}",
-            requestedGeneration,
-            analyzeGeneration.get(),
-            fileToAnalyze,
-          )
+      try {
+        if (requestedGeneration != analyzeGeneration.get()) {
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+              "Analyze skipped before start due to newer request requestedGeneration={} currentGeneration={} file={}",
+              requestedGeneration,
+              analyzeGeneration.get(),
+              fileToAnalyze,
+            )
+          }
+          return@launch
         }
-        return@launch
-      }
-      maybeEvictIdleHeavyCompositeModules()
-      if (requestedGeneration != analyzeGeneration.get()) {
-        if (IdeLogConfig.shouldLogInfo()) {
-          log.info(
-            "Analyze skipped after pre-work due to newer request requestedGeneration={} currentGeneration={} file={}",
-            requestedGeneration,
-            analyzeGeneration.get(),
-            fileToAnalyze,
-          )
+        maybeEvictIdleHeavyCompositeModules()
+        if (requestedGeneration != analyzeGeneration.get()) {
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+              "Analyze skipped after pre-work due to newer request requestedGeneration={} currentGeneration={} file={}",
+              requestedGeneration,
+              analyzeGeneration.get(),
+              fileToAnalyze,
+            )
+          }
+          return@launch
         }
-        return@launch
-      }
-      val result = analyze(fileToAnalyze)
-      if (requestedGeneration != analyzeGeneration.get()) {
-        if (IdeLogConfig.shouldLogInfo()) {
-          log.info(
-            "Analyze result dropped due to newer request requestedGeneration={} currentGeneration={} file={}",
-            requestedGeneration,
-            analyzeGeneration.get(),
-            fileToAnalyze,
-          )
+        val result = analyze(fileToAnalyze)
+        if (requestedGeneration != analyzeGeneration.get()) {
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+              "Analyze result dropped due to newer request requestedGeneration={} currentGeneration={} file={}",
+              requestedGeneration,
+              analyzeGeneration.get(),
+              fileToAnalyze,
+            )
+          }
+          return@launch
         }
-        return@launch
-      }
-      if (result == DiagnosticResult.NO_UPDATE) {
-        return@launch
-      }
-      withContext(Dispatchers.Main) {
-        if (requestedGeneration == analyzeGeneration.get()) {
-          client?.publishDiagnostics(result)
-        } else if (IdeLogConfig.shouldLogInfo()) {
-          log.info(
-            "Analyze publish skipped due to newer request requestedGeneration={} currentGeneration={} file={}",
-            requestedGeneration,
-            analyzeGeneration.get(),
-            fileToAnalyze,
-          )
+        if (result == DiagnosticResult.NO_UPDATE) {
+          return@launch
+        }
+        withContext(Dispatchers.Main) {
+          if (requestedGeneration == analyzeGeneration.get()) {
+            client?.publishDiagnostics(result)
+          } else if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+              "Analyze publish skipped due to newer request requestedGeneration={} currentGeneration={} file={}",
+              requestedGeneration,
+              analyzeGeneration.get(),
+              fileToAnalyze,
+            )
+          }
+        }
+      } finally {
+        analyzeLaunchInFlight.set(false)
+        if (analyzeRerunRequested.compareAndSet(true, false)) {
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+              "Analyze trailing rerun requested currentGeneration={} selectedFile={}",
+              analyzeGeneration.get(),
+              selectedFile,
+            )
+          }
+          analyzeSelected()
         }
       }
     }
