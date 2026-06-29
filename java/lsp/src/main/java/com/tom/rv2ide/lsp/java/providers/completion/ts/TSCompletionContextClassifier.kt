@@ -18,7 +18,10 @@ object TSCompletionContextClassifier {
     val parseResult = TSJavaParser.parse(InMemoryJavaFileObject(file, content))
     val root = parseResult.tree.rootNode
     val byteOffset = (cursor * 2L).toInt()
-    val node = findSmallestNodeContaining(root, byteOffset) ?: return TSCompletionContext.UNKNOWN
+    val node = root.namedDescendantForByteRange(byteOffset, byteOffset)
+    if (node == null || node.isNull) {
+      return TSCompletionContext.UNKNOWN
+    }
 
     return classifyNode(node)
   }
@@ -70,22 +73,7 @@ object TSCompletionContextClassifier {
     return false
   }
 
-  private fun findSmallestNodeContaining(node: TSNode, byteOffset: Int): TSNode? {
-    if (byteOffset < node.startByte || byteOffset > node.endByte) {
-      return null
-    }
-
-    var child = node.firstChild
-    while (child != null) {
-      val match = findSmallestNodeContaining(child, byteOffset)
-      if (match != null) {
-        return match
-      }
-      child = child.nextSibling
-    }
-
-    return node
-  }
+  /* removed legacy recursive descendant walk; namedDescendantForByteRange is used instead */
 
   private class InMemoryJavaFileObject(
     private val path: Path,
