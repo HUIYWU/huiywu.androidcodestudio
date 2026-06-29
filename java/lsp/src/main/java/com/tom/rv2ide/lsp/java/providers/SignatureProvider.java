@@ -98,7 +98,7 @@ public class SignatureProvider extends CancelableServiceProvider {
         params.getPosition().getLine(),
         params.getPosition().getColumn(),
         params.getPosition().getIndex(),
-        params.getContent());
+        params.getContent() == null ? null : params.getContent().toString());
   }
 
 
