@@ -21,7 +21,10 @@ import androidx.annotation.NonNull;
 import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.lsp.java.compiler.CompileTask;
 import com.tom.rv2ide.lsp.java.compiler.CompilerProvider;
+import com.tom.rv2ide.lsp.java.compiler.SourceFileObject;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
+import com.tom.rv2ide.lsp.java.models.CompilationRequest;
+import com.tom.rv2ide.lsp.java.models.PartialReparseRequest;
 import com.tom.rv2ide.lsp.java.utils.FindHelper;
 import com.tom.rv2ide.lsp.java.utils.MarkdownHelper;
 import com.tom.rv2ide.lsp.java.utils.ScopeHelper;
@@ -33,6 +36,7 @@ import com.tom.rv2ide.lsp.models.SignatureHelpParams;
 import com.tom.rv2ide.lsp.models.SignatureInformation;
 import com.tom.rv2ide.progress.ICancelChecker;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -90,27 +94,54 @@ public class SignatureProvider extends CancelableServiceProvider {
           params.getContent() == null ? -1 : params.getContent().length());
     }
     return signatureHelp(
-        params.getFile(), params.getPosition().getLine(), params.getPosition().getColumn());
+        params.getFile(),
+        params.getPosition().getLine(),
+        params.getPosition().getColumn(),
+        params.getPosition().getIndex(),
+        params.getContent());
   }
 
 
   @NonNull
-  public SignatureHelp signatureHelp(Path file, int l, int c) {
+  public SignatureHelp signatureHelp(Path file, int l, int c, long cursorIndex, String content) {
 
     // 1-based line and column index
     final int line = l + 1;
     final int column = c + 1;
 
-    // TODO prune
-    if (IdeLogConfig.shouldLogInfo()) {
-      LOG.info("SignatureProvider.compile start file={} line={} column={}", file, line, column);
+    final SynchronizedTask synchronizedTask;
+    if (content != null) {
+      final var source = new SourceFileObject(file, content, Instant.now());
+      final PartialReparseRequest partialRequest =
+          cursorIndex >= 0 ? new PartialReparseRequest(cursorIndex, content) : null;
+      final CompilationRequest request =
+          new CompilationRequest(Collections.singletonList(source), partialRequest, true);
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info(
+            "SignatureProvider.compile start file={} line={} column={} mode=content partial={} contentLength={}",
+            file,
+            line,
+            column,
+            partialRequest != null,
+            content.length());
+      }
+      synchronizedTask = compiler.compile(request);
+    } else {
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info(
+            "SignatureProvider.compile start file={} line={} column={} mode=file partial=false contentLength=-1",
+            file,
+            line,
+            column);
+      }
+      synchronizedTask = compiler.compile(file);
     }
-    SynchronizedTask synchronizedTask = compiler.compile(file);
     abortIfCancelled();
     return synchronizedTask.get(
         task -> {
           String stage = "cursorResolve";
           try {
+            final CompilationUnitTree root = task.root(file);
             if (IdeLogConfig.shouldLogInfo()) {
               LOG.info(
                   "SignatureProvider.stage stage={} file={} line={} column={}",
@@ -119,7 +150,7 @@ public class SignatureProvider extends CancelableServiceProvider {
                   line,
                   column);
             }
-            long cursor = task.root().getLineMap().getPosition(line, column);
+            long cursor = root.getLineMap().getPosition(line, column);
             if (IdeLogConfig.shouldLogInfo()) {
               LOG.info(
                   "SignatureProvider.stageDone stage={} file={} cursor={}",
@@ -132,7 +163,7 @@ public class SignatureProvider extends CancelableServiceProvider {
             if (IdeLogConfig.shouldLogInfo()) {
               LOG.info("SignatureProvider.stage stage={} file={} cursor={}", stage, file, cursor);
             }
-            TreePath path = new FindInvocationAt(task.task, this).scan(task.root(), cursor);
+            TreePath path = new FindInvocationAt(task.task, this).scan(root, cursor);
             if (IdeLogConfig.shouldLogInfo()) {
               LOG.info(
                   "SignatureProvider.stageDone stage={} file={} cursor={} pathNull={}",
