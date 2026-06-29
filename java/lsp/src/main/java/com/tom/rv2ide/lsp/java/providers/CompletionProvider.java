@@ -145,7 +145,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         final long index = params.getPosition().getIndex();
         final String prefix = params.getPrefix();
         LOG.error(
-            "An error occurred while computing completions file={} line={} column={} index={} prefix={} compilerHash={} currentContextPresent={} synchronizedTaskBusy={}",
+            "An error occurred while computing completions file={} line={} column={} index={} prefix={} compilerHash={} currentContextPresent={} synchronizedTaskBusy={} errorType={} errorMessage={}",
             file,
             line,
             column,
@@ -154,6 +154,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
             System.identityHashCode(compiler),
             compiler != null && compiler.compiler.currentContext != null,
             synchronizedTask.isBusy(),
+            err.getClass().getName(),
+            err.getMessage(),
             err);
       }
       throw err;
