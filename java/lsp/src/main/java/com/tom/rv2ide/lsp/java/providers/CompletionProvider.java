@@ -298,7 +298,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       contents = contentBuilder;
     }
     final String contentString = contents.toString();
-    final TSCompletionContext tsContext;
+    TSCompletionContext tsContext;
     try {
       tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor);
     } catch (Throwable err) {
