@@ -336,21 +336,6 @@ class JavaLanguageServer : ILanguageServer {
         }
     val interval = maxOf(baseInterval.toLong(), interactiveDelay)
     val shouldRestart = !timer.isStarted || forceRestart || timer.interval < interval
-    if (IdeLogConfig.shouldLogInfo()) {
-      log.info(
-        "Analyze timer scheduled generation={} selectedFile={} changeDelta={} intervalMs={} baseIntervalMs={} interactiveDelayMs={} sinceInteractiveMs={} forceRestart={} shouldRestart={} currentTimerIntervalMs={}",
-        nextGeneration,
-        selectedFile,
-        lastJavaChangeDelta,
-        interval,
-        baseInterval,
-        interactiveDelay,
-        sinceInteractive,
-        forceRestart,
-        shouldRestart,
-        timer.interval,
-      )
-    }
     if (timer.interval != interval) {
       timer.interval = interval
     }
@@ -442,14 +427,6 @@ class JavaLanguageServer : ILanguageServer {
     val now = System.currentTimeMillis()
     val sinceInteractive = now - lastInteractiveRequestAt.get()
     if (sinceInteractive in 0 until SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS) {
-      if (IdeLogConfig.shouldLogInfo()) {
-        log.info(
-          "Analyze delayed for interactive activity file={} sinceInteractiveMs={} graceMs={}",
-          fileToAnalyze,
-          sinceInteractive,
-          SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS,
-        )
-      }
       startOrRestartAnalyzeTimer(forceRestart = false)
       return
     }

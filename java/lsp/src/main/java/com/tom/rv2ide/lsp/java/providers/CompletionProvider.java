@@ -43,6 +43,8 @@ import com.tom.rv2ide.lsp.java.providers.completion.KeywordCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.MemberReferenceCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.MemberSelectCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.SwitchConstantCompletionProvider;
+import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContext;
+import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContextClassifier;
 import com.tom.rv2ide.lsp.java.utils.ASTFixer;
 import com.tom.rv2ide.lsp.java.utils.CancelChecker;
 import com.tom.rv2ide.lsp.java.visitors.FindCompletionsAt;
@@ -96,18 +98,31 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
   public CompletionResult complete(@NonNull CompletionParams params) {
     final var synchronizedTask = compiler.getSynchronizedTask();
     if (synchronizedTask.isBusy()) {
-      final CompletionResult busyFallback = tryServeBusyFallback(params);
+      final TSCompletionContext busyContext = classifyCompletionContext(params);
+      CompletionResult busyFallback = tryServeBusyFallback(params);
+      if (busyFallback == null && busyContext == TSCompletionContext.MEMBER_ACCESS) {
+        busyFallback = tryServeSameFileBusyFallback(params);
+      }
       if (busyFallback != null) {
         if (IdeLogConfig.shouldLogInfo()) {
-          LOG.info("Completion busy; serving fallback result itemCount={} incomplete={} cached={}",
+          LOG.info("Completion busy; serving fallback result itemCount={} incomplete={} cached={} tsContext={}",
               busyFallback.getItems().size(),
               busyFallback.isIncomplete(),
-              busyFallback.isCached());
+              busyFallback.isCached(),
+              busyContext);
         }
         return busyFallback;
       }
+      if (busyContext == TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR) {
+        if (IdeLogConfig.shouldLogDebug()) {
+          LOG.debug("Completion busy near broken syntax; returning empty result file={} cursor={}",
+              params.getFile(),
+              params.getPosition().getIndex());
+        }
+        return CompletionResult.EMPTY;
+      }
       if (IdeLogConfig.shouldLogWarn()) {
-        LOG.warn("Completion busy and no fallback result is available");
+        LOG.warn("Completion busy and no fallback result is available tsContext={}", busyContext);
         synchronizedTask.logStats();
       }
       return CompletionResult.EMPTY;
@@ -155,41 +170,57 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
     final String partial = params.getPrefix() == null ? "" : partialIdentifier(params.requirePrefix(), params.requirePrefix().length());
     if (this.cache.canUseCache(params)) {
-      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.result, partial, item -> {
-        final var description = item.getSnippetDescription();
-        var deleteSelected = true;
-        var allowCommands = false;
-        CodeSnippet snippet = null;
-        if (description != null) {
-          deleteSelected = description.getDeleteSelected();
-          allowCommands = description.getAllowCommandExecution();
-          snippet = description.getSnippet();
-        }
-        item.setSnippetDescription(describeSnippet(partial, deleteSelected, snippet, allowCommands));
-      });
-      result.markCached();
-      return result;
+      return mapCachedBusyResult(partial);
     }
 
     if (this.cache.params != null
         && DocumentUtils.isSameFile(this.cache.params.getFile(), params.getFile())) {
-      final CompletionResult result = CompletionResult.mapAndFilter(this.cache.result, partial, item -> {
-        final var description = item.getSnippetDescription();
-        var deleteSelected = true;
-        var allowCommands = false;
-        CodeSnippet snippet = null;
-        if (description != null) {
-          deleteSelected = description.getDeleteSelected();
-          allowCommands = description.getAllowCommandExecution();
-          snippet = description.getSnippet();
-        }
-        item.setSnippetDescription(describeSnippet(partial, deleteSelected, snippet, allowCommands));
-      });
-      result.markCached();
-      return result;
+      return mapCachedBusyResult(partial);
     }
 
     return null;
+  }
+
+  @Nullable
+  private CompletionResult tryServeSameFileBusyFallback(@NonNull final CompletionParams params) {
+    if (this.cache == null || this.cache.params == null) {
+      return null;
+    }
+    if (!DocumentUtils.isSameFile(this.cache.params.getFile(), params.getFile())) {
+      return null;
+    }
+    final String partial = params.getPrefix() == null ? "" : partialIdentifier(params.requirePrefix(), params.requirePrefix().length());
+    return mapCachedBusyResult(partial);
+  }
+
+  @NonNull
+  private CompletionResult mapCachedBusyResult(@NonNull final String partial) {
+    final CompletionResult result = CompletionResult.mapAndFilter(this.cache.result, partial, item -> {
+      final var description = item.getSnippetDescription();
+      var deleteSelected = true;
+      var allowCommands = false;
+      CodeSnippet snippet = null;
+      if (description != null) {
+        deleteSelected = description.getDeleteSelected();
+        allowCommands = description.getAllowCommandExecution();
+        snippet = description.getSnippet();
+      }
+      item.setSnippetDescription(describeSnippet(partial, deleteSelected, snippet, allowCommands));
+    });
+    result.markCached();
+    return result;
+  }
+
+  private TSCompletionContext classifyCompletionContext(@NonNull CompletionParams params) {
+    try {
+      final Path file = params.getFile();
+      final long cursor = params.getPosition().requireIndex();
+      final var sourceObject = new SourceFileObject(file);
+      final String originalContents = sourceObject.getCharContent(true).toString();
+      return TSCompletionContextClassifier.classify(file, originalContents, cursor);
+    } catch (Throwable ignored) {
+      return TSCompletionContext.UNKNOWN;
+    }
   }
 
   @NonNull
@@ -265,6 +296,16 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       contents = contentBuilder;
     }
     final String contentString = contents.toString();
+    final TSCompletionContext tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor);
+    if (tsContext == TSCompletionContext.COMMENT_OR_STRING) {
+      if (IdeLogConfig.shouldLogDebug()) {
+        LOG.debug("Skipping Java completion in comment/string context file={} cursor={}", file, cursor);
+      }
+      return CompletionResult.EMPTY;
+    }
+    if (IdeLogConfig.shouldLogDebug() && tsContext != TSCompletionContext.UNKNOWN) {
+      LOG.debug("Tree-sitter completion context file={} cursor={} context={}", file, cursor, tsContext);
+    }
     final boolean astFixerApplied = context != null;
     final boolean astFixerChangedContents = astFixerApplied && !contentString.contentEquals(contentBuilder);
     final int prefixLength = params.requirePrefix().length();
@@ -403,7 +444,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         }
       }
 
-      final var result = doComplete(file, contents, cursor, newPartial, endsWithParen, task, path);
+      final var result = doComplete(file, contents, cursor, newPartial, endsWithParen, task, path, tsContext);
 
       // IMPORTANT: Unregister the completion info from the compiler configuration
       if (task.task.getContext() != null) {
@@ -418,13 +459,19 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
   @NonNull
   private CompletionResult doComplete(final Path file, final String contents, final long cursor,
       final String partial, final boolean endsWithParen,
-      final CompileTask task, final TreePath path
+      final CompileTask task, final TreePath path,
+      final TSCompletionContext tsContext
   ) {
     final Class<? extends IJavaCompletionProvider> klass;
     abortIfCancelled();
     abortCompletionIfCancelled();
     switch (path.getLeaf().getKind()) {
       case IDENTIFIER:
+        if (tsContext == TSCompletionContext.IMPORT_DECLARATION
+            || tsContext == TSCompletionContext.PACKAGE_DECLARATION) {
+          klass = ImportCompletionProvider.class;
+          break;
+        }
         klass = IdentifierCompletionProvider.class;
         break;
       case MEMBER_SELECT:
@@ -446,6 +493,11 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         klass = ImportCompletionProvider.class;
         break;
       default:
+        if (tsContext == TSCompletionContext.IMPORT_DECLARATION
+            || tsContext == TSCompletionContext.PACKAGE_DECLARATION) {
+          klass = ImportCompletionProvider.class;
+          break;
+        }
         klass = KeywordCompletionProvider.class;
         break;
     }
@@ -457,6 +509,13 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     if (provider instanceof ImportCompletionProvider) {
       ((ImportCompletionProvider) provider).setImportPath(
           qualifiedPartialIdentifier(contents, (int) cursor));
+      if (IdeLogConfig.shouldLogDebug()) {
+        LOG.debug("Routing completion to ImportCompletionProvider file={} cursor={} tsContext={} leafKind={}",
+            file,
+            cursor,
+            tsContext,
+            path.getLeaf().getKind());
+      }
     }
 
     abortIfCancelled();
