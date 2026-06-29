@@ -989,27 +989,8 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
     return PartialReparseAttemptResult.success("method body reparsed");
   }
   private synchronized void recompile(CompilationRequest request) {
-    final Runtime runtimeBefore = Runtime.getRuntime();
-    final long usedBefore = runtimeBefore.totalMemory() - runtimeBefore.freeMemory();
-    LOG.info(
-        "recompile start requestHash={} sources={} cachedCompilePresentBeforeClose={} currentContextPresentBeforeClose={} usedMemoryBytes={}",
-        System.identityHashCode(request),
-        request.sources == null ? -1 : request.sources.size(),
-        cachedCompile != null,
-        compiler.currentContext != null,
-        usedBefore);
-
     close();
     this.cachedCompile = performCompilation(request);
-    final Runtime runtimeAfterCompile = Runtime.getRuntime();
-    final long usedAfterCompile = runtimeAfterCompile.totalMemory() - runtimeAfterCompile.freeMemory();
-    LOG.info(
-        "recompile finish requestHash={} cachedCompilePresentAfterCompile={} currentContextPresentAfterCompile={} usedMemoryBytes={}",
-        System.identityHashCode(request),
-        cachedCompile != null,
-        compiler.currentContext != null,
-        usedAfterCompile);
-
     this.incrementalState.resetAfterFullRecompile();
     updateModificationCache(request);
   }
@@ -1017,11 +998,6 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
   public synchronized void close() {
     final Runtime runtimeBeforeClose = Runtime.getRuntime();
     final long usedBeforeClose = runtimeBeforeClose.totalMemory() - runtimeBeforeClose.freeMemory();
-    LOG.info(
-        "JavaCompilerService.close start cachedCompilePresent={} currentContextPresent={} usedMemoryBytes={}",
-        cachedCompile != null,
-        compiler.currentContext != null,
-        usedBeforeClose);
 
     boolean recreatedReusableCompiler = false;
     if (cachedCompile != null) {
@@ -1039,18 +1015,6 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
       compiler = new ReusableCompiler();
       recreatedReusableCompiler = true;
     }
-    final Runtime runtimeAfterClose = Runtime.getRuntime();
-    final long usedAfterClose = runtimeAfterClose.totalMemory() - runtimeAfterClose.freeMemory();
-    LOG.info(
-        "JavaCompilerService.close end cachedCompilePresent={} currentContextPresent={} recreatedReusableCompiler={} lastExpandedSourceCount={} recreateForExpandedSources={} recreateForMemoryPressure={} usedMemoryBytes={}",
-        cachedCompile != null,
-        compiler.currentContext != null,
-        recreatedReusableCompiler,
-        lastExpandedSourceCount,
-        shouldRecreateForExpandedSources,
-        shouldRecreateForMemoryPressure,
-        usedAfterClose);
-
   }
 
 
@@ -1065,15 +1029,6 @@ for (int i = 0; i < Math.min(sampleLimit, fullOnlyOtherFiles.size()); i++) {
         compilationWorkingSetBuilder.expand(this, request);
     final Collection<? extends JavaFileObject> sources = expandedRequest.sources;
     lastExpandedSourceCount = sources == null ? -1 : sources.size();
-    LOG.info(
-        "performCompilation requestHash={} allowPartialReparse={} originalSources={} expandedSources={} currentContextPresent={} fileManagerClass={} firstSource={}",
-        System.identityHashCode(request),
-        request.allowPartialReparse,
-        request.sources == null ? -1 : request.sources.size(),
-        lastExpandedSourceCount,
-        compiler.currentContext != null,
-        fileManager == null ? null : fileManager.getClass().getName(),
-        sources != null && sources.iterator().hasNext() ? sources.iterator().next().toUri() : null);
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
           "performCompilation sourcesDetail requestHash={} sourcesDetail={}",

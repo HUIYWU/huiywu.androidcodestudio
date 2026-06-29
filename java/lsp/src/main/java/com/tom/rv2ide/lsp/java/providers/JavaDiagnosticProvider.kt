@@ -88,9 +88,6 @@ class JavaDiagnosticProvider {
     }
 
     val requestedGeneration = analyzeGeneration.incrementAndGet()
-    if (IdeLogConfig.shouldLogInfo()) {
-      log.info("Analyze request scheduled generation={} file={}", requestedGeneration, file)
-    }
     analyzing.set(true)
 
     val analyzingThread =
@@ -230,9 +227,7 @@ class JavaDiagnosticProvider {
                     }
               } catch (err: Throwable) {
                 if (CancelChecker.isCancelled(err)) {
-                  if (IdeLogConfig.shouldLogWarn()) {
-                    log.warn("Analyze request cancelled")
-                  }
+                  // Cancellation is expected during interactive editing; keep quiet.
                 } else {
                   if (IdeLogConfig.shouldLogWarn()) {
                     log.warn("Unable to analyze file", err)

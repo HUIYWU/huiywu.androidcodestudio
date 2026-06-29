@@ -34,12 +34,6 @@ final class CompilationWorkingSetBuilder {
       return request;
     }
     if (request.allowPartialReparse) {
-      final Collection<JavaFileObject> originalSources = request.sources;
-      LOG.info(
-          "WorkingSet.expand skip requestHash={} allowPartialReparse={} originalSources={} reason=partial-request-kept-single-file",
-          System.identityHashCode(request),
-          request.allowPartialReparse,
-          originalSources == null ? -1 : originalSources.size());
       return request;
     }
  
@@ -65,13 +59,6 @@ final class CompilationWorkingSetBuilder {
     addSamePackageSources(compiler, module, primaryPath, expanded);
     addImportedSources(compiler, primaryPath, expanded);
     if (expanded.size() == 1) {
-      LOG.info(
-          "WorkingSet.expand requestHash={} allowPartialReparse={} primary={} originalSources={} expandedSources={} samePackageOrImportsAdded=false",
-          System.identityHashCode(request),
-          request.allowPartialReparse,
-          primaryPath,
-          originalSources.size(),
-          expanded.size());
       cacheEntry =
           new WorkingSetCacheEntry(
               primaryPath,
@@ -81,14 +68,6 @@ final class CompilationWorkingSetBuilder {
       return request;
     }
  
-
-    LOG.info(
-        "WorkingSet.expand requestHash={} allowPartialReparse={} primary={} originalSources={} expandedSources={} samePackageOrImportsAdded=true",
-        System.identityHashCode(request),
-        request.allowPartialReparse,
-        primaryPath,
-        originalSources.size(),
-        expanded.size());
 
     cacheEntry =
         new WorkingSetCacheEntry(

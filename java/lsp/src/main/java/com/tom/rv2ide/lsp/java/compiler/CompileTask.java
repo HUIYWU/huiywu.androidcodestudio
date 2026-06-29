@@ -74,26 +74,9 @@ public class CompileTask implements AutoCloseable {
   }
   @Override
   public void close() {
-    final Runtime runtimeBefore = Runtime.getRuntime();
-    final long usedBefore = runtimeBefore.totalMemory() - runtimeBefore.freeMemory();
-    LOG.info(
-        "CompileTask.close start taskHash={} compileBatchPresent={} roots={} diagnostics={} usedMemoryBytes={}",
-        System.identityHashCode(this),
-        compileBatch != null,
-        roots == null ? -1 : roots.size(),
-        diagnostics == null ? -1 : diagnostics.size(),
-        usedBefore);
-
     if (compileBatch != null) {
       compileBatch.close();
     }
-    final Runtime runtimeAfter = Runtime.getRuntime();
-    final long usedAfter = runtimeAfter.totalMemory() - runtimeAfter.freeMemory();
-    LOG.info(
-        "CompileTask.close end taskHash={} usedMemoryBytes={}",
-        System.identityHashCode(this),
-        usedAfter);
-
   }
 }
 

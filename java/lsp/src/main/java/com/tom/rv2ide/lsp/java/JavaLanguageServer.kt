@@ -186,9 +186,6 @@ class JavaLanguageServer : ILanguageServer {
 
 
     if (diagnosticProvider!!.isAnalyzing()) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        log.warn("Cancelling source code analysis due to completion request")
-      }
       diagnosticProvider.cancel()
     }
 
@@ -470,14 +467,6 @@ class JavaLanguageServer : ILanguageServer {
         }
         val result = analyze(fileToAnalyze)
         if (requestedGeneration != analyzeGeneration.get()) {
-          if (IdeLogConfig.shouldLogInfo()) {
-            log.info(
-              "Analyze result dropped due to newer request requestedGeneration={} currentGeneration={} file={}",
-              requestedGeneration,
-              analyzeGeneration.get(),
-              fileToAnalyze,
-            )
-          }
           return@launch
         }
         if (result == DiagnosticResult.NO_UPDATE) {

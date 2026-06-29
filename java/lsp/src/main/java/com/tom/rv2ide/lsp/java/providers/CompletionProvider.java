@@ -104,13 +104,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         busyFallback = tryServeSameFileBusyFallback(params);
       }
       if (busyFallback != null) {
-        if (IdeLogConfig.shouldLogInfo()) {
-          LOG.info("Completion busy; serving fallback result itemCount={} incomplete={} cached={} tsContext={}",
-              busyFallback.getItems().size(),
-              busyFallback.isIncomplete(),
-              busyFallback.isCached(),
-              busyContext);
-        }
         return busyFallback;
       }
       if (busyContext == TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR) {
@@ -564,14 +557,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
     try {
-      LOG.warn(
-          "Completion provider start file={} cursor={} leafKind={} provider={} partial={} endsWithParen={}",
-          file,
-          cursor,
-          path.getLeaf().getKind(),
-          klass.getName(),
-          partial,
-          endsWithParen);
       return provider.complete(task, path, partial, endsWithParen);
     } catch (Throwable err) {
       LOG.error(
