@@ -226,6 +226,14 @@ class JavaLanguageServer : ILanguageServer {
 
   override suspend fun signatureHelp(params: SignatureHelpParams): SignatureHelp {
     lastInteractiveRequestAt.set(System.currentTimeMillis())
+    log.info(
+      "signatureHelp request file={} line={} column={} index={} contentLength={}",
+      params.file,
+      params.position.line,
+      params.position.column,
+      params.position.index,
+      params.content?.length ?: -1,
+    )
     val compiler = getCompiler(params.file)
     return if (!settings.signatureHelpEnabled()) {
       SignatureHelp(emptyList(), -1, -1)

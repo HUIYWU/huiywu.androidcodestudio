@@ -18,6 +18,7 @@
 package com.tom.rv2ide.lsp.java.providers;
 
 import androidx.annotation.NonNull;
+import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.lsp.java.compiler.CompileTask;
 import com.tom.rv2ide.lsp.java.compiler.CompilerProvider;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
@@ -62,23 +63,36 @@ import openjdk.source.util.DocTrees;
 import openjdk.source.util.SourcePositions;
 import openjdk.source.util.TreePath;
 import openjdk.source.util.Trees;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 public class SignatureProvider extends CancelableServiceProvider {
+
+  private static final Logger LOG = LoggerFactory.getLogger(SignatureProvider.class);
 
   public static final SignatureHelp NOT_SUPPORTED =
       new SignatureHelp(Collections.emptyList(), -1, -1);
   private final CompilerProvider compiler;
 
+
   public SignatureProvider(CompilerProvider compiler, ICancelChecker cancelChecker) {
     super(cancelChecker);
     this.compiler = compiler;
   }
-
   @NonNull
   public SignatureHelp signatureHelp(@NonNull SignatureHelpParams params) {
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info(
+          "SignatureProvider.request file={} line={} column={} index={} contentLength={}",
+          params.getFile(),
+          params.getPosition().getLine(),
+          params.getPosition().getColumn(),
+          params.getPosition().getIndex(),
+          params.getContent() == null ? -1 : params.getContent().length());
+    }
     return signatureHelp(
         params.getFile(), params.getPosition().getLine(), params.getPosition().getColumn());
   }
+
 
   @NonNull
   public SignatureHelp signatureHelp(Path file, int l, int c) {
@@ -88,6 +102,9 @@ public class SignatureProvider extends CancelableServiceProvider {
     final int column = c + 1;
 
     // TODO prune
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info("SignatureProvider.compile start file={} line={} column={}", file, line, column);
+    }
     SynchronizedTask synchronizedTask = compiler.compile(file);
     abortIfCancelled();
     return synchronizedTask.get(
@@ -95,7 +112,25 @@ public class SignatureProvider extends CancelableServiceProvider {
           long cursor = task.root().getLineMap().getPosition(line, column);
           TreePath path = new FindInvocationAt(task.task, this).scan(task.root(), cursor);
           if (path == null) {
+            if (IdeLogConfig.shouldLogInfo()) {
+              LOG.info(
+                  "SignatureProvider.notSupported reason=noInvocationPath file={} line={} column={} cursor={}",
+                  file,
+                  line,
+                  column,
+                  cursor);
+            }
             return NOT_SUPPORTED;
+          }
+          if (IdeLogConfig.shouldLogInfo()) {
+            LOG.info(
+                "SignatureProvider.path file={} line={} column={} cursor={} leafKind={} leaf={}",
+                file,
+                line,
+                column,
+                cursor,
+                path.getLeaf().getKind(),
+                path.getLeaf());
           }
           if (path.getLeaf() instanceof MethodInvocationTree) {
             MethodInvocationTree invoke = (MethodInvocationTree) path.getLeaf();
@@ -109,6 +144,17 @@ public class SignatureProvider extends CancelableServiceProvider {
             }
             int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
             int activeParameter = activeParameter(task, invoke.getArguments(), cursor);
+            if (IdeLogConfig.shouldLogInfo()) {
+              LOG.info(
+                  "SignatureProvider.methodResult file={} overloads={} signatures={} activeSignature={} activeParameter={} methodSelect={} argCount={}",
+                  file,
+                  overloads.size(),
+                  signatures.size(),
+                  activeSignature,
+                  activeParameter,
+                  invoke.getMethodSelect(),
+                  invoke.getArguments().size());
+            }
             return new SignatureHelp(signatures, activeSignature, activeParameter);
           }
           if (path.getLeaf() instanceof NewClassTree) {
@@ -123,7 +169,25 @@ public class SignatureProvider extends CancelableServiceProvider {
             }
             int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
             int activeParameter = activeParameter(task, invoke.getArguments(), cursor);
+            if (IdeLogConfig.shouldLogInfo()) {
+              LOG.info(
+                  "SignatureProvider.constructorResult file={} overloads={} signatures={} activeSignature={} activeParameter={} type={} argCount={}",
+                  file,
+                  overloads.size(),
+                  signatures.size(),
+                  activeSignature,
+                  activeParameter,
+                  invoke.getIdentifier(),
+                  invoke.getArguments().size());
+            }
             return new SignatureHelp(signatures, activeSignature, activeParameter);
+          }
+          if (IdeLogConfig.shouldLogInfo()) {
+            LOG.info(
+                "SignatureProvider.notSupported reason=unsupportedLeaf file={} leafKind={} leaf={}",
+                file,
+                path.getLeaf().getKind(),
+                path.getLeaf());
           }
           return NOT_SUPPORTED;
         });
