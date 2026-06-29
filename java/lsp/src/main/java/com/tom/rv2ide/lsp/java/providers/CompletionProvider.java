@@ -406,7 +406,19 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final var source = new SourceFileObject(file, contents, Instant.now());
     final var partial = partialIdentifier(contents, (int) cursor);
     final var endsWithParen = endsWithParen(contents, (int) cursor);
-    final TSCompletionContext tsContext = TSCompletionContextClassifier.classify(file, contents, cursor);
+    TSCompletionContext tsContext;
+    try {
+      tsContext = TSCompletionContextClassifier.classify(file, contents, cursor);
+    } catch (Throwable err) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info("Tree-sitter compile-stage context classification failed; falling back to UNKNOWN file={} cursor={} errorType={} errorMessage={}",
+            file,
+            cursor,
+            err.getClass().getName(),
+            err.getMessage());
+      }
+      tsContext = TSCompletionContext.UNKNOWN;
+    }
 
     abortIfCancelled();
     abortCompletionIfCancelled();
