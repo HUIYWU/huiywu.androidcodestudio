@@ -286,14 +286,6 @@ constructor(
     val cancelChecker = JobCancelChecker().also { this.sigHelpCancelChecker = it }
     val requestPosition = cursorLSPPosition
     val requestContent = text
-    log.info(
-        "signatureHelp request file={} line={} column={} index={} contentLength={}",
-        file,
-        requestPosition.line,
-        requestPosition.column,
-        requestPosition.index,
-        requestContent.length,
-    )
 
     editorScope
         .launch(Dispatchers.Default) {
@@ -320,13 +312,6 @@ constructor(
     if (isReleased) {
       return
     }
-    log.info(
-        "showSignatureHelp signatures={} activeSignature={} activeParameter={} nullHelp={}",
-        help?.signatures?.size ?: -1,
-        help?.activeSignature ?: -1,
-        help?.activeParameter ?: -1,
-        help == null,
-    )
     signatureHelpWindow.setupAndDisplay(help)
   }
 

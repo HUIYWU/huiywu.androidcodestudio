@@ -84,15 +84,6 @@ public class SignatureProvider extends CancelableServiceProvider {
   }
   @NonNull
   public SignatureHelp signatureHelp(@NonNull SignatureHelpParams params) {
-    if (IdeLogConfig.shouldLogInfo()) {
-      LOG.info(
-          "SignatureProvider.request file={} line={} column={} index={} contentLength={}",
-          params.getFile(),
-          params.getPosition().getLine(),
-          params.getPosition().getColumn(),
-          params.getPosition().getIndex(),
-          params.getContent() == null ? -1 : params.getContent().length());
-    }
     return signatureHelp(
         params.getFile(),
         params.getPosition().getLine(),
@@ -116,219 +107,48 @@ public class SignatureProvider extends CancelableServiceProvider {
           cursorIndex >= 0 ? new PartialReparseRequest(cursorIndex, content) : null;
       final CompilationRequest request =
           new CompilationRequest(Collections.singletonList(source), partialRequest, true);
-      if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info(
-            "SignatureProvider.compile start file={} line={} column={} mode=content partial={} contentLength={}",
-            file,
-            line,
-            column,
-            partialRequest != null,
-            content.length());
-      }
       synchronizedTask = compiler.compile(request);
     } else {
-      if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info(
-            "SignatureProvider.compile start file={} line={} column={} mode=file partial=false contentLength=-1",
-            file,
-            line,
-            column);
-      }
       synchronizedTask = compiler.compile(file);
     }
     abortIfCancelled();
     return synchronizedTask.get(
         task -> {
-          String stage = "cursorResolve";
-          try {
-            final CompilationUnitTree root = task.root(file);
-            if (IdeLogConfig.shouldLogInfo()) {
-              LOG.info(
-                  "SignatureProvider.stage stage={} file={} line={} column={}",
-                  stage,
-                  file,
-                  line,
-                  column);
-            }
-            long cursor = root.getLineMap().getPosition(line, column);
-            if (IdeLogConfig.shouldLogInfo()) {
-              LOG.info(
-                  "SignatureProvider.stageDone stage={} file={} cursor={}",
-                  stage,
-                  file,
-                  cursor);
-            }
-
-            stage = "scanInvocation";
-            if (IdeLogConfig.shouldLogInfo()) {
-              LOG.info("SignatureProvider.stage stage={} file={} cursor={}", stage, file, cursor);
-            }
-            TreePath path = new FindInvocationAt(task.task, this).scan(root, cursor);
-            if (IdeLogConfig.shouldLogInfo()) {
-              LOG.info(
-                  "SignatureProvider.stageDone stage={} file={} cursor={} pathNull={}",
-                  stage,
-                  file,
-                  cursor,
-                  path == null);
-            }
-            if (path == null) {
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.notSupported reason=noInvocationPath file={} line={} column={} cursor={}",
-                    file,
-                    line,
-                    column,
-                    cursor);
-              }
-              return NOT_SUPPORTED;
-            }
-            if (IdeLogConfig.shouldLogInfo()) {
-              LOG.info(
-                  "SignatureProvider.path file={} line={} column={} cursor={} leafKind={} leaf={}",
-                  file,
-                  line,
-                  column,
-                  cursor,
-                  path.getLeaf().getKind(),
-                  path.getLeaf());
-            }
-            if (path.getLeaf() instanceof MethodInvocationTree) {
-              MethodInvocationTree invoke = (MethodInvocationTree) path.getLeaf();
-              stage = "methodOverloads";
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.stage stage={} file={} methodSelect={} argCount={}",
-                    stage,
-                    file,
-                    invoke.getMethodSelect(),
-                    invoke.getArguments().size());
-              }
-              List<ExecutableElement> overloads = methodOverloads(task, invoke);
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.stageDone stage={} file={} overloads={}",
-                    stage,
-                    file,
-                    overloads.size());
-              }
-              stage = "buildMethodSignatures";
-              List<SignatureInformation> signatures = new ArrayList<>();
-              for (ExecutableElement method : overloads) {
-                SignatureInformation info = info(method);
-                addSourceInfo(task, method, info);
-                addFancyLabel(info);
-                signatures.add(info);
-              }
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.stageDone stage={} file={} signatures={}",
-                    stage,
-                    file,
-                    signatures.size());
-              }
-              stage = "resolveMethodActiveIndexes";
-              int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
-              int activeParameter = activeParameter(task, invoke.getArguments(), cursor);
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.stageDone stage={} file={} activeSignature={} activeParameter={}",
-                    stage,
-                    file,
-                    activeSignature,
-                    activeParameter);
-              }
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.methodResult file={} overloads={} signatures={} activeSignature={} activeParameter={} methodSelect={} argCount={}",
-                    file,
-                    overloads.size(),
-                    signatures.size(),
-                    activeSignature,
-                    activeParameter,
-                    invoke.getMethodSelect(),
-                    invoke.getArguments().size());
-              }
-              return new SignatureHelp(signatures, activeSignature, activeParameter);
-            }
-            if (path.getLeaf() instanceof NewClassTree) {
-              NewClassTree invoke = (NewClassTree) path.getLeaf();
-              stage = "constructorOverloads";
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.stage stage={} file={} type={} argCount={}",
-                    stage,
-                    file,
-                    invoke.getIdentifier(),
-                    invoke.getArguments().size());
-              }
-              List<ExecutableElement> overloads = constructorOverloads(task, invoke);
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.stageDone stage={} file={} overloads={}",
-                    stage,
-                    file,
-                    overloads.size());
-              }
-              stage = "buildConstructorSignatures";
-              List<SignatureInformation> signatures = new ArrayList<>();
-              for (ExecutableElement method : overloads) {
-                SignatureInformation info = info(method);
-                addSourceInfo(task, method, info);
-                addFancyLabel(info);
-                signatures.add(info);
-              }
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.stageDone stage={} file={} signatures={}",
-                    stage,
-                    file,
-                    signatures.size());
-              }
-              stage = "resolveConstructorActiveIndexes";
-              int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
-              int activeParameter = activeParameter(task, invoke.getArguments(), cursor);
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.stageDone stage={} file={} activeSignature={} activeParameter={}",
-                    stage,
-                    file,
-                    activeSignature,
-                    activeParameter);
-              }
-              if (IdeLogConfig.shouldLogInfo()) {
-                LOG.info(
-                    "SignatureProvider.constructorResult file={} overloads={} signatures={} activeSignature={} activeParameter={} type={} argCount={}",
-                    file,
-                    overloads.size(),
-                    signatures.size(),
-                    activeSignature,
-                    activeParameter,
-                    invoke.getIdentifier(),
-                    invoke.getArguments().size());
-              }
-              return new SignatureHelp(signatures, activeSignature, activeParameter);
-            }
-            if (IdeLogConfig.shouldLogInfo()) {
-              LOG.info(
-                  "SignatureProvider.notSupported reason=unsupportedLeaf file={} leafKind={} leaf={}",
-                  file,
-                  path.getLeaf().getKind(),
-                  path.getLeaf());
-            }
+          final CompilationUnitTree root = task.root(file);
+          long cursor = root.getLineMap().getPosition(line, column);
+          TreePath path = new FindInvocationAt(task.task, this).scan(root, cursor);
+          if (path == null) {
             return NOT_SUPPORTED;
-          } catch (Throwable err) {
-            LOG.error(
-                "SignatureProvider.failure stage={} file={} line={} column={} errorType={} message={}",
-                stage,
-                file,
-                line,
-                column,
-                err.getClass().getName(),
-                err.getMessage(),
-                err);
-            throw err;
           }
+          if (path.getLeaf() instanceof MethodInvocationTree) {
+            MethodInvocationTree invoke = (MethodInvocationTree) path.getLeaf();
+            List<ExecutableElement> overloads = methodOverloads(task, invoke);
+            List<SignatureInformation> signatures = new ArrayList<>();
+            for (ExecutableElement method : overloads) {
+              SignatureInformation info = info(method);
+              addSourceInfo(task, method, info);
+              addFancyLabel(info);
+              signatures.add(info);
+            }
+            int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
+            int activeParameter = activeParameter(task, invoke.getArguments(), cursor);
+            return new SignatureHelp(signatures, activeSignature, activeParameter);
+          }
+          if (path.getLeaf() instanceof NewClassTree) {
+            NewClassTree invoke = (NewClassTree) path.getLeaf();
+            List<ExecutableElement> overloads = constructorOverloads(task, invoke);
+            List<SignatureInformation> signatures = new ArrayList<>();
+            for (ExecutableElement method : overloads) {
+              SignatureInformation info = info(method);
+              addSourceInfo(task, method, info);
+              addFancyLabel(info);
+              signatures.add(info);
+            }
+            int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
+            int activeParameter = activeParameter(task, invoke.getArguments(), cursor);
+            return new SignatureHelp(signatures, activeSignature, activeParameter);
+          }
+          return NOT_SUPPORTED;
         });
   }
 

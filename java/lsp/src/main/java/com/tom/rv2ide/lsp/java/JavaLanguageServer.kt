@@ -110,6 +110,7 @@ class JavaLanguageServer : ILanguageServer {
     const val SERVER_ID = "ide.lsp.java"
     private const val LARGE_CHANGE_DELTA_FOR_DIAGNOSTIC_DEBOUNCE = 2_000
     private const val LARGE_CHANGE_ANALYZE_INTERVAL_MS = 1_500L
+    private const val SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS = 1_200L
     private const val HEAVY_COMPOSITE_IDLE_EVICTION_MS = 5 * 60_000L
     private val log = LoggerFactory.getLogger(JavaLanguageServer::class.java)
   }
@@ -226,14 +227,6 @@ class JavaLanguageServer : ILanguageServer {
 
   override suspend fun signatureHelp(params: SignatureHelpParams): SignatureHelp {
     lastInteractiveRequestAt.set(System.currentTimeMillis())
-    log.info(
-      "signatureHelp request file={} line={} column={} index={} contentLength={}",
-      params.file,
-      params.position.line,
-      params.position.column,
-      params.position.index,
-      params.content?.length ?: -1,
-    )
     val compiler = getCompiler(params.file)
     return if (!settings.signatureHelpEnabled()) {
       SignatureHelp(emptyList(), -1, -1)
@@ -321,19 +314,32 @@ class JavaLanguageServer : ILanguageServer {
       return
     }
     val nextGeneration = analyzeGeneration.incrementAndGet()
-    val interval =
+    val baseInterval =
         if (abs(lastJavaChangeDelta) >= LARGE_CHANGE_DELTA_FOR_DIAGNOSTIC_DEBOUNCE) {
           LARGE_CHANGE_ANALYZE_INTERVAL_MS
         } else {
           AnalyzeTimer.DEFAULT_INTERVAL
         }
+    val now = System.currentTimeMillis()
+    val sinceInteractive = now - lastInteractiveRequestAt.get()
+    val interactiveDelay =
+        when {
+          sinceInteractive < 0 -> 0L
+          sinceInteractive < SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS ->
+              SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS - sinceInteractive
+          else -> 0L
+        }
+    val interval = maxOf(baseInterval.toLong(), interactiveDelay)
     if (IdeLogConfig.shouldLogInfo()) {
       log.info(
-        "Analyze timer scheduled generation={} selectedFile={} changeDelta={} intervalMs={}",
+        "Analyze timer scheduled generation={} selectedFile={} changeDelta={} intervalMs={} baseIntervalMs={} interactiveDelayMs={} sinceInteractiveMs={}",
         nextGeneration,
         selectedFile,
         lastJavaChangeDelta,
         interval,
+        baseInterval,
+        interactiveDelay,
+        sinceInteractive,
       )
     }
     if (timer.interval != interval) {
@@ -424,6 +430,20 @@ class JavaLanguageServer : ILanguageServer {
     if (fileToAnalyze == null || client == null) {
       return
     }
+    val now = System.currentTimeMillis()
+    val sinceInteractive = now - lastInteractiveRequestAt.get()
+    if (sinceInteractive in 0 until SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+          "Analyze delayed for interactive activity file={} sinceInteractiveMs={} graceMs={}",
+          fileToAnalyze,
+          sinceInteractive,
+          SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS,
+        )
+      }
+      startOrRestartAnalyzeTimer()
+      return
+    }
     val requestedGeneration = analyzeGeneration.get()
     if (!analyzeLaunchInFlight.compareAndSet(false, true)) {
       analyzeRerunRequested.set(true)
@@ -437,7 +457,6 @@ class JavaLanguageServer : ILanguageServer {
       }
       return
     }
-
     CoroutineScope(Dispatchers.Default).launch {
       try {
         if (requestedGeneration != analyzeGeneration.get()) {
