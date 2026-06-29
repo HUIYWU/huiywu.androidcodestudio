@@ -18,8 +18,8 @@ object TSCompletionContextClassifier {
     val parseResult = TSJavaParser.parse(InMemoryJavaFileObject(file, content))
     val root = parseResult.tree.rootNode
     val byteOffset = (cursor * 2L).toInt()
-    val node = root.namedDescendantForByteRange(byteOffset, byteOffset)
-    if (node == null || node.isNull) {
+    val node = root.getNamedDescendantForByteRange(byteOffset, byteOffset)
+    if (node == null || node.isNull()) {
       return TSCompletionContext.UNKNOWN
     }
 
@@ -29,7 +29,7 @@ object TSCompletionContextClassifier {
   private fun classifyNode(node: TSNode): TSCompletionContext {
     var current: TSNode? = node
     while (current != null) {
-      when (current.type) {
+      when (current.getType()) {
         "line_comment", "block_comment", "comment", "string_literal", "character_literal" -> {
           return TSCompletionContext.COMMENT_OR_STRING
         }
@@ -46,7 +46,7 @@ object TSCompletionContextClassifier {
           return TSCompletionContext.METHOD_CALL_ARGUMENTS
         }
         "block" -> {
-          if (hasAncestorOfType(current.parent, "method_declaration", "constructor_declaration")) {
+          if (hasAncestorOfType(current.getParent(), "method_declaration", "constructor_declaration")) {
             return TSCompletionContext.METHOD_BODY
           }
         }
@@ -57,7 +57,7 @@ object TSCompletionContextClassifier {
           return TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR
         }
       }
-      current = current.parent
+      current = current.getParent()
     }
     return TSCompletionContext.UNKNOWN
   }
@@ -65,15 +65,13 @@ object TSCompletionContextClassifier {
   private fun hasAncestorOfType(node: TSNode?, vararg types: String): Boolean {
     var current = node
     while (current != null) {
-      if (types.any { it == current.type }) {
+      if (types.any { it == current.getType() }) {
         return true
       }
-      current = current.parent
+      current = current.getParent()
     }
     return false
   }
-
-  /* removed legacy recursive descendant walk; namedDescendantForByteRange is used instead */
 
   private class InMemoryJavaFileObject(
     private val path: Path,
