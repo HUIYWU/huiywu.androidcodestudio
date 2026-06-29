@@ -43,7 +43,10 @@ class SynchronizedTask {
       throw CompilationCancellationException(e)
     }
     try {
-      val currentTask = task ?: throw CompilationCancellationException("Compilation task is no longer available")
+      val currentTask =
+          task
+              ?: throw CompilationCancellationException(
+                  IllegalStateException("Compilation task is no longer available"))
       taskConsumer(currentTask)
     } catch (err: Throwable) {
       if (!isCancelled(err)) {
@@ -62,7 +65,10 @@ class SynchronizedTask {
       throw CompilationCancellationException(e)
     }
     return try {
-      val currentTask = task ?: throw CompilationCancellationException("Compilation task is no longer available")
+      val currentTask =
+          task
+              ?: throw CompilationCancellationException(
+                  IllegalStateException("Compilation task is no longer available"))
       action(currentTask)
     } catch (err: Throwable) {
       if (!isCancelled(err)) {
