@@ -3,7 +3,9 @@ package com.tom.rv2ide.lsp.java.providers.completion.ts
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.treesitter.TSNode
 import com.tom.rv2ide.treesitter.TSParser
+import com.tom.rv2ide.treesitter.TSPoint
 import com.tom.rv2ide.treesitter.java.TSLanguageJava
+
 import jdkx.tools.JavaFileObject
 import jdkx.tools.SimpleJavaFileObject
 import java.net.URI
@@ -13,14 +15,17 @@ import org.slf4j.LoggerFactory
 object TSCompletionContextClassifier {
 
   private val log = LoggerFactory.getLogger(TSCompletionContextClassifier::class.java)
-
   @JvmStatic
-  fun classify(file: Path, content: String, cursor: Long): TSCompletionContext {
+  fun classify(file: Path, content: String, cursor: Long, line: Int, column: Int): TSCompletionContext {
     if (cursor < 0 || cursor > content.length) {
+      return TSCompletionContext.UNKNOWN
+    }
+    if (line < 0 || column < 0) {
       return TSCompletionContext.UNKNOWN
     }
 
     val uri = file.toUri()
+
     TSParser.create().use { parser ->
       parser.language = TSLanguageJava.getInstance()
       parser.parseString(content).use { tree ->
@@ -48,23 +53,25 @@ object TSCompletionContextClassifier {
           }
           throw err
         }
-        val byteOffset = (cursor * 2L).toInt()
+        val point = TSPoint.create(line, column)
         val node = try {
-          root.getNamedDescendantForByteRange(byteOffset, byteOffset)
+          root.getNamedDescendantForPointRange(point, point)
         } catch (err: Throwable) {
           if (IdeLogConfig.shouldLogInfo()) {
             log.info(
-                "TSCompletionContextClassifier.descendantLookupFailed file={} cursor={} uri={} byteOffset={} errorType={} errorMessage={}",
+                "TSCompletionContextClassifier.descendantLookupFailed file={} cursor={} uri={} line={} column={} errorType={} errorMessage={}",
                 file,
                 cursor,
                 uri,
-                byteOffset,
+                line,
+                column,
                 err.javaClass.name,
                 err.message,
             )
           }
           throw err
         }
+
         if (node == null || node.isNull()) {
           return TSCompletionContext.UNKNOWN
         }

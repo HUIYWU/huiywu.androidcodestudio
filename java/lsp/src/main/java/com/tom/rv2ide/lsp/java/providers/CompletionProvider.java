@@ -212,18 +212,20 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     result.markCached();
     return result;
   }
-
   private TSCompletionContext classifyCompletionContext(@NonNull CompletionParams params) {
     try {
       final Path file = params.getFile();
+      final int line = params.getPosition().getLine();
+      final int column = params.getPosition().getColumn();
       final long cursor = params.getPosition().requireIndex();
       final var sourceObject = new SourceFileObject(file);
       final String originalContents = sourceObject.getCharContent(true).toString();
-      return TSCompletionContextClassifier.classify(file, originalContents, cursor);
+      return TSCompletionContextClassifier.classify(file, originalContents, cursor, line, column);
     } catch (Throwable ignored) {
       return TSCompletionContext.UNKNOWN;
     }
   }
+
 
   @NonNull
   private CompletionResult completeInternal(final @NonNull CompletionParams params) {
@@ -281,6 +283,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
     final long cursor = params.getPosition().requireIndex();
+    final int tsLine = params.getPosition().getLine();
+    final int tsColumn = params.getPosition().getColumn();
     final var sourceObject = new SourceFileObject(file);
     final String originalContents = sourceObject.getCharContent(true).toString();
     final var contentBuilder = new StringBuilder(originalContents);
@@ -300,7 +304,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final String contentString = contents.toString();
     TSCompletionContext tsContext;
     try {
-      tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor);
+      tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor, tsLine, tsColumn);
+
     } catch (Throwable err) {
       if (IdeLogConfig.shouldLogInfo()) {
         LOG.info("Tree-sitter completion context classification failed; falling back to UNKNOWN file={} cursor={} errorType={} errorMessage={}",
@@ -401,14 +406,18 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       PartialReparseRequest partialRequest
   ) {
     final long cursor = params.getPosition().requireIndex();
+    final int tsLine = params.getPosition().getLine();
+    final int tsColumn = params.getPosition().getColumn();
     final var file = params.getFile();
+
     final var started = Instant.now();
     final var source = new SourceFileObject(file, contents, Instant.now());
     final var partial = partialIdentifier(contents, (int) cursor);
     final var endsWithParen = endsWithParen(contents, (int) cursor);
     TSCompletionContext tsContext;
     try {
-      tsContext = TSCompletionContextClassifier.classify(file, contents, cursor);
+      tsContext = TSCompletionContextClassifier.classify(file, contents, cursor, tsLine, tsColumn);
+
     } catch (Throwable err) {
       if (IdeLogConfig.shouldLogInfo()) {
         LOG.info("Tree-sitter compile-stage context classification failed; falling back to UNKNOWN file={} cursor={} errorType={} errorMessage={}",
