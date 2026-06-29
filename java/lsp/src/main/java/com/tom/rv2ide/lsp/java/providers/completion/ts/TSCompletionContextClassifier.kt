@@ -1,8 +1,9 @@
 package com.tom.rv2ide.lsp.java.providers.completion.ts
 
 import com.tom.rv2ide.common.logging.IdeLogConfig
-import com.tom.rv2ide.lsp.java.parser.ts.TSJavaParser
 import com.tom.rv2ide.treesitter.TSNode
+import com.tom.rv2ide.treesitter.TSParser
+import com.tom.rv2ide.treesitter.java.TSLanguageJava
 import jdkx.tools.JavaFileObject
 import jdkx.tools.SimpleJavaFileObject
 import java.net.URI
@@ -19,53 +20,58 @@ object TSCompletionContextClassifier {
       return TSCompletionContext.UNKNOWN
     }
 
-    val parseResult = TSJavaParser.parse(InMemoryJavaFileObject(file, content))
-    if (IdeLogConfig.shouldLogInfo()) {
-      log.info(
-          "TSCompletionContextClassifier.parseSuccess file={} cursor={} uri={} contentLength={}",
-          file,
-          cursor,
-          parseResult.uri,
-          content.length,
-      )
-    }
-    val root = try {
-      parseResult.tree.rootNode
-    } catch (err: Throwable) {
-      if (IdeLogConfig.shouldLogInfo()) {
-        log.info(
-            "TSCompletionContextClassifier.rootNodeFailed file={} cursor={} uri={} errorType={} errorMessage={}",
-            file,
-            cursor,
-            parseResult.uri,
-            err.javaClass.name,
-            err.message,
-        )
-      }
-      throw err
-    }
-    val byteOffset = (cursor * 2L).toInt()
-    val node = try {
-      root.getNamedDescendantForByteRange(byteOffset, byteOffset)
-    } catch (err: Throwable) {
-      if (IdeLogConfig.shouldLogInfo()) {
-        log.info(
-            "TSCompletionContextClassifier.descendantLookupFailed file={} cursor={} uri={} byteOffset={} errorType={} errorMessage={}",
-            file,
-            cursor,
-            parseResult.uri,
-            byteOffset,
-            err.javaClass.name,
-            err.message,
-        )
-      }
-      throw err
-    }
-    if (node == null || node.isNull()) {
-      return TSCompletionContext.UNKNOWN
-    }
+    val uri = file.toUri()
+    TSParser.create().use { parser ->
+      parser.language = TSLanguageJava.getInstance()
+      parser.parseString(content).use { tree ->
+        if (IdeLogConfig.shouldLogInfo()) {
+          log.info(
+              "TSCompletionContextClassifier.parseSuccess file={} cursor={} uri={} contentLength={}",
+              file,
+              cursor,
+              uri,
+              content.length,
+          )
+        }
+        val root = try {
+          tree.rootNode
+        } catch (err: Throwable) {
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+                "TSCompletionContextClassifier.rootNodeFailed file={} cursor={} uri={} errorType={} errorMessage={}",
+                file,
+                cursor,
+                uri,
+                err.javaClass.name,
+                err.message,
+            )
+          }
+          throw err
+        }
+        val byteOffset = (cursor * 2L).toInt()
+        val node = try {
+          root.getNamedDescendantForByteRange(byteOffset, byteOffset)
+        } catch (err: Throwable) {
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+                "TSCompletionContextClassifier.descendantLookupFailed file={} cursor={} uri={} byteOffset={} errorType={} errorMessage={}",
+                file,
+                cursor,
+                uri,
+                byteOffset,
+                err.javaClass.name,
+                err.message,
+            )
+          }
+          throw err
+        }
+        if (node == null || node.isNull()) {
+          return TSCompletionContext.UNKNOWN
+        }
 
-    return classifyNode(file, cursor, parseResult.uri, node)
+        return classifyNode(file, cursor, uri, node)
+      }
+    }
   }
 
   private fun classifyNode(file: Path, cursor: Long, uri: URI, node: TSNode): TSCompletionContext {
