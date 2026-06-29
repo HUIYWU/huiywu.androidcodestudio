@@ -298,7 +298,19 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       contents = contentBuilder;
     }
     final String contentString = contents.toString();
-    final TSCompletionContext tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor);
+    final TSCompletionContext tsContext;
+    try {
+      tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor);
+    } catch (Throwable err) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info("Tree-sitter completion context classification failed; falling back to UNKNOWN file={} cursor={} errorType={} errorMessage={}",
+            file,
+            cursor,
+            err.getClass().getName(),
+            err.getMessage());
+      }
+      tsContext = TSCompletionContext.UNKNOWN;
+    }
     if (tsContext == TSCompletionContext.COMMENT_OR_STRING) {
       if (IdeLogConfig.shouldLogInfo()) {
         LOG.info("Skipping Java completion in comment/string context file={} cursor={}", file, cursor);
