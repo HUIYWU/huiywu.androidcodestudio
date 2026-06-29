@@ -392,6 +392,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final var source = new SourceFileObject(file, contents, Instant.now());
     final var partial = partialIdentifier(contents, (int) cursor);
     final var endsWithParen = endsWithParen(contents, (int) cursor);
+    final TSCompletionContext tsContext = TSCompletionContextClassifier.classify(file, contents, cursor);
 
     abortIfCancelled();
     abortCompletionIfCancelled();
