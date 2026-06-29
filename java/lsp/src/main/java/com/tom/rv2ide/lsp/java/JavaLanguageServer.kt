@@ -94,6 +94,7 @@ class JavaLanguageServer : ILanguageServer {
   private val analyzeGeneration = AtomicLong(0)
   private val analyzeLaunchInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
   private val analyzeRerunRequested = java.util.concurrent.atomic.AtomicBoolean(false)
+  private val lastInteractiveRequestAt = AtomicLong(0)
   private var cachedCompletion: CachedCompletion
   private var lastJavaChangeDelta = 0
 
@@ -175,12 +176,13 @@ class JavaLanguageServer : ILanguageServer {
     }
     startOrRestartAnalyzeTimer()
   }
-
   override fun complete(params: CompletionParams?): CompletionResult {
+    lastInteractiveRequestAt.set(System.currentTimeMillis())
     val compiler = getCompiler(params!!.file)
     if (!settings.completionsEnabled() || !completionProvider.canComplete(params.file)) {
       return CompletionResult.EMPTY
     }
+
 
     if (diagnosticProvider!!.isAnalyzing()) {
       if (IdeLogConfig.shouldLogWarn()) {
@@ -223,6 +225,7 @@ class JavaLanguageServer : ILanguageServer {
   }
 
   override suspend fun signatureHelp(params: SignatureHelpParams): SignatureHelp {
+    lastInteractiveRequestAt.set(System.currentTimeMillis())
     val compiler = getCompiler(params.file)
     return if (!settings.signatureHelpEnabled()) {
       SignatureHelp(emptyList(), -1, -1)

@@ -43,7 +43,8 @@ class SynchronizedTask {
       throw CompilationCancellationException(e)
     }
     try {
-      taskConsumer(task!!)
+      val currentTask = task ?: throw CompilationCancellationException("Compilation task is no longer available")
+      taskConsumer(currentTask)
     } catch (err: Throwable) {
       if (!isCancelled(err)) {
         log.error("An error occurred while working with compilation task", err)
@@ -61,7 +62,8 @@ class SynchronizedTask {
       throw CompilationCancellationException(e)
     }
     return try {
-      action(task!!)
+      val currentTask = task ?: throw CompilationCancellationException("Compilation task is no longer available")
+      action(currentTask)
     } catch (err: Throwable) {
       if (!isCancelled(err)) {
         log.error("An error occurred while working with compilation task", err)
