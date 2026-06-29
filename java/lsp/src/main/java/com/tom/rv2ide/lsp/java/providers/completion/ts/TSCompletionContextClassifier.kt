@@ -1,13 +1,17 @@
 package com.tom.rv2ide.lsp.java.providers.completion.ts
 
+import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.java.parser.ts.TSJavaParser
 import com.tom.rv2ide.treesitter.TSNode
 import jdkx.tools.JavaFileObject
 import jdkx.tools.SimpleJavaFileObject
 import java.net.URI
 import java.nio.file.Path
+import org.slf4j.LoggerFactory
 
 object TSCompletionContextClassifier {
+
+  private val log = LoggerFactory.getLogger(TSCompletionContextClassifier::class.java)
 
   @JvmStatic
   fun classify(file: Path, content: String, cursor: Long): TSCompletionContext {
@@ -16,20 +20,73 @@ object TSCompletionContextClassifier {
     }
 
     val parseResult = TSJavaParser.parse(InMemoryJavaFileObject(file, content))
-    val root = parseResult.tree.rootNode
+    if (IdeLogConfig.shouldLogInfo()) {
+      log.info(
+          "TSCompletionContextClassifier.parseSuccess file={} cursor={} uri={} contentLength={}",
+          file,
+          cursor,
+          parseResult.uri,
+          content.length,
+      )
+    }
+    val root = try {
+      parseResult.tree.rootNode
+    } catch (err: Throwable) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "TSCompletionContextClassifier.rootNodeFailed file={} cursor={} uri={} errorType={} errorMessage={}",
+            file,
+            cursor,
+            parseResult.uri,
+            err.javaClass.name,
+            err.message,
+        )
+      }
+      throw err
+    }
     val byteOffset = (cursor * 2L).toInt()
-    val node = root.getNamedDescendantForByteRange(byteOffset, byteOffset)
+    val node = try {
+      root.getNamedDescendantForByteRange(byteOffset, byteOffset)
+    } catch (err: Throwable) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "TSCompletionContextClassifier.descendantLookupFailed file={} cursor={} uri={} byteOffset={} errorType={} errorMessage={}",
+            file,
+            cursor,
+            parseResult.uri,
+            byteOffset,
+            err.javaClass.name,
+            err.message,
+        )
+      }
+      throw err
+    }
     if (node == null || node.isNull()) {
       return TSCompletionContext.UNKNOWN
     }
 
-    return classifyNode(node)
+    return classifyNode(file, cursor, parseResult.uri, node)
   }
 
-  private fun classifyNode(node: TSNode): TSCompletionContext {
+  private fun classifyNode(file: Path, cursor: Long, uri: URI, node: TSNode): TSCompletionContext {
     var current: TSNode? = node
     while (current != null) {
-      when (current.getType()) {
+      val currentType = try {
+        current.getType()
+      } catch (err: Throwable) {
+        if (IdeLogConfig.shouldLogInfo()) {
+          log.info(
+              "TSCompletionContextClassifier.nodeTypeFailed file={} cursor={} uri={} errorType={} errorMessage={}",
+              file,
+              cursor,
+              uri,
+              err.javaClass.name,
+              err.message,
+          )
+        }
+        throw err
+      }
+      when (currentType) {
         "line_comment", "block_comment", "comment", "string_literal", "character_literal" -> {
           return TSCompletionContext.COMMENT_OR_STRING
         }
@@ -46,7 +103,22 @@ object TSCompletionContextClassifier {
           return TSCompletionContext.METHOD_CALL_ARGUMENTS
         }
         "block" -> {
-          if (hasAncestorOfType(current.getParent(), "method_declaration", "constructor_declaration")) {
+          val parent = try {
+            current.getParent()
+          } catch (err: Throwable) {
+            if (IdeLogConfig.shouldLogInfo()) {
+              log.info(
+                  "TSCompletionContextClassifier.parentLookupFailed file={} cursor={} uri={} errorType={} errorMessage={}",
+                  file,
+                  cursor,
+                  uri,
+                  err.javaClass.name,
+                  err.message,
+              )
+            }
+            throw err
+          }
+          if (hasAncestorOfType(parent, "method_declaration", "constructor_declaration")) {
             return TSCompletionContext.METHOD_BODY
           }
         }
@@ -57,7 +129,21 @@ object TSCompletionContextClassifier {
           return TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR
         }
       }
-      current = current.getParent()
+      current = try {
+        current.getParent()
+      } catch (err: Throwable) {
+        if (IdeLogConfig.shouldLogInfo()) {
+          log.info(
+              "TSCompletionContextClassifier.parentAdvanceFailed file={} cursor={} uri={} errorType={} errorMessage={}",
+              file,
+              cursor,
+              uri,
+              err.javaClass.name,
+              err.message,
+          )
+        }
+        throw err
+      }
     }
     return TSCompletionContext.UNKNOWN
   }
