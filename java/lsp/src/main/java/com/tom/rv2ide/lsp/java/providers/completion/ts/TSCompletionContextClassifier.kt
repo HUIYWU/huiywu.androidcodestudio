@@ -29,15 +29,6 @@ object TSCompletionContextClassifier {
     TSParser.create().use { parser ->
       parser.language = TSLanguageJava.getInstance()
       parser.parseString(content).use { tree ->
-        if (IdeLogConfig.shouldLogInfo()) {
-          log.info(
-              "TSCompletionContextClassifier.parseSuccess file={} cursor={} uri={} contentLength={}",
-              file,
-              cursor,
-              uri,
-              content.length,
-          )
-        }
         val root = try {
           tree.rootNode
         } catch (err: Throwable) {
@@ -53,6 +44,10 @@ object TSCompletionContextClassifier {
           }
           throw err
         }
+        // Intentionally use point-based lookup here instead of byte-range lookup.
+        // The underlying binding parses Java source as UTF-16 and we observed that
+        // byte/index conversion on the completion hot path was more fragile than
+        // directly using the editor-provided line/column position.
         val point = TSPoint.create(line, column)
         val node = try {
           root.getNamedDescendantForPointRange(point, point)
@@ -82,6 +77,10 @@ object TSCompletionContextClassifier {
   }
 
   private fun classifyNode(file: Path, cursor: Long, uri: URI, node: TSNode): TSCompletionContext {
+    // Tree-sitter context classification is an opportunistic signal layer.
+    // The Java completion pipeline must remain usable even if native node access
+    // fails intermittently, so callers intentionally wrap this classifier with
+    // fallback-to-UNKNOWN behavior.
     var current: TSNode? = node
     while (current != null) {
       val currentType = try {

@@ -305,8 +305,10 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     TSCompletionContext tsContext;
     try {
       tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor, tsLine, tsColumn);
-
     } catch (Throwable err) {
+      // Tree-sitter enriches routing decisions, but completion must still work when
+      // native classifier access fails. Fall back to UNKNOWN so javac-based providers
+      // remain on the main path instead of aborting the whole request.
       if (IdeLogConfig.shouldLogInfo()) {
         LOG.info("Tree-sitter completion context classification failed; falling back to UNKNOWN file={} cursor={} errorType={} errorMessage={}",
             file,
@@ -417,8 +419,10 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     TSCompletionContext tsContext;
     try {
       tsContext = TSCompletionContextClassifier.classify(file, contents, cursor, tsLine, tsColumn);
-
     } catch (Throwable err) {
+      // Keep compile-stage routing resilient for the same reason as the primary
+      // classification path above: classifier failure must degrade to UNKNOWN,
+      // not break completion end-to-end.
       if (IdeLogConfig.shouldLogInfo()) {
         LOG.info("Tree-sitter compile-stage context classification failed; falling back to UNKNOWN file={} cursor={} errorType={} errorMessage={}",
             file,
