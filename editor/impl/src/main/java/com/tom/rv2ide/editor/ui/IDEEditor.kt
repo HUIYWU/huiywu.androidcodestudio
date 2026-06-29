@@ -286,7 +286,7 @@ constructor(
     val cancelChecker = JobCancelChecker().also { this.sigHelpCancelChecker = it }
     val requestPosition = cursorLSPPosition
     val requestContent = text
-    logger.info(
+    log.info(
         "signatureHelp request file={} line={} column={} index={} contentLength={}",
         file,
         requestPosition.line,
@@ -320,7 +320,7 @@ constructor(
     if (isReleased) {
       return
     }
-    logger.info(
+    log.info(
         "showSignatureHelp signatures={} activeSignature={} activeParameter={} nullHelp={}",
         help?.signatures?.size ?: -1,
         help?.activeSignature ?: -1,
