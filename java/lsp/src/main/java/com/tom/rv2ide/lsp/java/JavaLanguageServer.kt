@@ -309,6 +309,11 @@ class JavaLanguageServer : ILanguageServer {
       }
   }
 
+  private fun shouldForceAnalyzeTimerRestart(): Boolean {
+    val sinceInteractive = System.currentTimeMillis() - lastInteractiveRequestAt.get()
+    return sinceInteractive < 0 || sinceInteractive >= SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS
+  }
+
   private fun startOrRestartAnalyzeTimer(forceRestart: Boolean = true) {
     if (VMUtils.isJvm()) {
       return
@@ -373,7 +378,7 @@ class JavaLanguageServer : ILanguageServer {
       val compiler = JavaCompilerProvider.get(module)
       compiler.onDocumentChange(event)
     }
-    startOrRestartAnalyzeTimer()
+    startOrRestartAnalyzeTimer(forceRestart = shouldForceAnalyzeTimerRestart())
   }
 
   @Subscribe(threadMode = ThreadMode.ASYNC)
@@ -394,7 +399,7 @@ class JavaLanguageServer : ILanguageServer {
       event.text = com.tom.rv2ide.projects.FileManager.getDocumentContents(event.openedFile)
     }
 
-    startOrRestartAnalyzeTimer()
+    startOrRestartAnalyzeTimer(forceRestart = shouldForceAnalyzeTimerRestart())
   }
 
 
