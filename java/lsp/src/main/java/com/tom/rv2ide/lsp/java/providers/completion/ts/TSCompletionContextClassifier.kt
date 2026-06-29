@@ -2,6 +2,7 @@ package com.tom.rv2ide.lsp.java.providers.completion.ts
 
 import com.tom.rv2ide.lsp.java.parser.ts.TSJavaParser
 import com.tom.rv2ide.treesitter.TSNode
+import jdkx.tools.JavaFileObject
 import jdkx.tools.SimpleJavaFileObject
 import java.net.URI
 import java.nio.file.Path
@@ -74,12 +75,13 @@ object TSCompletionContextClassifier {
       return null
     }
 
-    for (i in 0 until node.childCount) {
-      val child = node.child(i) ?: continue
+    var child = node.firstChild
+    while (child != null) {
       val match = findSmallestNodeContaining(child, byteOffset)
       if (match != null) {
         return match
       }
+      child = child.nextSibling
     }
 
     return node
@@ -88,7 +90,7 @@ object TSCompletionContextClassifier {
   private class InMemoryJavaFileObject(
     private val path: Path,
     private val content: String,
-  ) : SimpleJavaFileObject(path.toUri(), Kind.SOURCE) {
+  ) : SimpleJavaFileObject(path.toUri(), JavaFileObject.Kind.SOURCE) {
     override fun getCharContent(ignoreEncodingErrors: Boolean): CharSequence = content
     override fun getName(): String = path.toString()
     override fun getLastModified(): Long = 0L
