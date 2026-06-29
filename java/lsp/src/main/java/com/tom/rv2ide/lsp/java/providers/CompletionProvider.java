@@ -114,10 +114,10 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         return busyFallback;
       }
       if (busyContext == TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR) {
-        if (IdeLogConfig.shouldLogDebug()) {
-          LOG.debug("Completion busy near broken syntax; returning empty result file={} cursor={}",
+        if (IdeLogConfig.shouldLogInfo()) {
+          LOG.info("Completion busy near broken syntax; returning empty result file={} cursor={}",
               params.getFile(),
-              params.getPosition().getIndex());
+              params.getPosition().requireIndex());
         }
         return CompletionResult.EMPTY;
       }
@@ -298,13 +298,13 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final String contentString = contents.toString();
     final TSCompletionContext tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor);
     if (tsContext == TSCompletionContext.COMMENT_OR_STRING) {
-      if (IdeLogConfig.shouldLogDebug()) {
-        LOG.debug("Skipping Java completion in comment/string context file={} cursor={}", file, cursor);
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info("Skipping Java completion in comment/string context file={} cursor={}", file, cursor);
       }
       return CompletionResult.EMPTY;
     }
-    if (IdeLogConfig.shouldLogDebug() && tsContext != TSCompletionContext.UNKNOWN) {
-      LOG.debug("Tree-sitter completion context file={} cursor={} context={}", file, cursor, tsContext);
+    if (IdeLogConfig.shouldLogInfo() && tsContext != TSCompletionContext.UNKNOWN) {
+      LOG.info("Tree-sitter completion context file={} cursor={} context={}", file, cursor, tsContext);
     }
     final boolean astFixerApplied = context != null;
     final boolean astFixerChangedContents = astFixerApplied && !contentString.contentEquals(contentBuilder);
@@ -508,14 +508,15 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         .get();
 
     if (provider instanceof ImportCompletionProvider) {
-      ((ImportCompletionProvider) provider).setImportPath(
-          qualifiedPartialIdentifier(contents, (int) cursor));
-      if (IdeLogConfig.shouldLogDebug()) {
-        LOG.debug("Routing completion to ImportCompletionProvider file={} cursor={} tsContext={} leafKind={}",
+      final String importPath = qualifiedPartialIdentifier(contents, (int) cursor);
+      ((ImportCompletionProvider) provider).setImportPath(importPath);
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info("Routing completion to ImportCompletionProvider file={} cursor={} tsContext={} leafKind={} importPath={}",
             file,
             cursor,
             tsContext,
-            path.getLeaf().getKind());
+            path.getLeaf().getKind(),
+            importPath);
       }
     }
 

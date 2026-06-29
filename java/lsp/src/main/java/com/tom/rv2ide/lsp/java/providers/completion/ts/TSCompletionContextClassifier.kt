@@ -33,10 +33,10 @@ object TSCompletionContextClassifier {
         "line_comment", "block_comment", "comment", "string_literal", "character_literal" -> {
           return TSCompletionContext.COMMENT_OR_STRING
         }
-        "import_declaration" -> {
+        "import_declaration", "import" -> {
           return TSCompletionContext.IMPORT_DECLARATION
         }
-        "package_declaration" -> {
+        "package_declaration", "package" -> {
           return TSCompletionContext.PACKAGE_DECLARATION
         }
         "field_access", "member_select" -> {

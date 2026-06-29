@@ -75,7 +75,26 @@ class ImportCompletionProvider(
   ): CompletionResult {
 
     val importTree = path.leaf
+    if (IdeLogConfig.shouldLogInfo()) {
+      log.info(
+          "ImportCompletionProvider.enter file={} cursor={} leafClass={} leafKind={} partial={} importPath={}",
+          file,
+          cursor,
+          importTree.javaClass.name,
+          importTree.kind,
+          partial,
+          importPath,
+      )
+    }
     if (importTree !is JCImport) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "ImportCompletionProvider.returnEmpty reason=leafNotJCImport leafClass={} leafKind={} importPath={}",
+            importTree.javaClass.name,
+            importTree.kind,
+            importPath,
+        )
+      }
       return CompletionResult.EMPTY
     }
 
