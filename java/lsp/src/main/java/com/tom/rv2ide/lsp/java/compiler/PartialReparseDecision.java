@@ -19,12 +19,11 @@ package com.tom.rv2ide.lsp.java.compiler;
 
 /** Decision produced before routing a Java compilation request through full compile or partial reparse. */
 public final class PartialReparseDecision {
-
   public enum Action {
     FULL_RECOMPILE,
-    TRY_PARTIAL_REPARSE,
-    DRY_RUN_PARTIAL_REPARSE
+    TRY_PARTIAL_REPARSE
   }
+
 
   public final Action action;
   public final String reason;
@@ -42,7 +41,5 @@ public final class PartialReparseDecision {
     return new PartialReparseDecision(Action.TRY_PARTIAL_REPARSE, reason);
   }
 
-  public static PartialReparseDecision dryRun(String reason) {
-    return new PartialReparseDecision(Action.DRY_RUN_PARTIAL_REPARSE, reason);
-  }
 }
+

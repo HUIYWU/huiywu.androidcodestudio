@@ -22,7 +22,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = false,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible())
 
@@ -36,7 +35,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = false,
-                dryRunEnabled = false,
             )
             .decide(eligible())
 
@@ -45,26 +43,11 @@ class PartialReparseDeciderTest {
   }
 
   @Test
-  fun returnsDryRun_whenDryRunIsEnabled() {
-    val decision =
-        TestablePartialReparseDecider(
-                userEnabled = true,
-                featureEnabled = false,
-                dryRunEnabled = true,
-            )
-            .decide(eligible())
-
-    assertEquals(PartialReparseDecision.Action.DRY_RUN_PARTIAL_REPARSE, decision.action)
-    assertEquals("partial reparse dry-run enabled", decision.reason)
-  }
-
-  @Test
   fun returnsTryPartial_whenEligibleAndFeatureEnabled() {
     val decision =
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible())
 
@@ -78,7 +61,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible(latestChangeRange = null))
 
@@ -92,7 +74,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible(changeDeltaWithinLimit = false))
 
@@ -106,7 +87,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible(hasPartialRequest = false))
 
@@ -120,7 +100,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(
                 buildEligibility(
@@ -148,7 +127,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible(needsRecompilation = true))
 
@@ -162,7 +140,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible(sourceCount = 2))
 
@@ -176,7 +153,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible(cursor = -1L))
 
@@ -190,7 +166,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible(contentsLength = -1))
 
@@ -204,7 +179,6 @@ class PartialReparseDeciderTest {
         TestablePartialReparseDecider(
                 userEnabled = true,
                 featureEnabled = true,
-                dryRunEnabled = false,
             )
             .decide(eligible(changeValidForReparse = false))
 
@@ -333,13 +307,10 @@ class PartialReparseDeciderTest {
   private class TestablePartialReparseDecider(
       private val userEnabled: Boolean,
       private val featureEnabled: Boolean,
-      private val dryRunEnabled: Boolean,
   ) : PartialReparseDecider() {
     override fun isPartialReparseEnabledByUser(): Boolean = userEnabled
 
     override fun isPartialReparseFeatureEnabled(): Boolean = featureEnabled
-
-    override fun isPartialReparseDryRunEnabled(): Boolean = dryRunEnabled
   }
 
   private class FakeSourceFile :

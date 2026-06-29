@@ -35,9 +35,6 @@ import openjdk.source.util.TreePath;
  */
 public final class PartialReparsePreflight {
 
-  private final PartialReparseTextRiskAnalyzer textRiskAnalyzer =
-      new PartialReparseTextRiskAnalyzer();
-
   @Nullable
   public PartialReparseAttemptResult validateCurrentMethod(
       @Nullable Pair<Range, TreePath> currentMethod, long cursor) {
@@ -90,18 +87,4 @@ public final class PartialReparsePreflight {
     return null;
   }
 
-  @Nullable
-  public PartialReparseAttemptResult validateTextRisk(
-      @NonNull final CharSequence contents,
-      final long cursor,
-      @Nullable final Range latestChangeRange,
-      final int bodyStart,
-      final int bodyEnd) {
-    final String riskReason =
-        textRiskAnalyzer.findRiskReason(contents, cursor, latestChangeRange, bodyStart, bodyEnd);
-    if (riskReason != null) {
-      return PartialReparseAttemptResult.notApplicable(riskReason);
-    }
-    return null;
-  }
 }

@@ -72,12 +72,8 @@ public class PartialReparseDecider {
       return PartialReparseDecision.fullRecompile("partial reparse disabled in Java editor preferences");
     }
 
-    if (!isPartialReparseFeatureEnabled() && !isPartialReparseDryRunEnabled()) {
+    if (!isPartialReparseFeatureEnabled()) {
       return PartialReparseDecision.fullRecompile("partial reparse disabled by feature flags");
-    }
-
-    if (isPartialReparseDryRunEnabled()) {
-      return PartialReparseDecision.dryRun("partial reparse dry-run enabled");
     }
 
     return PartialReparseDecision.tryPartial("eligible for partial reparse");
@@ -91,8 +87,5 @@ public class PartialReparseDecider {
     return JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE;
   }
 
-  protected boolean isPartialReparseDryRunEnabled() {
-    return JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_DRY_RUN;
   }
-}
 

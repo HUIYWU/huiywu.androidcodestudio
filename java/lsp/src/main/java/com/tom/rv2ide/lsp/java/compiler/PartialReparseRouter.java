@@ -23,26 +23,21 @@ import androidx.annotation.NonNull;
  * Routes a partial reparse decision to the appropriate execution branch.
  *
  * <p>This class intentionally contains no javac state. It gives the Java compiler service a small,
- * testable seam for verifying the entry-level full-recompile / dry-run / try-partial routing
- * without constructing a real {@link JavaCompilerService} or mutating cached javac AST state.
+ * testable seam for verifying the entry-level full-recompile / try-partial routing without
+ * constructing a real {@link JavaCompilerService} or mutating cached javac AST state.
  */
 public final class PartialReparseRouter {
 
   public enum Branch {
     FULL_RECOMPILE,
-    DRY_RUN_PARTIAL_REPARSE,
     TRY_PARTIAL_REPARSE
   }
 
   public Branch route(
       @NonNull PartialReparseDecision decision,
       @NonNull Runnable fullRecompile,
-      @NonNull Runnable dryRunPartialReparse,
       @NonNull Runnable tryPartialReparse) {
     switch (decision.action) {
-      case DRY_RUN_PARTIAL_REPARSE:
-        dryRunPartialReparse.run();
-        return Branch.DRY_RUN_PARTIAL_REPARSE;
       case TRY_PARTIAL_REPARSE:
         tryPartialReparse.run();
         return Branch.TRY_PARTIAL_REPARSE;
