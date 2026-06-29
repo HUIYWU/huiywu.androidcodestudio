@@ -309,7 +309,7 @@ class JavaLanguageServer : ILanguageServer {
       }
   }
 
-  private fun startOrRestartAnalyzeTimer() {
+  private fun startOrRestartAnalyzeTimer(forceRestart: Boolean = true) {
     if (VMUtils.isJvm()) {
       return
     }
@@ -330,9 +330,10 @@ class JavaLanguageServer : ILanguageServer {
           else -> 0L
         }
     val interval = maxOf(baseInterval.toLong(), interactiveDelay)
+    val shouldRestart = !timer.isStarted || forceRestart || timer.interval < interval
     if (IdeLogConfig.shouldLogInfo()) {
       log.info(
-        "Analyze timer scheduled generation={} selectedFile={} changeDelta={} intervalMs={} baseIntervalMs={} interactiveDelayMs={} sinceInteractiveMs={}",
+        "Analyze timer scheduled generation={} selectedFile={} changeDelta={} intervalMs={} baseIntervalMs={} interactiveDelayMs={} sinceInteractiveMs={} forceRestart={} shouldRestart={} currentTimerIntervalMs={}",
         nextGeneration,
         selectedFile,
         lastJavaChangeDelta,
@@ -340,6 +341,9 @@ class JavaLanguageServer : ILanguageServer {
         baseInterval,
         interactiveDelay,
         sinceInteractive,
+        forceRestart,
+        shouldRestart,
+        timer.interval,
       )
     }
     if (timer.interval != interval) {
@@ -347,7 +351,7 @@ class JavaLanguageServer : ILanguageServer {
     }
     if (!timer.isStarted) {
       timer.start()
-    } else {
+    } else if (shouldRestart) {
       timer.restart()
     }
   }
@@ -441,7 +445,7 @@ class JavaLanguageServer : ILanguageServer {
           SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS,
         )
       }
-      startOrRestartAnalyzeTimer()
+      startOrRestartAnalyzeTimer(forceRestart = false)
       return
     }
     val requestedGeneration = analyzeGeneration.get()
