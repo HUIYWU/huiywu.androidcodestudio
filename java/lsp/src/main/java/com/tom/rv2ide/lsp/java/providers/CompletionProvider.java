@@ -420,6 +420,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       tsContext = TSCompletionContext.UNKNOWN;
     }
 
+    final TSCompletionContext tsContextFinal = tsContext;
+
     abortIfCancelled();
     abortCompletionIfCancelled();
 
@@ -471,7 +473,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         }
       }
 
-      final var result = doComplete(file, contents, cursor, newPartial, endsWithParen, task, path, tsContext);
+      final var result = doComplete(file, contents, cursor, newPartial, endsWithParen, task, path, tsContextFinal);
 
       // IMPORTANT: Unregister the completion info from the compiler configuration
       if (task.task.getContext() != null) {
