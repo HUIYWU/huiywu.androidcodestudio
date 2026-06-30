@@ -187,11 +187,11 @@ internal class WorkspaceImpl(
       return result
     }
     log.warn(
-        "[TRACE_ANDROID_RES] file={} exists={} module={} nonAndroidModule result=true",
+        "[TRACE_ANDROID_RES] file={} exists={} module={} nonAndroidModule result=false",
         file.absolutePath,
         file.exists(),
         module.path,
     )
-    return true
+    return false
   }
 }
