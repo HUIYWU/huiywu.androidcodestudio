@@ -291,10 +291,28 @@ class NewFileAction(context: Context, override val order: Int) :
       flashError(R.string.msg_get_package_failed)
       return
     }
-
     val id: Int = binding.typeGroup.checkedButtonId
     val javaName = if (name.endsWith(".java")) name else "$name.java"
     val className = if (!name.contains(".")) name else name.substring(0, name.lastIndexOf("."))
+    val javaTypeLabel =
+        when (id) {
+          binding.typeClass.id -> "class"
+          binding.typeInterface.id -> "interface"
+          binding.typeEnum.id -> "enum"
+          binding.typeActivity.id -> "activity"
+          else -> "unknown"
+        }
+    log.warn(
+        "[TRACE_NEW_JAVA] dir={} name={} javaName={} type={} autoLayout={} createLayoutChecked={} checkedButtonId={}",
+        file.absolutePath,
+        name,
+        javaName,
+        javaTypeLabel,
+        autoLayout,
+        binding.createLayout.isChecked,
+        id,
+    )
+
     val created =
         when (id) {
           binding.typeClass.id ->
@@ -335,11 +353,25 @@ class NewFileAction(context: Context, override val order: Int) :
 
           else -> createFile(context, node, file, javaName, "")
         }
-
     if (created && autoLayout) {
       val packagePath = pkgName.toString().replace(".", "/")
+      log.warn(
+          "[TRACE_NEW_JAVA] auto-layout requested for java file dir={} name={} packagePath={}",
+          file.absolutePath,
+          name,
+          packagePath,
+      )
       createAutoLayout(context, file, name, packagePath)
+    } else {
+      log.warn(
+          "[TRACE_NEW_JAVA] no auto-layout for java file dir={} name={} created={} autoLayout={}",
+          file.absolutePath,
+          name,
+          created,
+          autoLayout,
+      )
     }
+
   }
 
   private fun isValidKotlinName(s: CharSequence?): Boolean {
@@ -406,6 +438,13 @@ class NewFileAction(context: Context, override val order: Int) :
       return
     }
 
+    log.warn(
+        "[TRACE_NEW_KOTLIN] created auto-layout file path={} fromDir={} sourceName={} packagePath={}",
+        newFileLayout.absolutePath,
+        directory.absolutePath,
+        fileName,
+        packagePath,
+    )
     notifyFileCreated(newFileLayout, context)
   }
 
@@ -524,6 +563,13 @@ class NewFileAction(context: Context, override val order: Int) :
       return
     }
 
+    log.warn(
+        "[TRACE_NEW_JAVA] created auto-layout file path={} fromDir={} sourceName={} packagePath={}",
+        newFileLayout.absolutePath,
+        directory.absolutePath,
+        fileName,
+        packagePath,
+    )
     notifyFileCreated(newFileLayout, context)
   }
 
@@ -644,7 +690,15 @@ class NewFileAction(context: Context, override val order: Int) :
       return false
     }
 
+    log.warn(
+        "[TRACE_NEW_FILE] created file path={} parent={} ext={} size={}",
+        newFile.absolutePath,
+        directory.absolutePath,
+        newFile.extension,
+        content.length,
+    )
     notifyFileCreated(newFile, context)
+
     // TODO Notify language servers about file created event
     flashSuccess(R.string.msg_file_created)
     if (node != null) {

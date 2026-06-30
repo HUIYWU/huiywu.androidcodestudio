@@ -214,15 +214,6 @@ public class IDELanguageClientImpl implements ILanguageClient {
           }
           container.addDiagnostics(regions);
           mapRegionsCostMs = android.os.SystemClock.elapsedRealtime() - mapRegionsStartMs;
-          if (IdeLogConfig.shouldLogIde()) {
-            LOG.info(
-                "publishDiagnostics mapped {} of {} diagnostic regions for file={} (mapRegionsCostMs={}, contentLength={})",
-                editorDiagnostics.size(),
-                mergedDiagnostics.size(),
-                file.getAbsolutePath(),
-                mapRegionsCostMs,
-                contentLength);
-          }
 
         } catch (Throwable err) {
           LOG.error("Unable to map DiagnosticItem to DiagnosticRegion", err);
@@ -231,12 +222,6 @@ public class IDELanguageClientImpl implements ILanguageClient {
         final long applyToEditorStartMs = android.os.SystemClock.elapsedRealtime();
         activity.runOnUiThread(() -> editor.setDiagnostics(container));
         applyToEditorCostMs = android.os.SystemClock.elapsedRealtime() - applyToEditorStartMs;
-        if (IdeLogConfig.shouldLogIde()) {
-          LOG.info(
-              "publishDiagnostics applied diagnostics to editor for file={} (applyToEditorCostMs={})",
-              file.getAbsolutePath(),
-              applyToEditorCostMs);
-        }
       } else {
         LOG.warn(
             "publishDiagnostics editor match MISS: CodeEditorView has null editor for file={}",
@@ -253,24 +238,6 @@ public class IDELanguageClientImpl implements ILanguageClient {
     }
     final long updateAdapterCostMs = android.os.SystemClock.elapsedRealtime() - updateAdapterStartMs;
     final long totalCostMs = android.os.SystemClock.elapsedRealtime() - totalStartMs;
-
-    if (IdeLogConfig.shouldLogIde()) {
-      LOG.info(
-          "publishDiagnostics perf: file={}, totalCostMs={}, editorLookupCostMs={}, mapRegionsCostMs={}, applyToEditorCostMs={}, updateAdapterCostMs={}, incomingDiagnosticCount={}, mergedDiagnosticCount={}, channel={}, contentLength={}, adapterUpdated={}, thread={}, isMainThread={}",
-          file.getAbsolutePath(),
-          totalCostMs,
-          editorLookupCostMs,
-          mapRegionsCostMs,
-          applyToEditorCostMs,
-          updateAdapterCostMs,
-          incomingDiagnosticCount,
-          mergedDiagnostics.size(),
-          channel,
-          contentLength,
-          updateDiagnosticsAdapter,
-          threadName,
-          isMainThread);
-    }
   }
 
   /**
