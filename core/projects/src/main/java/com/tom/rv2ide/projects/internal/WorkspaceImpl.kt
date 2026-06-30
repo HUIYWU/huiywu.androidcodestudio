@@ -162,36 +162,10 @@ internal class WorkspaceImpl(
   }
 
   override fun isAndroidResource(file: File): Boolean {
-    val module = findModuleForFile(file, true)
-    if (module == null) {
-      log.warn(
-          "[TRACE_ANDROID_RES] file={} exists={} -> module=null result=false",
-          file.absolutePath,
-          file.exists(),
-      )
-      return false
-    }
+    val module = findModuleForFile(file, true) ?: return false
     if (module is AndroidModule) {
-      val resourceDirs = module.getResourceDirectories().map { it.path }
-      val matched = resourceDirs.find { file.path.startsWith(it) }
-      val result = matched != null
-      log.warn(
-          "[TRACE_ANDROID_RES] file={} exists={} module={} resourceDirs={} matchedDir={} result={}",
-          file.absolutePath,
-          file.exists(),
-          module.path,
-          resourceDirs,
-          matched,
-          result,
-      )
-      return result
+      return module.getResourceDirectories().find { file.path.startsWith(it.path) } != null
     }
-    log.warn(
-        "[TRACE_ANDROID_RES] file={} exists={} module={} nonAndroidModule result=false",
-        file.absolutePath,
-        file.exists(),
-        module.path,
-    )
     return false
   }
 }

@@ -302,16 +302,6 @@ class NewFileAction(context: Context, override val order: Int) :
           binding.typeActivity.id -> "activity"
           else -> "unknown"
         }
-    log.warn(
-        "[TRACE_NEW_JAVA] dir={} name={} javaName={} type={} autoLayout={} createLayoutChecked={} checkedButtonId={}",
-        file.absolutePath,
-        name,
-        javaName,
-        javaTypeLabel,
-        autoLayout,
-        binding.createLayout.isChecked,
-        id,
-    )
 
     val created =
         when (id) {
@@ -355,21 +345,7 @@ class NewFileAction(context: Context, override val order: Int) :
         }
     if (created && autoLayout) {
       val packagePath = pkgName.toString().replace(".", "/")
-      log.warn(
-          "[TRACE_NEW_JAVA] auto-layout requested for java file dir={} name={} packagePath={}",
-          file.absolutePath,
-          name,
-          packagePath,
-      )
       createAutoLayout(context, file, name, packagePath)
-    } else {
-      log.warn(
-          "[TRACE_NEW_JAVA] no auto-layout for java file dir={} name={} created={} autoLayout={}",
-          file.absolutePath,
-          name,
-          created,
-          autoLayout,
-      )
     }
 
   }
@@ -438,13 +414,6 @@ class NewFileAction(context: Context, override val order: Int) :
       return
     }
 
-    log.warn(
-        "[TRACE_NEW_KOTLIN] created auto-layout file path={} fromDir={} sourceName={} packagePath={}",
-        newFileLayout.absolutePath,
-        directory.absolutePath,
-        fileName,
-        packagePath,
-    )
     notifyFileCreated(newFileLayout, context)
   }
 
@@ -563,13 +532,6 @@ class NewFileAction(context: Context, override val order: Int) :
       return
     }
 
-    log.warn(
-        "[TRACE_NEW_JAVA] created auto-layout file path={} fromDir={} sourceName={} packagePath={}",
-        newFileLayout.absolutePath,
-        directory.absolutePath,
-        fileName,
-        packagePath,
-    )
     notifyFileCreated(newFileLayout, context)
   }
 
@@ -690,13 +652,6 @@ class NewFileAction(context: Context, override val order: Int) :
       return false
     }
 
-    log.warn(
-        "[TRACE_NEW_FILE] created file path={} parent={} ext={} size={}",
-        newFile.absolutePath,
-        directory.absolutePath,
-        newFile.extension,
-        content.length,
-    )
     notifyFileCreated(newFile, context)
 
     // TODO Notify language servers about file created event

@@ -237,15 +237,12 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
       return java.util.concurrent.CompletableFuture.completedFuture(false)
     }
 
-    log.warn("[TRACE_GEN_TASKS] resolved tasks={} notifyOnSuccess={}", tasks, notifyOnSuccess)
     log.info("Generating Android sources before language-server init: {}", tasks)
     return builder.executeTasks(*tasks.toTypedArray()).handle { result, taskErr ->
       if (result == null || !result.isSuccessful || taskErr != null) {
-        log.warn("[TRACE_GEN_TASKS] execution failed tasks={} result={} error={}", tasks, result, taskErr)
         log.warn("Execution for tasks failed: {} {}", tasks, taskErr ?: "")
         false
       } else {
-        log.warn("[TRACE_GEN_TASKS] execution success tasks={}", tasks)
         log.info("Android source generation completed successfully: {}", tasks)
         if (notifyOnSuccess) {
           notifyProjectUpdate()
@@ -324,29 +321,12 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     onUpdated(buildVariants)
   }
   private fun generateSourcesIfNecessary(event: FileEvent) {
-    val builder = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE)
-    if (builder == null) {
-      log.warn("[TRACE_GEN_SRC] skip fileEvent={} file={} reason=no-build-service", event.javaClass.simpleName, event.file.absolutePath)
-      return
-    }
+    val builder = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return
     val file = event.file
-    val workspace = getWorkspace()
-    val isAndroidResource = workspace?.isAndroidResource(file) == true
-    log.warn(
-        "[TRACE_GEN_SRC] fileEvent={} file={} exists={} ext={} isAndroidResource={} buildInProgress={} toolingStarted={}",
-        event.javaClass.simpleName,
-        file.absolutePath,
-        file.exists(),
-        file.extension,
-        isAndroidResource,
-        builder.isBuildInProgress,
-        builder.isToolingServerStarted(),
-    )
-    if (!isAndroidResource) {
+    if (getWorkspace()?.isAndroidResource(file) != true) {
       return
     }
 
-    log.warn("[TRACE_GEN_SRC] triggering generateSources due to fileEvent={} file={}", event.javaClass.simpleName, file.absolutePath)
     generateSources(builder)
   }
 
