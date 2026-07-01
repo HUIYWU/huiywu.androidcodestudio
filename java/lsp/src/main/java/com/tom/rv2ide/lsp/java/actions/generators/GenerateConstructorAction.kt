@@ -104,13 +104,14 @@ class GenerateConstructorAction : FieldBasedAction() {
         log.debug("Creating toString() method with fields: {}", fields.map { it.name })
       }
 
-      generateForFields(data, task, type, fields.map { TreePath(typeFinder.path, it) })
+      generateForFields(data, task, file, type, fields.map { TreePath(typeFinder.path, it) })
     }
   }
 
   private fun generateForFields(
       data: ActionData,
       task: CompileTask,
+      file: java.nio.file.Path,
       type: ClassTree,
       paths: List<TreePath>,
   ) {
