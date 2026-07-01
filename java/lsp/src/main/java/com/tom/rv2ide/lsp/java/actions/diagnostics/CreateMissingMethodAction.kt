@@ -70,7 +70,7 @@ class CreateMissingMethodAction : BaseJavaCodeAction() {
         )
     val file = data.requirePath()
     return compiler.compile(file).get {
-      CreateMissingMethod(file, findPosition(it, diagnostic.range.start))
+      CreateMissingMethod(file, findPosition(it, file, diagnostic.range.start))
     }
   }
 

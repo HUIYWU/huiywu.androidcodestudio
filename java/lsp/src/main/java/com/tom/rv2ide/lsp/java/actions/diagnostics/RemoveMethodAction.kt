@@ -71,7 +71,7 @@ class RemoveMethodAction : BaseJavaCodeAction() {
     val file = data.requirePath()
 
     return compiler.compile(file).get {
-      val unusedMethod = findMethod(it, diagnostic.range)
+      val unusedMethod = findMethod(it, file, diagnostic.range)
       RemoveMethod(
           unusedMethod.className,
           unusedMethod.methodName,

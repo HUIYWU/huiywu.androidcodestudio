@@ -76,7 +76,7 @@ class FieldToBlockAction : BaseJavaCodeAction() {
     val file = data.requirePath()
 
     return compiler.compile(file).get {
-      ConvertFieldToBlock(file, findPosition(it, diagnostic.range.start))
+      ConvertFieldToBlock(file, findPosition(it, file, diagnostic.range.start))
     }
   }
 

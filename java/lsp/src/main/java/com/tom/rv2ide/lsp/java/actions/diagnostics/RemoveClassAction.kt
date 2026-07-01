@@ -71,7 +71,7 @@ class RemoveClassAction : BaseJavaCodeAction() {
     val file = data.requirePath()
 
     return compiler.compile(file).get {
-      RemoveClass(file, findPosition(it, diagnostic.range.start))
+      RemoveClass(file, findPosition(it, file, diagnostic.range.start))
     }
   }
 

@@ -70,7 +70,7 @@ class GenerateMissingConstructorAction : BaseJavaCodeAction() {
     val file = data.requirePath()
     return compiler.compile(file).get { task ->
       val needsConstructor =
-          CodeActionUtils.findClassNeedingConstructor(task, diagnostic.range) ?: return@get false
+          CodeActionUtils.findClassNeedingConstructor(task, file, diagnostic.range) ?: return@get false
       return@get GenerateRecordConstructor(needsConstructor)
     }
   }

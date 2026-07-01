@@ -78,7 +78,7 @@ class VariableToStatementAction : BaseJavaCodeAction() {
     val path = data.requirePath()
 
     return compiler.compile(path).get {
-      ConvertVariableToStatement(path, findPosition(it, diagnostic.range.start))
+      ConvertVariableToStatement(path, findPosition(it, path, diagnostic.range.start))
     }
   }
 
