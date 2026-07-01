@@ -70,9 +70,7 @@ object MethodStubGenerator {
     normalizeVisibility(declaration, method)
     val imports = JavaParserUtils.collectImports(parameterizedType)
     fillBody(declaration, method, bodyStrategy)
-    val renderedText = prettyPrint(declaration) { identifier ->
-      imports.any { identifier == it || identifier.startsWith("$it<") || identifier.startsWith("$it[") }
-    } ?: declaration.toString()
+    val renderedText = prettyPrint(declaration) { false } ?: declaration.toString()
     return GeneratedMethod(declaration, imports, renderedText)
   }
 
@@ -105,7 +103,14 @@ object MethodStubGenerator {
     val body = BlockStmt()
     when (bodyStrategy) {
       BodyStrategy.IMPLEMENT_ABSTRACT -> appendDefaultBody(body, declaration.type, method.returnType)
-      BodyStrategy.OVERRIDE_SUPER -> appendSuperBody(body, declaration)
+      BodyStrategy.OVERRIDE_SUPER -> {
+        val enclosing = method.enclosingElement as? TypeElement
+        if (enclosing?.kind == ElementKind.INTERFACE) {
+          appendDefaultBody(body, declaration.type, method.returnType)
+        } else {
+          appendSuperBody(body, declaration)
+        }
+      }
     }
     declaration.setBody(body)
   }
