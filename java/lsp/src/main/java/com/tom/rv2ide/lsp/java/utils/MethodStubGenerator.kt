@@ -17,6 +17,7 @@
 package com.tom.rv2ide.lsp.java.utils
 
 import com.github.javaparser.ast.Modifier
+import com.github.javaparser.ast.NodeList
 import com.github.javaparser.ast.body.MethodDeclaration
 import com.github.javaparser.ast.expr.BooleanLiteralExpr
 import com.github.javaparser.ast.expr.CharLiteralExpr
@@ -126,15 +127,11 @@ object MethodStubGenerator {
     val call = MethodCallExpr()
     call.setScope(SuperExpr())
     call.name = declaration.name
-    call.arguments = declaration.parameters.map { it.nameAsExpression }.toNodeList()
+    call.arguments = NodeList.nodeList(*declaration.parameters.map { it.nameAsExpression }.toTypedArray())
     if (declaration.type.isVoidType) {
       body.addStatement(call)
     } else {
       body.addStatement(ReturnStmt(call))
     }
   }
-}
-
-private fun <E> Collection<E>.toNodeList(): com.github.javaparser.ast.NodeList<E> {
-  return com.github.javaparser.ast.NodeList(this)
 }

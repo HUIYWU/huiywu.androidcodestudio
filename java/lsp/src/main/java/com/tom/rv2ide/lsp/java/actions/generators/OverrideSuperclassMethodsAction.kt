@@ -35,6 +35,7 @@ import com.tom.rv2ide.lsp.java.utils.EditHelper
 import com.tom.rv2ide.lsp.java.utils.FindHelper
 import com.tom.rv2ide.lsp.java.utils.JavaParserUtils
 import com.tom.rv2ide.lsp.java.utils.MethodPtr
+import com.tom.rv2ide.lsp.java.utils.MethodStubGenerator
 import com.tom.rv2ide.lsp.java.visitors.FindTypeDeclarationAt
 import com.tom.rv2ide.models.Position
 import com.tom.rv2ide.preferences.internal.EditorPreferences
@@ -273,8 +274,10 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         sb.replace(Regex(Regex.escape("\n")), "\n${indentationString(indent)}")
         sb.append("\n")
 
-        newImports.removeIf {
-          it.startsWith("java.lang.") || it.startsWith(filePackage) || fileImports.contains(it)
+        newImports.removeIf { importName ->
+          importName.startsWith("java.lang.") ||
+              importName.startsWith(filePackage) ||
+              fileImports.contains(importName)
         }
 
         imports.addAll(newImports)
