@@ -98,16 +98,36 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
                 ?.findModuleForFile(data.requireFile(), false) ?: return Any()
         )
     val file = data.requirePath()
-
     return compiler.compile(file).get { task ->
+      val fileRoot =
+          try {
+            task.root(file)
+          } catch (e: Throwable) {
+            log.warn(
+                "[TRACE_OVERRIDE] execAction root(file) failed file={} roots={} rootUris={}",
+                file,
+                task.roots.size,
+                task.roots.map { it.sourceFile?.toUri().toString() },
+                e,
+            )
+            return@get false
+          }
+      log.warn(
+          "[TRACE_OVERRIDE] execAction file={} range={} roots={} rootUris={}",
+          file,
+          range,
+          task.roots.size,
+          task.roots.map { it.sourceFile?.toUri().toString() },
+      )
       // 1-based line and column index
       val startLine = range.start.line + 1
       val startColumn = range.start.column + 1
       val endLine = range.end.line + 1
       val endColumn = range.end.column + 1
-      val lines = task.root().lineMap
+      val lines = fileRoot.lineMap
       val start = lines.getPosition(startLine.toLong(), startColumn.toLong())
       val end = lines.getPosition(endLine.toLong(), endColumn.toLong())
+
 
       if (start == (-1).toLong() || end == (-1).toLong()) {
         return@get false
@@ -115,9 +135,9 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
 
       this.position = start
       val typeFinder = FindTypeDeclarationAt(task.task)
-      var type = typeFinder.scan(task.root(file), start)
+      var type = typeFinder.scan(fileRoot, start)
       if (type == null) {
-        type = typeFinder.scan(task.root(file), end)
+        type = typeFinder.scan(fileRoot, end)
         position = end
       }
 
@@ -212,19 +232,45 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
                 ?.findModuleForFile(data.requireFile(), false) ?: return
         )
     val file = data.requirePath()
-
     compiler.compile(file).run { task ->
+      val fileRoot =
+          try {
+            task.root(file)
+          } catch (e: Throwable) {
+            log.warn(
+                "[TRACE_OVERRIDE] overrideMethods root(file) failed file={} roots={} rootUris={}",
+                file,
+                task.roots.size,
+                task.roots.map { it.sourceFile?.toUri().toString() },
+                e,
+            )
+            return@run
+          }
+      log.warn(
+          "[TRACE_OVERRIDE] overrideMethods file={} position={} roots={} rootUris={}",
+          file,
+          position,
+          task.roots.size,
+          task.roots.map { it.sourceFile?.toUri().toString() },
+      )
       val types = task.task.types
       val trees = Trees.instance(task.task)
       val sb = StringBuilder()
       val imports = mutableSetOf<String>()
 
       val typeFinder = FindTypeDeclarationAt(task.task)
-      val classTree = typeFinder.scan(task.root(), position)
-      val thisClass = trees.getElement(typeFinder.path) as TypeElement
-      val indent = EditHelper.indent(task.task, task.root(), classTree) + EditorPreferences.tabSize
-      val fileImports = task.root(file).imports.map { it.qualifiedIdentifier.toString() }.toSet()
-      val filePackage = task.root(file).`package`.packageName.toString()
+      val classTree = typeFinder.scan(fileRoot, position) ?: run {
+        log.warn("[TRACE_OVERRIDE] overrideMethods classTree not found file={} position={}", file, position)
+        return@run
+      }
+      val thisClass = trees.getElement(typeFinder.path) as? TypeElement ?: run {
+        log.warn("[TRACE_OVERRIDE] overrideMethods TypeElement not found file={} position={} path={}", file, position, typeFinder.path)
+        return@run
+      }
+      val indent = EditHelper.indent(task.task, fileRoot, classTree) + EditorPreferences.tabSize
+      val fileImports = fileRoot.imports.map { it.qualifiedIdentifier.toString() }.toSet()
+      val filePackage = fileRoot.`package`.packageName.toString()
+
 
       for (pointer in checkedMethods) {
         val superMethod =
@@ -263,7 +309,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
             data,
             sb,
             imports,
-            EditHelper.insertAtEndOfClass(task.task, task.root(file), classTree),
+            EditHelper.insertAtEndOfClass(task.task, fileRoot, classTree),
         )
       }
     }

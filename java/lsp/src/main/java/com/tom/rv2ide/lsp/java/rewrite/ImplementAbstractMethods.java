@@ -85,6 +85,11 @@ public class ImplementAbstractMethods extends Rewrite {
   @Override
   public Map<Path, TextEdit[]> rewrite(@NonNull CompilerProvider compiler) {
     final Path file = compiler.findTypeDeclaration(this.classFile);
+    LOG.warn(
+        "[TRACE_IMPL_ABSTRACT] rewrite className={} classFile={} resolvedFile={}",
+        this.className,
+        this.classFile,
+        file);
     if (file == CompilerProvider.NOT_FOUND) {
       LOG.warn("Unable to find source file for class: {} classFile={}", this.className,
           this.classFile);
@@ -94,6 +99,23 @@ public class ImplementAbstractMethods extends Rewrite {
     final SynchronizedTask synchronizedTask = compiler.compile(file);
     return synchronizedTask.get(
         task -> {
+          final CompilationUnitTree fileRoot;
+          try {
+            fileRoot = task.root(file);
+          } catch (RuntimeException err) {
+            LOG.warn(
+                "[TRACE_IMPL_ABSTRACT] root(file) failed file={} roots={} rootUris={}",
+                file,
+                task.roots.size(),
+                task.roots.stream().map(root -> String.valueOf(root.getSourceFile().toUri())).collect(Collectors.toList()),
+                err);
+            throw err;
+          }
+          LOG.warn(
+              "[TRACE_IMPL_ABSTRACT] rewrite file={} roots={} rootUris={}",
+              file,
+              task.roots.size(),
+              task.roots.stream().map(root -> String.valueOf(root.getSourceFile().toUri())).collect(Collectors.toList()));
           StringJoiner insertText = new StringJoiner("\n");
           Elements elements = task.task.getElements();
           Trees trees = Trees.instance(task.task);
@@ -105,7 +127,7 @@ public class ImplementAbstractMethods extends Rewrite {
           }
 
           final Set<String> imports = new TreeSet<>();
-          int indent = EditHelper.indent(task.task, task.root(), thisTree)
+          int indent = EditHelper.indent(task.task, fileRoot, thisTree)
               + EditorPreferences.INSTANCE.getTabSize();
           for (Element member : elements.getAllMembers(thisClass)) {
             if (member.getKind() == ElementKind.METHOD
@@ -118,7 +140,7 @@ public class ImplementAbstractMethods extends Rewrite {
             }
           }
 
-          Position insert = EditHelper.insertAtEndOfClass(task.task, task.root(), thisTree);
+          Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
           final List<TextEdit> edits = new ArrayList<>();
           edits.add(new TextEdit(new Range(insert, insert), insertText + "\n"));
           addImports(compiler, task, file, imports, edits);
