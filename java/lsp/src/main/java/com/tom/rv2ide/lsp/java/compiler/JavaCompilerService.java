@@ -323,14 +323,6 @@ public class JavaCompilerService implements CompilerProvider {
     synchronizedTask.post(
         () -> {
           final boolean needsCompilation = needsCompilation(request.sources);
-          LOG.warn(
-              "[TRACE_JAVA_COMPILE] compileBatch start requestHash={} sources={} needsCompilation={} cachedCompilePresent={} currentContextPresent={} sourceSummary={}",
-              System.identityHashCode(request),
-              request.sources == null ? -1 : request.sources.size(),
-              needsCompilation,
-              cachedCompile != null,
-              compiler.currentContext != null,
-              request.sources == null ? null : CompileBatch.describeSources(request.sources));
           if (needsCompilation) {
             reparseOrRecompile(request);
           } else {
@@ -338,12 +330,6 @@ public class JavaCompilerService implements CompilerProvider {
               LOG.debug("...using cached compile");
             }
           }
-          LOG.warn(
-              "[TRACE_JAVA_COMPILE] compileBatch end requestHash={} cachedCompilePresent={} roots={} diagnostics={}",
-              System.identityHashCode(request),
-              cachedCompile != null,
-              cachedCompile == null || cachedCompile.roots == null ? -1 : cachedCompile.roots.size(),
-              diagnostics == null ? -1 : diagnostics.size());
           synchronizedTask.setTask(new CompileTask(cachedCompile, diagnostics, false));
         });
 
@@ -590,19 +576,8 @@ public class JavaCompilerService implements CompilerProvider {
     return PartialReparseAttemptResult.success("method body reparsed");
   }
   private synchronized void recompile(CompilationRequest request) {
-    LOG.warn(
-        "[TRACE_JAVA_COMPILE] recompile start requestHash={} sources={} sourceSummary={}",
-        System.identityHashCode(request),
-        request.sources == null ? -1 : request.sources.size(),
-        request.sources == null ? null : CompileBatch.describeSources(request.sources));
     close();
     this.cachedCompile = performCompilation(request);
-    LOG.warn(
-        "[TRACE_JAVA_COMPILE] recompile end requestHash={} cachedCompilePresent={} roots={} diagnostics={}",
-        System.identityHashCode(request),
-        this.cachedCompile != null,
-        this.cachedCompile == null || this.cachedCompile.roots == null ? -1 : this.cachedCompile.roots.size(),
-        diagnostics == null ? -1 : diagnostics.size());
     this.incrementalState.resetAfterFullRecompile();
     updateModificationCache(request);
   }

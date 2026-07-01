@@ -116,19 +116,9 @@ public class CompileBatch implements AutoCloseable {
       throw new RuntimeException(e);
     }
 
-    LOG.warn(
-        "[TRACE_COMPILE_BATCH] rootsBuilt={} files={} firstSource={} rootUris={}",
-        roots.size(),
-        files.size(),
-        files.iterator().hasNext() ? files.iterator().next().toUri() : null,
-        roots.stream().map(root -> String.valueOf(root.getSourceFile().toUri())).collect(java.util.stream.Collectors.toList()));
-
     config.setFiles(null);
   }
   private void processCompilationUnit(final CompilationUnitTree root) {
-    LOG.warn(
-        "[TRACE_COMPILE_BATCH] processCompilationUnit uri={}",
-        root == null || root.getSourceFile() == null ? null : root.getSourceFile().toUri());
     roots.add(root);
     updatePositions(root, false);
   }

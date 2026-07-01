@@ -17,7 +17,6 @@
 
 package com.tom.rv2ide.lsp.java.providers.completion
 
-import com.squareup.javapoet.MethodSpec.Builder
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.api.IServerSettings
 import com.tom.rv2ide.lsp.api.describeSnippet
@@ -25,8 +24,7 @@ import com.tom.rv2ide.lsp.java.compiler.CompileTask
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.lsp.java.edits.MultipleClassImportEditHandler
 import com.tom.rv2ide.lsp.java.models.JavaCompletionItem
-import com.tom.rv2ide.lsp.java.utils.JavaPoetUtils.Companion.buildMethod
-import com.tom.rv2ide.lsp.java.utils.JavaPoetUtils.Companion.print
+import com.tom.rv2ide.lsp.java.utils.MethodStubGenerator
 import com.tom.rv2ide.lsp.java.utils.ScopeHelper
 import com.tom.rv2ide.lsp.models.CompletionItem
 import com.tom.rv2ide.lsp.models.CompletionResult
@@ -154,25 +152,28 @@ class ScopeCompletionProvider(
       return method(task, listOf(method), !endsWithParen, matchLevel, partial)
     }
 
-    // Print the method details and the annotations
-    // Print the method details and the annotations
-    val builder: Builder
-    try {
-      builder = buildMethod(method, types, type)
-    } catch (error: Throwable) {
-      log.error("Cannot override method:{} err={}", method.simpleName, error.message)
-      return method(task, listOf(method), !endsWithParen, matchLevel, partial)
-    }
+    val generated =
+        try {
+          MethodStubGenerator.generate(
+              method = method,
+              parameterizedType = types.asMemberOf(type, method) as jdkx.lang.model.type.ExecutableType,
+              source = null,
+              bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
+          )
+        } catch (error: Throwable) {
+          log.error("Cannot override method:{} err={}", method.simpleName, error.message)
+          return method(task, listOf(method), !endsWithParen, matchLevel, partial)
+        }
 
-    val imports = mutableSetOf<String>()
-    val methodSpec = builder.build()
-    val insertText = print(methodSpec, imports, false)
+    val imports = generated.imports
+    val methodSpec = generated.declaration
+    val insertText = generated.renderedText
 
     abortIfCancelled()
     abortCompletionIfCancelled()
 
     val item = JavaCompletionItem()
-    item.ideLabel = methodSpec.name
+    item.ideLabel = methodSpec.nameAsString
     item.completionKind = com.tom.rv2ide.lsp.models.CompletionItemKind.METHOD
     item.detail = method.returnType.toString() + " " + method
     item.ideSortText = item.ideLabel

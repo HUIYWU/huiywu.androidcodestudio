@@ -115,12 +115,6 @@ class SynchronizedTask {
   }
 
   fun setTask(task: CompileTask?) {
-    log.warn(
-        "[TRACE_SYNC_TASK] setTask taskPresent={} roots={} diagnostics={}",
-        task != null,
-        task?.roots?.size ?: -1,
-        task?.diagnostics?.size ?: -1,
-    )
     this.task = task
   }
 

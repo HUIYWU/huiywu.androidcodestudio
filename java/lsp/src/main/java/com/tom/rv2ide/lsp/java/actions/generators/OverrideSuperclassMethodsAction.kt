@@ -103,22 +103,8 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
           try {
             task.root(file)
           } catch (e: Throwable) {
-            log.warn(
-                "[TRACE_OVERRIDE] execAction root(file) failed file={} roots={} rootUris={}",
-                file,
-                task.roots.size,
-                task.roots.map { it.sourceFile?.toUri().toString() },
-                e,
-            )
             return@get false
           }
-      log.warn(
-          "[TRACE_OVERRIDE] execAction file={} range={} roots={} rootUris={}",
-          file,
-          range,
-          task.roots.size,
-          task.roots.map { it.sourceFile?.toUri().toString() },
-      )
       // 1-based line and column index
       val startLine = range.start.line + 1
       val startColumn = range.start.column + 1
@@ -237,22 +223,8 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
           try {
             task.root(file)
           } catch (e: Throwable) {
-            log.warn(
-                "[TRACE_OVERRIDE] overrideMethods root(file) failed file={} roots={} rootUris={}",
-                file,
-                task.roots.size,
-                task.roots.map { it.sourceFile?.toUri().toString() },
-                e,
-            )
             return@run
           }
-      log.warn(
-          "[TRACE_OVERRIDE] overrideMethods file={} position={} roots={} rootUris={}",
-          file,
-          position,
-          task.roots.size,
-          task.roots.map { it.sourceFile?.toUri().toString() },
-      )
       val types = task.task.types
       val trees = Trees.instance(task.task)
       val sb = StringBuilder()
@@ -261,22 +233,11 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       val typeFinder = FindTypeDeclarationAt(task.task)
       val classTreeCandidate = typeFinder.scan(fileRoot, position)
       if (classTreeCandidate == null) {
-        log.warn(
-            "[TRACE_OVERRIDE] overrideMethods classTree not found file={} position={}",
-            file,
-            position,
-        )
         return@run
       }
       val classTree: openjdk.source.tree.ClassTree = classTreeCandidate
       val thisClassCandidate = trees.getElement(typeFinder.path) as? TypeElement
       if (thisClassCandidate == null) {
-        log.warn(
-            "[TRACE_OVERRIDE] overrideMethods TypeElement not found file={} position={} path={}",
-            file,
-            position,
-            typeFinder.path,
-        )
         return@run
       }
       val thisClass: TypeElement = thisClassCandidate
@@ -297,16 +258,18 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         val thisDeclaredType = thisClass.asType() as DeclaredType
         val executableType = types.asMemberOf(thisDeclaredType, superMethod) as ExecutableType
         val source = findSource(compiler, task, superMethod)
-        val method =
-            if (source != null) {
-              JavaParserUtils.printMethod(superMethod, executableType, source)
-            } else {
-              JavaParserUtils.printMethod(superMethod, executableType, superMethod)
-            }
+        val generated =
+            MethodStubGenerator.generate(
+                method = superMethod,
+                parameterizedType = executableType,
+                source = source,
+                bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
+            )
 
-        val newImports = JavaParserUtils.collectImports(executableType)
+        val method = generated.declaration
+        val newImports = generated.imports
         sb.append("\n")
-        sb.append(method.toString())
+        sb.append(generated.renderedText)
         sb.replace(Regex(Regex.escape("\n")), "\n${indentationString(indent)}")
         sb.append("\n")
 

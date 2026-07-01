@@ -22,7 +22,8 @@ import com.tom.rv2ide.lsp.java.compiler.CompileTask;
 import com.tom.rv2ide.lsp.java.compiler.CompilerProvider;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
 import com.tom.rv2ide.lsp.java.utils.EditHelper;
-import com.tom.rv2ide.lsp.java.utils.JavaPoetUtils;
+import com.tom.rv2ide.lsp.java.utils.MethodStubGenerator;
+
 import com.tom.rv2ide.lsp.java.visitors.FindAnonymousTypeDeclaration;
 import com.tom.rv2ide.lsp.java.visitors.FindTypeDeclarationAt;
 import com.tom.rv2ide.lsp.models.CodeActionItem;
@@ -32,7 +33,6 @@ import com.tom.rv2ide.models.Position;
 import com.tom.rv2ide.models.Range;
 import com.tom.rv2ide.preferences.internal.EditorPreferences;
 import com.tom.rv2ide.preferences.utils.EditorUtilKt;
-import com.squareup.javapoet.MethodSpec;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,6 +47,7 @@ import jdkx.lang.model.element.ElementKind;
 import jdkx.lang.model.element.ExecutableElement;
 import jdkx.lang.model.element.Modifier;
 import jdkx.lang.model.element.TypeElement;
+import jdkx.lang.model.type.ExecutableType;
 import jdkx.lang.model.util.Elements;
 import openjdk.source.tree.ClassTree;
 import openjdk.source.tree.CompilationUnitTree;
@@ -85,11 +86,6 @@ public class ImplementAbstractMethods extends Rewrite {
   @Override
   public Map<Path, TextEdit[]> rewrite(@NonNull CompilerProvider compiler) {
     final Path file = compiler.findTypeDeclaration(this.classFile);
-    LOG.warn(
-        "[TRACE_IMPL_ABSTRACT] rewrite className={} classFile={} resolvedFile={}",
-        this.className,
-        this.classFile,
-        file);
     if (file == CompilerProvider.NOT_FOUND) {
       LOG.warn("Unable to find source file for class: {} classFile={}", this.className,
           this.classFile);
@@ -99,23 +95,7 @@ public class ImplementAbstractMethods extends Rewrite {
     final SynchronizedTask synchronizedTask = compiler.compile(file);
     return synchronizedTask.get(
         task -> {
-          final CompilationUnitTree fileRoot;
-          try {
-            fileRoot = task.root(file);
-          } catch (RuntimeException err) {
-            LOG.warn(
-                "[TRACE_IMPL_ABSTRACT] root(file) failed file={} roots={} rootUris={}",
-                file,
-                task.roots.size(),
-                task.roots.stream().map(root -> String.valueOf(root.getSourceFile().toUri())).collect(Collectors.toList()),
-                err);
-            throw err;
-          }
-          LOG.warn(
-              "[TRACE_IMPL_ABSTRACT] rewrite file={} roots={} rootUris={}",
-              file,
-              task.roots.size(),
-              task.roots.stream().map(root -> String.valueOf(root.getSourceFile().toUri())).collect(Collectors.toList()));
+          final CompilationUnitTree fileRoot = task.root(file);
           StringJoiner insertText = new StringJoiner("\n");
           Elements elements = task.task.getElements();
           Trees trees = Trees.instance(task.task);
@@ -133,8 +113,16 @@ public class ImplementAbstractMethods extends Rewrite {
             if (member.getKind() == ElementKind.METHOD
                 && member.getModifiers().contains(Modifier.ABSTRACT)) {
               ExecutableElement method = (ExecutableElement) member;
-              final MethodSpec methodSpec = MethodSpec.overriding(method).build();
-              String text = "\n" + JavaPoetUtils.print(methodSpec, imports, false);
+              final ExecutableType executableType =
+                  (ExecutableType) trees.getTypeMirror(trees.getPath(method));
+              final MethodStubGenerator.GeneratedMethod generated =
+                  MethodStubGenerator.generate(
+                      method,
+                      executableType,
+                      trees.getTree(method),
+                      MethodStubGenerator.BodyStrategy.IMPLEMENT_ABSTRACT);
+              imports.addAll(generated.getImports());
+              String text = "\n" + generated.getRenderedText();
               text = text.replaceAll("\n", "\n" + EditorUtilKt.indentationString(indent));
               insertText.add(text);
             }
