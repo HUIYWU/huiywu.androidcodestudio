@@ -73,7 +73,7 @@ public class GenerateRecordConstructor extends Rewrite {
           TypeElement typeElement = task.task.getElements().getTypeElement(className);
           ClassTree typeTree = Trees.instance(task.task).getTree(typeElement);
           List<VariableTree> fields = fieldsNeedingInitialization(typeTree);
-          String parameters = generateParameters(task, fields);
+          String parameters = generateParameters(task, file, fields);
           String initializers = generateInitializers(fields);
           StringBuilder buf = new StringBuilder();
           buf.append("\n");
@@ -88,11 +88,12 @@ public class GenerateRecordConstructor extends Rewrite {
               .append(initializers)
               .append("\n}");
           String string = buf.toString();
-          int indent = EditHelper.indent(task.task, task.root(), typeTree)
+          final var fileRoot = task.root(file);
+          int indent = EditHelper.indent(task.task, fileRoot, typeTree)
               + EditorPreferences.INSTANCE.getTabSize();
           string = string.replaceAll("\n", "\n" + EditorUtilKt.indentationString(indent));
           string = string + "\n\n";
-          Position insert = insertPoint(task, typeTree);
+          Position insert = insertPoint(task, file, typeTree);
           TextEdit[] edits = {new TextEdit(new Range(insert, insert), string)};
           return Collections.singletonMap(file, edits);
         });
@@ -121,20 +122,21 @@ public class GenerateRecordConstructor extends Rewrite {
     return fields;
   }
 
-  private String generateParameters(CompileTask task, List<VariableTree> fields) {
+  private String generateParameters(CompileTask task, Path file, List<VariableTree> fields) {
     StringJoiner join = new StringJoiner(", ");
     for (VariableTree f : fields) {
-      join.add(extract(task, f.getType()) + " " + f.getName());
+      join.add(extract(task, file, f.getType()) + " " + f.getName());
     }
     return join.toString();
   }
 
-  private CharSequence extract(CompileTask task, Tree typeTree) {
+  private CharSequence extract(CompileTask task, Path file, Tree typeTree) {
     try {
-      CharSequence contents = task.root().getSourceFile().getCharContent(true);
+      final var fileRoot = task.root(file);
+      CharSequence contents = fileRoot.getSourceFile().getCharContent(true);
       SourcePositions pos = Trees.instance(task.task).getSourcePositions();
-      int start = (int) pos.getStartPosition(task.root(), typeTree);
-      int end = (int) pos.getEndPosition(task.root(), typeTree);
+      int start = (int) pos.getStartPosition(fileRoot, typeTree);
+      int end = (int) pos.getEndPosition(fileRoot, typeTree);
       return contents.subSequence(start, end);
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -157,7 +159,7 @@ public class GenerateRecordConstructor extends Rewrite {
     return className;
   }
 
-  private Position insertPoint(CompileTask task, ClassTree typeTree) {
+  private Position insertPoint(CompileTask task, Path file, ClassTree typeTree) {
     for (Tree member : typeTree.getMembers()) {
       if (member.getKind() == Tree.Kind.METHOD) {
         MethodTree method = (MethodTree) member;
@@ -165,10 +167,10 @@ public class GenerateRecordConstructor extends Rewrite {
           continue;
         }
         LOG.info("...insert constructor before {}", method.getName());
-        return EditHelper.insertBefore(task.task, task.root(), method);
+        return EditHelper.insertBefore(task.task, task.root(file), method);
       }
     }
     LOG.info("...insert constructor at end of class");
-    return EditHelper.insertAtEndOfClass(task.task, task.root(), typeTree);
+    return EditHelper.insertAtEndOfClass(task.task, task.root(file), typeTree);
   }
 }

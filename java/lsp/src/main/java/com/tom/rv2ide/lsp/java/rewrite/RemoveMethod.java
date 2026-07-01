@@ -60,7 +60,8 @@ public class RemoveMethod extends Rewrite {
                 return CANCELLED;
               }
 
-              TextEdit[] edits = {EditHelper.removeTree(task.task, task.root(), methodTree)};
+              final var fileRoot = task.root(file);
+              TextEdit[] edits = {EditHelper.removeTree(task.task, fileRoot, methodTree)};
               return Collections.singletonMap(file, edits);
             });
   }

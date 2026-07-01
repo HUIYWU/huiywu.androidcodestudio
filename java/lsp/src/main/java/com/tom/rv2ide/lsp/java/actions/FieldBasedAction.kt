@@ -101,7 +101,8 @@ abstract class FieldBasedAction : BaseJavaCodeAction() {
     val startColumn = range.start.column + 1
     val endLine = range.end.line + 1
     val endColumn = range.end.column + 1
-    val lines = task.root().lineMap
+    val fileRoot = task.root(file)
+    val lines = fileRoot.lineMap
     val start = lines.getPosition(startLine.toLong(), startColumn.toLong())
     val end = lines.getPosition(endLine.toLong(), endColumn.toLong())
 
@@ -112,9 +113,9 @@ abstract class FieldBasedAction : BaseJavaCodeAction() {
     }
 
     val typeFinder = FindTypeDeclarationAt(task.task)
-    var type = typeFinder.scan(task.root(file), start)
+    var type = typeFinder.scan(fileRoot, start)
     if (type == null) {
-      type = typeFinder.scan(task.root(file), end)
+      type = typeFinder.scan(fileRoot, end)
     }
 
     if (type == null) {

@@ -129,8 +129,9 @@ class GenerateToStringMethodAction : FieldBasedAction() {
     val file = data.requirePath()
     val editor = data[CodeEditor::class.java]!!
     val trees = JavacTrees.instance(task.task)
-    val indent = EditHelper.indent(task.task, task.root(), type) + EditorPreferences.tabSize
-    val insert = EditHelper.insertAtEndOfClass(task.task, task.root(file), type)
+    val fileRoot = task.root(file)
+    val indent = EditHelper.indent(task.task, fileRoot, type) + EditorPreferences.tabSize
+    val insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, type)
     val string = StringBuilder()
     var isFirst = true
 

@@ -84,8 +84,9 @@ public class RemoveException extends Rewrite {
             return CANCELLED;
           }
 
+          final var fileRoot = task.root(file);
           if (methodTree.getThrows().size() == 1) {
-            TextEdit delete = removeEntireThrows(task.task, task.root(), methodTree);
+            TextEdit delete = removeEntireThrows(task.task, fileRoot, methodTree);
             if (delete == TextEdit.NONE) {
               return CANCELLED;
             }
@@ -93,7 +94,7 @@ public class RemoveException extends Rewrite {
             TextEdit[] edits = {delete};
             return Collections.singletonMap(file, edits);
           }
-          TextEdit[] edits = {removeSingleException(task.task, task.root(), methodTree)};
+          TextEdit[] edits = {removeSingleException(task.task, fileRoot, methodTree)};
           return Collections.singletonMap(file, edits);
         });
   }

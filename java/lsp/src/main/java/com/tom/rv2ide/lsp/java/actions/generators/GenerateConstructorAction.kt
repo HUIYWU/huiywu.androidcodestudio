@@ -144,8 +144,9 @@ class GenerateConstructorAction : FieldBasedAction() {
       log.info("Inserting constructor into editor...")
     }
 
-    val insertAt = EditHelper.insertAfter(task.task, task.root(), paths.last().leaf)
-    val indent = EditHelper.indent(task.task, task.root(), paths.last().leaf)
+    val fileRoot = task.root(file)
+    val insertAt = EditHelper.insertAfter(task.task, fileRoot, paths.last().leaf)
+    val indent = EditHelper.indent(task.task, fileRoot, paths.last().leaf)
     var text = constructor.toString()
     text = text.replace("\n", "\n${indentationString(indent)}")
     text += "\n"
