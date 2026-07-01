@@ -20,6 +20,7 @@ package com.tom.rv2ide.lsp.java.utils
 import com.tom.rv2ide.lsp.java.compiler.CompileTask
 import com.tom.rv2ide.lsp.java.parser.ParseTask
 import com.tom.rv2ide.models.Position
+import java.nio.file.Path
 import openjdk.source.tree.CompilationUnitTree
 import openjdk.source.tree.Tree
 import openjdk.source.util.JavacTask
@@ -30,8 +31,8 @@ fun positionForImports(className: String, task: ParseTask): Position {
   return positionForImports(className, task.task, task.root)
 }
 
-fun positionForImports(className: String, task: CompileTask): Position {
-  return positionForImports(className, task.task, task.root())
+fun positionForImports(className: String, task: CompileTask, file: Path): Position {
+  return positionForImports(className, task.task, task.root(file))
 }
 
 fun positionForImports(className: String, task: JavacTask, root: CompilationUnitTree): Position {

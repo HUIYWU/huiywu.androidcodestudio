@@ -71,7 +71,7 @@ class RemoveUnusedThrowsAction : BaseJavaCodeAction() {
     val file = data.requirePath()
     return compiler.compile(file).get { task ->
       val notThrown = CodeActionUtils.extractNotThrownExceptionName(d.message)
-      val methodWithExtraThrow = CodeActionUtils.findMethod(task, d.range)
+      val methodWithExtraThrow = CodeActionUtils.findMethod(task, file, d.range)
 
       return@get RemoveException(
           methodWithExtraThrow.className,

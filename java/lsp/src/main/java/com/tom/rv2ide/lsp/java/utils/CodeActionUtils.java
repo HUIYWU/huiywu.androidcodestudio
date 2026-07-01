@@ -68,8 +68,10 @@ public class CodeActionUtils {
     return ((Rewrite) rewrite).asCodeActions(compiler, title);
   }
 
-  public static boolean isInMethod(@NonNull CompileTask task, long cursor) {
-    MethodTree method = new FindMethodDeclarationAt(task.task).scan(task.root(), cursor);
+  public static boolean isInMethod(@NonNull CompileTask task, @NonNull java.nio.file.Path file,
+      long cursor) {
+    final CompilationUnitTree root = task.root(file);
+    MethodTree method = new FindMethodDeclarationAt(task.task).scan(root, cursor);
     return method != null;
   }
 
@@ -91,26 +93,28 @@ public class CodeActionUtils {
     return true;
   }
 
-  public static int findPosition(@NonNull CompileTask task, @NonNull Position position) {
-    final LineMap lines = task.root().getLineMap();
+  public static int findPosition(@NonNull CompileTask task, @NonNull java.nio.file.Path file,
+      @NonNull Position position) {
+    final LineMap lines = task.root(file).getLineMap();
     return (int) lines.getPosition(position.getLine() + 1, position.getColumn() + 1);
   }
 
   @Nullable
-  public static String findClassNeedingConstructor(CompileTask task, Range range) {
-    final ClassTree type = findClassTree(task, range);
-    if (type == null || hasConstructor(task, type)) {
+  public static String findClassNeedingConstructor(CompileTask task,
+      @NonNull java.nio.file.Path file, Range range) {
+    final ClassTree type = findClassTree(task, file, range);
+    if (type == null || hasConstructor(task, file, type)) {
       return null;
     }
-    return qualifiedName(task, type);
+    return qualifiedName(task, file, type);
   }
 
-  public static ClassTree findClassTree(@NonNull CompileTask task, @NonNull Range range) {
+  public static ClassTree findClassTree(@NonNull CompileTask task,
+      @NonNull java.nio.file.Path file, @NonNull Range range) {
+    final CompilationUnitTree root = task.root(file);
     final long position =
-        task.root()
-            .getLineMap()
-            .getPosition(range.getStart().getLine() + 1, range.getStart().getColumn() + 1);
-    return newClassFinder(task).scan(task.root(), position);
+        root.getLineMap().getPosition(range.getStart().getLine() + 1, range.getStart().getColumn() + 1);
+    return newClassFinder(task).scan(root, position);
   }
 
   @NonNull
@@ -120,18 +124,20 @@ public class CodeActionUtils {
   }
 
   @NonNull
-  public static String qualifiedName(@NonNull CompileTask task, ClassTree tree) {
+  public static String qualifiedName(@NonNull CompileTask task, @NonNull java.nio.file.Path file,
+      ClassTree tree) {
     final Trees trees = Trees.instance(task.task);
-    final TreePath path = trees.getPath(task.root(), tree);
+    final TreePath path = trees.getPath(task.root(file), tree);
     final TypeElement type = (TypeElement) trees.getElement(path);
     return type.getQualifiedName().toString();
   }
 
-  public static boolean hasConstructor(CompileTask task, @NonNull ClassTree type) {
+  public static boolean hasConstructor(CompileTask task, @NonNull java.nio.file.Path file,
+      @NonNull ClassTree type) {
     for (Tree member : type.getMembers()) {
       if (member instanceof MethodTree) {
         MethodTree method = (MethodTree) member;
-        if (isConstructor(task, method)) {
+        if (isConstructor(task, file, method)) {
           return true;
         }
       }
@@ -139,24 +145,26 @@ public class CodeActionUtils {
     return false;
   }
 
-  public static boolean isConstructor(CompileTask task, @NonNull MethodTree method) {
-    return method.getName().contentEquals("<init>") && !synthetic(task, method);
+  public static boolean isConstructor(CompileTask task, @NonNull java.nio.file.Path file,
+      @NonNull MethodTree method) {
+    return method.getName().contentEquals("<init>") && !synthetic(task, file, method);
   }
 
-  public static boolean synthetic(@NonNull CompileTask task, MethodTree method) {
-    return Trees.instance(task.task).getSourcePositions().getStartPosition(task.root(), method)
+  public static boolean synthetic(@NonNull CompileTask task, @NonNull java.nio.file.Path file,
+      MethodTree method) {
+    return Trees.instance(task.task).getSourcePositions().getStartPosition(task.root(file), method)
         != -1;
   }
 
   @NonNull
-  public static MethodPtr findMethod(@NonNull CompileTask task, @NonNull Range range) {
+  public static MethodPtr findMethod(@NonNull CompileTask task, @NonNull java.nio.file.Path file,
+      @NonNull Range range) {
     final Trees trees = Trees.instance(task.task);
+    final CompilationUnitTree root = task.root(file);
     final long position =
-        task.root()
-            .getLineMap()
-            .getPosition(range.getStart().getLine() + 1, range.getStart().getColumn() + 1);
-    final MethodTree tree = new FindMethodDeclarationAt(task.task).scan(task.root(), position);
-    final TreePath path = trees.getPath(task.root(), tree);
+        root.getLineMap().getPosition(range.getStart().getLine() + 1, range.getStart().getColumn() + 1);
+    final MethodTree tree = new FindMethodDeclarationAt(task.task).scan(root, position);
+    final TreePath path = trees.getPath(root, tree);
     final ExecutableElement method = (ExecutableElement) trees.getElement(path);
     return new MethodPtr(task.task, method);
   }
@@ -180,22 +188,22 @@ public class CodeActionUtils {
   }
 
   @NonNull
-  public static CharSequence extractRange(@NonNull CompileTask task, Range range) {
+  public static CharSequence extractRange(@NonNull CompileTask task,
+      @NonNull java.nio.file.Path file, Range range) {
+    final CompilationUnitTree root = task.root(file);
     CharSequence contents;
     try {
-      contents = task.root().getSourceFile().getCharContent(true);
+      contents = root.getSourceFile().getCharContent(true);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
     int start =
         (int)
-            task.root()
-                .getLineMap()
+            root.getLineMap()
                 .getPosition(range.getStart().getLine() + 1, range.getStart().getColumn() + 1);
     int end =
         (int)
-            task.root()
-                .getLineMap()
+            root.getLineMap()
                 .getPosition(range.getEnd().getLine() + 1, range.getEnd().getColumn() + 1);
     return contents.subSequence(start, end);
   }

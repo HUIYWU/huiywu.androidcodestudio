@@ -62,9 +62,10 @@ public class AddSuppressWarningAnnotation extends Rewrite {
           if (methodTree == null) {
             return CANCELLED;
           }
+          final var fileRoot = task.root(file);
           final var startMethod = (int) trees.getSourcePositions()
-              .getStartPosition(task.root(), methodTree);
-          final var lines = task.root().getLineMap();
+              .getStartPosition(fileRoot, methodTree);
+          final var lines = fileRoot.getLineMap();
           final var line = (int) lines.getLineNumber(startMethod);
           final var column = (int) lines.getColumnNumber(startMethod);
           final var startLine = (int) lines.getStartPosition(line);

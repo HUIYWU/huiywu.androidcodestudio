@@ -131,7 +131,8 @@ public class SignatureProvider extends CancelableServiceProvider {
               signatures.add(info);
             }
             int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
-            int activeParameter = activeParameter(task, invoke.getArguments(), cursor);
+            int activeParameter =
+                activeParameter(path.getCompilationUnit(), task, invoke.getArguments(), cursor);
             return new SignatureHelp(signatures, activeSignature, activeParameter);
           }
           if (path.getLeaf() instanceof NewClassTree) {
@@ -145,7 +146,8 @@ public class SignatureProvider extends CancelableServiceProvider {
               signatures.add(info);
             }
             int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
-            int activeParameter = activeParameter(task, invoke.getArguments(), cursor);
+            int activeParameter =
+                activeParameter(path.getCompilationUnit(), task, invoke.getArguments(), cursor);
             return new SignatureHelp(signatures, activeSignature, activeParameter);
           }
           return NOT_SUPPORTED;
@@ -334,10 +336,10 @@ public class SignatureProvider extends CancelableServiceProvider {
   }
 
   private int activeParameter(
-      @NonNull CompileTask task, @NonNull List<? extends ExpressionTree> arguments, long cursor) {
+      @NonNull CompilationUnitTree root, @NonNull CompileTask task,
+      @NonNull List<? extends ExpressionTree> arguments, long cursor) {
     abortIfCancelled();
     SourcePositions pos = Trees.instance(task.task).getSourcePositions();
-    CompilationUnitTree root = task.root();
     for (int i = 0; i < arguments.size(); i++) {
       long end = pos.getEndPosition(root, arguments.get(i));
       if (cursor <= end) {

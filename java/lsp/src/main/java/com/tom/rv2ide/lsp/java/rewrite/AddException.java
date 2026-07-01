@@ -72,10 +72,11 @@ public class AddException extends Rewrite {
         return CANCELLED;
       }
 
+      final var fileRoot = task.root(file);
       final var pos = trees.getSourcePositions();
-      final var lines = task.root().getLineMap();
+      final var lines = fileRoot.getLineMap();
 
-      final var index = pos.getStartPosition(task.root(), methodTree.getBody());
+      final var index = pos.getStartPosition(fileRoot, methodTree.getBody());
       int line = (int) lines.getLineNumber(index);
       int column = (int) lines.getColumnNumber(index);
       Position insertPos = new Position(line - 1, column - 1);

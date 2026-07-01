@@ -119,8 +119,8 @@ object DiagnosticsProvider {
     val thisTree = path.leaf
     val code = EMPTY_BLOCK
 
-    val root = task.root()
-    val lines = task.root().lineMap
+    val root = path.compilationUnit
+    val lines = root.lineMap
     val positions = trees.sourcePositions
     val start = positions.getStartPosition(root, thisTree)
     val end = positions.getEndPosition(root, thisTree)

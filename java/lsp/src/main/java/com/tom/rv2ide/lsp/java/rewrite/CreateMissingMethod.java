@@ -74,13 +74,14 @@ public class CreateMissingMethod extends Rewrite {
     SynchronizedTask synchronizedTask = compiler.compile(file);
     return synchronizedTask.get(task -> {
       final Trees trees = Trees.instance(task.task);
+      final CompilationUnitTree fileRoot = task.root(file);
       final FindMethodCallAt methodFinder = new FindMethodCallAt(task.task);
-      final MethodInvocationTree call = methodFinder.scan(task.root(), position);
+      final MethodInvocationTree call = methodFinder.scan(fileRoot, position);
       if (call == null || file == null) {
         return CANCELLED;
       }
 
-      final TreePath path = trees.getPath(task.root(), call);
+      final TreePath path = trees.getPath(fileRoot, call);
       final String returnType = methodFinder.getReturnType();
       Path sourceFile = file;
       MethodTree currentMethod = surroundingMethod(path);
@@ -92,7 +93,7 @@ public class CreateMissingMethod extends Rewrite {
         methodFinder.isStaticAccess();
 
       insertTextBuilder.append(
-          printMethodHeader(task, call, returnType, methodFinder.isMemberSelect(), isStatic))
+          printMethodHeader(task, fileRoot, call, returnType, methodFinder.isMemberSelect(), isStatic))
         .append(" {\n")
         .append(indent)
         .append(TODO_COMMENT)
@@ -115,7 +116,7 @@ public class CreateMissingMethod extends Rewrite {
         insertPoint = insertAtEndOfClass(task.task, compilationUnit, enclosingClass);
         sourceFile = Paths.get(compilationUnit.getSourceFile().toUri());
       } else {
-        compilationUnit = task.root();
+        compilationUnit = fileRoot;
         enclosingClass = surroundingClass(path);
         insertPoint = insertAfter(task.task, compilationUnit, surroundingMethod(path));
       }
@@ -185,13 +186,14 @@ public class CreateMissingMethod extends Rewrite {
     throw new RuntimeException("No surrounding method");
   }
 
-  private String printMethodHeader(CompileTask task, MethodInvocationTree call, String type,
+  private String printMethodHeader(CompileTask task, CompilationUnitTree root,
+                                   MethodInvocationTree call, String type,
                                    boolean isMemberSelect, boolean isStatic
   ) {
     String methodName = extractMethodName(call.getMethodSelect());
     String returnType = type == null || "(ERROR)".equals(type) ? "void" : type;
     LOG.info("Creating missing method '{}' with return type: {}", methodName, returnType);
-    String parameters = printParameters(task, call);
+    String parameters = printParameters(task, root, call);
     String modifiers = isMemberSelect ? "public" : "private";
     if (isStatic) {
       modifiers += " static";
@@ -199,11 +201,12 @@ public class CreateMissingMethod extends Rewrite {
     return modifiers + " " + returnType + " " + methodName + "(" + parameters + ")";
   }
 
-  private String printParameters(CompileTask task, MethodInvocationTree call) {
+  private String printParameters(CompileTask task, CompilationUnitTree root,
+      MethodInvocationTree call) {
     Trees trees = Trees.instance(task.task);
     StringJoiner join = new StringJoiner(", ");
     for (int i = 0; i < call.getArguments().size(); i++) {
-      TypeMirror type = trees.getTypeMirror(trees.getPath(task.root(), call.getArguments().get(i)));
+      TypeMirror type = trees.getTypeMirror(trees.getPath(root, call.getArguments().get(i)));
       String name = guessParameterName(call.getArguments().get(i), type);
       String argType = EditHelper.printType(type);
       join.add(String.format("final %s %s", argType, name));

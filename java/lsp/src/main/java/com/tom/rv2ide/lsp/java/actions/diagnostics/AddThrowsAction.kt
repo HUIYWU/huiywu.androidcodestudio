@@ -71,7 +71,7 @@ class AddThrowsAction : BaseJavaCodeAction() {
         )
     val file = data.requirePath()
     return compiler.compile(file).get { task ->
-      val needsThrow = CodeActionUtils.findMethod(task, diagnostic.range)
+      val needsThrow = CodeActionUtils.findMethod(task, file, diagnostic.range)
       val exceptionName = CodeActionUtils.extractExceptionName(diagnostic.message)
       return@get AddException(
           needsThrow.className,

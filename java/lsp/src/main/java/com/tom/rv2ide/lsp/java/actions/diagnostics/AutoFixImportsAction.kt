@@ -161,7 +161,7 @@ class AutoFixImportsAction : BaseJavaCodeAction() {
       insertText.append("import ${klass};\n")
     }
 
-    val position = compiler.compile(path).get { positionForImports(classes[0], it) }
+    val position = compiler.compile(path).get { positionForImports(classes[0], it, path) }
 
     val change = DocumentChange()
     change.file = path

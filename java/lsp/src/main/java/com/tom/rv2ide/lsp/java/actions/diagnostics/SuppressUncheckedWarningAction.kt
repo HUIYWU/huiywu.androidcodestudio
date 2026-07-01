@@ -70,7 +70,7 @@ class SuppressUncheckedWarningAction : BaseJavaCodeAction() {
         )
     val file = data.requirePath()
     return compiler.compile(file).get { task ->
-      val warnedMethod = CodeActionUtils.findMethod(task, diagnostic.range)
+      val warnedMethod = CodeActionUtils.findMethod(task, file, diagnostic.range)
       return@get AddSuppressWarningAnnotation(
           warnedMethod.className,
           warnedMethod.methodName,
