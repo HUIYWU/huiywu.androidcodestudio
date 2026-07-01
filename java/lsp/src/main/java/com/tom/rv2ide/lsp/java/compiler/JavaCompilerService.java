@@ -344,7 +344,7 @@ public class JavaCompilerService implements CompilerProvider {
               cachedCompile != null,
               cachedCompile == null || cachedCompile.roots == null ? -1 : cachedCompile.roots.size(),
               diagnostics == null ? -1 : diagnostics.size());
-          synchronizedTask.setTask(new CompileTask(cachedCompile, diagnostics));
+          synchronizedTask.setTask(new CompileTask(cachedCompile, diagnostics, false));
         });
 
     return synchronizedTask;

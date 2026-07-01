@@ -38,14 +38,23 @@ public class CompileTask implements AutoCloseable {
   public final List<Diagnostic<? extends JavaFileObject>> diagnostics;
   public final CompileBatch compileBatch;
   public final DiagnosticListenerImpl diagnosticListener;
+  private final boolean ownsCompileBatch;
 
   public CompileTask(
       @NonNull CompileBatch compileBatch, List<Diagnostic<? extends JavaFileObject>> diagnostics) {
+    this(compileBatch, diagnostics, true);
+  }
+
+  public CompileTask(
+      @NonNull CompileBatch compileBatch,
+      List<Diagnostic<? extends JavaFileObject>> diagnostics,
+      boolean ownsCompileBatch) {
     this.compileBatch = compileBatch;
     this.task = compileBatch.task;
     this.roots = compileBatch.roots;
     this.diagnostics = diagnostics;
     this.diagnosticListener = compileBatch.diagnosticListener;
+    this.ownsCompileBatch = ownsCompileBatch;
   }
 
   public CompilationUnitTree root() {
@@ -74,7 +83,7 @@ public class CompileTask implements AutoCloseable {
   }
   @Override
   public void close() {
-    if (compileBatch != null) {
+    if (ownsCompileBatch && compileBatch != null) {
       compileBatch.close();
     }
   }
