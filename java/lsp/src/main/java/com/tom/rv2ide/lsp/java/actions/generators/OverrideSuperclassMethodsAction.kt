@@ -259,14 +259,25 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       val imports = mutableSetOf<String>()
 
       val typeFinder = FindTypeDeclarationAt(task.task)
-      val classTree = typeFinder.scan(fileRoot, position) ?: run {
-        log.warn("[TRACE_OVERRIDE] overrideMethods classTree not found file={} position={}", file, position)
-        return@run
-      }
-      val thisClass = trees.getElement(typeFinder.path) as? TypeElement ?: run {
-        log.warn("[TRACE_OVERRIDE] overrideMethods TypeElement not found file={} position={} path={}", file, position, typeFinder.path)
-        return@run
-      }
+      val classTree: openjdk.source.tree.ClassTree =
+          typeFinder.scan(fileRoot, position) ?: run {
+            log.warn(
+                "[TRACE_OVERRIDE] overrideMethods classTree not found file={} position={}",
+                file,
+                position,
+            )
+            return@run
+          }
+      val thisClass: TypeElement =
+          (trees.getElement(typeFinder.path) as? TypeElement) ?: run {
+            log.warn(
+                "[TRACE_OVERRIDE] overrideMethods TypeElement not found file={} position={} path={}",
+                file,
+                position,
+                typeFinder.path,
+            )
+            return@run
+          }
       val indent = EditHelper.indent(task.task, fileRoot, classTree) + EditorPreferences.tabSize
       val fileImports = fileRoot.imports.map { it.qualifiedIdentifier.toString() }.toSet()
       val filePackage = fileRoot.`package`.packageName.toString()
