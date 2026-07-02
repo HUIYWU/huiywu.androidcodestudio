@@ -22,6 +22,7 @@ import com.tom.rv2ide.lsp.java.compiler.CompileTask;
 import com.tom.rv2ide.lsp.java.compiler.CompilerProvider;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
 import com.tom.rv2ide.lsp.java.utils.EditHelper;
+import com.tom.rv2ide.lsp.java.utils.FindHelper;
 import com.tom.rv2ide.lsp.java.utils.MethodStubGenerator;
 
 import com.tom.rv2ide.lsp.java.visitors.FindAnonymousTypeDeclaration;
@@ -170,7 +171,10 @@ public class ImplementAbstractMethods extends Rewrite {
                 continue;
               }
             }
-            String signatureKey = method.getSimpleName() + "#" + method.getParameters().size();
+            String signatureKey =
+                method.getSimpleName()
+                    + "#"
+                    + String.join(",", FindHelper.erasedParameterTypes(task, method));
             if (!addedMethods.add(signatureKey)) {
               continue;
             }

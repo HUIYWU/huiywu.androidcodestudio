@@ -36,6 +36,7 @@ import com.tom.rv2ide.lsp.java.utils.FindHelper
 import com.tom.rv2ide.lsp.java.utils.JavaParserUtils
 import com.tom.rv2ide.lsp.java.utils.MethodPtr
 import com.tom.rv2ide.lsp.java.utils.MethodStubGenerator
+import com.tom.rv2ide.lsp.java.visitors.FindAnonymousTypeDeclaration
 import com.tom.rv2ide.lsp.java.visitors.FindTypeDeclarationAt
 import com.tom.rv2ide.models.Position
 import com.tom.rv2ide.preferences.internal.EditorPreferences
@@ -123,19 +124,31 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       this.position = start
       val typeFinder = FindTypeDeclarationAt(task.task)
       var type = typeFinder.scan(fileRoot, start)
+      var classPath = typeFinder.path
       if (type == null) {
         type = typeFinder.scan(fileRoot, end)
+        classPath = typeFinder.path
         position = end
       }
 
-      if (type == null) {
+      if (type == null || classPath == null) {
+        val anonymousFinder = FindAnonymousTypeDeclaration(task.task, fileRoot)
+        type = anonymousFinder.scan(fileRoot, start)
+        classPath = anonymousFinder.storedPath
+        if (type == null || classPath == null) {
+          type = anonymousFinder.scan(fileRoot, end)
+          classPath = anonymousFinder.storedPath
+          position = end
+        }
+      }
+
+      if (type == null || classPath == null) {
         return@get false
       }
 
       val overridable = mutableListOf<MethodPtr>()
       val trees = Trees.instance(task.task)
       val elements = task.task.elements
-      val classPath = typeFinder.path
       val element = trees.getElement(classPath) as TypeElement
 
       for (member in elements.getAllMembers(element)) {
@@ -232,12 +245,18 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       val imports = mutableSetOf<String>()
 
       val typeFinder = FindTypeDeclarationAt(task.task)
-      val classTreeCandidate = typeFinder.scan(fileRoot, position)
-      if (classTreeCandidate == null) {
+      var classTreeCandidate = typeFinder.scan(fileRoot, position)
+      var classPath = typeFinder.path
+      if (classTreeCandidate == null || classPath == null) {
+        val anonymousFinder = FindAnonymousTypeDeclaration(task.task, fileRoot)
+        classTreeCandidate = anonymousFinder.scan(fileRoot, position)
+        classPath = anonymousFinder.storedPath
+      }
+      if (classTreeCandidate == null || classPath == null) {
         return@run
       }
       val classTree: openjdk.source.tree.ClassTree = classTreeCandidate
-      val thisClassCandidate = trees.getElement(typeFinder.path) as? TypeElement
+      val thisClassCandidate = trees.getElement(classPath) as? TypeElement
       if (thisClassCandidate == null) {
         return@run
       }
@@ -258,12 +277,11 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
 
         val thisDeclaredType = thisClass.asType() as DeclaredType
         val executableType = types.asMemberOf(thisDeclaredType, superMethod) as ExecutableType
-        val source = findSource(compiler, task, superMethod)
         val generated =
             MethodStubGenerator.generate(
                 method = superMethod,
                 parameterizedType = executableType,
-                source = source,
+                source = null,
                 bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
             )
 
