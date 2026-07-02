@@ -27,7 +27,7 @@ import com.tom.rv2ide.lsp.java.actions.BaseJavaCodeAction
 import com.tom.rv2ide.lsp.java.models.DiagnosticCode
 import com.tom.rv2ide.lsp.java.rewrite.AddException
 import com.tom.rv2ide.lsp.java.utils.CodeActionUtils
-import com.tom.rv2ide.lsp.java.visitors.FindNameAt
+import com.tom.rv2ide.lsp.java.visitors.FindPathAt
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.resources.R
@@ -114,7 +114,7 @@ class AddThrowsAction : BaseJavaCodeAction() {
     val root = task.root(file)
     val position =
         root.lineMap.getPosition(range.start.line + 1L, range.start.column + 1L)
-    val path = FindNameAt(task).scan(root, position) ?: return ""
+    val path = FindPathAt(task.task).scan(root, position) ?: return ""
     val trees = Trees.instance(task.task)
     val targetPath = findThrowingSite(path) ?: return ""
     val target = resolveInvocationTarget(trees, targetPath)
