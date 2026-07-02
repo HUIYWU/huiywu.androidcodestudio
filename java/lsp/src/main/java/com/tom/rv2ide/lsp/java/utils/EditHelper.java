@@ -168,16 +168,36 @@ public class EditHelper {
     int line = (int) lines.getLineNumber(end);
     return new Position(line, 0);
   }
-
   public static Position insertAtEndOfClass(JavacTask task, CompilationUnitTree root, ClassTree leaf
   ) {
     SourcePositions pos = Trees.instance(task).getSourcePositions();
     LineMap lines = root.getLineMap();
     long end = pos.getEndPosition(root, leaf);
     int line = (int) lines.getLineNumber(end);
-    int column = (int) lines.getColumnNumber(end);
-    return new Position(line - 1, column - 2);
+    long lineStart = lines.getStartPosition(line);
+    int braceColumn = (int) lines.getColumnNumber(end) - 2;
+    int indentColumn = 0;
+    try {
+      CharSequence source = root.getSourceFile().getCharContent(true);
+      int index = (int) lineStart;
+      int max = source.length();
+      while (index < max) {
+        char ch = source.charAt(index);
+        if (ch == '\n' || ch == '\r') {
+          break;
+        }
+        if (!Character.isWhitespace(ch)) {
+          indentColumn = index - (int) lineStart;
+          break;
+        }
+        index++;
+      }
+    } catch (IOException ignored) {
+    }
+    int column = Math.max(indentColumn, Math.max(0, braceColumn));
+    return new Position(line - 1, column);
   }
+
 
   private static String printParameters(final ExecutableType method, final MethodTree source) {
     StringJoiner join = new StringJoiner(", ");

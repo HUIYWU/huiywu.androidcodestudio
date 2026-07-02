@@ -158,8 +158,7 @@ public class ImplementAbstractMethods extends Rewrite {
           final Set<String> imports = new TreeSet<>();
           final Set<String> addedMethods = new HashSet<>();
           Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
-          insert = new Position(insert.getLine(), 0);
-          int indent = EditorPreferences.INSTANCE.getTabSize();
+          int indent = insert.getColumn() + EditorPreferences.INSTANCE.getTabSize();
           for (Element member : elements.getAllMembers(thisClass)) {
             if (member.getKind() != ElementKind.METHOD || !member.getModifiers().contains(Modifier.ABSTRACT)) {
               continue;
@@ -212,11 +211,11 @@ public class ImplementAbstractMethods extends Rewrite {
                   generated.getDeclaration());
             }
             imports.addAll(generated.getImports());
-            String baseIndent = EditorUtilKt.indentationString(indent);
+            String memberIndent = EditorUtilKt.indentationString(indent + EditorPreferences.INSTANCE.getTabSize());
             String text = generated.getRenderedText();
             insertText.append("\n");
-            insertText.append(baseIndent);
-            insertText.append(text.replace("\n", "\n" + baseIndent));
+            insertText.append(memberIndent);
+            insertText.append(text.replace("\n", "\n" + memberIndent));
             insertText.append("\n");
           }
 
