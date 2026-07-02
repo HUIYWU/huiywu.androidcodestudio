@@ -26,7 +26,6 @@ import com.tom.rv2ide.lsp.java.parser.ParseTask;
 import com.tom.rv2ide.lsp.models.TextEdit;
 import com.tom.rv2ide.models.Position;
 import com.tom.rv2ide.models.Range;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Map;
@@ -61,38 +60,23 @@ public class ConvertFieldToBlock extends Rewrite {
     if (!isExpressionStatement(expression)) {
       return CANCELLED;
     }
+
     long start = pos.getStartPosition(task.root, variable);
-    long end = pos.getStartPosition(task.root, expression);
+    long end = pos.getEndPosition(task.root, variable);
     int startLine = (int) lines.getLineNumber(start);
     int startColumn = (int) lines.getColumnNumber(start);
     Position startPos = new Position(startLine - 1, startColumn - 1);
     int endLine = (int) lines.getLineNumber(end);
     int endColumn = (int) lines.getColumnNumber(end);
     Position endPos = new Position(endLine - 1, endColumn - 1);
-    Range deleteLhs = new Range(startPos, endPos);
-    TextEdit fixLhs = new TextEdit(deleteLhs, "{ ");
+
+    Range replaceVariable = new Range(startPos, endPos);
+    String replacement = "{ " + expression + "; }";
     if (variable.getModifiers().getFlags().contains(Modifier.STATIC)) {
-      fixLhs.setNewText("static { ");
+      replacement = "static { " + expression + "; }";
     }
-    long right = pos.getEndPosition(task.root, variable);
-    long insertOffset = right;
-    try {
-      CharSequence contents = task.root.getSourceFile().getCharContent(true);
-      for (long i = right - 1; i >= end; i--) {
-        if (contents.charAt((int) i) == ';') {
-          insertOffset = i;
-          break;
-        }
-      }
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-    int rightLine = (int) lines.getLineNumber(insertOffset);
-    int rightColumn = (int) lines.getColumnNumber(insertOffset);
-    Position rightPos = new Position(rightLine - 1, rightColumn - 1);
-    Range insertRight = new Range(rightPos, rightPos);
-    TextEdit fixRhs = new TextEdit(insertRight, " }");
-    TextEdit[] edits = {fixLhs, fixRhs};
-    return Collections.singletonMap(file, edits);
+
+    TextEdit edit = new TextEdit(replaceVariable, replacement);
+    return Collections.singletonMap(file, new TextEdit[] {edit});
   }
 }
