@@ -41,7 +41,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.StringJoiner;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import jdkx.lang.model.element.Element;
@@ -121,7 +120,7 @@ public class ImplementAbstractMethods extends Rewrite {
     return synchronizedTask.get(
         task -> {
           final CompilationUnitTree fileRoot = task.root(file);
-          StringJoiner insertText = new StringJoiner("\n");
+          StringBuilder insertText = new StringBuilder();
           Elements elements = task.task.getElements();
           Trees trees = Trees.instance(task.task);
           TypeElement superType = elements.getTypeElement(this.superTypeName);
@@ -212,9 +211,11 @@ public class ImplementAbstractMethods extends Rewrite {
                   generated.getDeclaration());
             }
             imports.addAll(generated.getImports());
-            String text = "\n" + generated.getRenderedText();
+            String text = generated.getRenderedText();
             text = text.replaceAll("\n", "\n" + EditorUtilKt.indentationString(indent));
-            insertText.add(text);
+            insertText.append("\n");
+            insertText.append(text);
+            insertText.append("\n");
           }
 
           if (insertText.length() == 0) {
@@ -227,8 +228,11 @@ public class ImplementAbstractMethods extends Rewrite {
           }
 
           Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("ImplementAbstractMethods final insert text={}", insertText);
+          }
           final List<TextEdit> edits = new ArrayList<>();
-          edits.add(new TextEdit(new Range(insert, insert), insertText + "\n"));
+          edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
           addImports(compiler, task, file, imports, edits);
 
           return Collections.singletonMap(file, edits.toArray(new TextEdit[0]));
