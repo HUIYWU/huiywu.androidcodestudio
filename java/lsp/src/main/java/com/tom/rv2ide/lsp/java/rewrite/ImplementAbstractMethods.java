@@ -122,8 +122,20 @@ public class ImplementAbstractMethods extends Rewrite {
           StringJoiner insertText = new StringJoiner("\n");
           Elements elements = task.task.getElements();
           Trees trees = Trees.instance(task.task);
-          TypeElement thisClass = elements.getTypeElement(this.className);
           TypeElement superType = elements.getTypeElement(this.superTypeName);
+
+          ClassTree thisTree = getClassTree(task, file);
+          TypeElement thisClass = null;
+          if (thisTree != null) {
+            thisClass = (TypeElement) trees.getElement(trees.getPath(fileRoot, thisTree));
+          }
+          if (thisTree == null) {
+            thisClass = elements.getTypeElement(this.className);
+            if (thisClass != null) {
+              thisTree = trees.getTree(thisClass);
+            }
+          }
+
           if (LOG.isDebugEnabled()) {
             LOG.debug(
                 "ImplementAbstractMethods type lookup className={} type={} superTypeName={} superType={}",
@@ -131,14 +143,6 @@ public class ImplementAbstractMethods extends Rewrite {
                 thisClass,
                 this.superTypeName,
                 superType);
-          }
-
-          ClassTree thisTree = getClassTree(task, file);
-          if (thisTree == null && thisClass != null) {
-            thisTree = trees.getTree(thisClass);
-          }
-
-          if (LOG.isDebugEnabled()) {
             LOG.debug("ImplementAbstractMethods class tree position={} tree={}", this.position, thisTree);
           }
           if (thisTree == null || thisClass == null || superType == null) {
