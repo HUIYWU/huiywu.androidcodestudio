@@ -298,9 +298,10 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
 
         val method = generated.declaration
         val newImports = generated.imports
+        val baseIndent = indentationString(indent)
         sb.append("\n")
-        sb.append(generated.renderedText)
-        sb.replace(Regex(Regex.escape("\n")), "\n${indentationString(indent)}")
+        sb.append(baseIndent)
+        sb.append(generated.renderedText.replace("\n", "\n$baseIndent"))
         sb.append("\n")
 
         newImports.removeIf { importName ->

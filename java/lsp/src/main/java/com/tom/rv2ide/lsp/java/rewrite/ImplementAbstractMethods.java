@@ -211,10 +211,11 @@ public class ImplementAbstractMethods extends Rewrite {
                   generated.getDeclaration());
             }
             imports.addAll(generated.getImports());
+            String baseIndent = EditorUtilKt.indentationString(indent);
             String text = generated.getRenderedText();
-            text = text.replaceAll("\n", "\n" + EditorUtilKt.indentationString(indent));
             insertText.append("\n");
-            insertText.append(text);
+            insertText.append(baseIndent);
+            insertText.append(text.replace("\n", "\n" + baseIndent));
             insertText.append("\n");
           }
 
