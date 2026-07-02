@@ -27,16 +27,17 @@ import com.tom.rv2ide.lsp.java.actions.BaseJavaCodeAction
 import com.tom.rv2ide.lsp.java.models.DiagnosticCode
 import com.tom.rv2ide.lsp.java.rewrite.AddException
 import com.tom.rv2ide.lsp.java.utils.CodeActionUtils
-import com.tom.rv2ide.lsp.java.visitors.FindInvocationAt
+import com.tom.rv2ide.lsp.java.visitors.FindNameAt
 import com.tom.rv2ide.lsp.models.DiagnosticItem
-import com.tom.rv2ide.progress.ICancelChecker
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.resources.R
 import jdkx.lang.model.element.ExecutableElement
 import jdkx.lang.model.element.TypeElement
 import jdkx.lang.model.type.DeclaredType
+import openjdk.source.tree.ExpressionTree
 import openjdk.source.tree.MethodInvocationTree
 import openjdk.source.tree.NewClassTree
+import openjdk.source.tree.ThrowTree
 import openjdk.source.util.TreePath
 import openjdk.source.util.Trees
 import org.slf4j.LoggerFactory
@@ -113,22 +114,29 @@ class AddThrowsAction : BaseJavaCodeAction() {
     val root = task.root(file)
     val position =
         root.lineMap.getPosition(range.start.line + 1L, range.start.column + 1L)
-    val cancelChecker =
-        object : ICancelChecker {
-          override fun abortIfCancelled() = Unit
-
-          override fun cancel() = Unit
-
-          override fun isCancelled() = false
-        }
-    val path = FindInvocationAt(task.task, cancelChecker).scan(root, position) ?: return ""
+    val path = FindNameAt(task).scan(root, position) ?: return ""
     val trees = Trees.instance(task.task)
-    val target = resolveInvocationTarget(trees, path) ?: return ""
-    val declaredThrown = target.thrownTypes.mapNotNull { (it as? DeclaredType)?.asElement() as? TypeElement }
-    if (declaredThrown.isEmpty()) {
-      return ""
+    val targetPath = findThrowingSite(path) ?: return ""
+    val target = resolveInvocationTarget(trees, targetPath)
+    val declaredThrown = target?.thrownTypes?.mapNotNull { (it as? DeclaredType)?.asElement() as? TypeElement }
+    if (!declaredThrown.isNullOrEmpty()) {
+      return declaredThrown.first().qualifiedName.toString()
     }
-    return declaredThrown.first().qualifiedName.toString()
+    if (targetPath.leaf is ThrowTree) {
+      return resolveThrownExpressionType(trees, targetPath.leaf.expression, targetPath)
+    }
+    return ""
+  }
+
+  private fun findThrowingSite(path: TreePath): TreePath? {
+    var current: TreePath? = path
+    while (current != null) {
+      when (current.leaf) {
+        is MethodInvocationTree, is NewClassTree, is ThrowTree -> return current
+      }
+      current = current.parentPath
+    }
+    return null
   }
 
   private fun resolveInvocationTarget(
@@ -140,8 +148,19 @@ class AddThrowsAction : BaseJavaCodeAction() {
         when (leaf) {
           is MethodInvocationTree -> TreePath(path, leaf.methodSelect)
           is NewClassTree -> TreePath(path, leaf.identifier)
-          else -> path
+          else -> return null
         }
     return trees.getElement(targetPath) as? ExecutableElement
+  }
+
+  private fun resolveThrownExpressionType(
+      trees: Trees,
+      expression: ExpressionTree,
+      path: TreePath,
+  ): String {
+    val expressionPath = TreePath(path, expression)
+    val type = trees.getTypeMirror(expressionPath) as? DeclaredType ?: return ""
+    val element = type.asElement() as? TypeElement ?: return ""
+    return element.qualifiedName.toString()
   }
 }
