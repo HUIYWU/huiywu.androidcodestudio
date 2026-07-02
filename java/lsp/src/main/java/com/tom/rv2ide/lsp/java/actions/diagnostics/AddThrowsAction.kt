@@ -27,9 +27,17 @@ import com.tom.rv2ide.lsp.java.actions.BaseJavaCodeAction
 import com.tom.rv2ide.lsp.java.models.DiagnosticCode
 import com.tom.rv2ide.lsp.java.rewrite.AddException
 import com.tom.rv2ide.lsp.java.utils.CodeActionUtils
+import com.tom.rv2ide.lsp.java.visitors.FindInvocationAt
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.resources.R
+import jdkx.lang.model.element.ExecutableElement
+import jdkx.lang.model.element.TypeElement
+import jdkx.lang.model.type.DeclaredType
+import openjdk.source.tree.MethodInvocationTree
+import openjdk.source.tree.NewClassTree
+import openjdk.source.util.TreePath
+import openjdk.source.util.Trees
 import org.slf4j.LoggerFactory
 
 /** @author Akash Yadav */
@@ -72,7 +80,10 @@ class AddThrowsAction : BaseJavaCodeAction() {
     val file = data.requirePath()
     return compiler.compile(file).get { task ->
       val needsThrow = CodeActionUtils.findMethod(task, file, diagnostic.range)
-      val exceptionName = CodeActionUtils.extractExceptionName(diagnostic.message)
+      val exceptionName = findUnhandledExceptionType(task, file, diagnostic.range)
+      if (exceptionName.isBlank()) {
+        return@get false
+      }
       return@get AddException(
           needsThrow.className,
           needsThrow.methodName,
@@ -91,5 +102,38 @@ class AddThrowsAction : BaseJavaCodeAction() {
     }
 
     performCodeAction(data, result)
+  }
+
+  private fun findUnhandledExceptionType(
+      task: com.tom.rv2ide.lsp.java.compiler.CompileTask,
+      file: java.nio.file.Path,
+      range: com.tom.rv2ide.models.Range,
+  ): String {
+    val root = task.root(file)
+    val position =
+        root.lineMap.getPosition(range.start.line + 1L, range.start.column + 1L)
+    val path = FindInvocationAt(task.task, this).scan(root, position) ?: return ""
+    val trees = Trees.instance(task.task)
+    val target = resolveInvocationTarget(trees, path) ?: return ""
+    val declaredThrown = target.thrownTypes.mapNotNull { (it as? DeclaredType)?.asElement() as? TypeElement }
+    if (declaredThrown.isEmpty()) {
+      return ""
+    }
+    val currentMethod = CodeActionUtils.findMethod(task, file, range)
+    return declaredThrown.first().qualifiedName.toString()
+  }
+
+  private fun resolveInvocationTarget(
+      trees: Trees,
+      path: TreePath,
+  ): ExecutableElement? {
+    val leaf = path.leaf
+    val targetPath =
+        when (leaf) {
+          is MethodInvocationTree -> TreePath(path, leaf.methodSelect)
+          is NewClassTree -> TreePath(path, leaf.identifier)
+          else -> path
+        }
+    return trees.getElement(targetPath) as? ExecutableElement
   }
 }
