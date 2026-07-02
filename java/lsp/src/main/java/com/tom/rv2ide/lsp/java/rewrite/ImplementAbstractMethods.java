@@ -157,8 +157,8 @@ public class ImplementAbstractMethods extends Rewrite {
           }
           final Set<String> imports = new TreeSet<>();
           final Set<String> addedMethods = new HashSet<>();
-          int indent = EditHelper.indent(task.task, fileRoot, thisTree)
-              + EditorPreferences.INSTANCE.getTabSize();
+          Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
+          int indent = Math.max(0, insert.getColumn() - EditorPreferences.INSTANCE.getTabSize());
           for (Element member : elements.getAllMembers(thisClass)) {
             if (member.getKind() != ElementKind.METHOD || !member.getModifiers().contains(Modifier.ABSTRACT)) {
               continue;
@@ -228,9 +228,8 @@ public class ImplementAbstractMethods extends Rewrite {
             return CANCELLED;
           }
 
-          Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
           if (LOG.isDebugEnabled()) {
-            LOG.debug("ImplementAbstractMethods final insert text={}", insertText);
+            LOG.debug("ImplementAbstractMethods insert position={} indent={} final insert text={}", insert, indent, insertText);
           }
           final List<TextEdit> edits = new ArrayList<>();
           edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
