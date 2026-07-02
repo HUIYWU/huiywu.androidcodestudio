@@ -27,10 +27,12 @@ import com.tom.rv2ide.lsp.java.actions.BaseJavaCodeAction
 import com.tom.rv2ide.lsp.java.models.DiagnosticCode
 import com.tom.rv2ide.lsp.java.rewrite.AddException
 import com.tom.rv2ide.lsp.java.utils.CodeActionUtils
+import com.tom.rv2ide.lsp.java.utils.FindHelper
 import com.tom.rv2ide.lsp.java.visitors.FindPathAt
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.resources.R
+import jdkx.lang.model.element.ElementKind
 import jdkx.lang.model.element.ExecutableElement
 import jdkx.lang.model.element.TypeElement
 import jdkx.lang.model.type.DeclaredType
@@ -163,12 +165,14 @@ class AddThrowsAction : BaseJavaCodeAction() {
     if (IdeLogConfig.shouldLogDebug()) {
       log.debug("AddThrowsAction throwingSite kind={} tree={}", targetPath.leaf.kind, targetPath.leaf)
     }
-    val target = resolveInvocationTarget(trees, targetPath)
+    val target = resolveInvocationTarget(task, trees, targetPath)
     val declaredThrown = target?.thrownTypes?.mapNotNull { (it as? DeclaredType)?.asElement() as? TypeElement }
     if (IdeLogConfig.shouldLogDebug()) {
       log.debug(
-          "AddThrowsAction invocationTarget={} thrownTypes={}",
+          "AddThrowsAction invocationTarget={} kind={} params={} thrownTypes={}",
           target,
+          target?.kind,
+          target?.parameters?.map { it.asType().toString() } ?: emptyList<String>(),
           declaredThrown?.map { it.qualifiedName.toString() } ?: emptyList<String>(),
       )
     }
@@ -234,17 +238,42 @@ class AddThrowsAction : BaseJavaCodeAction() {
   }
 
   private fun resolveInvocationTarget(
+      task: com.tom.rv2ide.lsp.java.compiler.CompileTask,
       trees: Trees,
       path: TreePath,
   ): ExecutableElement? {
     val leaf = path.leaf
-    val targetPath =
-        when (leaf) {
-          is MethodInvocationTree -> TreePath(path, leaf.methodSelect)
-          is NewClassTree -> TreePath(path, leaf.identifier)
-          else -> return null
-        }
-    return trees.getElement(targetPath) as? ExecutableElement
+    return when (leaf) {
+      is MethodInvocationTree -> {
+        val targetPath = TreePath(path, leaf.methodSelect)
+        trees.getElement(targetPath) as? ExecutableElement
+      }
+      is NewClassTree -> resolveConstructorTarget(task, trees, path, leaf)
+      else -> null
+    }
+  }
+
+  private fun resolveConstructorTarget(
+      task: com.tom.rv2ide.lsp.java.compiler.CompileTask,
+      trees: Trees,
+      path: TreePath,
+      leaf: NewClassTree,
+  ): ExecutableElement? {
+    val identifierPath = TreePath(path, leaf.identifier)
+    val type = trees.getElement(identifierPath) as? TypeElement ?: return null
+    val argumentTypes =
+        leaf.arguments.mapNotNull { argument -> trees.getTypeMirror(TreePath(path, argument))?.toString() }.toTypedArray()
+    return task.task.elements.getAllMembers(type).firstNotNullOfOrNull { member ->
+      if (member.kind != ElementKind.CONSTRUCTOR) {
+        return@firstNotNullOfOrNull null
+      }
+      val constructor = member as ExecutableElement
+      if (FindHelper.isSameMethod(task, constructor, type.qualifiedName.toString(), type.simpleName.toString(), argumentTypes)) {
+        constructor
+      } else {
+        null
+      }
+    }
   }
 
   private fun resolveThrownExpressionType(
