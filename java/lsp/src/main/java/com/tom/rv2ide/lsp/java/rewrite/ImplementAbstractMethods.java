@@ -36,6 +36,7 @@ import com.tom.rv2ide.preferences.utils.EditorUtilKt;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -155,41 +156,60 @@ public class ImplementAbstractMethods extends Rewrite {
             return CANCELLED;
           }
           final Set<String> imports = new TreeSet<>();
+          final Set<String> addedMethods = new HashSet<>();
           int indent = EditHelper.indent(task.task, fileRoot, thisTree)
               + EditorPreferences.INSTANCE.getTabSize();
           for (Element member : elements.getAllMembers(thisClass)) {
-            if (member.getKind() == ElementKind.METHOD
-                && member.getModifiers().contains(Modifier.ABSTRACT)
-                && member.getEnclosingElement().equals(superType)) {
-              ExecutableElement method = (ExecutableElement) member;
-              final ExecutableType executableType;
-              if (thisClass.asType() instanceof jdkx.lang.model.type.DeclaredType) {
-                executableType =
-                    (ExecutableType)
-                        task.task.getTypes().asMemberOf(
-                            (jdkx.lang.model.type.DeclaredType) thisClass.asType(), method);
-              } else {
-                final openjdk.source.util.TreePath methodPath = trees.getPath(method);
-                if (methodPath == null) {
-                  LOG.warn(
-                      "ImplementAbstractMethods could not resolve method path. className={} method={}",
-                      this.className,
-                      method);
-                  continue;
-                }
-                executableType = (ExecutableType) trees.getTypeMirror(methodPath);
-              }
-              final MethodStubGenerator.GeneratedMethod generated =
-                  MethodStubGenerator.generate(
-                      method,
-                      executableType,
-                      trees.getTree(method),
-                      MethodStubGenerator.BodyStrategy.IMPLEMENT_ABSTRACT);
-              imports.addAll(generated.getImports());
-              String text = "\n" + generated.getRenderedText();
-              text = text.replaceAll("\n", "\n" + EditorUtilKt.indentationString(indent));
-              insertText.add(text);
+            if (member.getKind() != ElementKind.METHOD || !member.getModifiers().contains(Modifier.ABSTRACT)) {
+              continue;
             }
+            ExecutableElement method = (ExecutableElement) member;
+            if (method.getEnclosingElement() instanceof TypeElement) {
+              TypeElement owner = (TypeElement) method.getEnclosingElement();
+              if (owner.getQualifiedName().contentEquals("java.lang.Object")) {
+                continue;
+              }
+            }
+            String signatureKey = method.getSimpleName() + "#" + method.getParameters().size();
+            if (!addedMethods.add(signatureKey)) {
+              continue;
+            }
+            final ExecutableType executableType;
+            if (thisClass.asType() instanceof jdkx.lang.model.type.DeclaredType) {
+              executableType =
+                  (ExecutableType)
+                      task.task.getTypes().asMemberOf(
+                          (jdkx.lang.model.type.DeclaredType) thisClass.asType(), method);
+            } else {
+              final openjdk.source.util.TreePath methodPath = trees.getPath(method);
+              if (methodPath == null) {
+                LOG.warn(
+                    "ImplementAbstractMethods could not resolve method path. className={} method={}",
+                    this.className,
+                    method);
+                continue;
+              }
+              executableType = (ExecutableType) trees.getTypeMirror(methodPath);
+            }
+            final MethodStubGenerator.GeneratedMethod generated =
+                MethodStubGenerator.generate(
+                    method,
+                    executableType,
+                    null,
+                    MethodStubGenerator.BodyStrategy.IMPLEMENT_ABSTRACT);
+            imports.addAll(generated.getImports());
+            String text = "\n" + generated.getRenderedText();
+            text = text.replaceAll("\n", "\n" + EditorUtilKt.indentationString(indent));
+            insertText.add(text);
+          }
+
+          if (insertText.length() == 0) {
+            LOG.warn(
+                "ImplementAbstractMethods found no abstract methods to generate. className={} superTypeName={} position={}",
+                this.className,
+                this.superTypeName,
+                this.position);
+            return CANCELLED;
           }
 
           Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
