@@ -29,6 +29,7 @@ import com.tom.rv2ide.lsp.java.rewrite.AddException
 import com.tom.rv2ide.lsp.java.utils.CodeActionUtils
 import com.tom.rv2ide.lsp.java.visitors.FindInvocationAt
 import com.tom.rv2ide.lsp.models.DiagnosticItem
+import com.tom.rv2ide.progress.ICancelChecker
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.resources.R
 import jdkx.lang.model.element.ExecutableElement
@@ -112,14 +113,17 @@ class AddThrowsAction : BaseJavaCodeAction() {
     val root = task.root(file)
     val position =
         root.lineMap.getPosition(range.start.line + 1L, range.start.column + 1L)
-    val path = FindInvocationAt(task.task, this).scan(root, position) ?: return ""
+    val cancelChecker =
+        object : ICancelChecker {
+          override fun abortIfCancelled() = Unit
+        }
+    val path = FindInvocationAt(task.task, cancelChecker).scan(root, position) ?: return ""
     val trees = Trees.instance(task.task)
     val target = resolveInvocationTarget(trees, path) ?: return ""
     val declaredThrown = target.thrownTypes.mapNotNull { (it as? DeclaredType)?.asElement() as? TypeElement }
     if (declaredThrown.isEmpty()) {
       return ""
     }
-    val currentMethod = CodeActionUtils.findMethod(task, file, range)
     return declaredThrown.first().qualifiedName.toString()
   }
 
