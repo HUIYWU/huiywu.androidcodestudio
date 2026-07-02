@@ -287,6 +287,14 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
                 source = null,
                 bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
             )
+        if (IdeLogConfig.shouldLogDebug()) {
+          log.debug(
+              "OverrideSuperclassMethods generated method={} rendered={} declaration={}",
+              superMethod,
+              generated.renderedText,
+              generated.declaration,
+          )
+        }
 
         val method = generated.declaration
         val newImports = generated.imports

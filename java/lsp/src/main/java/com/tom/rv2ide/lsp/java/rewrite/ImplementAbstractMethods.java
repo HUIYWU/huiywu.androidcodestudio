@@ -145,7 +145,7 @@ public class ImplementAbstractMethods extends Rewrite {
                 thisClass,
                 this.superTypeName,
                 superType);
-            LOG.debug("ImplementAbstractMethods class tree position={} tree={}", this.position, thisTree);
+            LOG.debug("ImplementAbstractMethods class tree position={} kind={}", this.position, thisTree.getKind());
           }
           if (thisTree == null || thisClass == null || superType == null) {
             LOG.warn(
@@ -204,6 +204,13 @@ public class ImplementAbstractMethods extends Rewrite {
                     executableType,
                     null,
                     MethodStubGenerator.BodyStrategy.IMPLEMENT_ABSTRACT);
+            if (LOG.isDebugEnabled()) {
+              LOG.debug(
+                  "ImplementAbstractMethods generated method={} rendered={} declaration={}",
+                  method,
+                  generated.getRenderedText(),
+                  generated.getDeclaration());
+            }
             imports.addAll(generated.getImports());
             String text = "\n" + generated.getRenderedText();
             text = text.replaceAll("\n", "\n" + EditorUtilKt.indentationString(indent));
