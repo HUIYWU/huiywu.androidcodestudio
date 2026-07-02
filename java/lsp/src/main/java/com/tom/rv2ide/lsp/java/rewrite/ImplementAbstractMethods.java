@@ -69,6 +69,14 @@ public class ImplementAbstractMethods extends Rewrite {
     Object[] args = diagnostic.getArgs();
     String className = args[0].toString();
 
+    if (LOG.isDebugEnabled()) {
+      LOG.debug(
+          "ImplementAbstractMethods ctor code={} start={} args={}",
+          diagnostic.getCode(),
+          diagnostic.getStartPosition(),
+          java.util.Arrays.toString(args));
+    }
+
     if (!className.contains("<anonymous")) {
       this.className = className;
       this.classFile = className;
@@ -80,12 +88,24 @@ public class ImplementAbstractMethods extends Rewrite {
       this.className = args[2].toString();
       this.position = diagnostic.getStartPosition();
     }
+
+    if (LOG.isDebugEnabled()) {
+      LOG.debug(
+          "ImplementAbstractMethods resolved className={} classFile={} position={}",
+          this.className,
+          this.classFile,
+          this.position);
+    }
   }
 
   @NonNull
   @Override
   public Map<Path, TextEdit[]> rewrite(@NonNull CompilerProvider compiler) {
     final Path file = compiler.findTypeDeclaration(this.classFile);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("ImplementAbstractMethods rewrite className={} classFile={} file={}", this.className,
+          this.classFile, file);
+    }
     if (file == CompilerProvider.NOT_FOUND) {
       LOG.warn("Unable to find source file for class: {} classFile={}", this.className,
           this.classFile);
@@ -100,10 +120,16 @@ public class ImplementAbstractMethods extends Rewrite {
           Elements elements = task.task.getElements();
           Trees trees = Trees.instance(task.task);
           TypeElement thisClass = elements.getTypeElement(this.className);
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("ImplementAbstractMethods type lookup className={} type={}", this.className, thisClass);
+          }
 
           ClassTree thisTree = getClassTree(task, file);
           if (thisTree == null) {
             thisTree = trees.getTree(thisClass);
+          }
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("ImplementAbstractMethods class tree position={} tree={}", this.position, thisTree);
           }
 
           final Set<String> imports = new TreeSet<>();
