@@ -123,7 +123,8 @@ class AddThrowsAction : BaseJavaCodeAction() {
       return declaredThrown.first().qualifiedName.toString()
     }
     if (targetPath.leaf is ThrowTree) {
-      return resolveThrownExpressionType(trees, targetPath.leaf.expression, targetPath)
+      val throwTree = targetPath.leaf as ThrowTree
+      return resolveThrownExpressionType(trees, throwTree.expression, targetPath)
     }
     return ""
   }
