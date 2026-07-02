@@ -63,6 +63,7 @@ public class ImplementAbstractMethods extends Rewrite {
   private static final Logger LOG = LoggerFactory.getLogger(ImplementAbstractMethods.class);
   private final String className;
   private final String classFile;
+  private final String superTypeName;
   private final long position;
 
   public ImplementAbstractMethods(@NonNull JCDiagnostic diagnostic) {
@@ -80,19 +81,22 @@ public class ImplementAbstractMethods extends Rewrite {
     if (!isAnonymousTarget(targetName)) {
       this.className = targetName;
       this.classFile = targetName;
+      this.superTypeName = targetName;
       this.position = 0;
     } else {
       String ownerName = extractAnonymousOwner(targetName);
       this.classFile = ownerName;
-      this.className = args[2].toString();
+      this.className = targetName;
+      this.superTypeName = args[2].toString();
       this.position = diagnostic.getStartPosition();
     }
 
     if (LOG.isDebugEnabled()) {
       LOG.debug(
-          "ImplementAbstractMethods resolved className={} classFile={} position={}",
+          "ImplementAbstractMethods resolved className={} classFile={} superTypeName={} position={}",
           this.className,
           this.classFile,
+          this.superTypeName,
           this.position);
     }
   }
@@ -119,8 +123,14 @@ public class ImplementAbstractMethods extends Rewrite {
           Elements elements = task.task.getElements();
           Trees trees = Trees.instance(task.task);
           TypeElement thisClass = elements.getTypeElement(this.className);
+          TypeElement superType = elements.getTypeElement(this.superTypeName);
           if (LOG.isDebugEnabled()) {
-            LOG.debug("ImplementAbstractMethods type lookup className={} type={}", this.className, thisClass);
+            LOG.debug(
+                "ImplementAbstractMethods type lookup className={} type={} superTypeName={} superType={}",
+                this.className,
+                thisClass,
+                this.superTypeName,
+                superType);
           }
 
           ClassTree thisTree = getClassTree(task, file);
@@ -131,11 +141,12 @@ public class ImplementAbstractMethods extends Rewrite {
           if (LOG.isDebugEnabled()) {
             LOG.debug("ImplementAbstractMethods class tree position={} tree={}", this.position, thisTree);
           }
-          if (thisTree == null || thisClass == null) {
+          if (thisTree == null || thisClass == null || superType == null) {
             LOG.warn(
-                "ImplementAbstractMethods could not resolve target class. className={} classFile={} position={}",
+                "ImplementAbstractMethods could not resolve target class. className={} classFile={} superTypeName={} position={}",
                 this.className,
                 this.classFile,
+                this.superTypeName,
                 this.position);
             return CANCELLED;
           }
@@ -144,7 +155,8 @@ public class ImplementAbstractMethods extends Rewrite {
               + EditorPreferences.INSTANCE.getTabSize();
           for (Element member : elements.getAllMembers(thisClass)) {
             if (member.getKind() == ElementKind.METHOD
-                && member.getModifiers().contains(Modifier.ABSTRACT)) {
+                && member.getModifiers().contains(Modifier.ABSTRACT)
+                && member.getEnclosingElement().equals(superType)) {
               ExecutableElement method = (ExecutableElement) member;
               final ExecutableType executableType =
                   (ExecutableType) trees.getTypeMirror(trees.getPath(method));
