@@ -117,7 +117,9 @@ class AddThrowsAction : BaseJavaCodeAction() {
         object : ICancelChecker {
           override fun abortIfCancelled() = Unit
 
-          override fun cancel() = false
+          override fun cancel() = Unit
+
+          override fun isCancelled() = false
         }
     val path = FindInvocationAt(task.task, cancelChecker).scan(root, position) ?: return ""
     val trees = Trees.instance(task.task)
