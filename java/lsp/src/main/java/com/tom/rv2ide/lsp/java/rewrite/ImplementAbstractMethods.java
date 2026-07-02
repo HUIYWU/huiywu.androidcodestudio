@@ -67,7 +67,7 @@ public class ImplementAbstractMethods extends Rewrite {
 
   public ImplementAbstractMethods(@NonNull JCDiagnostic diagnostic) {
     Object[] args = diagnostic.getArgs();
-    String className = args[0].toString();
+    String targetName = args[0].toString();
 
     if (LOG.isDebugEnabled()) {
       LOG.debug(
@@ -77,14 +77,13 @@ public class ImplementAbstractMethods extends Rewrite {
           java.util.Arrays.toString(args));
     }
 
-    if (!className.contains("<anonymous")) {
-      this.className = className;
-      this.classFile = className;
+    if (!isAnonymousTarget(targetName)) {
+      this.className = targetName;
+      this.classFile = targetName;
       this.position = 0;
     } else {
-      className = className.substring("<anonymous ".length(), className.length() - 1);
-      className = className.substring(0, className.indexOf('$'));
-      this.classFile = className;
+      String ownerName = extractAnonymousOwner(targetName);
+      this.classFile = ownerName;
       this.className = args[2].toString();
       this.position = diagnostic.getStartPosition();
     }
@@ -125,13 +124,21 @@ public class ImplementAbstractMethods extends Rewrite {
           }
 
           ClassTree thisTree = getClassTree(task, file);
-          if (thisTree == null) {
+          if (thisTree == null && thisClass != null) {
             thisTree = trees.getTree(thisClass);
           }
+
           if (LOG.isDebugEnabled()) {
             LOG.debug("ImplementAbstractMethods class tree position={} tree={}", this.position, thisTree);
           }
-
+          if (thisTree == null || thisClass == null) {
+            LOG.warn(
+                "ImplementAbstractMethods could not resolve target class. className={} classFile={} position={}",
+                this.className,
+                this.classFile,
+                this.position);
+            return CANCELLED;
+          }
           final Set<String> imports = new TreeSet<>();
           int indent = EditHelper.indent(task.task, fileRoot, thisTree)
               + EditorPreferences.INSTANCE.getTabSize();
@@ -212,5 +219,23 @@ public class ImplementAbstractMethods extends Rewrite {
   @Override
   protected void finalizeCodeAction(@NonNull CodeActionItem action) {
     action.setCommand(new Command("Format code", Command.FORMAT_CODE));
+  }
+
+  private static boolean isAnonymousTarget(String targetName) {
+    return targetName.startsWith("<anonymous ") || targetName.startsWith("<匿名");
+  }
+
+  private static String extractAnonymousOwner(String targetName) {
+    String owner = targetName.substring(1, targetName.length() - 1);
+    if (owner.startsWith("anonymous ")) {
+      owner = owner.substring("anonymous ".length());
+    } else if (owner.startsWith("匿名")) {
+      owner = owner.substring("匿名".length());
+    }
+    int dollar = owner.indexOf('$');
+    if (dollar >= 0) {
+      owner = owner.substring(0, dollar);
+    }
+    return owner;
   }
 }
