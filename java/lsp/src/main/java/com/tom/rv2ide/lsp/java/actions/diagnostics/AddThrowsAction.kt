@@ -27,7 +27,6 @@ import com.tom.rv2ide.lsp.java.actions.BaseJavaCodeAction
 import com.tom.rv2ide.lsp.java.models.DiagnosticCode
 import com.tom.rv2ide.lsp.java.rewrite.AddException
 import com.tom.rv2ide.lsp.java.utils.CodeActionUtils
-import com.tom.rv2ide.lsp.java.utils.FindHelper
 import com.tom.rv2ide.lsp.java.visitors.FindPathAt
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.projects.IProjectManager
@@ -268,7 +267,7 @@ class AddThrowsAction : BaseJavaCodeAction() {
         return@firstNotNullOfOrNull null
       }
       val constructor = member as ExecutableElement
-      if (FindHelper.isSameMethod(task, constructor, type.qualifiedName.toString(), type.simpleName.toString(), argumentTypes)) {
+      if (matchesConstructor(constructor, argumentTypes)) {
         constructor
       } else {
         null
@@ -285,6 +284,19 @@ class AddThrowsAction : BaseJavaCodeAction() {
     val type = trees.getTypeMirror(expressionPath) as? DeclaredType ?: return ""
     val element = type.asElement() as? TypeElement ?: return ""
     return element.qualifiedName.toString()
+  }
+
+  private fun matchesConstructor(
+      constructor: ExecutableElement,
+      argumentTypes: Array<String>,
+  ): Boolean {
+    if (constructor.parameters.size != argumentTypes.size) {
+      return false
+    }
+    return constructor.parameters.indices.all { index ->
+      val parameterType = constructor.parameters[index].asType().toString()
+      parameterType == argumentTypes[index]
+    }
   }
 
   private fun debugParentChain(path: TreePath): String {
