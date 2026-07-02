@@ -562,8 +562,8 @@ object JavaParserUtils {
     if (returnType != null) {
       methodDeclaration.type = getTypeWithoutBounds(returnType)
     }
-    methodDeclaration.isDefault = method!!.isDefault
-    methodDeclaration.setName(method.simpleName.toString())
+    methodDeclaration.isDefault = false
+    methodDeclaration.setName(method!!.simpleName.toString())
     methodDeclaration.setModifiers(
         *method.modifiers
             .stream()
