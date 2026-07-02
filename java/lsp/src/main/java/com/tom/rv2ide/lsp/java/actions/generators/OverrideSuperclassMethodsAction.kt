@@ -265,7 +265,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       }
       val thisClass: TypeElement = thisClassCandidate
       val insertPosition = EditHelper.insertAtEndOfClass(task.task, fileRoot, classTree)
-      val indent = maxOf(0, insertPosition.column - EditorPreferences.tabSize)
+      val indent = EditorPreferences.tabSize
       val fileImports = fileRoot.imports.map { it.qualifiedIdentifier.toString() }.toSet()
       val filePackage = fileRoot.`package`.packageName.toString()
 
