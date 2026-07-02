@@ -162,8 +162,23 @@ public class ImplementAbstractMethods extends Rewrite {
                 && member.getModifiers().contains(Modifier.ABSTRACT)
                 && member.getEnclosingElement().equals(superType)) {
               ExecutableElement method = (ExecutableElement) member;
-              final ExecutableType executableType =
-                  (ExecutableType) trees.getTypeMirror(trees.getPath(method));
+              final ExecutableType executableType;
+              if (thisClass.asType() instanceof jdkx.lang.model.type.DeclaredType) {
+                executableType =
+                    (ExecutableType)
+                        task.task.getTypes().asMemberOf(
+                            (jdkx.lang.model.type.DeclaredType) thisClass.asType(), method);
+              } else {
+                final openjdk.source.util.TreePath methodPath = trees.getPath(method);
+                if (methodPath == null) {
+                  LOG.warn(
+                      "ImplementAbstractMethods could not resolve method path. className={} method={}",
+                      this.className,
+                      method);
+                  continue;
+                }
+                executableType = (ExecutableType) trees.getTypeMirror(methodPath);
+              }
               final MethodStubGenerator.GeneratedMethod generated =
                   MethodStubGenerator.generate(
                       method,

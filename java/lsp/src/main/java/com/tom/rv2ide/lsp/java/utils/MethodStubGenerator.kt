@@ -88,6 +88,7 @@ object MethodStubGenerator {
     if (enclosing.kind == ElementKind.INTERFACE) {
       declaration.removeModifier(Modifier.Keyword.PROTECTED)
       declaration.removeModifier(Modifier.Keyword.PRIVATE)
+      declaration.removeModifier(Modifier.Keyword.DEFAULT)
       if (!declaration.hasModifier(Modifier.Keyword.PUBLIC)) {
         declaration.addModifier(Modifier.Keyword.PUBLIC)
       }
