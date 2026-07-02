@@ -25,10 +25,15 @@ import com.tom.rv2ide.lsp.models.TextEdit;
 import com.tom.rv2ide.models.Position;
 import com.tom.rv2ide.models.Range;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import jdkx.lang.model.element.ExecutableElement;
+import openjdk.source.tree.CompilationUnitTree;
 import openjdk.source.util.Trees;
+
+import static com.tom.rv2ide.lsp.java.utils.InsertUtilsKt.positionForImports;
 
 public class AddException extends Rewrite {
 
@@ -36,7 +41,10 @@ public class AddException extends Rewrite {
   final String[] erasedParameterTypes;
   final String exceptionType;
 
-  public AddException(String className, String methodName, String[] erasedParameterTypes,
+  public AddException(
+      String className,
+      String methodName,
+      String[] erasedParameterTypes,
       String exceptionType
   ) {
     this.className = className;
@@ -61,8 +69,8 @@ public class AddException extends Rewrite {
         return CANCELLED;
       }
 
-      ExecutableElement methodElement = FindHelper.findMethod(task, className, methodName,
-          erasedParameterTypes);
+      ExecutableElement methodElement =
+          FindHelper.findMethod(task, className, methodName, erasedParameterTypes);
       if (methodElement == null) {
         return CANCELLED;
       }
@@ -80,6 +88,7 @@ public class AddException extends Rewrite {
       int line = (int) lines.getLineNumber(index);
       int column = (int) lines.getColumnNumber(index);
       Position insertPos = new Position(line - 1, column - 1);
+
       String simpleName = exceptionType;
       int lastDot = simpleName.lastIndexOf('.');
       if (lastDot != -1) {
@@ -93,10 +102,48 @@ public class AddException extends Rewrite {
         insertText = ", " + simpleName + " ";
       }
 
-      TextEdit insertThrows = new TextEdit(new Range(insertPos, insertPos), insertText);
-      // TODO add import if needed
-      TextEdit[] edits = {insertThrows};
-      return Collections.singletonMap(file, edits);
+      final List<TextEdit> edits = new ArrayList<>();
+      edits.add(new TextEdit(new Range(insertPos, insertPos), insertText));
+
+      // Keep the quick fix compilable after adding a checked exception. We only add an import
+      // when the resolved exception type is fully qualified and not already visible via java.lang,
+      // same-package lookup or an existing explicit import.
+      if (needsImport(fileRoot, exceptionType)) {
+        final Position importPos = positionForImports(exceptionType, task, file);
+        edits.add(new TextEdit(new Range(importPos, importPos), "import " + exceptionType + ";\n"));
+      }
+
+      return Collections.singletonMap(file, edits.toArray(new TextEdit[0]));
     });
+  }
+
+  private static boolean needsImport(
+      final CompilationUnitTree fileRoot,
+      final String exceptionType
+  ) {
+    if (exceptionType == null || exceptionType.isBlank() || exceptionType.indexOf('.') == -1) {
+      return false;
+    }
+
+    if (exceptionType.startsWith("java.lang.")) {
+      return false;
+    }
+
+    final String packageName =
+        fileRoot.getPackageName() != null ? fileRoot.getPackageName().toString() : "";
+    final int lastDot = exceptionType.lastIndexOf('.');
+    final String exceptionPackage = lastDot != -1 ? exceptionType.substring(0, lastDot) : "";
+    if (exceptionPackage.equals(packageName)) {
+      return false;
+    }
+
+    for (final var importTree : fileRoot.getImports()) {
+      final String imported = importTree.getQualifiedIdentifier().toString();
+      if (exceptionType.equals(imported)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }
