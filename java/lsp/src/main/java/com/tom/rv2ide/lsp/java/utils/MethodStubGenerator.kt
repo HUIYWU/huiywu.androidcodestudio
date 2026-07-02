@@ -84,6 +84,7 @@ object MethodStubGenerator {
   }
 
   private fun normalizeVisibility(declaration: MethodDeclaration, method: ExecutableElement) {
+    declaration.isDefault = false
     val enclosing = method.enclosingElement as? TypeElement ?: return
     if (enclosing.kind == ElementKind.INTERFACE) {
       declaration.removeModifier(Modifier.Keyword.PROTECTED)

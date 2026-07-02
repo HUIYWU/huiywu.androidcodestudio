@@ -165,6 +165,9 @@ public class ImplementAbstractMethods extends Rewrite {
               continue;
             }
             ExecutableElement method = (ExecutableElement) member;
+            if (method.getSimpleName().contentEquals("<init>")) {
+              continue;
+            }
             if (method.getEnclosingElement() instanceof TypeElement) {
               TypeElement owner = (TypeElement) method.getEnclosingElement();
               if (owner.getQualifiedName().contentEquals("java.lang.Object")) {

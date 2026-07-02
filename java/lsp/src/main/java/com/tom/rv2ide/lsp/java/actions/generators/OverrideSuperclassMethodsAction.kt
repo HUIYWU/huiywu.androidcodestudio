@@ -157,6 +157,9 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         }
 
         val method = member as ExecutableElement
+        if (method.simpleName.contentEquals("<init>")) {
+          continue
+        }
         val methodSource = member.getEnclosingElement() as TypeElement
         if (
             methodSource.qualifiedName.contentEquals("java.lang.Object") || methodSource == element
