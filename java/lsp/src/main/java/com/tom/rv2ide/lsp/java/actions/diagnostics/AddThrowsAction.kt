@@ -16,7 +16,6 @@
  */
 package com.tom.rv2ide.lsp.java.actions.diagnostics
 
-import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
@@ -45,7 +44,6 @@ import openjdk.source.tree.ThrowTree
 import openjdk.source.tree.VariableTree
 import openjdk.source.util.TreePath
 import openjdk.source.util.Trees
-import org.slf4j.LoggerFactory
 
 /** @author Akash Yadav */
 class AddThrowsAction : BaseJavaCodeAction() {
@@ -55,11 +53,6 @@ class AddThrowsAction : BaseJavaCodeAction() {
   private val diagnosticCode = DiagnosticCode.NOT_THROWN.id
 
   override val titleTextRes: Int = R.string.action_add_throws
-
-  companion object {
-
-    private val log = LoggerFactory.getLogger(AddThrowsAction::class.java)
-  }
 
   override fun prepare(data: ActionData) {
     super.prepare(data)
@@ -87,25 +80,9 @@ class AddThrowsAction : BaseJavaCodeAction() {
     val file = data.requirePath()
     return compiler.compile(file).get { task ->
       val needsThrow = CodeActionUtils.findMethod(task, file, diagnostic.range)
-      if (IdeLogConfig.shouldLogDebug()) {
-        log.debug(
-            "AddThrowsAction exec file={} range={} method={}.{} params={}",
-            file,
-            diagnostic.range,
-            needsThrow.className,
-            needsThrow.methodName,
-            needsThrow.erasedParameterTypes.contentToString(),
-        )
-      }
       val exceptionName = findUnhandledExceptionType(task, file, diagnostic.range)
       if (exceptionName.isBlank()) {
-        if (IdeLogConfig.shouldLogWarn()) {
-          log.warn("AddThrowsAction could not resolve exception type file={} range={}", file, diagnostic.range)
-        }
         return@get false
-      }
-      if (IdeLogConfig.shouldLogDebug()) {
-        log.debug("AddThrowsAction resolved exception type file={} type={}", file, exceptionName)
       }
       return@get AddException(
           needsThrow.className,
@@ -118,14 +95,12 @@ class AddThrowsAction : BaseJavaCodeAction() {
 
   override fun postExec(data: ActionData, result: Any) {
     if (result !is AddException) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        log.warn("Unable to add 'throws' expression resultType={}", result::class.java.name)
-      }
       return
     }
 
     performCodeAction(data, result)
   }
+
 
   private fun findUnhandledExceptionType(
       task: com.tom.rv2ide.lsp.java.compiler.CompileTask,
@@ -134,66 +109,17 @@ class AddThrowsAction : BaseJavaCodeAction() {
   ): String {
     val root = task.root(file)
     val position = root.lineMap.getPosition(range.start.line + 1L, range.start.column + 1L)
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug("AddThrowsAction resolve start file={} range={} position={}", file, range, position)
-    }
-    val path = FindPathAt(task.task).scan(root, position)
-    if (path == null) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        log.warn("AddThrowsAction no TreePath found file={} range={} position={}", file, range, position)
-      }
-      return ""
-    }
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug("AddThrowsAction leaf={} parentChain={}", path.leaf.kind, debugParentChain(path))
-    }
+    val path = FindPathAt(task.task).scan(root, position) ?: return ""
     val trees = Trees.instance(task.task)
-    val targetPath = findThrowingSite(path)
-    if (targetPath == null) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        log.warn(
-            "AddThrowsAction no throwing site file={} range={} leaf={} parentChain={}",
-            file,
-            range,
-            path.leaf.kind,
-            debugParentChain(path),
-        )
-      }
-      return ""
-    }
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug("AddThrowsAction throwingSite kind={} tree={}", targetPath.leaf.kind, targetPath.leaf)
-    }
+    val targetPath = findThrowingSite(path) ?: return ""
     val target = resolveInvocationTarget(task, trees, targetPath)
     val declaredThrown = target?.thrownTypes?.mapNotNull { (it as? DeclaredType)?.asElement() as? TypeElement }
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug(
-          "AddThrowsAction invocationTarget={} kind={} params={} thrownTypes={}",
-          target,
-          target?.kind,
-          target?.parameters?.map { it.asType().toString() } ?: emptyList<String>(),
-          declaredThrown?.map { it.qualifiedName.toString() } ?: emptyList<String>(),
-      )
-    }
     if (!declaredThrown.isNullOrEmpty()) {
       return declaredThrown.first().qualifiedName.toString()
     }
     if (targetPath.leaf is ThrowTree) {
       val throwTree = targetPath.leaf as ThrowTree
-      val thrownType = resolveThrownExpressionType(trees, throwTree.expression, targetPath)
-      if (IdeLogConfig.shouldLogDebug()) {
-        log.debug("AddThrowsAction throw expression={} resolvedType={}", throwTree.expression, thrownType)
-      }
-      return thrownType
-    }
-    if (IdeLogConfig.shouldLogWarn()) {
-      log.warn(
-          "AddThrowsAction throwing site resolved but no exception type file={} range={} siteKind={} site={}",
-          file,
-          range,
-          targetPath.leaf.kind,
-          targetPath.leaf,
-      )
+      return resolveThrownExpressionType(trees, throwTree.expression, targetPath)
     }
     return ""
   }
@@ -299,13 +225,4 @@ class AddThrowsAction : BaseJavaCodeAction() {
     }
   }
 
-  private fun debugParentChain(path: TreePath): String {
-    val chain = mutableListOf<String>()
-    var current: TreePath? = path
-    while (current != null) {
-      chain.add(current.leaf.kind.toString())
-      current = current.parentPath
-    }
-    return chain.joinToString(" -> ")
-  }
 }

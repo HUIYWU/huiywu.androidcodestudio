@@ -26,6 +26,7 @@ import com.tom.rv2ide.lsp.java.parser.ParseTask;
 import com.tom.rv2ide.lsp.models.TextEdit;
 import com.tom.rv2ide.models.Position;
 import com.tom.rv2ide.models.Range;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Map;
@@ -74,8 +75,20 @@ public class ConvertFieldToBlock extends Rewrite {
       fixLhs.setNewText("static { ");
     }
     long right = pos.getEndPosition(task.root, variable);
-    int rightLine = (int) lines.getLineNumber(right);
-    int rightColumn = (int) lines.getColumnNumber(right);
+    long insertOffset = right;
+    try {
+      CharSequence contents = task.root.getSourceFile().getCharContent(true);
+      for (long i = right - 1; i >= end; i--) {
+        if (contents.charAt((int) i) == ';') {
+          insertOffset = i;
+          break;
+        }
+      }
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+    int rightLine = (int) lines.getLineNumber(insertOffset);
+    int rightColumn = (int) lines.getColumnNumber(insertOffset);
     Position rightPos = new Position(rightLine - 1, rightColumn - 1);
     Range insertRight = new Range(rightPos, rightPos);
     TextEdit fixRhs = new TextEdit(insertRight, " }");
