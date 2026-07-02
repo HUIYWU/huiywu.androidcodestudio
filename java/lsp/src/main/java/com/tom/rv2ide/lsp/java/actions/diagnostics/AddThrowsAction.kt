@@ -34,10 +34,14 @@ import com.tom.rv2ide.resources.R
 import jdkx.lang.model.element.ExecutableElement
 import jdkx.lang.model.element.TypeElement
 import jdkx.lang.model.type.DeclaredType
+import openjdk.source.tree.AssignmentTree
+import openjdk.source.tree.ExpressionStatementTree
 import openjdk.source.tree.ExpressionTree
 import openjdk.source.tree.MethodInvocationTree
 import openjdk.source.tree.NewClassTree
+import openjdk.source.tree.ReturnTree
 import openjdk.source.tree.ThrowTree
+import openjdk.source.tree.VariableTree
 import openjdk.source.util.TreePath
 import openjdk.source.util.Trees
 import org.slf4j.LoggerFactory
@@ -194,8 +198,35 @@ class AddThrowsAction : BaseJavaCodeAction() {
   private fun findThrowingSite(path: TreePath): TreePath? {
     var current: TreePath? = path
     while (current != null) {
-      when (current.leaf) {
+      when (val leaf = current.leaf) {
         is MethodInvocationTree, is NewClassTree, is ThrowTree -> return current
+        is VariableTree -> {
+          val nested = leaf.initializer?.let { findThrowingSite(TreePath(current, it)) }
+          if (nested != null) {
+            return nested
+          }
+        }
+        is AssignmentTree -> {
+          val nested = findThrowingSite(TreePath(current, leaf.expression))
+          if (nested != null) {
+            return nested
+          }
+        }
+        is ExpressionStatementTree -> {
+          val nested = findThrowingSite(TreePath(current, leaf.expression))
+          if (nested != null) {
+            return nested
+          }
+        }
+        is ReturnTree -> {
+          val expr = leaf.expression
+          if (expr != null) {
+            val nested = findThrowingSite(TreePath(current, expr))
+            if (nested != null) {
+              return nested
+            }
+          }
+        }
       }
       current = current.parentPath
     }
