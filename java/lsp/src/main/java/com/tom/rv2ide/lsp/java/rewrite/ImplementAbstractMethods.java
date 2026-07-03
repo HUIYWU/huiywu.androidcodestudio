@@ -315,11 +315,16 @@ public class ImplementAbstractMethods extends Rewrite {
   private static String extractAnonymousOwner(String targetName) {
     String owner = targetName.substring(1, targetName.length() - 1).trim();
 
-    // Diagnostic display names for anonymous types are localized, so prefer the trailing owner
-    // token instead of matching a specific language prefix such as "anonymous" or "匿名".
-    int lastSpace = owner.lastIndexOf(' ');
-    if (lastSpace >= 0 && lastSpace + 1 < owner.length()) {
-      owner = owner.substring(lastSpace + 1);
+    // Diagnostic display names for anonymous types are localized, so prefer extracting the
+    // binary name tail instead of matching a specific language prefix such as "anonymous".
+    int binaryNameStart = findBinaryNameStart(owner);
+    if (binaryNameStart > 0 && binaryNameStart < owner.length()) {
+      owner = owner.substring(binaryNameStart);
+    } else {
+      int lastSpace = owner.lastIndexOf(' ');
+      if (lastSpace >= 0 && lastSpace + 1 < owner.length()) {
+        owner = owner.substring(lastSpace + 1);
+      }
     }
 
     int dollar = owner.indexOf('$');
@@ -327,6 +332,20 @@ public class ImplementAbstractMethods extends Rewrite {
       owner = owner.substring(0, dollar);
     }
     return owner;
+  }
+
+  private static int findBinaryNameStart(String text) {
+    for (int index = 0; index < text.length(); index++) {
+      char current = text.charAt(index);
+      if (!Character.isJavaIdentifierStart(current)) {
+        continue;
+      }
+      int nextDot = text.indexOf('.', index);
+      if (nextDot > index) {
+        return index;
+      }
+    }
+    return -1;
   }
 
 }
