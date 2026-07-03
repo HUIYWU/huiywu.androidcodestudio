@@ -273,12 +273,20 @@ public class ImplementAbstractMethods extends Rewrite {
             final LineMap lineMap = fileRoot.getLineMap();
             final Position replaceStart = new Position(
                 (int) lineMap.getLineNumber(openBraceOffset + 1) - 1,
-                (int) lineMap.getColumnNumber(openBraceOffset + 1) - 1);
+                (int) lineMap.getColumnNumber(openBraceOffset + 1) - 1,
+                openBraceOffset + 1);
             final Position replaceEnd = new Position(
                 (int) lineMap.getLineNumber(closeBraceOffset) - 1,
-                (int) lineMap.getColumnNumber(closeBraceOffset) - 1);
+                (int) lineMap.getColumnNumber(closeBraceOffset) - 1,
+                closeBraceOffset);
+            if (LOG.isDebugEnabled()) {
+              LOG.debug("ImplementAbstractMethods applying replace-body edit replaceStart={} replaceEnd={} openBraceOffset={} closeBraceOffset={} newText={}", replaceStart, replaceEnd, openBraceOffset, closeBraceOffset, insertText);
+            }
             edits.add(new TextEdit(new Range(replaceStart, replaceEnd), insertText.toString()));
           } else {
+            if (LOG.isDebugEnabled()) {
+              LOG.debug("ImplementAbstractMethods applying fallback-insert edit insert={} newText={}", insert, insertText);
+            }
             edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
           }
           addImports(compiler, task, file, imports, edits);
