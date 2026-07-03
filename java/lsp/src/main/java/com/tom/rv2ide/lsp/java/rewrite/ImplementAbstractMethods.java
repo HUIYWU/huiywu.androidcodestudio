@@ -246,8 +246,14 @@ public class ImplementAbstractMethods extends Rewrite {
             } else {
               insertText.append("\n");
             }
-            insertText.append(memberIndent);
-            insertText.append(text.replace("\n", "\n" + memberIndent));
+            String[] lines = text.split("\\r?\\n", -1);
+            for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+              if (lineIndex > 0) {
+                insertText.append("\n");
+              }
+              insertText.append(memberIndent);
+              insertText.append(lines[lineIndex]);
+            }
             insertText.append("\n");
             insertText.append(EditorUtilKt.indentationString(braceIndent));
           }
