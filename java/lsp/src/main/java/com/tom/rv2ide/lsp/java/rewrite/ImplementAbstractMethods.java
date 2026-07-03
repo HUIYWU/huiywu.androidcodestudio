@@ -34,6 +34,7 @@ import com.tom.rv2ide.models.Position;
 import com.tom.rv2ide.models.Range;
 import com.tom.rv2ide.preferences.internal.EditorPreferences;
 import com.tom.rv2ide.preferences.utils.EditorUtilKt;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -160,7 +161,13 @@ public class ImplementAbstractMethods extends Rewrite {
           final Set<String> imports = new TreeSet<>();
           final Set<String> addedMethods = new HashSet<>();
           Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
-          final CharSequence source = fileRoot.getSourceFile().getCharContent(true);
+          final CharSequence source;
+          try {
+            source = fileRoot.getSourceFile().getCharContent(true);
+          } catch (IOException e) {
+            LOG.warn("ImplementAbstractMethods could not read source content for className={} classFile={}", this.className, this.classFile, e);
+            return CANCELLED;
+          }
           final SourcePositions sourcePositions = Trees.instance(task.task).getSourcePositions();
           final long treeStartOffset = sourcePositions.getStartPosition(fileRoot, thisTree);
           final long treeEndOffset = sourcePositions.getEndPosition(fileRoot, thisTree);
