@@ -162,12 +162,16 @@ object JavaParserUtils {
     if (type.kind == TypeKind.TYPEVAR) {
       return null
     }
-    var fqn = toType(type).toString()
+    val parsedType = toType(type) ?: return null
+    var fqn = parsedType.toString()
     if (type.kind == TypeKind.ARRAY) {
       fqn = removeArray(fqn)
     }
-
-    return removeDiamond(fqn)
+    fqn = removeDiamond(fqn)
+    if (!fqn.contains('.')) {
+      return null
+    }
+    return fqn
   }
 
   fun printMethod(
