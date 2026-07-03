@@ -74,14 +74,6 @@ public class ImplementAbstractMethods extends Rewrite {
     Object[] args = diagnostic.getArgs();
     String targetName = args[0].toString();
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug(
-          "ImplementAbstractMethods ctor code={} start={} args={}",
-          diagnostic.getCode(),
-          diagnostic.getStartPosition(),
-          java.util.Arrays.toString(args));
-    }
-
     if (!isAnonymousTarget(targetName)) {
       this.className = targetName;
       this.classFile = targetName;
@@ -94,25 +86,12 @@ public class ImplementAbstractMethods extends Rewrite {
       this.superTypeName = args[2].toString();
       this.position = diagnostic.getStartPosition();
     }
-
-    if (LOG.isDebugEnabled()) {
-      LOG.debug(
-          "ImplementAbstractMethods resolved className={} classFile={} superTypeName={} position={}",
-          this.className,
-          this.classFile,
-          this.superTypeName,
-          this.position);
-    }
   }
-
+ 
   @NonNull
   @Override
   public Map<Path, TextEdit[]> rewrite(@NonNull CompilerProvider compiler) {
     final Path file = compiler.findTypeDeclaration(this.classFile);
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("ImplementAbstractMethods rewrite className={} classFile={} file={}", this.className,
-          this.classFile, file);
-    }
     if (file == CompilerProvider.NOT_FOUND) {
       LOG.warn("Unable to find source file for class: {} classFile={}", this.className,
           this.classFile);
@@ -140,15 +119,6 @@ public class ImplementAbstractMethods extends Rewrite {
             }
           }
 
-          if (LOG.isDebugEnabled()) {
-            LOG.debug(
-                "ImplementAbstractMethods type lookup className={} type={} superTypeName={} superType={}",
-                this.className,
-                thisClass,
-                this.superTypeName,
-                superType);
-            LOG.debug("ImplementAbstractMethods class tree position={} kind={}", this.position, thisTree.getKind());
-          }
           if (thisTree == null || thisClass == null || superType == null) {
             LOG.warn(
                 "ImplementAbstractMethods could not resolve target class. className={} classFile={} superTypeName={} position={}",
@@ -231,13 +201,6 @@ public class ImplementAbstractMethods extends Rewrite {
                     executableType,
                     null,
                     MethodStubGenerator.BodyStrategy.IMPLEMENT_ABSTRACT);
-            if (LOG.isDebugEnabled()) {
-              LOG.debug(
-                  "ImplementAbstractMethods generated method={} rendered={} declaration={}",
-                  method,
-                  generated.getRenderedText(),
-                  generated.getDeclaration());
-            }
             imports.addAll(generated.getImports());
             String memberIndent = EditorUtilKt.indentationString(indent);
             String text = generated.getRenderedText();
@@ -267,15 +230,10 @@ public class ImplementAbstractMethods extends Rewrite {
             return CANCELLED;
           }
 
-          if (LOG.isDebugEnabled()) {
-            long treeStart = Trees.instance(task.task).getSourcePositions().getStartPosition(fileRoot, thisTree);
-            long treeEnd = Trees.instance(task.task).getSourcePositions().getEndPosition(fileRoot, thisTree);
-            int classIndent = EditHelper.indent(task.task, fileRoot, thisTree);
-            int lineIndent = EditHelper.lineIndent(task.task, fileRoot, thisTree);
-            LOG.debug("ImplementAbstractMethods treeStart={} treeEnd={} openBraceOffset={} closeBraceOffset={} insert position={} classIndent={} lineIndent={} braceIndent={} indent={} final insert text={}", treeStart, treeEnd, openBraceOffset, closeBraceOffset, insert, classIndent, lineIndent, braceIndent, indent, insertText);
-          }
           final List<TextEdit> edits = new ArrayList<>();
           if (openBraceOffset >= 0 && closeBraceOffset > openBraceOffset) {
+            // For anonymous classes, replacing only the body keeps the closing brace and semicolon
+            // structurally stable for both compact (`new X() {};`) and multi-line forms.
             final LineMap lineMap = fileRoot.getLineMap();
             final Position replaceStart = new Position(
                 (int) lineMap.getLineNumber(openBraceOffset + 1) - 1,
@@ -285,20 +243,11 @@ public class ImplementAbstractMethods extends Rewrite {
                 (int) lineMap.getLineNumber(closeBraceOffset) - 1,
                 (int) lineMap.getColumnNumber(closeBraceOffset) - 1,
                 closeBraceOffset);
-            if (LOG.isDebugEnabled()) {
-              LOG.debug("ImplementAbstractMethods applying replace-body edit replaceStart={} replaceEnd={} openBraceOffset={} closeBraceOffset={} newText={}", replaceStart, replaceEnd, openBraceOffset, closeBraceOffset, insertText);
-            }
             edits.add(new TextEdit(new Range(replaceStart, replaceEnd), insertText.toString()));
           } else {
-            if (LOG.isDebugEnabled()) {
-              LOG.debug("ImplementAbstractMethods applying fallback-insert edit insert={} newText={}", insert, insertText);
-            }
             edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
           }
           addImports(compiler, task, file, imports, edits);
-          if (LOG.isDebugEnabled()) {
-            LOG.debug("ImplementAbstractMethods final edits={} imports={}", edits, imports);
-          }
 
           return Collections.singletonMap(file, edits.toArray(new TextEdit[0]));
         });

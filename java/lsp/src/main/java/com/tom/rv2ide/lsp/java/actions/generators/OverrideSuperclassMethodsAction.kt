@@ -318,24 +318,11 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
                 parameterizedType = executableType,
                 source = null,
                 bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
-            )
-        if (IdeLogConfig.shouldLogDebug()) {
-          log.debug(
-              "OverrideSuperclassMethods generated method={} rendered={} declaration={}",
-              superMethod,
-              generated.renderedText,
-              generated.declaration,
-          )
-        }
-
-        val method = generated.declaration
         val newImports = generated.imports
         val memberIndent = indentationString(indent)
-        if (sb.isEmpty()) {
-          sb.append("\n")
-        } else {
-          sb.append("\n")
-        }
+        // Keep method text assembly explicit so anonymous-class insertions preserve
+        // the pre-format brace layout for both compact and multi-line forms.
+        sb.append("\n")
         val lines = generated.renderedText.replace("\r\n", "\n").split("\n")
         lines.forEachIndexed { lineIndex, line ->
           if (lineIndex > 0) {
@@ -358,6 +345,8 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
 
       val targetPosition =
           if (closeBraceOffset >= 0) {
+            // Insert immediately before the anonymous class closing brace so existing members are kept,
+            // while the brace line itself stays in a valid pre-format position.
             val lineMap: LineMap = fileRoot.lineMap
             Position(
                 lineMap.getLineNumber(closeBraceOffset.toLong()).toInt() - 1,
@@ -392,11 +381,9 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
     val editor = data[CodeEditor::class.java]!!
     val file = data.requirePath()
     val text = editor.text
- 
+
     text.beginBatchEdit()
     text.insert(position.line, position.column, sb)
- 
-
 
     for (name in imports) {
       val rewrite = AddImport(file, name)
