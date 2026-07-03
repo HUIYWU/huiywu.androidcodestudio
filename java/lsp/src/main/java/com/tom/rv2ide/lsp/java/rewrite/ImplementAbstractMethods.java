@@ -296,6 +296,9 @@ public class ImplementAbstractMethods extends Rewrite {
             edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
           }
           addImports(compiler, task, file, imports, edits);
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("ImplementAbstractMethods final edits={} imports={}", edits, imports);
+          }
 
           return Collections.singletonMap(file, edits.toArray(new TextEdit[0]));
         });
