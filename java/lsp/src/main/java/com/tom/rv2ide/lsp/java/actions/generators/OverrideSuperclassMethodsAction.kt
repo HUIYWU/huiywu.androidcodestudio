@@ -332,7 +332,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         val newImports = generated.imports
         val memberIndent = indentationString(indent)
         if (sb.isEmpty()) {
-          sb.append("\n\n")
+          sb.append("\n")
         } else {
           sb.append("\n")
         }
