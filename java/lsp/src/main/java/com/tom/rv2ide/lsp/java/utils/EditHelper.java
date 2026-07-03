@@ -208,44 +208,64 @@ public class EditHelper {
     LineMap lines = root.getLineMap();
     long start = pos.getStartPosition(root, leaf);
     long end = pos.getEndPosition(root, leaf);
-    int line = (int) lines.getLineNumber(end);
-    long lineStart = lines.getStartPosition(line);
-    int braceColumn = (int) lines.getColumnNumber(end) - 2;
-    int indentColumn = 0;
+    int line;
+    int column;
     String braceLineText = "";
     try {
       CharSequence source = root.getSourceFile().getCharContent(true);
-      int index = (int) lineStart;
-      int max = source.length();
-      StringBuilder sb = new StringBuilder();
-      while (index < max) {
-        char ch = source.charAt(index);
+      int closeBraceOffset = -1;
+      for (int i = (int) Math.min(end - 1, source.length() - 1); i >= 0; i--) {
+        if (source.charAt(i) == '}') {
+          closeBraceOffset = i;
+          break;
+        }
+      }
+      if (closeBraceOffset < 0) {
+        closeBraceOffset = (int) end;
+      }
+      line = (int) lines.getLineNumber(closeBraceOffset);
+      long lineStart = lines.getStartPosition(line);
+      int lineEnd = (int) Math.min(source.length(), lineStart);
+      while (lineEnd < source.length()) {
+        char ch = source.charAt(lineEnd);
         if (ch == '\n' || ch == '\r') {
           break;
         }
-        sb.append(ch);
-        if (!Character.isWhitespace(ch) && indentColumn == 0) {
-          indentColumn = index - (int) lineStart;
-        }
-        index++;
+        lineEnd++;
       }
-      braceLineText = sb.toString();
+      braceLineText = source.subSequence((int) lineStart, lineEnd).toString();
+      int indentColumn = 0;
+      while (indentColumn < braceLineText.length()
+          && Character.isWhitespace(braceLineText.charAt(indentColumn))) {
+        indentColumn++;
+      }
+      boolean braceOnlyLine = indentColumn < braceLineText.length()
+          && braceLineText.charAt(indentColumn) == '}'
+          && braceLineText.substring(indentColumn).trim().startsWith("}");
+      if (braceOnlyLine) {
+        column = 0;
+      } else {
+        column = (int) lines.getColumnNumber(closeBraceOffset) - 1;
+      }
+      if (IdeLogConfig.shouldLogDebug()) {
+        LOG.debug("EditHelper.insertAtEndOfClass start={} end={} closeBraceOffset={} startLine={} endLine={} resultLine={} resultColumn={} braceOnlyLine={} braceLine='{}' leafKind={}",
+            start,
+            end,
+            closeBraceOffset,
+            lines.getLineNumber(start),
+            lines.getLineNumber(end),
+            line,
+            column,
+            braceOnlyLine,
+            braceLineText,
+            leaf.getKind());
+      }
+      return new Position(line - 1, column);
     } catch (IOException ignored) {
+      line = (int) lines.getLineNumber(end);
+      column = Math.max(0, (int) lines.getColumnNumber(end) - 2);
+      return new Position(line - 1, column);
     }
-    int column = Math.max(indentColumn, Math.max(0, braceColumn));
-    if (IdeLogConfig.shouldLogDebug()) {
-      LOG.debug("EditHelper.insertAtEndOfClass start={} end={} startLine={} endLine={} braceColumn={} indentColumn={} resultColumn={} braceLine='{}' leafKind={}",
-          start,
-          end,
-          lines.getLineNumber(start),
-          line,
-          braceColumn,
-          indentColumn,
-          column,
-          braceLineText,
-          leaf.getKind());
-    }
-    return new Position(line - 1, column);
   }
 
 
