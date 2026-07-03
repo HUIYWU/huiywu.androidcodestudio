@@ -124,11 +124,12 @@ class UiMode(
       position: Int,
   ) {
     AppRestartDialog.show(preference.context) { restart ->
-        if (restart) { 
-            GeneralPreferences.uiMode = (entry?.data as? Int?) ?: AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-            android.widget.Toast.makeText(preference.context, "Restarting...", 0).show()
-            Handler(Looper.getMainLooper()).postDelayed({ AppRestartDialog.restartApp(preference.context) }, 1000)
-        }
+      if (restart) {
+        GeneralPreferences.uiMode =
+            (entry?.data as? Int?) ?: AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        android.widget.Toast.makeText(preference.context, preference.context.getString(string.restarting), 0).show()
+        Handler(Looper.getMainLooper()).postDelayed({ AppRestartDialog.restartApp(preference.context) }, 1000)
+      }
     }
 
   }
@@ -163,11 +164,12 @@ class ThemeSelector(
       position: Int,
   ) {
     AppRestartDialog.show(preference.context) { restart ->
-        if (restart) { 
-            GeneralPreferences.selectedTheme = (entry?.data as? IDETheme?)?.name ?: IDETheme.DEFAULT.name
-            android.widget.Toast.makeText(preference.context, "Restarting...", 0).show()
-            Handler(Looper.getMainLooper()).postDelayed({ AppRestartDialog.restartApp(preference.context) }, 1000)
-        }
+      if (restart) {
+        GeneralPreferences.selectedTheme =
+            (entry?.data as? IDETheme?)?.name ?: IDETheme.DEFAULT.name
+        android.widget.Toast.makeText(preference.context, preference.context.getString(string.restarting), 0).show()
+        Handler(Looper.getMainLooper()).postDelayed({ AppRestartDialog.restartApp(preference.context) }, 1000)
+      }
     }
   }
 }
@@ -192,7 +194,7 @@ class Snowfall(
     AppRestartDialog.show(preference.context) { restart ->
       if (restart) {
         GeneralPreferences.snowfallOverlay = newSnowfallValue
-        android.widget.Toast.makeText(preference.context, "Restarting...", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(preference.context, preference.context.getString(string.restarting), android.widget.Toast.LENGTH_SHORT).show()
         Handler(Looper.getMainLooper()).postDelayed({ 
           AppRestartDialog.restartApp(preference.context) 
         }, 1000)

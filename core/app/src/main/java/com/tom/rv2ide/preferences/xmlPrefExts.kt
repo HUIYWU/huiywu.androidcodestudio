@@ -41,6 +41,7 @@ private class XMLFormattingOptions(
     override val key: String = "idepref_xml_formattingOptions",
     override val title: Int = string.xml_formatting_options,
     override val summary: Int? = string.xml_formatting_options_summary,
+    override val icon: Int? = com.tom.rv2ide.resources.R.drawable.ic_language_xml,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 
