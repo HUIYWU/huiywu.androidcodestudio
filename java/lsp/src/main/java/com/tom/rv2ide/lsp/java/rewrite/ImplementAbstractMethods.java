@@ -51,6 +51,7 @@ import jdkx.lang.model.element.Modifier;
 import jdkx.lang.model.element.TypeElement;
 import jdkx.lang.model.type.ExecutableType;
 import jdkx.lang.model.util.Elements;
+import jdkx.tools.JavaFileObject;
 import openjdk.source.tree.ClassTree;
 import openjdk.source.tree.CompilationUnitTree;
 import openjdk.source.tree.ImportTree;
@@ -69,10 +70,12 @@ public class ImplementAbstractMethods extends Rewrite {
   private final String classFile;
   private final String superTypeName;
   private final long position;
+  @Nullable private final Path sourceFile;
 
   public ImplementAbstractMethods(@NonNull JCDiagnostic diagnostic) {
     Object[] args = diagnostic.getArgs();
     String targetName = args[0].toString();
+    this.sourceFile = resolveSourceFile(diagnostic);
 
     if (!isAnonymousTarget(targetName)) {
       this.className = targetName;
@@ -91,8 +94,8 @@ public class ImplementAbstractMethods extends Rewrite {
   @NonNull
   @Override
   public Map<Path, TextEdit[]> rewrite(@NonNull CompilerProvider compiler) {
-    final Path file = compiler.findTypeDeclaration(this.classFile);
-    if (file == CompilerProvider.NOT_FOUND) {
+    final Path file = this.sourceFile != null ? this.sourceFile : compiler.findTypeDeclaration(this.classFile);
+    if (file == null || file == CompilerProvider.NOT_FOUND) {
       LOG.warn("Unable to find source file for class: {} classFile={}", this.className,
           this.classFile);
       return CANCELLED;
@@ -306,6 +309,19 @@ public class ImplementAbstractMethods extends Rewrite {
   protected void finalizeCodeAction(@NonNull CodeActionItem action) {
     action.setCommand(new Command("Format code", Command.FORMAT_CODE));
   }
+  @Nullable
+  private static Path resolveSourceFile(@NonNull JCDiagnostic diagnostic) {
+    try {
+      JavaFileObject source = diagnostic.getSource();
+      if (source == null) {
+        return null;
+      }
+      return Path.of(source.toUri());
+    } catch (Throwable ignored) {
+      return null;
+    }
+  }
+
   private static boolean isAnonymousTarget(String targetName) {
     return targetName.length() > 2
         && targetName.charAt(0) == '<'
@@ -337,15 +353,26 @@ public class ImplementAbstractMethods extends Rewrite {
   private static int findBinaryNameStart(String text) {
     for (int index = 0; index < text.length(); index++) {
       char current = text.charAt(index);
-      if (!Character.isJavaIdentifierStart(current)) {
+      if (!isAsciiIdentifierStart(current)) {
         continue;
       }
-      int nextDot = text.indexOf('.', index);
-      if (nextDot > index) {
+      int cursor = index + 1;
+      while (cursor < text.length() && isAsciiIdentifierPart(text.charAt(cursor))) {
+        cursor++;
+      }
+      if (cursor < text.length() && text.charAt(cursor) == '.') {
         return index;
       }
     }
     return -1;
+  }
+
+  private static boolean isAsciiIdentifierStart(char ch) {
+    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_';
+  }
+
+  private static boolean isAsciiIdentifierPart(char ch) {
+    return isAsciiIdentifierStart(ch) || (ch >= '0' && ch <= '9');
   }
 
 }
