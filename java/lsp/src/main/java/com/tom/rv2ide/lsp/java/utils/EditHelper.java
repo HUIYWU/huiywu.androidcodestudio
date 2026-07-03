@@ -18,6 +18,7 @@
 package com.tom.rv2ide.lsp.java.utils;
 
 import androidx.annotation.NonNull;
+import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.lsp.java.compiler.CompilerProvider;
 import com.tom.rv2ide.lsp.java.rewrite.AddImport;
 import com.tom.rv2ide.lsp.models.TextEdit;
@@ -47,9 +48,12 @@ import openjdk.source.tree.MethodTree;
 import openjdk.source.tree.Tree;
 import openjdk.source.util.JavacTask;
 import openjdk.source.util.SourcePositions;
+import openjdk.source.util.TreePath;
 import openjdk.source.util.Trees;
-
+import org.slf4j.LoggerFactory;
 public class EditHelper {
+
+  private static final org.slf4j.Logger LOG = LoggerFactory.getLogger(EditHelper.class);
 
   public static List<TextEdit> addImportIfNeeded(CompilerProvider compiler, Path file,
                                                  Set<String> imports, String className
@@ -202,29 +206,45 @@ public class EditHelper {
   ) {
     SourcePositions pos = Trees.instance(task).getSourcePositions();
     LineMap lines = root.getLineMap();
+    long start = pos.getStartPosition(root, leaf);
     long end = pos.getEndPosition(root, leaf);
     int line = (int) lines.getLineNumber(end);
     long lineStart = lines.getStartPosition(line);
     int braceColumn = (int) lines.getColumnNumber(end) - 2;
     int indentColumn = 0;
+    String braceLineText = "";
     try {
       CharSequence source = root.getSourceFile().getCharContent(true);
       int index = (int) lineStart;
       int max = source.length();
+      StringBuilder sb = new StringBuilder();
       while (index < max) {
         char ch = source.charAt(index);
         if (ch == '\n' || ch == '\r') {
           break;
         }
-        if (!Character.isWhitespace(ch)) {
+        sb.append(ch);
+        if (!Character.isWhitespace(ch) && indentColumn == 0) {
           indentColumn = index - (int) lineStart;
-          break;
         }
         index++;
       }
+      braceLineText = sb.toString();
     } catch (IOException ignored) {
     }
     int column = Math.max(indentColumn, Math.max(0, braceColumn));
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug("EditHelper.insertAtEndOfClass start={} end={} startLine={} endLine={} braceColumn={} indentColumn={} resultColumn={} braceLine='{}' leafKind={}",
+          start,
+          end,
+          lines.getLineNumber(start),
+          line,
+          braceColumn,
+          indentColumn,
+          column,
+          braceLineText,
+          leaf.getKind());
+    }
     return new Position(line - 1, column);
   }
 

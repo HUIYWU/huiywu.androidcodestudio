@@ -229,7 +229,11 @@ public class ImplementAbstractMethods extends Rewrite {
           }
 
           if (LOG.isDebugEnabled()) {
-            LOG.debug("ImplementAbstractMethods insert position={} indent={} final insert text={}", insert, indent, insertText);
+            long treeStart = Trees.instance(task.task).getSourcePositions().getStartPosition(fileRoot, thisTree);
+            long treeEnd = Trees.instance(task.task).getSourcePositions().getEndPosition(fileRoot, thisTree);
+            int classIndent = EditHelper.indent(task.task, fileRoot, thisTree);
+            int lineIndent = EditHelper.lineIndent(task.task, fileRoot, thisTree);
+            LOG.debug("ImplementAbstractMethods treeStart={} treeEnd={} insert position={} classIndent={} lineIndent={} indent={} final insert text={}", treeStart, treeEnd, insert, classIndent, lineIndent, indent, insertText);
           }
           final List<TextEdit> edits = new ArrayList<>();
           edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
