@@ -39,15 +39,19 @@ import com.tom.rv2ide.lsp.java.utils.MethodStubGenerator
 import com.tom.rv2ide.lsp.java.visitors.FindAnonymousTypeDeclaration
 import com.tom.rv2ide.lsp.java.visitors.FindTypeDeclarationAt
 import com.tom.rv2ide.models.Position
+import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.preferences.utils.indentationString
 import com.tom.rv2ide.projects.IProjectManager
+
 import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.utils.flashError
 import io.github.rosemoe.sora.widget.CodeEditor
+import java.io.IOException
 import java.util.Arrays
 import java.util.Optional
 import java.util.concurrent.CompletableFuture
+
 import jdkx.lang.model.element.ElementKind
 import jdkx.lang.model.element.ExecutableElement
 import jdkx.lang.model.element.Modifier
@@ -55,8 +59,11 @@ import jdkx.lang.model.element.TypeElement
 import jdkx.lang.model.type.DeclaredType
 import jdkx.lang.model.type.ExecutableType
 import jdkx.tools.JavaFileObject
+import openjdk.source.tree.LineMap
 import openjdk.source.tree.MethodTree
+import openjdk.source.util.SourcePositions
 import openjdk.source.util.Trees
+
 import org.slf4j.LoggerFactory
 
 /**
@@ -269,8 +276,31 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       val indent = braceIndent + EditorPreferences.tabSize
       val fileImports = fileRoot.imports.map { it.qualifiedIdentifier.toString() }.toSet()
       val filePackage = fileRoot.`package`.packageName.toString()
-
-
+      val source =
+          try {
+            fileRoot.sourceFile.getCharContent(true)
+          } catch (error: IOException) {
+            log.warn("OverrideSuperclassMethods could not read source content", error)
+            return@run
+          }
+      val sourcePositions: SourcePositions = Trees.instance(task.task).sourcePositions
+      val treeStartOffset = sourcePositions.getStartPosition(fileRoot, classTree)
+      val treeEndOffset = sourcePositions.getEndPosition(fileRoot, classTree)
+      var openBraceOffset = -1
+      var closeBraceOffset = -1
+      for (i in maxOf(0L, treeStartOffset).toInt() until minOf(source.length, treeEndOffset.toInt())) {
+        if (source[i] == '{') {
+          openBraceOffset = i
+          break
+        }
+      }
+      for (i in minOf(treeEndOffset.toInt() - 1, source.length - 1) downTo maxOf(0L, treeStartOffset).toInt()) {
+        if (source[i] == '}') {
+          closeBraceOffset = i
+          break
+        }
+      }
+ 
       for (pointer in checkedMethods) {
         val superMethod =
             FindHelper.findMethod(
@@ -306,8 +336,14 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         } else {
           sb.append("\n")
         }
-        sb.append(memberIndent)
-        sb.append(generated.renderedText.replace("\n", "\n$memberIndent"))
+        val lines = generated.renderedText.split(Regex("\\r?\\n"), -1)
+        lines.forEachIndexed { lineIndex, line ->
+          if (lineIndex > 0) {
+            sb.append("\n")
+          }
+          sb.append(memberIndent)
+          sb.append(line)
+        }
         sb.append("\n")
         sb.append(indentationString(braceIndent))
 
@@ -320,22 +356,41 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         imports.addAll(newImports)
       }
 
+      val replaceRange =
+          if (openBraceOffset >= 0 && closeBraceOffset > openBraceOffset) {
+            val lineMap: LineMap = fileRoot.lineMap
+            Range(
+                Position(
+                    lineMap.getLineNumber((openBraceOffset + 1).toLong()).toInt() - 1,
+                    lineMap.getColumnNumber((openBraceOffset + 1).toLong()).toInt() - 1,
+                    openBraceOffset + 1,
+                ),
+                Position(
+                    lineMap.getLineNumber(closeBraceOffset.toLong()).toInt() - 1,
+                    lineMap.getColumnNumber(closeBraceOffset.toLong()).toInt() - 1,
+                    closeBraceOffset,
+                ),
+            )
+          } else {
+            null
+          }
       ThreadUtils.runOnUiThread {
         performEdits(
             data,
             sb,
             imports,
             insertPosition,
+            replaceRange,
         )
       }
     }
   }
-
   private fun performEdits(
       data: ActionData,
       sb: StringBuilder,
       imports: MutableSet<String>,
       position: Position,
+      replaceRange: Range?,
   ) {
     val compiler =
         JavaCompilerProvider.get(
@@ -346,10 +401,21 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
     val editor = data[CodeEditor::class.java]!!
     val file = data.requirePath()
     val text = editor.text
-
+ 
     text.beginBatchEdit()
+ 
+    if (replaceRange != null) {
+      text.replace(
+          replaceRange.start.line,
+          replaceRange.start.column,
+          replaceRange.end.line,
+          replaceRange.end.column,
+          sb,
+      )
+    } else {
+      text.insert(position.line, position.column, sb)
+    }
 
-    text.insert(position.line, position.column, sb)
 
     for (name in imports) {
       val rewrite = AddImport(file, name)

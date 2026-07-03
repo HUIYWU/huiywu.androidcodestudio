@@ -171,6 +171,9 @@ object JavaParserUtils {
     if (!fqn.contains('.')) {
       return null
     }
+    if (fqn.startsWith("java.lang.")) {
+      return null
+    }
     return fqn
   }
 
