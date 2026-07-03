@@ -311,7 +311,10 @@ public class ImplementAbstractMethods extends Rewrite {
       Set<String> imports,
       List<TextEdit> edits) {
     imports =
-        imports.stream().filter(name -> !name.startsWith("java.lang.")).collect(Collectors.toSet());
+        imports.stream()
+            .filter(name -> !name.startsWith("java.lang."))
+            .filter(name -> name.contains("."))
+            .collect(Collectors.toSet());
     for (String name : imports) {
       final List<TextEdit> importEdits =
           EditHelper.addImportIfNeeded(compiler, file, getFileImports(task, file), name);
