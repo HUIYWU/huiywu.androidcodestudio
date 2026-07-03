@@ -306,22 +306,27 @@ public class ImplementAbstractMethods extends Rewrite {
   protected void finalizeCodeAction(@NonNull CodeActionItem action) {
     action.setCommand(new Command("Format code", Command.FORMAT_CODE));
   }
-
   private static boolean isAnonymousTarget(String targetName) {
-    return targetName.startsWith("<anonymous ") || targetName.startsWith("<匿名");
+    return targetName.length() > 2
+        && targetName.charAt(0) == '<'
+        && targetName.charAt(targetName.length() - 1) == '>';
   }
 
   private static String extractAnonymousOwner(String targetName) {
-    String owner = targetName.substring(1, targetName.length() - 1);
-    if (owner.startsWith("anonymous ")) {
-      owner = owner.substring("anonymous ".length());
-    } else if (owner.startsWith("匿名")) {
-      owner = owner.substring("匿名".length());
+    String owner = targetName.substring(1, targetName.length() - 1).trim();
+
+    // Diagnostic display names for anonymous types are localized, so prefer the trailing owner
+    // token instead of matching a specific language prefix such as "anonymous" or "匿名".
+    int lastSpace = owner.lastIndexOf(' ');
+    if (lastSpace >= 0 && lastSpace + 1 < owner.length()) {
+      owner = owner.substring(lastSpace + 1);
     }
+
     int dollar = owner.indexOf('$');
     if (dollar >= 0) {
       owner = owner.substring(0, dollar);
     }
     return owner;
   }
+
 }
