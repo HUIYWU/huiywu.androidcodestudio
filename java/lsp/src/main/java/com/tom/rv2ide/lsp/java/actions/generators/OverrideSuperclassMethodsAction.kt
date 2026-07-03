@@ -219,9 +219,9 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
             ->
             if (error != null) {
               if (IdeLogConfig.shouldLogError()) {
-                log.error("An error occurred overriding methods")
+                log.error("An error occurred overriding methods", error)
               }
-
+ 
               ThreadUtils.runOnUiThread {
                 flashError(
                     data[Context::class.java]!!.getString(R.string.msg_cannot_override_methods)
@@ -336,7 +336,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         } else {
           sb.append("\n")
         }
-        val lines = generated.renderedText.split(Regex("\\r?\\n"), -1)
+        val lines = generated.renderedText.replace("\r\n", "\n").split("\n")
         lines.forEachIndexed { lineIndex, line ->
           if (lineIndex > 0) {
             sb.append("\n")
