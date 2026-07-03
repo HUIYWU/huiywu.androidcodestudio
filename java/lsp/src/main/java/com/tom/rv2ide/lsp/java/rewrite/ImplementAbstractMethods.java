@@ -211,9 +211,13 @@ public class ImplementAbstractMethods extends Rewrite {
                   generated.getDeclaration());
             }
             imports.addAll(generated.getImports());
-            String memberIndent = EditorUtilKt.indentationString(indent + EditorPreferences.INSTANCE.getTabSize());
+            String memberIndent = EditorUtilKt.indentationString(indent);
             String text = generated.getRenderedText();
-            insertText.append("\n");
+            if (insertText.length() == 0) {
+              insertText.append("\n\n");
+            } else {
+              insertText.append("\n");
+            }
             insertText.append(memberIndent);
             insertText.append(text.replace("\n", "\n" + memberIndent));
             insertText.append("\n");

@@ -299,8 +299,12 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
 
         val method = generated.declaration
         val newImports = generated.imports
-        val memberIndent = indentationString(indent + EditorPreferences.tabSize)
-        sb.append("\n")
+        val memberIndent = indentationString(indent)
+        if (sb.isEmpty()) {
+          sb.append("\n\n")
+        } else {
+          sb.append("\n")
+        }
         sb.append(memberIndent)
         sb.append(generated.renderedText.replace("\n", "\n$memberIndent"))
         sb.append("\n")
