@@ -158,6 +158,24 @@ public class ImplementAbstractMethods extends Rewrite {
           final Set<String> imports = new TreeSet<>();
           final Set<String> addedMethods = new HashSet<>();
           Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
+          final CharSequence source = fileRoot.getSourceFile().getCharContent(true);
+          final SourcePositions sourcePositions = Trees.instance(task.task).getSourcePositions();
+          final long treeStartOffset = sourcePositions.getStartPosition(fileRoot, thisTree);
+          final long treeEndOffset = sourcePositions.getEndPosition(fileRoot, thisTree);
+          int openBraceOffset = -1;
+          int closeBraceOffset = -1;
+          for (int i = (int) Math.max(0, treeStartOffset); i < source.length() && i < treeEndOffset; i++) {
+            if (source.charAt(i) == '{') {
+              openBraceOffset = i;
+              break;
+            }
+          }
+          for (int i = (int) Math.min(treeEndOffset - 1, source.length() - 1); i >= 0 && i >= treeStartOffset; i--) {
+            if (source.charAt(i) == '}') {
+              closeBraceOffset = i;
+              break;
+            }
+          }
           int braceIndent = EditHelper.lineIndent(task.task, fileRoot, thisTree);
           int indent = braceIndent + EditorPreferences.INSTANCE.getTabSize();
           for (Element member : elements.getAllMembers(thisClass)) {
@@ -239,10 +257,21 @@ public class ImplementAbstractMethods extends Rewrite {
             long treeEnd = Trees.instance(task.task).getSourcePositions().getEndPosition(fileRoot, thisTree);
             int classIndent = EditHelper.indent(task.task, fileRoot, thisTree);
             int lineIndent = EditHelper.lineIndent(task.task, fileRoot, thisTree);
-            LOG.debug("ImplementAbstractMethods treeStart={} treeEnd={} insert position={} classIndent={} lineIndent={} braceIndent={} indent={} final insert text={}", treeStart, treeEnd, insert, classIndent, lineIndent, braceIndent, indent, insertText);
+            LOG.debug("ImplementAbstractMethods treeStart={} treeEnd={} openBraceOffset={} closeBraceOffset={} insert position={} classIndent={} lineIndent={} braceIndent={} indent={} final insert text={}", treeStart, treeEnd, openBraceOffset, closeBraceOffset, insert, classIndent, lineIndent, braceIndent, indent, insertText);
           }
           final List<TextEdit> edits = new ArrayList<>();
-          edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
+          if (openBraceOffset >= 0 && closeBraceOffset > openBraceOffset) {
+            final LineMap lineMap = fileRoot.getLineMap();
+            final Position replaceStart = new Position(
+                (int) lineMap.getLineNumber(openBraceOffset + 1) - 1,
+                (int) lineMap.getColumnNumber(openBraceOffset + 1) - 1);
+            final Position replaceEnd = new Position(
+                (int) lineMap.getLineNumber(closeBraceOffset) - 1,
+                (int) lineMap.getColumnNumber(closeBraceOffset) - 1);
+            edits.add(new TextEdit(new Range(replaceStart, replaceEnd), insertText.toString()));
+          } else {
+            edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
+          }
           addImports(compiler, task, file, imports, edits);
 
           return Collections.singletonMap(file, edits.toArray(new TextEdit[0]));
