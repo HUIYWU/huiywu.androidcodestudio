@@ -1314,7 +1314,7 @@ Add a remote to push/pull changes</string>
   <string name="sub_module_name_valid">Valid module name</string>
   <string name="sub_module_name_invalid">Invalid module name</string>
   <string name="sub_module_create">Create Module</string>
-  <string name="sub_module_created_success">Module '%1$s' created successfully!</string>
+  <string name="sub_module_created_success">Module \'%1$s\' created successfully!</string>
   <string name="sub_module_created_error">Failed to create module: %1$s</string>
   <string name="sub_module_info_title">About Sub-Modules</string>
   <string name="sub_module_info_description">Sub-modules help organize your project into smaller, manageable components. Each module can have its own dependencies and build configuration.</string>
