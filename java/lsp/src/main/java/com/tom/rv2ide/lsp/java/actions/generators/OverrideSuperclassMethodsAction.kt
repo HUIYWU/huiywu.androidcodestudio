@@ -356,31 +356,23 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         imports.addAll(newImports)
       }
 
-      val replaceRange =
-          if (openBraceOffset >= 0 && closeBraceOffset > openBraceOffset) {
+      val targetPosition =
+          if (closeBraceOffset >= 0) {
             val lineMap: LineMap = fileRoot.lineMap
-            Range(
-                Position(
-                    lineMap.getLineNumber((openBraceOffset + 1).toLong()).toInt() - 1,
-                    lineMap.getColumnNumber((openBraceOffset + 1).toLong()).toInt() - 1,
-                    openBraceOffset + 1,
-                ),
-                Position(
-                    lineMap.getLineNumber(closeBraceOffset.toLong()).toInt() - 1,
-                    lineMap.getColumnNumber(closeBraceOffset.toLong()).toInt() - 1,
-                    closeBraceOffset,
-                ),
+            Position(
+                lineMap.getLineNumber(closeBraceOffset.toLong()).toInt() - 1,
+                lineMap.getColumnNumber(closeBraceOffset.toLong()).toInt() - 1,
+                closeBraceOffset,
             )
           } else {
-            null
+            insertPosition
           }
       ThreadUtils.runOnUiThread {
         performEdits(
             data,
             sb,
             imports,
-            insertPosition,
-            replaceRange,
+            targetPosition,
         )
       }
     }
@@ -390,7 +382,6 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       sb: StringBuilder,
       imports: MutableSet<String>,
       position: Position,
-      replaceRange: Range?,
   ) {
     val compiler =
         JavaCompilerProvider.get(
@@ -403,18 +394,8 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
     val text = editor.text
  
     text.beginBatchEdit()
+    text.insert(position.line, position.column, sb)
  
-    if (replaceRange != null) {
-      text.replace(
-          replaceRange.start.line,
-          replaceRange.start.column,
-          replaceRange.end.line,
-          replaceRange.end.column,
-          sb,
-      )
-    } else {
-      text.insert(position.line, position.column, sb)
-    }
 
 
     for (name in imports) {
