@@ -16,11 +16,11 @@
   <string name="official_tg_channel">官方 Telegram 频道</string>
   <string name="msg_empty_view">没有数据</string>
   <string name="title_terminal">终端</string>
-  <string name="terminal_new_session">新建终端</string>
-  <string name="terminal_close_session">关闭终端</string>
-  <string name="terminal_empty_state">没有终端会话</string>
-  <string name="terminal_empty_message">当前没有打开的终端会话。创建新会话以开始使用。</string>
-  <string name="terminal_create_first">创建终端</string>
+  <string name="terminal_nav_hide">隐藏</string>
+  <string name="terminal_nav_new_session">新建会话</string>
+  <string name="terminal_nav_settings">设置</string>
+  <string name="terminal_session_name">会话 %1$d</string>
+  <string name="terminal_close_session">关闭会话</string>
   <string name="edit">编辑</string>
   <string name="reset">重置</string>
   <string name="updater_download">下载</string>
