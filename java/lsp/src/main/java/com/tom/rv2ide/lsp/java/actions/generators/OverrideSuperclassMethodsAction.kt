@@ -265,7 +265,8 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       }
       val thisClass: TypeElement = thisClassCandidate
       val insertPosition = EditHelper.insertAtEndOfClass(task.task, fileRoot, classTree)
-      val indent = EditHelper.lineIndent(task.task, fileRoot, classTree) + EditorPreferences.tabSize
+      val braceIndent = EditHelper.lineIndent(task.task, fileRoot, classTree)
+      val indent = braceIndent + EditorPreferences.tabSize
       val fileImports = fileRoot.imports.map { it.qualifiedIdentifier.toString() }.toSet()
       val filePackage = fileRoot.`package`.packageName.toString()
 
@@ -308,6 +309,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         sb.append(memberIndent)
         sb.append(generated.renderedText.replace("\n", "\n$memberIndent"))
         sb.append("\n")
+        sb.append(indentationString(braceIndent))
 
         newImports.removeIf { importName ->
           importName.startsWith("java.lang.") ||

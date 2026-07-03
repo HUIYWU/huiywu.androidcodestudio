@@ -158,7 +158,8 @@ public class ImplementAbstractMethods extends Rewrite {
           final Set<String> imports = new TreeSet<>();
           final Set<String> addedMethods = new HashSet<>();
           Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
-          int indent = EditHelper.lineIndent(task.task, fileRoot, thisTree) + EditorPreferences.INSTANCE.getTabSize();
+          int braceIndent = EditHelper.lineIndent(task.task, fileRoot, thisTree);
+          int indent = braceIndent + EditorPreferences.INSTANCE.getTabSize();
           for (Element member : elements.getAllMembers(thisClass)) {
             if (member.getKind() != ElementKind.METHOD || !member.getModifiers().contains(Modifier.ABSTRACT)) {
               continue;
@@ -221,6 +222,7 @@ public class ImplementAbstractMethods extends Rewrite {
             insertText.append(memberIndent);
             insertText.append(text.replace("\n", "\n" + memberIndent));
             insertText.append("\n");
+            insertText.append(EditorUtilKt.indentationString(braceIndent));
           }
 
           if (insertText.length() == 0) {
@@ -237,7 +239,7 @@ public class ImplementAbstractMethods extends Rewrite {
             long treeEnd = Trees.instance(task.task).getSourcePositions().getEndPosition(fileRoot, thisTree);
             int classIndent = EditHelper.indent(task.task, fileRoot, thisTree);
             int lineIndent = EditHelper.lineIndent(task.task, fileRoot, thisTree);
-            LOG.debug("ImplementAbstractMethods treeStart={} treeEnd={} insert position={} classIndent={} lineIndent={} indent={} final insert text={}", treeStart, treeEnd, insert, classIndent, lineIndent, indent, insertText);
+            LOG.debug("ImplementAbstractMethods treeStart={} treeEnd={} insert position={} classIndent={} lineIndent={} braceIndent={} indent={} final insert text={}", treeStart, treeEnd, insert, classIndent, lineIndent, braceIndent, indent, insertText);
           }
           final List<TextEdit> edits = new ArrayList<>();
           edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
