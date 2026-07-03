@@ -24,6 +24,7 @@ import com.tom.rv2ide.lsp.models.TextEdit;
 import com.tom.rv2ide.models.Position;
 import com.tom.rv2ide.models.Range;
 import com.tom.rv2ide.projects.util.StringSearch;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
