@@ -141,6 +141,35 @@ public class EditHelper {
     return indent(root, leaf, pos);
   }
 
+  public static int lineIndent(final JavacTask task, final CompilationUnitTree root, final Tree leaf) {
+    SourcePositions pos = Trees.instance(task).getSourcePositions();
+    long start = pos.getStartPosition(root, leaf);
+    return lineIndent(root, start);
+  }
+
+  public static int lineIndent(@NonNull CompilationUnitTree root, long offset) {
+    LineMap lines = root.getLineMap();
+    long line = lines.getLineNumber(offset);
+    long lineStart = lines.getStartPosition(line);
+    try {
+      CharSequence source = root.getSourceFile().getCharContent(true);
+      int index = (int) lineStart;
+      int max = source.length();
+      while (index < max) {
+        char ch = source.charAt(index);
+        if (ch == '\n' || ch == '\r') {
+          break;
+        }
+        if (!Character.isWhitespace(ch)) {
+          return index - (int) lineStart;
+        }
+        index++;
+      }
+    } catch (IOException ignored) {
+    }
+    return 0;
+  }
+
   private static int indent(@NonNull CompilationUnitTree root, Tree leaf,
                             @NonNull SourcePositions pos
   ) {

@@ -158,7 +158,7 @@ public class ImplementAbstractMethods extends Rewrite {
           final Set<String> imports = new TreeSet<>();
           final Set<String> addedMethods = new HashSet<>();
           Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
-          int indent = insert.getColumn() + EditorPreferences.INSTANCE.getTabSize();
+          int indent = EditHelper.lineIndent(task.task, fileRoot, thisTree) + EditorPreferences.INSTANCE.getTabSize();
           for (Element member : elements.getAllMembers(thisClass)) {
             if (member.getKind() != ElementKind.METHOD || !member.getModifiers().contains(Modifier.ABSTRACT)) {
               continue;
