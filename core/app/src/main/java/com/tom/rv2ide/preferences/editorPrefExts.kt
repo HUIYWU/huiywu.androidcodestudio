@@ -368,25 +368,29 @@ private class UseCustomFont(
   }
 
   @IgnoredOnParcel override val dialogCancellable = true
-
   override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
     val fontDir = File("${Environment.HOME}/.androidide/ui")
-    val fontFiles = fontDir.listFiles { file ->
-      file.extension.lowercase() in listOf("ttf", "otf")
-    }?.map { it.name }?.sorted() ?: emptyList()
-    
+    val fontFiles =
+        fontDir.listFiles { file ->
+          file.extension.lowercase() in listOf("ttf", "otf")
+        }
+            ?.map { it.name }
+            ?.filterNot { it.equals("jetbrains-mono.ttf", ignoreCase = true) }
+            ?.sorted()
+            ?: emptyList()
+
     val currentFont = EditorPreferences.selectedCustomFont
-    
+
     val entries = mutableListOf<PreferenceChoices.Entry>()
-    
+
     entries.add(
       PreferenceChoices.Entry(
         label = "JetBrains Mono (Default)",
         _isChecked = currentFont == null,
-        data = ""
+        data = null
       )
     )
-    
+
     fontFiles.forEach { fontName ->
       entries.add(
         PreferenceChoices.Entry(
@@ -396,6 +400,7 @@ private class UseCustomFont(
         )
       )
     }
+
     
     entries.add(
       PreferenceChoices.Entry(

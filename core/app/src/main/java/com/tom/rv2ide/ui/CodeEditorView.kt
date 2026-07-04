@@ -162,28 +162,55 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
         prewarmedBinding = null
       }
     }
-
     fun clearPrewarmedEditorBinding() {
       prewarmedBinding?.editor?.runCatching { release() }
       prewarmedBinding = null
     }
 
-    private fun prewarmTextAppearanceCache() {
-      val state = EditorPreferences.useCustomFont
-      var fontPath = "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/${EditorPreferences.selectedCustomFont}"
-      if (fontPath == "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/null") {
-        fontPath = "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/jetbrains-mono.ttf"
+    private const val DEFAULT_JB_MONO_SENTINEL = "__default_jb_mono__"
+    private const val DEFAULT_JB_MONO_FILE_NAME = "jetbrains-mono.ttf"
+    private const val DEFAULT_JB_MONO_ASSET_PATH = "fonts/jetbrains-mono.ttf"
+
+    private fun resolveEditorTypeface(context: Context, selectedFont: String?): Typeface {
+      val defaultStorageFile = File("${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/$DEFAULT_JB_MONO_FILE_NAME")
+
+      fun loadFromFile(file: File): Typeface? {
+        return if (file.isFile && file.canRead()) {
+          runCatching { Typeface.createFromFile(file) }.getOrNull()
+        } else {
+          null
+        }
       }
 
-      if (cachedTypefacePath != fontPath || cachedTypeface == null) {
-        cachedTypeface = runCatching { Typeface.createFromFile(fontPath) }.getOrNull() ?: Typeface.MONOSPACE
-        cachedTypefacePath = fontPath
+      fun loadDefaultTypeface(): Typeface {
+        return loadFromFile(defaultStorageFile)
+            ?: runCatching { Typeface.createFromAsset(context.assets, DEFAULT_JB_MONO_ASSET_PATH) }.getOrNull()
+            ?: Typeface.MONOSPACE
+      }
+
+      if (selectedFont.isNullOrBlank()) {
+        return loadDefaultTypeface()
+      }
+
+      val customFile = File("${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/$selectedFont")
+      return loadFromFile(customFile) ?: loadDefaultTypeface()
+    }
+
+    private fun prewarmTextAppearanceCache() {
+
+      val state = EditorPreferences.useCustomFont
+      val fontKey = EditorPreferences.selectedCustomFont ?: DEFAULT_JB_MONO_SENTINEL
+
+      if (cachedTypefacePath != fontKey || cachedTypeface == null) {
+        cachedTypeface = resolveEditorTypeface(BaseApplication.getBaseInstance(), EditorPreferences.selectedCustomFont)
+        cachedTypefacePath = fontKey
       }
       if (cachedLineNumberTypefaceState != state || cachedLineNumberTypeface == null) {
         cachedLineNumberTypeface = customOrJBMono(state)
         cachedLineNumberTypefaceState = state
       }
     }
+
   }
 
   private fun obtainBinding(context: Context): LayoutCodeEditorBinding {
@@ -579,25 +606,22 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   private fun onUseIcuPrefChanged() {
     binding.editor.props.useICULibToSelectWords = EditorPreferences.useIcu
   }
-
   private fun onCustomFontPrefChanged() {
     val state = EditorPreferences.useCustomFont
-    var fontPath = "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/${EditorPreferences.selectedCustomFont}"
-    if (fontPath == "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/null") {
-      fontPath = "${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/jetbrains-mono.ttf"
-    }
+    val fontKey = EditorPreferences.selectedCustomFont ?: DEFAULT_JB_MONO_SENTINEL
 
     val typeface =
-        if (cachedTypefacePath == fontPath && cachedTypeface != null) {
+        if (cachedTypefacePath == fontKey && cachedTypeface != null) {
           cachedTypeface!!
         } else {
-          (runCatching { Typeface.createFromFile(fontPath) }.getOrNull() ?: Typeface.MONOSPACE).also {
-            cachedTypefacePath = fontPath
+          resolveEditorTypeface(context, EditorPreferences.selectedCustomFont).also {
+            cachedTypefacePath = fontKey
             cachedTypeface = it
           }
         }
 
     val lineNumberTypeface =
+
         if (cachedLineNumberTypefaceState == state && cachedLineNumberTypeface != null) {
           cachedLineNumberTypeface!!
         } else {
