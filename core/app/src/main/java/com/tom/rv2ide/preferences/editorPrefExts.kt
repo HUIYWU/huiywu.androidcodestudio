@@ -365,6 +365,7 @@ private class UseCustomFont(
 
   companion object {
     const val PICK_FONT_REQUEST = 1001
+    private const val DEFAULT_FONT_ENTRY = "DEFAULT_JB_MONO"
   }
 
   @IgnoredOnParcel override val dialogCancellable = true
@@ -387,7 +388,7 @@ private class UseCustomFont(
       PreferenceChoices.Entry(
         label = "JetBrains Mono (Default)",
         _isChecked = currentFont == null,
-        data = null
+        data = DEFAULT_FONT_ENTRY
       )
     )
 
@@ -422,13 +423,13 @@ private class UseCustomFont(
       "ADD_NEW" -> {
         openFontPicker(preference)
       }
-      null -> {
+      DEFAULT_FONT_ENTRY -> {
         EditorPreferences.selectedCustomFont = null
         Toast.makeText(preference.context, "Using default font", Toast.LENGTH_SHORT).show()
       }
       else -> {
-        EditorPreferences.selectedCustomFont = entry.data as String
-        Toast.makeText(preference.context, "Font selected: ${entry.label}", Toast.LENGTH_SHORT).show()
+        EditorPreferences.selectedCustomFont = entry?.data as? String
+        Toast.makeText(preference.context, "Font selected: ${entry?.label}", Toast.LENGTH_SHORT).show()
       }
     }
   }
