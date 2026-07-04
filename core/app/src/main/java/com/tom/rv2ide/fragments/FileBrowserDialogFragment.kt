@@ -125,8 +125,8 @@ class FileBrowserDialogFragment : DialogFragment() {
 
     private fun setupToolbar() {
         val title = when (operationType) {
-            OperationType.COPY -> "Select Destination (Copy)"
-            OperationType.MOVE -> "Select Destination (Move)"
+            OperationType.COPY -> getString(R.string.file_browser_select_destination_copy)
+            OperationType.MOVE -> getString(R.string.file_browser_select_destination_move)
         }
         binding.toolbarDialog.title = title
         
@@ -235,8 +235,8 @@ class FileBrowserDialogFragment : DialogFragment() {
                     listFiles(fileItem.path)
                 } else {
                     Toast.makeText(
-                        requireContext(), 
-                        "Please select a folder to paste into", 
+                        requireContext(),
+                        getString(R.string.file_browser_select_folder_to_paste),
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -277,14 +277,14 @@ class FileBrowserDialogFragment : DialogFragment() {
         val destinationFile = File(destinationDir, sourceFile.name)
 
         if (!sourceFile.exists()) {
-            Toast.makeText(requireContext(), "Source file doesn't exist", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_source_not_exists), Toast.LENGTH_SHORT).show()
             return
         }
 
         if (destinationFile.exists()) {
             Toast.makeText(
-                requireContext(), 
-                "File already exists in destination", 
+                requireContext(),
+                getString(R.string.file_browser_destination_exists),
                 Toast.LENGTH_SHORT
             ).show()
             return
@@ -292,26 +292,25 @@ class FileBrowserDialogFragment : DialogFragment() {
 
         if (sourceFile.absolutePath == destinationFile.absolutePath) {
             Toast.makeText(
-                requireContext(), 
-                "Source and destination are the same", 
+                requireContext(),
+                getString(R.string.file_browser_same_source_destination),
                 Toast.LENGTH_SHORT
             ).show()
             return
         }
 
-        // Check if trying to move a directory into itself
         if (sourceFile.isDirectory && destinationFile.absolutePath.startsWith(sourceFile.absolutePath)) {
             Toast.makeText(
-                requireContext(), 
-                "Cannot move a folder into itself", 
+                requireContext(),
+                getString(R.string.file_browser_move_into_self),
                 Toast.LENGTH_SHORT
             ).show()
             return
         }
 
         Toast.makeText(
-            requireContext(), 
-            "Moving ${sourceFile.name} to ${destinationDir.name}...", 
+            requireContext(),
+            getString(R.string.file_browser_moving_progress, sourceFile.name, destinationDir.name),
             Toast.LENGTH_SHORT
         ).show()
 
@@ -320,21 +319,20 @@ class FileBrowserDialogFragment : DialogFragment() {
                 if (sourceFile.renameTo(destinationFile)) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
-                            requireContext(), 
-                            "File moved successfully!", 
+                            requireContext(),
+                            getString(R.string.file_browser_move_success),
                             Toast.LENGTH_SHORT
                         ).show()
                         onOperationCompleteListener?.invoke()
                         animateDialogExit()
                     }
                 } else {
-                    // If rename fails (different partitions), copy then delete
                     copyFile(sourceFile, destinationFile)
                     sourceFile.deleteRecursively()
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
-                            requireContext(), 
-                            "File moved successfully!", 
+                            requireContext(),
+                            getString(R.string.file_browser_move_success),
                             Toast.LENGTH_SHORT
                         ).show()
                         onOperationCompleteListener?.invoke()
@@ -344,8 +342,8 @@ class FileBrowserDialogFragment : DialogFragment() {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
-                        requireContext(), 
-                        "Failed to move: ${e.message}", 
+                        requireContext(),
+                        getString(R.string.file_browser_move_failed, e.message ?: ""),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -359,14 +357,14 @@ class FileBrowserDialogFragment : DialogFragment() {
         val destinationFile = File(destinationDir, sourceFile.name)
 
         if (!sourceFile.exists()) {
-            Toast.makeText(requireContext(), "Source file doesn't exist", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_source_not_exists), Toast.LENGTH_SHORT).show()
             return
         }
 
         if (destinationFile.exists()) {
             Toast.makeText(
-                requireContext(), 
-                "File already exists in destination", 
+                requireContext(),
+                getString(R.string.file_browser_destination_exists),
                 Toast.LENGTH_SHORT
             ).show()
             return
@@ -374,16 +372,16 @@ class FileBrowserDialogFragment : DialogFragment() {
 
         if (sourceFile.absolutePath == destinationFile.absolutePath) {
             Toast.makeText(
-                requireContext(), 
-                "Source and destination are the same", 
+                requireContext(),
+                getString(R.string.file_browser_same_source_destination),
                 Toast.LENGTH_SHORT
             ).show()
             return
         }
 
         Toast.makeText(
-            requireContext(), 
-            "Copying ${sourceFile.name} to ${destinationDir.name}...", 
+            requireContext(),
+            getString(R.string.file_browser_copying_progress, sourceFile.name, destinationDir.name),
             Toast.LENGTH_SHORT
         ).show()
 
@@ -392,8 +390,8 @@ class FileBrowserDialogFragment : DialogFragment() {
                 copyFile(sourceFile, destinationFile)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
-                        requireContext(), 
-                        "File copied successfully!", 
+                        requireContext(),
+                        getString(R.string.file_browser_copy_success),
                         Toast.LENGTH_SHORT
                     ).show()
                     animateDialogExit()
@@ -401,8 +399,8 @@ class FileBrowserDialogFragment : DialogFragment() {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
-                        requireContext(), 
-                        "Failed to copy: ${e.message}", 
+                        requireContext(),
+                        getString(R.string.file_browser_copy_failed, e.message ?: ""),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -482,19 +480,19 @@ class FileBrowserDialogFragment : DialogFragment() {
         val file = File(path)
 
         if (!file.exists()) {
-            Toast.makeText(requireContext(), "Directory doesn't exist: ${file.name}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_directory_not_exists, file.name), Toast.LENGTH_SHORT).show()
             return
         }
 
         if (!file.canRead()) {
-            Toast.makeText(requireContext(), "Cannot read directory: ${file.name}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_cannot_read_directory, file.name), Toast.LENGTH_SHORT).show()
             return
         }
 
         val filesAndFolders = file.listFiles()
 
         if (filesAndFolders == null) {
-            Toast.makeText(requireContext(), "Cannot access folder", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_cannot_access_folder_short), Toast.LENGTH_SHORT).show()
             return
         }
 
