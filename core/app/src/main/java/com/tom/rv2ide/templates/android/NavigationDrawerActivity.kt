@@ -43,7 +43,7 @@ import kotlinx.coroutines.withContext
  */
 
 class NavigationDrawerActivity : Template {
-  override val displayName = "Navigation drawer"
+  override val displayName = "Navigation Drawer"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()

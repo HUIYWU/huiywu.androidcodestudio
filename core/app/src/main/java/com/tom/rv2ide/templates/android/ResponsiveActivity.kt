@@ -43,7 +43,7 @@ import kotlinx.coroutines.withContext
  */
 
 class ResponsiveActivity : Template {
-  override val displayName = "Responsive activity"
+  override val displayName = "Responsive Activity"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()
