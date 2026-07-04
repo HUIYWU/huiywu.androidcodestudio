@@ -135,6 +135,7 @@
   <string name="template_empty">空项目</string>
   <string name="template_navigation_drawer">抽屉式导航栏项目</string>
   <string name="template_navigation_tabs">底部导航栏 Activity</string>
+  <string name="template_creating">正在创建%1$s...</string>
   <string name="template_tabs">选项卡 Activity</string>
   <string name="template_no_activity">无 Activity</string>
   <string name="template_no_AndroidX">无 AndroidX</string>
@@ -721,6 +722,9 @@
   <string name="msg_remove_ndk_failed">移除 NDK %1$s 失败</string>
   <string name="dialog_remove_cmake_title">移除 CMake</string>
   <string name="dialog_remove_cmake_message">确定要移除 CMake 版本 %1$s 吗？</string>
+  <string name="action_download">下载</string>
+  <string name="action_remove">移除</string>
+  <string name="action_ok">确定</string>
   <string name="msg_remove_cmake_success">已成功移除 CMake %1$s</string>
   <string name="msg_remove_cmake_failed">移除 CMake %1$s 失败</string>
   <string name="msg_unsupported_architecture">不支持的架构：%1$s</string>
@@ -1037,6 +1041,8 @@
   <string name="hin_jdk_version">JDK 版本</string>
   <string name="action_install_git">安装 Git</string>
   <string name="action_install_openssh">安装 OpenSSH</string>
+  <string name="status_installed">已安装</string>
+  <string name="status_not_installed">未安装</string>
   <string name="action_search">搜索</string>
   <string name="msg_terminal_new_sessions_disabled">无法创建会话，新会话被禁用！</string>
   <string name="title_install_location_error">安装位置错误</string>

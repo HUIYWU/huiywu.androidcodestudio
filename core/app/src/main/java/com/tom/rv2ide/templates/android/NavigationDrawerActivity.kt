@@ -74,8 +74,14 @@ class NavigationDrawerActivity : Template {
 
           // Show toast on main thread
           withContext(Dispatchers.Main) {
-            Toast.makeText(context, "Creating Navigation drawer Activity...", Toast.LENGTH_SHORT)
-                .show()
+            Toast.makeText(
+          context,
+          context.getString(
+              com.tom.rv2ide.R.string.template_creating,
+              context.getString(com.tom.rv2ide.R.string.template_toast_navigation_drawer),
+          ),
+          Toast.LENGTH_SHORT,
+      ).show()
           }
 
           val packageHelper =

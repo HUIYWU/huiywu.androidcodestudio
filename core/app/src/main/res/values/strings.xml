@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="template_toast_basic">Basic Activity</string>
+  <string name="template_toast_empty">Empty Activity</string>
+  <string name="template_toast_no_activity">No Activity</string>
+  <string name="template_toast_cpp">C++ project</string>
+  <string name="template_toast_game">Game Activity</string>
+  <string name="template_toast_compose">Jetpack Compose</string>
+  <string name="template_toast_bottom_navigation">Bottom Navigation Activity</string>
+  <string name="template_toast_navigation_drawer">Navigation drawer Activity</string>
+  <string name="template_toast_responsive">Responsive activity</string>
+</resources>

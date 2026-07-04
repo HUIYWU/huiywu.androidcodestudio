@@ -314,6 +314,7 @@
     name="template_compose"
     translatable="false">Jetpack Compose</string>
   <string name="template_navigation_tabs">Bottom Navigation Activity</string>
+  <string name="template_creating">Creating %1$s...</string>
   <string name="template_tabs">Tabbed Activity</string>
   <string name="template_no_activity">No Activity</string>
   <string name="template_no_AndroidX">No AndroidX</string>
