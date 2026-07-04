@@ -883,6 +883,47 @@
   <string name="file_browser_select_destination">选择目标位置</string>
   <string name="file_browser_goto_my_project">前往我的项目</string>
   <string name="file_browser_paste_here">粘贴到此处</string>
+  <string name="file_browser_filter">筛选</string>
+  <string name="file_browser_show_all">显示全部</string>
+  <string name="file_browser_folders_only">仅文件夹</string>
+  <string name="file_browser_files_only">仅文件</string>
+  <string name="file_browser_filter_by_extension">按扩展名筛选</string>
+  <string name="file_browser_all_files">所有文件</string>
+  <string name="file_browser_xml_files">XML 文件 (.xml)</string>
+  <string name="file_browser_text_files">文本文件 (.txt)</string>
+  <string name="file_browser_pdf_files">PDF 文件 (.pdf)</string>
+  <string name="file_browser_image_files">图片 (.jpg, .png, .gif)</string>
+  <string name="file_browser_video_files">视频 (.mp4, .mkv, .avi)</string>
+  <string name="file_browser_audio_files">音频 (.mp3, .wav, .m4a)</string>
+  <string name="file_browser_apk_files">APK 文件 (.apk)</string>
+  <string name="file_browser_archive_files">压缩包 (.zip, .rar, .7z)</string>
+  <string name="file_browser_custom_extension">自定义扩展名...</string>
+  <string name="file_browser_search_files_hint">搜索文件...</string>
+  <string name="file_browser_custom_extension_hint">例如：json、kt、java</string>
+  <string name="file_browser_custom_extension_title">输入自定义扩展名</string>
+  <string name="file_browser_custom_extension_message">输入不带点号的文件扩展名</string>
+  <string name="file_browser_no_files_match_filters">没有文件符合当前筛选条件</string>
+  <string name="file_browser_clicked_file">点击了文件：%1$s</string>
+  <string name="file_browser_copy_to">复制到</string>
+  <string name="file_browser_move_to">移动到</string>
+  <string name="file_browser_copy_full_path">复制完整路径</string>
+  <string name="file_browser_rename_message">输入 %1$s 的新名称</string>
+  <string name="file_browser_name_empty">名称不能为空</string>
+  <string name="file_browser_name_exists">已存在同名文件</string>
+  <string name="file_browser_renamed_success">重命名成功</string>
+  <string name="file_browser_rename_failed">重命名失败</string>
+  <string name="file_browser_clipboard_label">文件路径</string>
+  <string name="file_browser_path_copied">路径已复制到剪贴板</string>
+  <string name="file_browser_delete_folder_message">确定要删除此文件夹及其全部内容吗？
+
+%1$s</string>
+  <string name="file_browser_delete_file_message">确定要删除此文件吗？
+
+%1$s</string>
+  <string name="file_browser_delete_folder_title">删除文件夹</string>
+  <string name="file_browser_delete_file_title">删除文件</string>
+  <string name="file_browser_deleted_success">删除成功</string>
+  <string name="file_browser_cannot_access_folder">无法访问此文件夹</string>
   <string name="git_user_name_hint">用户名</string>
   <string name="import_project">导入项目</string>
   <string name="git_user_email_hint">用户邮箱</string>
