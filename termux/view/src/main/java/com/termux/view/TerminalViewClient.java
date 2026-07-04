@@ -35,7 +35,16 @@ public interface TerminalViewClient {
     boolean shouldUseCtrlSpaceWorkaround();
 
     boolean isTerminalViewSelected();
-
+    /**
+     * Whether the text selection action mode should expose the optional "More" entry.
+     *
+     * Default is enabled for existing clients so legacy behavior is preserved.
+     * Embedders that provide a simplified terminal UX (for example inside a compact IDE panel)
+     * may override and return false to keep only Copy/Paste.
+     */
+    default boolean shouldShowTextSelectionMore() {
+        return true;
+    }
 
 
     void copyModeChanged(boolean copyMode);

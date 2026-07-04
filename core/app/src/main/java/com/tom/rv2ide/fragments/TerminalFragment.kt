@@ -81,6 +81,8 @@ class TerminalFragment : Fragment() {
         override fun shouldEnforceCharBasedInput() = true
         override fun shouldUseCtrlSpaceWorkaround() = false
         override fun isTerminalViewSelected() = true
+        // Keep long-press text selection focused on Copy/Paste inside the compact editor sheet terminal.
+        override fun shouldShowTextSelectionMore() = false
         override fun copyModeChanged(copyMode: Boolean) {}
         override fun onKeyDown(keyCode: Int, e: KeyEvent?, session: TerminalSession?) = false
         override fun onKeyUp(keyCode: Int, e: KeyEvent?) = false
