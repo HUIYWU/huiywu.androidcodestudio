@@ -409,9 +409,13 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.templatesGrid.adapter =
         TemplateAdapter(ctx, templates) { template ->
           selectedTemplate = template
+          // Reset wizard-global template flags before applying the newly selected template,
+          // otherwise a previously selected template can leak state into the next one.
+          Options.resetToDefaults()
           template.configureOptions()
 
           if (template.javaClass.simpleName == "NativeCpp") {
+
             validateNativeTemplate(ctx)
           } else {
             proceedToOptionsPage(ctx)

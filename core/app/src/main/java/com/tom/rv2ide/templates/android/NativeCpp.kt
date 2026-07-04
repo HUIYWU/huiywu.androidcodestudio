@@ -59,10 +59,13 @@ class NativeCpp : Template {
   private val ASSETS_BASE_PATH = NativeCpp::class.simpleName
   private val ASSETS_RESOURCES_PATH = "$ASSETS_BASE_PATH/resources"
   private val ASSETS_GRADLE_PATH = "$ASSETS_BASE_PATH/gradle"
-
   override fun configureOptions() {
     Options.OPT_IS_NATIVE_CPP = true
+    // Native C++ is a generic native template and must not inherit the stricter
+    // Game Activity save-location restriction from a previously selected template.
+    Options.OPT_IS_NATIVE_GAME_ACTIVITY = false
   }
+
 
   override suspend fun create(
       context: Context,
