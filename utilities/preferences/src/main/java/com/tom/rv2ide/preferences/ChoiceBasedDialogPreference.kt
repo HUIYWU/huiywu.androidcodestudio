@@ -36,6 +36,7 @@ abstract class ChoiceBasedDialogPreference : DialogPreference(), PreferenceChoic
 
     val selections = BooleanArray(choices.size) { choices[it].isChecked }
     onConfigureDialogChoices(preference, dialog, choices, selections)
+    onConfigureDialogActions(preference, dialog)
 
     dialog.setPositiveButton(android.R.string.ok) { dialogInterface, _ ->
       dialogInterface.dismiss()
@@ -65,6 +66,11 @@ abstract class ChoiceBasedDialogPreference : DialogPreference(), PreferenceChoic
       entries: Array<PreferenceChoices.Entry>,
       selections: BooleanArray,
   )
+
+  protected open fun onConfigureDialogActions(
+      preference: Preference,
+      dialog: MaterialAlertDialogBuilder,
+  ) {}
 
   override fun onChoicesConfirmed(
       preference: Preference,

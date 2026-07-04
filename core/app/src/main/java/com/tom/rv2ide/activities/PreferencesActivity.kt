@@ -16,7 +16,12 @@
  */
 package com.tom.rv2ide.activities
 
+import android.app.Activity
+import android.content.Intent
+import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Toast
 import androidx.core.graphics.Insets
@@ -29,13 +34,10 @@ import com.tom.rv2ide.databinding.ActivityPreferencesBinding
 import com.tom.rv2ide.fragments.IDEPreferencesFragment
 import com.tom.rv2ide.preferences.IDEPreferences as prefs
 import com.tom.rv2ide.preferences.addRootPreferences
+import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.utils.Environment
-import kotlin.system.exitProcess
-import android.provider.OpenableColumns
-import android.net.Uri
 import java.io.File
-import android.app.Activity
-import android.content.Intent
+import kotlin.system.exitProcess
 
 class PreferencesActivity : EdgeToEdgeIDEActivity(), PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
 
@@ -70,31 +72,52 @@ class PreferencesActivity : EdgeToEdgeIDEActivity(), PreferenceFragmentCompat.On
   }
 
   override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-      super.onActivityResult(requestCode, resultCode, data)
-      
-      if (requestCode == 1001 && resultCode == Activity.RESULT_OK) {
-          data?.data?.let { uri ->
-              try {
-                  val fontDir = File("${Environment.HOME}/.androidide/ui")
-                  if (!fontDir.exists()) {
-                      fontDir.mkdirs()
-                  }
-                  
-                  val fileName = getFileName(uri) ?: "custom_font.ttf"
-                  val destFile = File(fontDir, fileName)
-                  
-                  contentResolver.openInputStream(uri)?.use { input ->
-                      destFile.outputStream().use { output ->
-                          input.copyTo(output)
-                      }
-                  }
-                  
-                  Toast.makeText(this, "Font copied successfully: $fileName", Toast.LENGTH_SHORT).show()
-              } catch (e: Exception) {
-                  Toast.makeText(this, "Error copying font: ${e.message}", Toast.LENGTH_LONG).show()
-              }
-          }
+    super.onActivityResult(requestCode, resultCode, data)
+
+    if (requestCode == 1001 && resultCode == Activity.RESULT_OK) {
+      data?.data?.let { uri -> importEditorFont(uri) }
+    }
+  }
+
+  private fun importEditorFont(uri: Uri) {
+    try {
+      val fileName = File(getFileName(uri) ?: "custom_font.ttf").name
+      val extension = fileName.substringAfterLast('.', "").lowercase()
+      if (extension !in setOf("ttf", "otf")) {
+        Toast.makeText(this, "Only TTF and OTF fonts can be imported.", Toast.LENGTH_LONG).show()
+        return
       }
+
+      val fontDir = File("${Environment.HOME}/.androidide/ui")
+      if (!fontDir.exists()) {
+        fontDir.mkdirs()
+      }
+
+      val destFile = File(fontDir, fileName)
+      val tempFile = File(fontDir, "$fileName.importing")
+      contentResolver.openInputStream(uri)?.use { input ->
+        tempFile.outputStream().use { output -> input.copyTo(output) }
+      } ?: error("Unable to open selected font.")
+
+      runCatching { Typeface.createFromFile(tempFile) }.getOrElse {
+        tempFile.delete()
+        throw IllegalArgumentException("The selected file is not a valid font.", it)
+      }
+
+      if (destFile.exists() && !destFile.delete()) {
+        tempFile.delete()
+        error("Unable to replace existing font.")
+      }
+      if (!tempFile.renameTo(destFile)) {
+        tempFile.delete()
+        error("Unable to save imported font.")
+      }
+
+      EditorPreferences.selectedCustomFont = fileName
+      Toast.makeText(this, "Font imported and applied: $fileName", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+      Toast.makeText(this, "Error importing font: ${e.message}", Toast.LENGTH_LONG).show()
+    }
   }
   
   private fun getFileName(uri: Uri): String? {

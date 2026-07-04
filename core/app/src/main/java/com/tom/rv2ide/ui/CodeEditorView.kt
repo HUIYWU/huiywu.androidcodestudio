@@ -41,8 +41,8 @@ import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.syntax.colorschemes.SchemeAndroidIDE
 import com.tom.rv2ide.tasks.cancelIfActive
 import com.tom.rv2ide.tasks.runOnUiThread
+import com.tom.rv2ide.utils.EditorFontResolver
 import com.tom.rv2ide.utils.LargeFileOptimizationHelper
-import com.tom.rv2ide.utils.customOrJBMono
 import com.tom.rv2ide.artificial.completion.SuggestionView
 import io.github.rosemoe.sora.text.Content
 import io.github.rosemoe.sora.text.LineSeparator
@@ -145,7 +145,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     private var prewarmedBinding: LayoutCodeEditorBinding? = null
     private var cachedTypefacePath: String? = null
     private var cachedTypeface: Typeface? = null
-    private var cachedLineNumberTypefaceState: Boolean? = null
     private var cachedLineNumberTypeface: Typeface? = null
 
     fun prewarmEditorBinding(context: Context) {
@@ -167,50 +166,21 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
       prewarmedBinding = null
     }
 
-    private const val DEFAULT_JB_MONO_SENTINEL = "__default_jb_mono__"
-    private const val DEFAULT_JB_MONO_FILE_NAME = "jetbrains-mono.ttf"
-    private const val DEFAULT_JB_MONO_ASSET_PATH = "fonts/jetbrains-mono.ttf"
-
-    private fun resolveEditorTypeface(context: Context, selectedFont: String?): Typeface {
-      val defaultStorageFile = File("${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/$DEFAULT_JB_MONO_FILE_NAME")
-
-      fun loadFromFile(file: File): Typeface? {
-        return if (file.isFile && file.canRead()) {
-          runCatching { Typeface.createFromFile(file) }.getOrNull()
-        } else {
-          null
-        }
-      }
-
-      fun loadDefaultTypeface(): Typeface {
-        return loadFromFile(defaultStorageFile)
-            ?: runCatching { Typeface.createFromAsset(context.assets, DEFAULT_JB_MONO_ASSET_PATH) }.getOrNull()
-            ?: Typeface.MONOSPACE
-      }
-
-      if (selectedFont.isNullOrBlank()) {
-        return loadDefaultTypeface()
-      }
-
-      val customFile = File("${com.tom.rv2ide.utils.Environment.HOME}/.androidide/ui/$selectedFont")
-      return loadFromFile(customFile) ?: loadDefaultTypeface()
-    }
-
     private fun prewarmTextAppearanceCache() {
-
-      val state = EditorPreferences.useCustomFont
-      val fontKey = EditorPreferences.selectedCustomFont ?: DEFAULT_JB_MONO_SENTINEL
+      val fontKey = EditorFontResolver.cacheKey(EditorPreferences.selectedCustomFont)
 
       if (cachedTypefacePath != fontKey || cachedTypeface == null) {
-        cachedTypeface = resolveEditorTypeface(BaseApplication.getBaseInstance(), EditorPreferences.selectedCustomFont)
+        cachedTypeface =
+            EditorFontResolver.resolve(
+                BaseApplication.getBaseInstance(),
+                EditorPreferences.selectedCustomFont,
+            )
         cachedTypefacePath = fontKey
       }
-      if (cachedLineNumberTypefaceState != state || cachedLineNumberTypeface == null) {
-        cachedLineNumberTypeface = customOrJBMono(state)
-        cachedLineNumberTypefaceState = state
+      if (cachedLineNumberTypeface == null) {
+        cachedLineNumberTypeface = cachedTypeface
       }
     }
-
   }
 
   private fun obtainBinding(context: Context): LayoutCodeEditorBinding {
@@ -607,26 +577,23 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     binding.editor.props.useICULibToSelectWords = EditorPreferences.useIcu
   }
   private fun onCustomFontPrefChanged() {
-    val state = EditorPreferences.useCustomFont
-    val fontKey = EditorPreferences.selectedCustomFont ?: DEFAULT_JB_MONO_SENTINEL
+    val fontKey = EditorFontResolver.cacheKey(EditorPreferences.selectedCustomFont)
 
     val typeface =
         if (cachedTypefacePath == fontKey && cachedTypeface != null) {
           cachedTypeface!!
         } else {
-          resolveEditorTypeface(context, EditorPreferences.selectedCustomFont).also {
+          EditorFontResolver.resolve(context, EditorPreferences.selectedCustomFont).also {
             cachedTypefacePath = fontKey
             cachedTypeface = it
           }
         }
 
     val lineNumberTypeface =
-
-        if (cachedLineNumberTypefaceState == state && cachedLineNumberTypeface != null) {
+        if (cachedLineNumberTypeface != null && cachedTypefacePath == fontKey) {
           cachedLineNumberTypeface!!
         } else {
-          customOrJBMono(state).also {
-            cachedLineNumberTypefaceState = state
+          typeface.also {
             cachedLineNumberTypeface = it
           }
         }

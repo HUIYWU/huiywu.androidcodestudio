@@ -88,7 +88,7 @@ private class CommonConfigurations(
     addPreference(FontLigatures())
     //addPreference(autoSave())
     addPreference(keyboardSuggestions())
-    addPreference(UseCustomFont())
+    addPreference(EditorFontPreference())
     addPreference(UseSoftTab())
     addPreference(WordWrap())
     addPreference(UseMagnifier())
@@ -356,7 +356,7 @@ private class UseICU(
     )
 
 @Parcelize
-private class UseCustomFont(
+private class EditorFontPreference(
     override val key: String = USE_CUSTOM_FONT,
     override val title: Int = string.idepref_customFont_title,
     override val summary: Int? = string.idepref_customFont_summary,
@@ -402,16 +402,17 @@ private class UseCustomFont(
       )
     }
 
-    
-    entries.add(
-      PreferenceChoices.Entry(
-        label = "+ Add New Font",
-        _isChecked = false,
-        data = "ADD_NEW"
-      )
-    )
-    
     return entries.toTypedArray()
+  }
+
+  override fun onConfigureDialogActions(
+      preference: Preference,
+      dialog: MaterialAlertDialogBuilder,
+  ) {
+    dialog.setNeutralButton("Import") { dialogInterface, _ ->
+      dialogInterface.dismiss()
+      openFontPicker(preference)
+    }
   }
 
   override fun onChoiceConfirmed(
@@ -420,12 +421,9 @@ private class UseCustomFont(
       position: Int,
   ) {
     when (entry?.data) {
-      "ADD_NEW" -> {
-        openFontPicker(preference)
-      }
       DEFAULT_FONT_ENTRY -> {
         EditorPreferences.selectedCustomFont = null
-        Toast.makeText(preference.context, "Using default font", Toast.LENGTH_SHORT).show()
+        Toast.makeText(preference.context, "Using JetBrains Mono", Toast.LENGTH_SHORT).show()
       }
       else -> {
         EditorPreferences.selectedCustomFont = entry?.data as? String
