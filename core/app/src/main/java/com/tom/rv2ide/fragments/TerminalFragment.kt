@@ -1,10 +1,12 @@
 package com.tom.rv2ide.fragments
-
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.SharedPreferences
+
 import android.graphics.Typeface
 import android.os.Bundle
 import android.os.IBinder
@@ -82,8 +84,9 @@ class TerminalFragment : Fragment() {
         override fun copyModeChanged(copyMode: Boolean) {}
         override fun onKeyDown(keyCode: Int, e: KeyEvent?, session: TerminalSession?) = false
         override fun onKeyUp(keyCode: Int, e: KeyEvent?) = false
-        override fun onLongPress(event: MotionEvent?) = true
+        override fun onLongPress(event: MotionEvent?) = false
         override fun readControlKey() = extraKeysHandler.isCtrlPressed()
+
         override fun readAltKey() = extraKeysHandler.isAltPressed()
         override fun readShiftKey() = false
         override fun readFnKey() = false
@@ -114,10 +117,21 @@ class TerminalFragment : Fragment() {
         override fun onSessionFinished(finishedSession: TerminalSession) {
             sessionManager.onSessionFinished(finishedSession, termuxService)
         }
-        
-        override fun onCopyTextToClipboard(session: TerminalSession, text: String) {}
-        override fun onPasteTextFromClipboard(session: TerminalSession?) {}
+        override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
+            val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Terminal", text))
+        }
+        override fun onPasteTextFromClipboard(session: TerminalSession?) {
+            val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = clipboard.primaryClip ?: return
+            val item = clip.getItemAt(0) ?: return
+            val text = item.coerceToText(requireContext())?.toString() ?: return
+            if (text.isNotEmpty()) {
+                terminalView?.mEmulator?.paste(text)
+            }
+        }
         override fun onBell(session: TerminalSession) {}
+
         override fun onColorsChanged(session: TerminalSession) {}
         override fun onTerminalCursorStateChange(state: Boolean) {}
         override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
