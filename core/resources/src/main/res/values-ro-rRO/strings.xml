@@ -280,8 +280,8 @@
   <string name="idepref_emptyElements_summary">Alegerea comportamentului de formatare pentru elementele goale.</string>
   <string name="xml_formatting_options">XML opțiune de formatares</string>
   <string name="xml_formatting_options_summary">Configurarea formatterului XML</string>
-  <string name="idepref_customFont_title">Folosește fontul particularizat</string>
-  <string name="idepref_customFont_summary">Dacă este activat, fișierul din \"/data/data/com.tom.rv2ide/files/home/.androidide/ui/font.ttf\" va fi folosit ca font în Editor.</string>
+  <string name="idepref_customFont_title">Font selection</string>
+  <string name="idepref_customFont_summary">Choose the editor font. JetBrains Mono is the default. Imported fonts are loaded from ~/.androidide/ui.</string>
   <string name="msg_installing_apk">Instalez APK…</string>
   <string name="msg_action_open_application">Doriți să deschideți aplicația?</string>
   <string name="title_gradle_service_notification_channel">AndroidIDE Gradle build service</string>

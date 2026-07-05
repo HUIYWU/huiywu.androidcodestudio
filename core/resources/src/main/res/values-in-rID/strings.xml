@@ -280,8 +280,8 @@
   <string name="idepref_emptyElements_summary">Pilih perilaku pemformatan untuk elemen kosong.</string>
   <string name="xml_formatting_options">Opsi pemformatan XML</string>
   <string name="xml_formatting_options_summary">Konfigurasikan pemformatan XML</string>
-  <string name="idepref_customFont_title">Gunakan custom font</string>
-  <string name="idepref_customFont_summary">Jika diaktifkan, file di \"/data/data/com.tom.rv2ide/files/home/.androidide/ui/font.ttf\" akan digunakan sebagai font Editor.</string>
+  <string name="idepref_customFont_title">Font selection</string>
+  <string name="idepref_customFont_summary">Choose the editor font. JetBrains Mono is the default. Imported fonts are loaded from ~/.androidide/ui.</string>
   <string name="msg_installing_apk">Menginstal APK...</string>
   <string name="msg_action_open_application">Apakah Anda ingin membuka aplikasi?</string>
   <string name="title_gradle_service_notification_channel">Layanan Build Gradle AndroidIDE</string>
