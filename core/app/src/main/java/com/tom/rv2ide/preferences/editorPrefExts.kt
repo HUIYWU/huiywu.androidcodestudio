@@ -21,6 +21,7 @@ import android.view.LayoutInflater
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
+import com.tom.rv2ide.activities.FontImportLauncherHost
 import com.tom.rv2ide.databinding.LayoutTextSizeSliderBinding
 import com.tom.rv2ide.editor.schemes.IDEColorScheme
 import com.tom.rv2ide.editor.schemes.IDEColorSchemeProvider
@@ -48,12 +49,11 @@ import com.tom.rv2ide.preferences.internal.EditorPreferences.USE_SOFT_TAB
 import com.tom.rv2ide.preferences.internal.EditorPreferences.WORD_WRAP
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
+import com.tom.rv2ide.utils.EditorFontImporter
 import com.tom.rv2ide.utils.Environment
 import kotlin.reflect.KMutableProperty0
 import kotlinx.parcelize.IgnoredOnParcel
 import kotlinx.parcelize.Parcelize
-import android.content.Intent
-import android.app.Activity
 import android.widget.Toast
 import java.io.File
 
@@ -364,7 +364,6 @@ private class EditorFontPreference(
 ) : SingleChoicePreference() {
 
   companion object {
-    const val PICK_FONT_REQUEST = 1001
     private const val DEFAULT_FONT_ENTRY = "DEFAULT_JB_MONO"
   }
 
@@ -386,7 +385,7 @@ private class EditorFontPreference(
 
     entries.add(
       PreferenceChoices.Entry(
-        label = "JetBrains Mono (Default)",
+        label = preference.context.getString(string.idepref_customFont_default_entry),
         _isChecked = currentFont == null,
         data = DEFAULT_FONT_ENTRY
       )
@@ -409,7 +408,7 @@ private class EditorFontPreference(
       preference: Preference,
       dialog: MaterialAlertDialogBuilder,
   ) {
-    dialog.setNeutralButton("Import") { dialogInterface, _ ->
+    dialog.setNeutralButton(string.idepref_customFont_import_action) { dialogInterface, _ ->
       dialogInterface.dismiss()
       openFontPicker(preference)
     }
@@ -423,30 +422,30 @@ private class EditorFontPreference(
     when (entry?.data) {
       DEFAULT_FONT_ENTRY -> {
         EditorPreferences.selectedCustomFont = null
-        Toast.makeText(preference.context, "Using JetBrains Mono", Toast.LENGTH_SHORT).show()
+        Toast.makeText(preference.context, string.idepref_customFont_using_default, Toast.LENGTH_SHORT).show()
       }
       else -> {
         EditorPreferences.selectedCustomFont = entry?.data as? String
-        Toast.makeText(preference.context, "Font selected: ${entry?.label}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            preference.context,
+            preference.context.getString(string.idepref_customFont_selected, entry?.label ?: ""),
+            Toast.LENGTH_SHORT,
+        ).show()
       }
     }
   }
 
   private fun openFontPicker(preference: Preference) {
-    val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-      type = "*/*"
-      addCategory(Intent.CATEGORY_OPENABLE)
-      putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("font/ttf", "font/otf", "application/x-font-ttf", "application/x-font-otf"))
-    }
-
     try {
-      val activity = preference.context as? Activity
-      activity?.startActivityForResult(
-          Intent.createChooser(intent, "Select Font File"),
-          PICK_FONT_REQUEST
-      )
+      val host = preference.context as? FontImportLauncherHost
+      host?.launchFontPicker(EditorFontImporter.createPickerIntent(preference.context))
+          ?: error(preference.context.getString(string.idepref_customFont_host_unavailable))
     } catch (e: Exception) {
-      Toast.makeText(preference.context, "Error opening file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+      Toast.makeText(
+          preference.context,
+          preference.context.getString(string.idepref_customFont_picker_error, e.message ?: preference.context.getString(string.error)),
+          Toast.LENGTH_SHORT,
+      ).show()
     }
   }
 }

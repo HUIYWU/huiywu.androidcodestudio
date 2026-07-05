@@ -642,8 +642,22 @@
   <string name="xml_formatting_options">XML formatting options</string>
   <string name="xml_formatting_options_summary">Configure the XML formatter</string>
 
-<string name="idepref_customFont_title">Editor font</string>
-<string name="idepref_customFont_summary">Choose the editor font. JetBrains Mono is the default, and imported fonts are loaded from ~/.androidide/ui.</string>
+  <string name="idepref_customFont_title">Editor font</string>
+  <string name="idepref_customFont_summary">Choose the editor font. JetBrains Mono is the default, and imported fonts are loaded from ~/.androidide/ui.</string>
+  <string name="idepref_customFont_default_entry">JetBrains Mono (Default)</string>
+  <string name="idepref_customFont_import_action">Import</string>
+  <string name="idepref_customFont_using_default">Using JetBrains Mono</string>
+  <string name="idepref_customFont_selected">Font selected: %1$s</string>
+  <string name="idepref_customFont_picker_title">Select Font File</string>
+  <string name="idepref_customFont_picker_error">Error opening file picker: %1$s</string>
+  <string name="idepref_customFont_host_unavailable">Font import host is unavailable.</string>
+  <string name="idepref_customFont_invalid_extension">Only TTF and OTF fonts can be imported.</string>
+  <string name="idepref_customFont_open_failed">Unable to open selected font.</string>
+  <string name="idepref_customFont_invalid_file">The selected file is not a valid font.</string>
+  <string name="idepref_customFont_replace_failed">Unable to replace existing font.</string>
+  <string name="idepref_customFont_save_failed">Unable to save imported font.</string>
+  <string name="idepref_customFont_imported_applied">Font imported and applied: %1$s</string>
+  <string name="idepref_customFont_import_error">Error importing font: %1$s</string>
   <string name="msg_installing_apk">Installing APK...</string>
   <string name="msg_action_open_application">Do you want to open the application?</string>
 

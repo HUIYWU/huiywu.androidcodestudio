@@ -18,12 +18,10 @@ package com.tom.rv2ide.activities
 
 import android.app.Activity
 import android.content.Intent
-import android.graphics.Typeface
-import android.net.Uri
 import android.os.Bundle
-import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.graphics.Insets
 import androidx.fragment.app.Fragment
 import androidx.preference.Preference
@@ -34,12 +32,33 @@ import com.tom.rv2ide.databinding.ActivityPreferencesBinding
 import com.tom.rv2ide.fragments.IDEPreferencesFragment
 import com.tom.rv2ide.preferences.IDEPreferences as prefs
 import com.tom.rv2ide.preferences.addRootPreferences
-import com.tom.rv2ide.preferences.internal.EditorPreferences
-import com.tom.rv2ide.utils.Environment
-import java.io.File
+import com.tom.rv2ide.utils.EditorFontImporter
 import kotlin.system.exitProcess
 
-class PreferencesActivity : EdgeToEdgeIDEActivity(), PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
+class PreferencesActivity : EdgeToEdgeIDEActivity(), PreferenceFragmentCompat.OnPreferenceStartFragmentCallback, FontImportLauncherHost {
+
+  private val fontPickerLauncher =
+      registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+          result.data?.data?.let { uri ->
+            when (val importResult = EditorFontImporter.importFont(contentResolver, uri)) {
+              is EditorFontImporter.Result.Success -> {
+                Toast.makeText(
+                    this,
+                    getString(R.string.idepref_customFont_imported_applied, importResult.fileName),
+                    Toast.LENGTH_SHORT,
+                ).show()
+              }
+              is EditorFontImporter.Result.Error -> {
+                val message =
+                    importResult.formatArg?.let { getString(importResult.messageRes, it) }
+                        ?: getString(importResult.messageRes)
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+              }
+            }
+          }
+        }
+      }
 
   private var _binding: ActivityPreferencesBinding? = null
   private val binding: ActivityPreferencesBinding
@@ -71,74 +90,8 @@ class PreferencesActivity : EdgeToEdgeIDEActivity(), PreferenceFragmentCompat.On
     loadFragment(rootFragment)
   }
 
-  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-    super.onActivityResult(requestCode, resultCode, data)
-
-    if (requestCode == 1001 && resultCode == Activity.RESULT_OK) {
-      data?.data?.let { uri -> importEditorFont(uri) }
-    }
-  }
-
-  private fun importEditorFont(uri: Uri) {
-    try {
-      val fileName = File(getFileName(uri) ?: "custom_font.ttf").name
-      val extension = fileName.substringAfterLast('.', "").lowercase()
-      if (extension !in setOf("ttf", "otf")) {
-        Toast.makeText(this, "Only TTF and OTF fonts can be imported.", Toast.LENGTH_LONG).show()
-        return
-      }
-
-      val fontDir = File("${Environment.HOME}/.androidide/ui")
-      if (!fontDir.exists()) {
-        fontDir.mkdirs()
-      }
-
-      val destFile = File(fontDir, fileName)
-      val tempFile = File(fontDir, "$fileName.importing")
-      contentResolver.openInputStream(uri)?.use { input ->
-        tempFile.outputStream().use { output -> input.copyTo(output) }
-      } ?: error("Unable to open selected font.")
-
-      runCatching { Typeface.createFromFile(tempFile) }.getOrElse {
-        tempFile.delete()
-        throw IllegalArgumentException("The selected file is not a valid font.", it)
-      }
-
-      if (destFile.exists() && !destFile.delete()) {
-        tempFile.delete()
-        error("Unable to replace existing font.")
-      }
-      if (!tempFile.renameTo(destFile)) {
-        tempFile.delete()
-        error("Unable to save imported font.")
-      }
-
-      EditorPreferences.selectedCustomFont = fileName
-      Toast.makeText(this, "Font imported and applied: $fileName", Toast.LENGTH_SHORT).show()
-    } catch (e: Exception) {
-      Toast.makeText(this, "Error importing font: ${e.message}", Toast.LENGTH_LONG).show()
-    }
-  }
-  
-  private fun getFileName(uri: Uri): String? {
-      var result: String? = null
-      if (uri.scheme == "content") {
-          contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-              if (cursor.moveToFirst()) {
-                  val columnIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                  if (columnIndex != -1) {
-                      result = cursor.getString(columnIndex)
-                  }
-              }
-          }
-      }
-      if (result == null) {
-          result = uri.path?.let { path ->
-              val cut = path.lastIndexOf('/')
-              if (cut != -1) path.substring(cut + 1) else path
-          }
-      }
-      return result
+  override fun launchFontPicker(intent: Intent) {
+    fontPickerLauncher.launch(intent)
   }
 
   /** Force restart the entire application Call this method when theme changes need to be applied */
