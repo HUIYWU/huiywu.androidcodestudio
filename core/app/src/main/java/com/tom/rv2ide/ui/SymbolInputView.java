@@ -35,7 +35,7 @@ import java.util.List;
 
 public class SymbolInputView extends FrameLayout {
 
-  private static final int EXPANDED_SPAN_COUNT = 8;
+  private static final int EXPANDED_SPAN_COUNT = 10;
 
   public enum ExpandDirection {
     UP,
@@ -68,11 +68,13 @@ public class SymbolInputView extends FrameLayout {
     collapsedList.setLayoutManager(
         new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false));
     collapsedList.setOverScrollMode(OVER_SCROLL_NEVER);
+    collapsedList.setNestedScrollingEnabled(false);
     collapsedList.setClipToPadding(false);
 
     expandedGrid = new RecyclerView(context);
     expandedGrid.setLayoutManager(new GridLayoutManager(getContext(), EXPANDED_SPAN_COUNT));
     expandedGrid.setOverScrollMode(OVER_SCROLL_NEVER);
+    expandedGrid.setNestedScrollingEnabled(false);
     expandedGrid.setClipToPadding(false);
     expandedGrid.setPadding(dp(8), dp(8), dp(8), dp(8));
 
@@ -134,7 +136,15 @@ public class SymbolInputView extends FrameLayout {
 
     this.expanded = expanded;
     collapsedList.setVisibility(expanded ? GONE : VISIBLE);
+    collapsedList.setEnabled(!expanded);
     expandedGrid.setVisibility(expanded ? VISIBLE : GONE);
+    expandedGrid.setEnabled(expanded);
+    collapsedList.clearFocus();
+    expandedGrid.clearFocus();
+    if (toggleButton != null) {
+      toggleButton.setPressed(false);
+      toggleButton.clearFocus();
+    }
     updateToggleButton();
 
     if (changed && expansionChangeListener != null) {
