@@ -229,6 +229,8 @@ constructor(
     binding = LayoutEditorBottomSheetBinding.inflate(inflater)
     pagerAdapter = EditorBottomSheetTabAdapter(context)
     binding.pager.adapter = pagerAdapter
+    binding.cardView.clipToOutline = false
+    binding.blurView.clipToOutline = false
 
     removeAllViews()
     addView(binding.root)
@@ -267,6 +269,8 @@ constructor(
   }
 
   fun onSlide(sheetOffset: Float) {
+    binding.symbolInput.collapse()
+
     val selectedTab = binding.tabs.selectedTabPosition
     val fragment = pagerAdapter.getFragmentAtIndex(selectedTab)
     val shouldShowHeader = shouldShowHeaderControls(fragment)
@@ -302,6 +306,9 @@ constructor(
   }
 
   fun showChild(index: Int) {
+    if (index != CHILD_SYMBOL_INPUT) {
+      binding.symbolInput.collapse()
+    }
     binding.headerContainer.displayedChild = index
   }
 
@@ -369,9 +376,11 @@ constructor(
         binding.headerContainer.visibility = View.VISIBLE
         binding.headerContainer.displayedChild = CHILD_SYMBOL_INPUT
       } else {
+        binding.symbolInput.collapse()
         binding.headerContainer.visibility = View.GONE
       }
     } else {
+      binding.symbolInput.collapse()
       if (shouldShowHeader || behavior.state == BottomSheetBehavior.STATE_COLLAPSED) {
         binding.headerContainer.visibility = View.VISIBLE
         binding.headerContainer.displayedChild = CHILD_HEADER
@@ -444,7 +453,7 @@ constructor(
                           true
                       )
                       binding.blurView.setOutlineProvider(ViewOutlineProvider.BACKGROUND)
-                      binding.blurView.setClipToOutline(true)
+                      binding.blurView.setClipToOutline(false)
 
                   } catch (e: Exception) {
                       log.error("Blur setup failed", e)

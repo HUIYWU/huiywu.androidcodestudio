@@ -18,11 +18,14 @@
 package com.tom.rv2ide.ui;
 
 import android.content.Context;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.view.Gravity;
-import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.PopupWindow;
 import android.widget.TextView;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -39,11 +42,15 @@ public class SymbolInputView extends FrameLayout {
 
   private static final int EXPANDED_SPAN_COUNT = 8;
   private static final int EXPAND_BUTTON_SIZE_DP = 40;
+  private static final int EXPAND_BUTTON_OVERHANG_DP = 22;
   private static final int EXPANDED_HEIGHT_DP = 180;
+  private static final int EXPANDED_VERTICAL_GAP_DP = 8;
+  private static final int PANEL_CORNER_RADIUS_DP = 24;
 
   private final RecyclerView collapsedList;
   private final RecyclerView expandedGrid;
   private final TextView toggleButton;
+  private PopupWindow popupWindow;
   private boolean expanded;
 
   public SymbolInputView(Context context) {
@@ -62,21 +69,28 @@ public class SymbolInputView extends FrameLayout {
         new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false));
     collapsedList.setOverScrollMode(OVER_SCROLL_NEVER);
     collapsedList.setClipToPadding(false);
-    collapsedList.setPadding(0, 0, dp(EXPAND_BUTTON_SIZE_DP), 0);
+    collapsedList.setPadding(0, 0, dp(12), 0);
 
     expandedGrid = new RecyclerView(context);
     expandedGrid.setLayoutManager(new GridLayoutManager(getContext(), EXPANDED_SPAN_COUNT));
     expandedGrid.setOverScrollMode(OVER_SCROLL_NEVER);
     expandedGrid.setClipToPadding(false);
-    expandedGrid.setPadding(0, 0, dp(EXPAND_BUTTON_SIZE_DP), 0);
-    expandedGrid.setVisibility(GONE);
+    expandedGrid.setPadding(dp(8), dp(8), dp(8), dp(8));
+    expandedGrid.setBackground(createPanelBackground());
 
     toggleButton = new TextView(context);
     toggleButton.setGravity(Gravity.CENTER);
     toggleButton.setTextColor(com.tom.rv2ide.utils.ResourceUtilsKt.resolveAttr(context, R.attr.colorOnSurface));
     toggleButton.setTextSize(18f);
     toggleButton.setText("⌃");
+    toggleButton.setBackground(createButtonBackground());
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      toggleButton.setElevation(dp(4));
+    }
     toggleButton.setOnClickListener(__ -> toggleExpanded());
+
+    setClipChildren(false);
+    setClipToPadding(false);
 
     addView(
         collapsedList,
@@ -84,14 +98,10 @@ public class SymbolInputView extends FrameLayout {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
     final var toggleParams =
-        new LayoutParams(dp(EXPAND_BUTTON_SIZE_DP), ViewGroup.LayoutParams.MATCH_PARENT);
-    toggleParams.gravity = Gravity.END;
+        new LayoutParams(dp(EXPAND_BUTTON_SIZE_DP), dp(EXPAND_BUTTON_SIZE_DP));
+    toggleParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+    toggleParams.rightMargin = -dp(EXPAND_BUTTON_OVERHANG_DP);
     addView(toggleButton, toggleParams);
-
-    addView(
-        expandedGrid,
-        new LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
     setExpanded(false);
   }
@@ -125,11 +135,14 @@ public class SymbolInputView extends FrameLayout {
 
   public void setExpanded(boolean expanded) {
     this.expanded = expanded;
-    collapsedList.setVisibility(expanded ? GONE : VISIBLE);
-    expandedGrid.setVisibility(expanded ? VISIBLE : GONE);
     toggleButton.setText(expanded ? "⌄" : "⌃");
     toggleButton.bringToFront();
-    updateParentHeight(expanded);
+
+    if (expanded) {
+      showExpandedPanel();
+    } else {
+      dismissExpandedPanel();
+    }
   }
 
   public void endItemAnimations() {
@@ -151,28 +164,64 @@ public class SymbolInputView extends FrameLayout {
     }
   }
 
-  private void updateParentHeight(boolean expanded) {
-    final var parent = getParent();
-    if (!(parent instanceof View)) {
+  private void showExpandedPanel() {
+    if (popupWindow != null && popupWindow.isShowing()) {
       return;
     }
 
-    final var parentView = (View) parent;
-    final var layoutParams = parentView.getLayoutParams();
-    if (layoutParams == null) {
+    final int width = Math.max(0, getWidth());
+    if (width == 0) {
+      post(() -> setExpanded(true));
       return;
     }
 
-    final int targetHeight =
-        expanded
-            ? dp(EXPANDED_HEIGHT_DP)
-            : getResources().getDimensionPixelSize(R.dimen.editor_sheet_collapsed_height);
-    if (layoutParams.height == targetHeight) {
-      return;
+    popupWindow =
+        new PopupWindow(
+            expandedGrid,
+            width,
+            dp(EXPANDED_HEIGHT_DP),
+            false);
+    popupWindow.setClippingEnabled(false);
+    popupWindow.setOutsideTouchable(true);
+    popupWindow.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      popupWindow.setElevation(dp(6));
     }
+    popupWindow.setOnDismissListener(
+        () -> {
+          expanded = false;
+          toggleButton.setText("⌃");
+          popupWindow = null;
+        });
 
-    layoutParams.height = targetHeight;
-    parentView.setLayoutParams(layoutParams);
+    popupWindow.showAsDropDown(this, 0, -getHeight() - dp(EXPANDED_HEIGHT_DP + EXPANDED_VERTICAL_GAP_DP));
+  }
+
+  private void dismissExpandedPanel() {
+    if (popupWindow != null) {
+      popupWindow.dismiss();
+      popupWindow = null;
+    }
+  }
+
+  private GradientDrawable createPanelBackground() {
+    final var drawable = new GradientDrawable();
+    drawable.setColor(com.tom.rv2ide.utils.ResourceUtilsKt.resolveAttr(getContext(), R.attr.colorSurface));
+    drawable.setCornerRadius(dp(PANEL_CORNER_RADIUS_DP));
+    return drawable;
+  }
+
+  private GradientDrawable createButtonBackground() {
+    final var drawable = new GradientDrawable();
+    drawable.setShape(GradientDrawable.OVAL);
+    drawable.setColor(com.tom.rv2ide.utils.ResourceUtilsKt.resolveAttr(getContext(), R.attr.colorSurface));
+    return drawable;
+  }
+
+  @Override
+  protected void onDetachedFromWindow() {
+    dismissExpandedPanel();
+    super.onDetachedFromWindow();
   }
 
   private int dp(int value) {
