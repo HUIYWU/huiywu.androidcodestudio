@@ -24,7 +24,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.tom.rv2ide.adapters.SymbolInputAdapter;
 import com.tom.rv2ide.editor.ui.IDEEditor;
 import com.tom.rv2ide.models.Symbol;
-import com.tom.rv2ide.utils.Symbols;
+import com.tom.rv2ide.utils.EditorQuickInputProvider;
 import java.util.List;
 
 public class SymbolInputView extends RecyclerView {
@@ -43,15 +43,16 @@ public class SymbolInputView extends RecyclerView {
   }
 
   public void refresh(IDEEditor editor, List<Symbol> symbols) {
-    if (symbols == null || symbols.isEmpty()) {
-      symbols = Symbols.INSTANCE.getPlainTextSymbols();
-    }
+    final var quickItems =
+        symbols == null || symbols.isEmpty()
+            ? EditorQuickInputProvider.INSTANCE.plainTextItems()
+            : EditorQuickInputProvider.INSTANCE.toQuickItems(symbols);
 
     final var adapter = getAdapter();
     if (adapter instanceof SymbolInputAdapter) {
-      ((SymbolInputAdapter) adapter).refresh(editor, symbols);
+      ((SymbolInputAdapter) adapter).refresh(editor, quickItems);
     } else {
-      setAdapter(new SymbolInputAdapter(editor));
+      setAdapter(new SymbolInputAdapter(editor, quickItems));
     }
   }
 }
