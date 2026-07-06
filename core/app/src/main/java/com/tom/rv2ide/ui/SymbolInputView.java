@@ -19,15 +19,32 @@ package com.tom.rv2ide.ui;
 
 import android.content.Context;
 import android.util.AttributeSet;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import com.tom.rv2ide.R;
 import com.tom.rv2ide.adapters.SymbolInputAdapter;
 import com.tom.rv2ide.editor.ui.IDEEditor;
+import com.tom.rv2ide.models.EditorQuickItem;
 import com.tom.rv2ide.models.Symbol;
 import com.tom.rv2ide.utils.EditorQuickInputProvider;
 import java.util.List;
 
-public class SymbolInputView extends RecyclerView {
+public class SymbolInputView extends FrameLayout {
+
+  private static final int EXPANDED_SPAN_COUNT = 8;
+  private static final int EXPAND_BUTTON_SIZE_DP = 40;
+  private static final int EXPANDED_HEIGHT_DP = 180;
+
+  private final RecyclerView collapsedList;
+  private final RecyclerView expandedGrid;
+  private final TextView toggleButton;
+  private boolean expanded;
 
   public SymbolInputView(Context context) {
     this(context, null);
@@ -39,7 +56,44 @@ public class SymbolInputView extends RecyclerView {
 
   public SymbolInputView(Context context, AttributeSet attrs, int defStyle) {
     super(context, attrs, defStyle);
-    setLayoutManager(new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false));
+
+    collapsedList = new RecyclerView(context);
+    collapsedList.setLayoutManager(
+        new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false));
+    collapsedList.setOverScrollMode(OVER_SCROLL_NEVER);
+    collapsedList.setClipToPadding(false);
+    collapsedList.setPadding(0, 0, dp(EXPAND_BUTTON_SIZE_DP), 0);
+
+    expandedGrid = new RecyclerView(context);
+    expandedGrid.setLayoutManager(new GridLayoutManager(getContext(), EXPANDED_SPAN_COUNT));
+    expandedGrid.setOverScrollMode(OVER_SCROLL_NEVER);
+    expandedGrid.setClipToPadding(false);
+    expandedGrid.setPadding(0, 0, dp(EXPAND_BUTTON_SIZE_DP), 0);
+    expandedGrid.setVisibility(GONE);
+
+    toggleButton = new TextView(context);
+    toggleButton.setGravity(Gravity.CENTER);
+    toggleButton.setTextColor(com.tom.rv2ide.utils.ResourceUtilsKt.resolveAttr(context, R.attr.colorOnSurface));
+    toggleButton.setTextSize(18f);
+    toggleButton.setText("⌃");
+    toggleButton.setOnClickListener(__ -> toggleExpanded());
+
+    addView(
+        collapsedList,
+        new LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+    final var toggleParams =
+        new LayoutParams(dp(EXPAND_BUTTON_SIZE_DP), ViewGroup.LayoutParams.MATCH_PARENT);
+    toggleParams.gravity = Gravity.END;
+    addView(toggleButton, toggleParams);
+
+    addView(
+        expandedGrid,
+        new LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+    setExpanded(false);
   }
 
   public void refresh(IDEEditor editor, List<Symbol> symbols) {
@@ -48,11 +102,71 @@ public class SymbolInputView extends RecyclerView {
             ? EditorQuickInputProvider.INSTANCE.plainTextItems()
             : EditorQuickInputProvider.INSTANCE.toQuickItems(symbols);
 
-    final var adapter = getAdapter();
+    refreshAdapter(collapsedList, editor, quickItems);
+    refreshAdapter(expandedGrid, editor, quickItems);
+    setExpanded(false);
+  }
+
+  public boolean isExpanded() {
+    return expanded;
+  }
+
+  public void expand() {
+    setExpanded(true);
+  }
+
+  public void collapse() {
+    setExpanded(false);
+  }
+
+  public void toggleExpanded() {
+    setExpanded(!expanded);
+  }
+
+  public void setExpanded(boolean expanded) {
+    this.expanded = expanded;
+    collapsedList.setVisibility(expanded ? GONE : VISIBLE);
+    expandedGrid.setVisibility(expanded ? VISIBLE : GONE);
+    toggleButton.setText(expanded ? "⌄" : "⌃");
+    toggleButton.bringToFront();
+    updateParentHeight(expanded);
+  }
+
+  private void refreshAdapter(
+      RecyclerView recyclerView, IDEEditor editor, List<EditorQuickItem> quickItems) {
+    final var adapter = recyclerView.getAdapter();
     if (adapter instanceof SymbolInputAdapter) {
       ((SymbolInputAdapter) adapter).refresh(editor, quickItems);
     } else {
-      setAdapter(new SymbolInputAdapter(editor, quickItems));
+      recyclerView.setAdapter(new SymbolInputAdapter(editor, quickItems));
     }
+  }
+
+  private void updateParentHeight(boolean expanded) {
+    final var parent = getParent();
+    if (!(parent instanceof View)) {
+      return;
+    }
+
+    final var parentView = (View) parent;
+    final var layoutParams = parentView.getLayoutParams();
+    if (layoutParams == null) {
+      return;
+    }
+
+    final int targetHeight =
+        expanded
+            ? dp(EXPANDED_HEIGHT_DP)
+            : getResources().getDimensionPixelSize(R.dimen.editor_sheet_collapsed_height);
+    if (layoutParams.height == targetHeight) {
+      return;
+    }
+
+    layoutParams.height = targetHeight;
+    parentView.setLayoutParams(layoutParams);
+  }
+
+  private int dp(int value) {
+    return Math.round(value * getResources().getDisplayMetrics().density);
   }
 }
