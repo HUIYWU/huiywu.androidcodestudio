@@ -287,8 +287,8 @@ constructor(
 
   fun onSlide(sheetOffset: Float) {
     currentSheetOffset = sheetOffset
-    binding.symbolInput.collapse()
     updateQuickInputExpandDirection()
+    collapseQuickInputPanel()
 
     val selectedTab = binding.tabs.selectedTabPosition
     val fragment = pagerAdapter.getFragmentAtIndex(selectedTab)
@@ -314,9 +314,20 @@ constructor(
     }
     
     val padding = insetBottom * paddingScale
+    val headerHeight = ((collapsedHeight + padding) * heightScale).roundToInt().coerceAtLeast(0)
+    val headerVisible = headerHeight > 1
+
+    binding.quickInputShell.visibility = if (headerVisible) View.VISIBLE else View.GONE
+    binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
+      height = headerHeight
+    }
+    binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
+      height = headerHeight
+      gravity = android.view.Gravity.TOP
+    }
     binding.headerContainer.apply {
       updateLayoutParams<ViewGroup.LayoutParams> {
-        height = ((collapsedHeight + padding) * heightScale).roundToInt()
+        height = headerHeight
       }
       updatePaddingRelative(
         bottom = padding.roundToInt()
@@ -325,8 +336,9 @@ constructor(
   }
 
   fun showChild(index: Int) {
+    binding.quickInputShell.visibility = View.VISIBLE
     if (index != CHILD_SYMBOL_INPUT) {
-      binding.symbolInput.collapse()
+      collapseQuickInputPanel()
     }
     binding.headerContainer.displayedChild = index
     updateQuickInputToggleVisibility(index == CHILD_SYMBOL_INPUT)
@@ -354,7 +366,24 @@ constructor(
   }
 
   private fun shouldExpandQuickInputDown(): Boolean {
-    return currentSheetOffset > 0f && currentSheetOffset < COLLAPSE_HEADER_AT_OFFSET
+    return currentSheetOffset > 0.08f && currentSheetOffset < 0.92f
+  }
+
+  private fun collapseQuickInputPanel() {
+    binding.symbolInput.collapse()
+    val collapsed = collapsedHeight.roundToInt()
+    binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
+      height = collapsed
+    }
+    binding.cardView.translationY = 0f
+    binding.quickInputToggle.translationY = 0f
+    binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
+      height = collapsed
+      gravity = android.view.Gravity.TOP
+    }
+    binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
+      height = collapsed
+    }
   }
 
   private fun applyQuickInputExpansion(
@@ -443,16 +472,17 @@ constructor(
     
     if (KeyboardUtils.isSoftInputVisible(activity)) {
       if (shouldShowHeader) {
+        binding.quickInputShell.visibility = View.VISIBLE
         binding.headerContainer.visibility = View.VISIBLE
         binding.headerContainer.displayedChild = CHILD_SYMBOL_INPUT
         updateQuickInputToggleVisibility(true)
       } else {
-        binding.symbolInput.collapse()
+        collapseQuickInputPanel()
         updateQuickInputToggleVisibility(false)
         binding.headerContainer.visibility = View.GONE
       }
     } else {
-      binding.symbolInput.collapse()
+      collapseQuickInputPanel()
       updateQuickInputToggleVisibility(false)
       if (shouldShowHeader || behavior.state == BottomSheetBehavior.STATE_COLLAPSED) {
         binding.headerContainer.visibility = View.VISIBLE
