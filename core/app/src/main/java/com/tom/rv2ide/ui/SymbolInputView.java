@@ -130,17 +130,14 @@ public class SymbolInputView extends FrameLayout {
   }
 
   public void setExpanded(boolean expanded) {
-    if (this.expanded == expanded) {
-      updateToggleButton();
-      return;
-    }
+    final boolean changed = this.expanded != expanded;
 
     this.expanded = expanded;
     collapsedList.setVisibility(expanded ? GONE : VISIBLE);
     expandedGrid.setVisibility(expanded ? VISIBLE : GONE);
     updateToggleButton();
 
-    if (expansionChangeListener != null) {
+    if (changed && expansionChangeListener != null) {
       expansionChangeListener.onExpansionChanged(expanded, expandDirection);
     }
   }

@@ -324,7 +324,9 @@ constructor(
   }
 
   private fun updateQuickInputToggleVisibility(visible: Boolean) {
-    binding.quickInputToggle.visibility = if (visible) View.VISIBLE else View.GONE
+    val visibility = if (visible) View.VISIBLE else View.GONE
+    binding.quickInputLeadingSpace.visibility = visibility
+    binding.quickInputToggle.visibility = visibility
     if (visible) {
       updateQuickInputExpandDirection()
     }
