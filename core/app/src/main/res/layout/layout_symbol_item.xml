@@ -3,7 +3,7 @@
   xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:tools="http://schemas.android.com/tools"
   android:id="@+id/symbol"
-  android:layout_width="24dp"
+  android:layout_width="26dp"
   android:layout_height="40dp"
   android:background="?attr/selectableItemBackgroundBorderless"
   android:clickable="true"

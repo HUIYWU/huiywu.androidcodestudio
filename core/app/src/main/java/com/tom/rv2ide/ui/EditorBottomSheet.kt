@@ -25,6 +25,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import androidx.annotation.GravityInt
 import androidx.appcompat.widget.TooltipCompat
@@ -363,15 +364,19 @@ constructor(
     val collapsed = collapsedHeight.roundToInt()
     val targetHeight = if (expanded) quickInputExpandedHeight else collapsed
     val expandUp = expanded && direction == SymbolInputView.ExpandDirection.UP
-    val shellHeight = if (expanded && direction == SymbolInputView.ExpandDirection.DOWN) targetHeight else collapsed
-    val panelTranslation = if (expandUp) -(targetHeight - collapsed).toFloat() else 0f
+    val expandDown = expanded && direction == SymbolInputView.ExpandDirection.DOWN
+    val shellHeight = if (expandDown) targetHeight else collapsed
 
     binding.quickInputShell.bringToFront()
     binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
       height = shellHeight
     }
-    binding.cardView.translationY = panelTranslation
-    binding.quickInputToggle.translationY = panelTranslation
+    binding.cardView.translationY = 0f
+    binding.quickInputToggle.translationY = 0f
+    binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
+      height = targetHeight
+      gravity = if (expandUp) android.view.Gravity.BOTTOM else android.view.Gravity.TOP
+    }
     binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
       height = targetHeight
     }
