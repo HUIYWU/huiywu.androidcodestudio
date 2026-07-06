@@ -95,6 +95,9 @@ constructor(
     val localContext = getContext() ?: return@lazy 0f
     localContext.resources.getDimension(R.dimen.editor_sheet_collapsed_height)
   }
+  private val quickInputExpandedHeight: Int by lazy {
+    SizeUtils.dp2px(180f)
+  }
   private val behavior: BottomSheetBehavior<EditorBottomSheet> by lazy {
     BottomSheetBehavior.from(this).apply {
       isFitToContents = false
@@ -106,6 +109,7 @@ constructor(
   val pagerAdapter: EditorBottomSheetTabAdapter
 
   private var anchorOffset = 0
+  private var currentSheetOffset = 0f
   private var isImeVisible = false
   private var windowInsets: Insets? = null
 
@@ -229,8 +233,10 @@ constructor(
     binding = LayoutEditorBottomSheetBinding.inflate(inflater)
     pagerAdapter = EditorBottomSheetTabAdapter(context)
     binding.pager.adapter = pagerAdapter
-    binding.cardView.clipToOutline = false
-    binding.blurView.clipToOutline = false
+    binding.symbolInput.bindToggleButton(binding.quickInputToggle)
+    binding.symbolInput.setExpansionChangeListener { expanded, direction ->
+      applyQuickInputExpansion(expanded, direction)
+    }
 
     removeAllViews()
     addView(binding.root)
@@ -269,7 +275,9 @@ constructor(
   }
 
   fun onSlide(sheetOffset: Float) {
+    currentSheetOffset = sheetOffset
     binding.symbolInput.collapse()
+    updateQuickInputExpandDirection()
 
     val selectedTab = binding.tabs.selectedTabPosition
     val fragment = pagerAdapter.getFragmentAtIndex(selectedTab)
@@ -310,6 +318,48 @@ constructor(
       binding.symbolInput.collapse()
     }
     binding.headerContainer.displayedChild = index
+    updateQuickInputToggleVisibility(index == CHILD_SYMBOL_INPUT)
+  }
+
+  private fun updateQuickInputToggleVisibility(visible: Boolean) {
+    binding.quickInputToggle.visibility = if (visible) View.VISIBLE else View.GONE
+    if (visible) {
+      updateQuickInputExpandDirection()
+    }
+  }
+
+  private fun updateQuickInputExpandDirection() {
+    val direction =
+        if (shouldExpandQuickInputDown()) {
+          SymbolInputView.ExpandDirection.DOWN
+        } else {
+          SymbolInputView.ExpandDirection.UP
+        }
+    binding.symbolInput.setExpandDirection(direction)
+  }
+
+  private fun shouldExpandQuickInputDown(): Boolean {
+    return currentSheetOffset > 0f && currentSheetOffset < COLLAPSE_HEADER_AT_OFFSET
+  }
+
+  private fun applyQuickInputExpansion(
+      expanded: Boolean,
+      direction: SymbolInputView.ExpandDirection,
+  ) {
+    val collapsed = collapsedHeight.roundToInt()
+    val targetHeight = if (expanded) quickInputExpandedHeight else collapsed
+    val expandUp = expanded && direction == SymbolInputView.ExpandDirection.UP
+    val shellHeight = if (expanded && direction == SymbolInputView.ExpandDirection.DOWN) targetHeight else collapsed
+    val panelTranslation = if (expandUp) -(targetHeight - collapsed).toFloat() else 0f
+
+    binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
+      height = shellHeight
+    }
+    binding.cardView.translationY = panelTranslation
+    binding.quickInputToggle.translationY = panelTranslation
+    binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
+      height = targetHeight
+    }
   }
 
   fun setActionText(text: CharSequence) {
@@ -375,12 +425,15 @@ constructor(
       if (shouldShowHeader) {
         binding.headerContainer.visibility = View.VISIBLE
         binding.headerContainer.displayedChild = CHILD_SYMBOL_INPUT
+        updateQuickInputToggleVisibility(true)
       } else {
         binding.symbolInput.collapse()
+        updateQuickInputToggleVisibility(false)
         binding.headerContainer.visibility = View.GONE
       }
     } else {
       binding.symbolInput.collapse()
+      updateQuickInputToggleVisibility(false)
       if (shouldShowHeader || behavior.state == BottomSheetBehavior.STATE_COLLAPSED) {
         binding.headerContainer.visibility = View.VISIBLE
         binding.headerContainer.displayedChild = CHILD_HEADER
@@ -453,7 +506,7 @@ constructor(
                           true
                       )
                       binding.blurView.setOutlineProvider(ViewOutlineProvider.BACKGROUND)
-                      binding.blurView.setClipToOutline(false)
+                      binding.blurView.setClipToOutline(true)
 
                   } catch (e: Exception) {
                       log.error("Blur setup failed", e)

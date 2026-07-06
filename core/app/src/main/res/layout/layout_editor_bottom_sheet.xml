@@ -28,60 +28,82 @@
   android:translationY="-4dp"
   >
 
-  <com.google.android.material.card.MaterialCardView
-    android:id="@+id/cardView"
+  <LinearLayout
+    android:id="@+id/quick_input_shell"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:clipChildren="false"
-    android:clipToPadding="false"
-    app:cardCornerRadius="24dp"
     android:layout_marginLeft="16dp"
     android:layout_marginRight="16dp"
-    app:strokeWidth="0dp"
-    app:cardElevation="0dp"
-    android:scaleX="0.9"
-    android:scaleY="0.9"
-    app:cardBackgroundColor="?attr/colorSurface">
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
 
-    <eightbitlab.com.blurview.BlurView
-      android:id="@+id/blurView"
-      android:layout_width="match_parent"
+    <com.google.android.material.card.MaterialCardView
+      android:id="@+id/cardView"
+      android:layout_width="0dp"
       android:layout_height="wrap_content"
-      android:clipChildren="false"
-      android:clipToPadding="false">
-      
-      <ViewFlipper
-        android:id="@+id/header_container"
+      android:layout_weight="1"
+      app:cardCornerRadius="24dp"
+      app:strokeWidth="0dp"
+      app:cardElevation="0dp"
+      app:cardBackgroundColor="?attr/colorSurface">
+
+      <eightbitlab.com.blurview.BlurView
+        android:id="@+id/blurView"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/editor_sheet_collapsed_height"
-        android:clipChildren="false"
-        android:clipToPadding="false"
-        android:background="@android:color/transparent">
-
-        <include
-          layout="@layout/layout_editor_build_status"
-          android:id="@+id/build_status"/>
-
-        <com.tom.rv2ide.ui.SymbolInputView
-          android:id="@+id/symbol_input"
+        android:layout_height="wrap_content">
+        
+        <ViewFlipper
+          android:id="@+id/header_container"
           android:layout_width="match_parent"
-          android:layout_height="match_parent"/>
+          android:layout_height="@dimen/editor_sheet_collapsed_height"
+          android:background="@android:color/transparent">
 
-        <include
-          layout="@layout/layout_editor_bottom_action"
-          android:id="@+id/bottom_action"/>
+          <include
+            layout="@layout/layout_editor_build_status"
+            android:id="@+id/build_status"/>
 
-      </ViewFlipper>
-    </eightbitlab.com.blurview.BlurView>
+          <com.tom.rv2ide.ui.SymbolInputView
+            android:id="@+id/symbol_input"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"/>
 
-  </com.google.android.material.card.MaterialCardView>
+          <include
+            layout="@layout/layout_editor_bottom_action"
+            android:id="@+id/bottom_action"/>
+
+        </ViewFlipper>
+      </eightbitlab.com.blurview.BlurView>
+
+    </com.google.android.material.card.MaterialCardView>
+
+    <TextView
+      android:id="@+id/quick_input_toggle"
+      android:layout_width="44dp"
+      android:layout_height="44dp"
+      android:layout_gravity="top"
+      android:layout_marginStart="8dp"
+      android:layout_marginTop="6dp"
+      android:background="@drawable/bg_quick_input_toggle"
+      android:clickable="true"
+      android:elevation="4dp"
+      android:focusable="true"
+      android:foreground="?attr/selectableItemBackgroundBorderless"
+      android:gravity="center"
+      android:text="⌃"
+      android:textColor="?attr/colorOnSurface"
+      android:textSize="18sp"
+      android:visibility="gone" />
+
+  </LinearLayout>
 
   <com.google.android.material.tabs.TabLayout
     android:id="@+id/tabs"
     style="@style/AppTheme.TabLayout"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_below="@id/cardView" />
+    android:layout_below="@id/quick_input_shell" />
 
   <androidx.legacy.widget.Space
     android:id="@+id/space_bottom"
