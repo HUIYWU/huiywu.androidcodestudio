@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Button
+<TextView
   xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:tools="http://schemas.android.com/tools"
   android:id="@+id/symbol"
-  style="@style/Widget.Material3.Button.TextButton"
-  android:layout_width="32dp"
+  android:layout_width="30dp"
   android:layout_height="40dp"
+  android:background="?attr/selectableItemBackgroundBorderless"
+  android:clickable="true"
+  android:focusable="true"
   android:gravity="center"
+  android:includeFontPadding="false"
   android:singleLine="true"
+  android:textSize="14sp"
   tools:text="↹" />

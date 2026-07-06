@@ -76,7 +76,7 @@ public class SymbolInputView extends FrameLayout {
     expandedGrid.setOverScrollMode(OVER_SCROLL_NEVER);
     expandedGrid.setNestedScrollingEnabled(false);
     expandedGrid.setClipToPadding(false);
-    expandedGrid.setPadding(dp(8), dp(8), dp(8), dp(8));
+    expandedGrid.setPadding(0, dp(8), 0, dp(8));
 
     addView(
         collapsedList,

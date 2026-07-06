@@ -233,6 +233,8 @@ constructor(
     binding = LayoutEditorBottomSheetBinding.inflate(inflater)
     pagerAdapter = EditorBottomSheetTabAdapter(context)
     binding.pager.adapter = pagerAdapter
+    binding.cardView.scaleX = 0.9f
+    binding.cardView.scaleY = 0.9f
     binding.cardView.clipToOutline = true
     binding.blurView.clipToOutline = false
     binding.symbolInput.bindToggleButton(binding.quickInputToggle)
@@ -327,6 +329,8 @@ constructor(
     val visibility = if (visible) View.VISIBLE else View.GONE
     binding.quickInputLeadingSpace.visibility = visibility
     binding.quickInputToggle.visibility = visibility
+    binding.cardView.scaleX = if (visible) 1f else 0.9f
+    binding.cardView.scaleY = if (visible) 1f else 0.9f
     if (visible) {
       updateQuickInputExpandDirection()
     }

@@ -122,7 +122,7 @@ object Symbols {
     )
   }
 
-  private class TabSymbol : Symbol("↹") {
+  private class TabSymbol : Symbol("⇥") {
 
     override val commit: String
       get() = "\t"
