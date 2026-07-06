@@ -96,7 +96,7 @@ constructor(
     localContext.resources.getDimension(R.dimen.editor_sheet_collapsed_height)
   }
   private val quickInputExpandedHeight: Int by lazy {
-    SizeUtils.dp2px(180f)
+    SizeUtils.dp2px(136f)
   }
   private val behavior: BottomSheetBehavior<EditorBottomSheet> by lazy {
     BottomSheetBehavior.from(this).apply {
@@ -233,6 +233,12 @@ constructor(
     binding = LayoutEditorBottomSheetBinding.inflate(inflater)
     pagerAdapter = EditorBottomSheetTabAdapter(context)
     binding.pager.adapter = pagerAdapter
+    clipChildren = false
+    clipToPadding = false
+    binding.root.clipChildren = false
+    binding.root.clipToPadding = false
+    binding.quickInputShell.clipChildren = false
+    binding.quickInputShell.clipToPadding = false
     binding.cardView.scaleX = 0.9f
     binding.cardView.scaleY = 0.9f
     binding.cardView.clipToOutline = true
@@ -356,9 +362,11 @@ constructor(
   ) {
     val collapsed = collapsedHeight.roundToInt()
     val targetHeight = if (expanded) quickInputExpandedHeight else collapsed
-    val shellHeight = if (expanded) targetHeight else collapsed
-    val panelTranslation = 0f
+    val expandUp = expanded && direction == SymbolInputView.ExpandDirection.UP
+    val shellHeight = if (expanded && direction == SymbolInputView.ExpandDirection.DOWN) targetHeight else collapsed
+    val panelTranslation = if (expandUp) -(targetHeight - collapsed).toFloat() else 0f
 
+    binding.quickInputShell.bringToFront()
     binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
       height = shellHeight
     }
