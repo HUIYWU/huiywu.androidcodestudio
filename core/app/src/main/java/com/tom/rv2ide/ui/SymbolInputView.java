@@ -132,6 +132,15 @@ public class SymbolInputView extends FrameLayout {
     updateParentHeight(expanded);
   }
 
+  public void endItemAnimations() {
+    if (collapsedList.getItemAnimator() != null) {
+      collapsedList.getItemAnimator().endAnimations();
+    }
+    if (expandedGrid.getItemAnimator() != null) {
+      expandedGrid.getItemAnimator().endAnimations();
+    }
+  }
+
   private void refreshAdapter(
       RecyclerView recyclerView, IDEEditor editor, List<EditorQuickItem> quickItems) {
     final var adapter = recyclerView.getAdapter();

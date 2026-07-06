@@ -351,7 +351,7 @@ constructor(
       return
     }
   
-    binding.symbolInput.itemAnimator?.endAnimations()
+    binding.symbolInput.endItemAnimations()
   
     TransitionManager.beginDelayedTransition(
         binding.root,
