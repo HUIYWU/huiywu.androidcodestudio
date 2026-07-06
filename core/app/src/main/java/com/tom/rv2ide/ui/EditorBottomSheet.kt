@@ -233,6 +233,8 @@ constructor(
     binding = LayoutEditorBottomSheetBinding.inflate(inflater)
     pagerAdapter = EditorBottomSheetTabAdapter(context)
     binding.pager.adapter = pagerAdapter
+    binding.cardView.clipToOutline = true
+    binding.blurView.clipToOutline = false
     binding.symbolInput.bindToggleButton(binding.quickInputToggle)
     binding.symbolInput.setExpansionChangeListener { expanded, direction ->
       applyQuickInputExpansion(expanded, direction)
@@ -348,9 +350,8 @@ constructor(
   ) {
     val collapsed = collapsedHeight.roundToInt()
     val targetHeight = if (expanded) quickInputExpandedHeight else collapsed
-    val expandUp = expanded && direction == SymbolInputView.ExpandDirection.UP
-    val shellHeight = if (expanded && direction == SymbolInputView.ExpandDirection.DOWN) targetHeight else collapsed
-    val panelTranslation = if (expandUp) -(targetHeight - collapsed).toFloat() else 0f
+    val shellHeight = if (expanded) targetHeight else collapsed
+    val panelTranslation = 0f
 
     binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
       height = shellHeight
@@ -506,7 +507,7 @@ constructor(
                           true
                       )
                       binding.blurView.setOutlineProvider(ViewOutlineProvider.BACKGROUND)
-                      binding.blurView.setClipToOutline(true)
+                      binding.blurView.setClipToOutline(false)
 
                   } catch (e: Exception) {
                       log.error("Blur setup failed", e)
