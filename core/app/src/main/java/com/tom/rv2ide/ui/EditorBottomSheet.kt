@@ -166,6 +166,7 @@ constructor(
   companion object {
 
     private val log = LoggerFactory.getLogger(EditorBottomSheet::class.java)
+    private const val START_HIDE_CONTAINER_AT_OFFSET = 0.82f
     private const val HIDE_CONTAINER_AT_OFFSET = 0.92f
 
     const val CHILD_HEADER = 0
@@ -292,7 +293,6 @@ constructor(
   fun setImeVisible(isVisible: Boolean) {
     isImeVisible = isVisible
     behavior.isGestureInsetBottomIgnored = isVisible
-    applyTopContainerState()
   }
 
   fun setOffsetAnchor(view: View) {
@@ -326,7 +326,7 @@ constructor(
           BottomSheetBehavior.STATE_COLLAPSED -> 0f
           else -> currentSheetOffset
         }
-    applyTopContainerState()
+    applyTopContainerState(animated = true)
   }
 
   fun onSlide(sheetOffset: Float) {
@@ -373,7 +373,28 @@ constructor(
         behavior.state == BottomSheetBehavior.STATE_EXPANDED
   }
 
-  private fun applyTopContainerState() {
+  private fun topContainerVisibilityProgress(): Float {
+    if (currentSheetOffset <= START_HIDE_CONTAINER_AT_OFFSET) {
+      return 1f
+    }
+    if (currentSheetOffset >= HIDE_CONTAINER_AT_OFFSET) {
+      return 0f
+    }
+    val range = HIDE_CONTAINER_AT_OFFSET - START_HIDE_CONTAINER_AT_OFFSET
+    return (1f - ((currentSheetOffset - START_HIDE_CONTAINER_AT_OFFSET) / range)).coerceIn(0f, 1f)
+  }
+
+  private fun currentTopContainerHeight(): Int {
+    return (collapsedHeight * topContainerVisibilityProgress()).roundToInt().coerceAtLeast(0)
+  }
+
+  private fun applyTopContainerState(animated: Boolean = false) {
+    if (animated) {
+      TransitionManager.beginDelayedTransition(
+          binding.root,
+          MaterialSharedAxis(MaterialSharedAxis.Y, false),
+      )
+    }
     when (resolveTopContainerMode()) {
       TopContainerMode.HIDDEN -> hideTopContainer()
       TopContainerMode.SYMBOL_INPUT -> showSymbolInputContainer()
@@ -396,8 +417,10 @@ constructor(
 
   private fun hideTopContainer() {
     binding.symbolInput.collapse()
-    binding.quickInputShell.visibility = View.GONE
-    binding.headerContainer.visibility = View.GONE
+    binding.quickInputShell.visibility = View.VISIBLE
+    binding.quickInputShell.alpha = 0f
+    binding.quickInputShell.isEnabled = false
+    binding.headerContainer.visibility = View.INVISIBLE
     binding.quickInputLeadingSpace.visibility = View.GONE
     binding.quickInputToggle.visibility = View.GONE
     binding.cardView.translationY = 0f
@@ -406,8 +429,12 @@ constructor(
   }
 
   private fun showBasicContainer() {
+    val height = currentTopContainerHeight()
+    val progress = topContainerVisibilityProgress()
     binding.symbolInput.collapse()
     binding.quickInputShell.visibility = View.VISIBLE
+    binding.quickInputShell.alpha = progress
+    binding.quickInputShell.isEnabled = true
     binding.headerContainer.visibility = View.VISIBLE
     binding.headerContainer.displayedChild = basicContainerChild
     binding.quickInputLeadingSpace.visibility = View.GONE
@@ -416,11 +443,15 @@ constructor(
     binding.cardView.scaleY = 0.9f
     binding.cardView.translationY = 0f
     binding.quickInputToggle.translationY = 0f
-    setTopContainerHeight(collapsedHeight.roundToInt())
+    setTopContainerHeight(height)
   }
 
   private fun showSymbolInputContainer() {
+    val height = currentTopContainerHeight()
+    val progress = topContainerVisibilityProgress()
     binding.quickInputShell.visibility = View.VISIBLE
+    binding.quickInputShell.alpha = progress
+    binding.quickInputShell.isEnabled = true
     binding.headerContainer.visibility = View.VISIBLE
     binding.headerContainer.displayedChild = CHILD_SYMBOL_INPUT
     binding.quickInputLeadingSpace.visibility = View.VISIBLE
@@ -428,7 +459,7 @@ constructor(
     binding.cardView.scaleX = 1f
     binding.cardView.scaleY = 1f
     updateQuickInputExpandDirection()
-    setTopContainerHeight(collapsedHeight.roundToInt())
+    setTopContainerHeight(height)
   }
 
   private fun applyQuickInputExpansion(
@@ -504,14 +535,9 @@ constructor(
   
     binding.symbolInput.endItemAnimations()
   
-    TransitionManager.beginDelayedTransition(
-        binding.root,
-        MaterialSharedAxis(MaterialSharedAxis.Y, false),
-    )
-  
     val activity = context as Activity
     isImeVisible = KeyboardUtils.isSoftInputVisible(activity)
-    applyTopContainerState()
+    applyTopContainerState(animated = true)
   }
   
   fun setStatus(text: CharSequence, @GravityInt gravity: Int) {
