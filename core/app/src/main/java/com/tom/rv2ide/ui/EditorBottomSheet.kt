@@ -19,9 +19,11 @@ package com.tom.rv2ide.ui
 
 import android.app.Activity
 import android.content.Context
+import android.graphics.RectF
 import android.text.TextUtils
 import android.util.AttributeSet
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -116,6 +118,45 @@ constructor(
 
   private val insetBottom: Int
     get() = if (isImeVisible) 0 else windowInsets?.bottom ?: 0
+
+  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+    if (dispatchExpandedQuickInputTouch(event)) {
+      return true
+    }
+    return super.dispatchTouchEvent(event)
+  }
+
+  private fun dispatchExpandedQuickInputTouch(event: MotionEvent): Boolean {
+    if (!binding.symbolInput.isExpanded ||
+        binding.symbolInput.expandDirection != SymbolInputView.ExpandDirection.UP ||
+        binding.cardView.visibility != View.VISIBLE) {
+      return false
+    }
+
+    val cardRect = getDescendantRect(binding.cardView)
+    if (!cardRect.contains(event.x, event.y)) {
+      return false
+    }
+
+    val forwarded = MotionEvent.obtain(event)
+    forwarded.offsetLocation(-cardRect.left, -cardRect.top)
+    val handled = binding.cardView.dispatchTouchEvent(forwarded)
+    forwarded.recycle()
+    return handled ||
+        event.actionMasked == MotionEvent.ACTION_DOWN ||
+        event.actionMasked == MotionEvent.ACTION_MOVE ||
+        event.actionMasked == MotionEvent.ACTION_UP
+  }
+
+  private fun getDescendantRect(view: View): RectF {
+    val parentLocation = IntArray(2)
+    val childLocation = IntArray(2)
+    getLocationOnScreen(parentLocation)
+    view.getLocationOnScreen(childLocation)
+    val left = (childLocation[0] - parentLocation[0]).toFloat()
+    val top = (childLocation[1] - parentLocation[1]).toFloat()
+    return RectF(left, top, left + view.width, top + view.height)
+  }
 
   companion object {
 

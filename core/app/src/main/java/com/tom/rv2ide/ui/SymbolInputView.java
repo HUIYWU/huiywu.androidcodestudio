@@ -100,6 +100,10 @@ public class SymbolInputView extends FrameLayout {
     expandDirection = direction;
   }
 
+  public ExpandDirection getExpandDirection() {
+    return expandDirection;
+  }
+
   public void setExpansionChangeListener(@Nullable ExpansionChangeListener listener) {
     expansionChangeListener = listener;
   }
