@@ -8,41 +8,25 @@
     android:clipChildren="false"
     android:clipToPadding="false">
 
-    <LinearLayout
-        android:id="@+id/overlay_container"
-        android:layout_width="match_parent"
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardView"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:orientation="horizontal"
-        android:clipChildren="false"
-        android:clipToPadding="false">
+        app:cardCornerRadius="24dp"
+        app:strokeWidth="0dp"
+        app:cardElevation="0dp"
+        app:cardBackgroundColor="?attr/colorSurface">
 
-        <Space
-            android:layout_width="40dp"
-            android:layout_height="1dp" />
+        <eightbitlab.com.blurview.BlurView
+            android:id="@+id/blurView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
 
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardView"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            app:cardCornerRadius="24dp"
-            app:strokeWidth="0dp"
-            app:cardElevation="0dp"
-            app:cardBackgroundColor="?attr/colorSurface">
-
-            <eightbitlab.com.blurview.BlurView
-                android:id="@+id/blurView"
+            <com.tom.rv2ide.ui.SymbolInputView
+                android:id="@+id/symbol_input"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="152dp" />
 
-                <com.tom.rv2ide.ui.SymbolInputView
-                    android:id="@+id/symbol_input"
-                    android:layout_width="match_parent"
-                    android:layout_height="152dp" />
-
-            </eightbitlab.com.blurview.BlurView>
-        </com.google.android.material.card.MaterialCardView>
-    </LinearLayout>
+        </eightbitlab.com.blurview.BlurView>
+    </com.google.android.material.card.MaterialCardView>
 </FrameLayout>

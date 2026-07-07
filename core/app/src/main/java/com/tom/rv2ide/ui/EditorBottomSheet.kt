@@ -241,11 +241,13 @@ constructor(
       if (resolveTopContainerMode() != TopContainerMode.SYMBOL_INPUT) {
         return@setOnClickListener
       }
-      val direction = binding.symbolInput.expandDirection
-      if (direction == SymbolInputView.ExpandDirection.DOWN) {
+      if (shouldUseDownExpansion()) {
+        requestHideQuickInputOverlay?.invoke()
+        binding.symbolInput.setExpandDirection(SymbolInputView.ExpandDirection.DOWN)
         binding.symbolInput.toggleExpanded()
         setQuickInputOverlayActive(false)
       } else {
+        binding.symbolInput.collapse()
         if (quickInputOverlayActive) {
           requestHideQuickInputOverlay?.invoke()
         } else {
@@ -320,7 +322,7 @@ constructor(
 
   private fun updateQuickInputExpandDirection() {
     val direction =
-        if (shouldExpandQuickInputDown()) {
+        if (shouldUseDownExpansion()) {
           SymbolInputView.ExpandDirection.DOWN
         } else {
           SymbolInputView.ExpandDirection.UP
@@ -331,10 +333,19 @@ constructor(
   private fun shouldExpandQuickInputDown(): Boolean {
     return currentSheetOffset > 0.08f && currentSheetOffset < HIDE_CONTAINER_AT_OFFSET
   }
+
+  private fun shouldUseDownExpansion(): Boolean {
+    return shouldExpandQuickInputDown()
+  }
+
+  private fun shouldSuppressSymbolInputForTerminal(): Boolean {
+    return isTerminalTabSelected() && shouldUseDownExpansion()
+  }
+
   private fun resolveTopContainerMode(): TopContainerMode {
     return if (shouldHideTopContainer()) {
       TopContainerMode.HIDDEN
-    } else if (isImeVisible && !isTerminalTabSelected()) {
+    } else if (isImeVisible && !shouldSuppressSymbolInputForTerminal()) {
       TopContainerMode.SYMBOL_INPUT
     } else {
       TopContainerMode.BASIC
@@ -433,10 +444,10 @@ constructor(
     binding.cardView.scaleX = 1f
     binding.cardView.scaleY = 1f
     updateQuickInputExpandDirection()
-    if (binding.symbolInput.expandDirection == SymbolInputView.ExpandDirection.UP) {
+    if (!shouldUseDownExpansion()) {
       binding.symbolInput.collapse()
     }
-    binding.quickInputToggle.text = if (binding.symbolInput.isExpanded && binding.symbolInput.expandDirection == SymbolInputView.ExpandDirection.DOWN) "⌄" else if (quickInputOverlayActive) "⌄" else "⌃"
+    binding.quickInputToggle.text = if ((binding.symbolInput.isExpanded && shouldUseDownExpansion()) || quickInputOverlayActive) "⌄" else "⌃"
     setTopContainerHeight(height)
   }
   fun setActionText(text: CharSequence) {
