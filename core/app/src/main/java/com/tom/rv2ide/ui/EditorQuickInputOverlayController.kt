@@ -3,7 +3,6 @@ package com.tom.rv2ide.ui
 import android.app.Activity
 import android.graphics.Rect
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
@@ -30,17 +29,18 @@ class EditorQuickInputOverlayController(
 
         overlay.root.isClickable = false
         overlay.root.isFocusable = false
-        overlay.root.setOnTouchListener { _, event ->
-            val container = overlay.overlayContainer
-            val x = event.x
-            val y = event.y
-            x >= container.x && x <= container.x + container.width &&
-                y >= container.y && y <= container.y + container.height
-        }
-        overlay.overlayContainer.isClickable = true
-        overlay.overlayContainer.isFocusable = true
+        overlay.overlayContainer.isClickable = false
+        overlay.overlayContainer.isFocusable = false
+        overlay.cardView.isClickable = true
+        overlay.cardView.isFocusable = true
         overlay.cardView.clipToOutline = true
         overlay.blurView.clipToOutline = false
+        overlay.root.setOnTouchListener { _, event ->
+            val localX = event.x - overlay.overlayContainer.x - overlay.cardView.x
+            val localY = event.y - overlay.overlayContainer.y - overlay.cardView.y
+            localX >= 0f && localX <= overlay.cardView.width &&
+                localY >= 0f && localY <= overlay.cardView.height
+        }
         setupBlurEffect(overlay)
 
         overlay.symbolInput.refresh(editor.editor, forFile(editor.file))
@@ -54,11 +54,9 @@ class EditorQuickInputOverlayController(
             host.getGlobalVisibleRect(hostRect)
 
             val localLeft = anchorRect.left - hostRect.left
-            val localTop = anchorRect.top - hostRect.top
             val localBottom = anchorRect.bottom - hostRect.top
+            val collapsedTop = localBottom - anchorRect.height()
 
-            overlay.overlayContainer.x = localLeft.toFloat()
-            overlay.overlayContainer.y = localTop.toFloat()
             overlay.overlayContainer.layoutParams = overlay.overlayContainer.layoutParams.apply {
                 width = anchorRect.width()
                 height = FrameLayout.LayoutParams.WRAP_CONTENT
@@ -66,8 +64,8 @@ class EditorQuickInputOverlayController(
             overlay.overlayContainer.alpha = 1f
 
             overlay.overlayContainer.doOnLayout {
-                val collapsedTop = localBottom - anchorRect.height()
                 val expandedTop = localBottom - overlay.overlayContainer.height
+                overlay.overlayContainer.x = localLeft.toFloat()
                 overlay.overlayContainer.y = collapsedTop.toFloat()
                 overlay.overlayContainer.animate()
                     .y(expandedTop.toFloat())

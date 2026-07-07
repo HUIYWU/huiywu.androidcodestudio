@@ -112,6 +112,7 @@ constructor(
     get() = if (isImeVisible) 0 else windowInsets?.bottom ?: 0
 
   var requestShowQuickInputOverlay: (() -> Unit)? = null
+  var requestHideQuickInputOverlay: (() -> Unit)? = null
   private var quickInputOverlayActive = false
 
 
@@ -237,8 +238,19 @@ constructor(
     binding.cardView.clipToOutline = true
     binding.blurView.clipToOutline = false
     binding.quickInputToggle.setOnClickListener {
-      if (resolveTopContainerMode() == TopContainerMode.SYMBOL_INPUT) {
-        requestShowQuickInputOverlay?.invoke()
+      if (resolveTopContainerMode() != TopContainerMode.SYMBOL_INPUT) {
+        return@setOnClickListener
+      }
+      val direction = binding.symbolInput.expandDirection
+      if (direction == SymbolInputView.ExpandDirection.DOWN) {
+        binding.symbolInput.toggleExpanded()
+        setQuickInputOverlayActive(false)
+      } else {
+        if (quickInputOverlayActive) {
+          requestHideQuickInputOverlay?.invoke()
+        } else {
+          requestShowQuickInputOverlay?.invoke()
+        }
       }
     }
 
@@ -289,9 +301,12 @@ constructor(
   }
 
   fun onSlide(sheetOffset: Float) {
+    val previousDirection = binding.symbolInput.expandDirection
     currentSheetOffset = sheetOffset
     updateQuickInputExpandDirection()
-    binding.symbolInput.collapse()
+    if (previousDirection != binding.symbolInput.expandDirection || binding.symbolInput.expandDirection == SymbolInputView.ExpandDirection.UP) {
+      binding.symbolInput.collapse()
+    }
     binding.headerContainer.updatePaddingRelative(bottom = 0)
     applyTopContainerState()
   }
@@ -418,6 +433,10 @@ constructor(
     binding.cardView.scaleX = 1f
     binding.cardView.scaleY = 1f
     updateQuickInputExpandDirection()
+    if (binding.symbolInput.expandDirection == SymbolInputView.ExpandDirection.UP) {
+      binding.symbolInput.collapse()
+    }
+    binding.quickInputToggle.text = if (binding.symbolInput.isExpanded && binding.symbolInput.expandDirection == SymbolInputView.ExpandDirection.DOWN) "⌄" else if (quickInputOverlayActive) "⌄" else "⌃"
     setTopContainerHeight(height)
   }
   fun setActionText(text: CharSequence) {
@@ -462,7 +481,7 @@ constructor(
 
   fun getCurrentQuickInputEditor(): CodeEditorView? = currentSymbolInputEditor
 
-  fun getQuickInputAnchorView(): View = binding.quickInputShell
+  fun getQuickInputAnchorView(): View = binding.cardView
 
   fun setQuickInputOverlayActive(active: Boolean) {
     quickInputOverlayActive = active
