@@ -29,17 +29,15 @@ class EditorQuickInputOverlayController(
 
         overlay.root.isClickable = false
         overlay.root.isFocusable = false
-        overlay.overlayContainer.isClickable = false
-        overlay.overlayContainer.isFocusable = false
         overlay.cardView.isClickable = true
         overlay.cardView.isFocusable = true
         overlay.cardView.clipToOutline = true
         overlay.blurView.clipToOutline = false
         overlay.root.setOnTouchListener { _, event ->
-            val localX = event.x - overlay.overlayContainer.x - overlay.cardView.x
-            val localY = event.y - overlay.overlayContainer.y - overlay.cardView.y
-            localX >= 0f && localX <= overlay.cardView.width &&
-                localY >= 0f && localY <= overlay.cardView.height
+            val x = event.x - overlay.cardView.x
+            val y = event.y - overlay.cardView.y
+            x >= 0f && x <= overlay.cardView.width.toFloat() &&
+                y >= 0f && y <= overlay.cardView.height.toFloat()
         }
         setupBlurEffect(overlay)
 
@@ -57,18 +55,19 @@ class EditorQuickInputOverlayController(
             val localBottom = anchorRect.bottom - hostRect.top
             val collapsedTop = localBottom - anchorRect.height()
 
-            overlay.overlayContainer.layoutParams = overlay.overlayContainer.layoutParams.apply {
+            overlay.cardView.layoutParams = (overlay.cardView.layoutParams as FrameLayout.LayoutParams).apply {
                 width = anchorRect.width()
                 height = FrameLayout.LayoutParams.WRAP_CONTENT
+                leftMargin = localLeft
+                topMargin = collapsedTop
             }
-            overlay.overlayContainer.alpha = 1f
+            overlay.cardView.alpha = 1f
 
-            overlay.overlayContainer.doOnLayout {
-                val expandedTop = localBottom - overlay.overlayContainer.height
-                overlay.overlayContainer.x = localLeft.toFloat()
-                overlay.overlayContainer.y = collapsedTop.toFloat()
-                overlay.overlayContainer.animate()
-                    .y(expandedTop.toFloat())
+            overlay.cardView.doOnLayout {
+                val expandedTop = localBottom - overlay.cardView.height
+                overlay.cardView.translationY = 0f
+                overlay.cardView.animate()
+                    .translationY((expandedTop - collapsedTop).toFloat())
                     .setDuration(180)
                     .start()
             }
@@ -97,7 +96,7 @@ class EditorQuickInputOverlayController(
             return
         }
 
-        overlay.overlayContainer.animate()
+        overlay.cardView.animate()
             .alpha(0f)
             .setDuration(120)
             .withEndAction(endAction)
