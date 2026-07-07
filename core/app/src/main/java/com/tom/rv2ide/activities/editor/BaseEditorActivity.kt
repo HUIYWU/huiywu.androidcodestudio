@@ -1542,7 +1542,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
   private fun onSoftInputChanged() {
     if (!isDestroying) {
       invalidateOptionsMenu()
-      if (!isImeVisible || content.bottomSheet.isTerminalTabSelected()) {
+      if (!isImeVisible) {
         quickInputOverlayController?.hide(false)
       }
       content.bottomSheet.onSoftInputChanged()

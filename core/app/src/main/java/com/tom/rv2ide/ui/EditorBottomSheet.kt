@@ -237,6 +237,12 @@ constructor(
     binding.cardView.scaleY = 0.9f
     binding.cardView.clipToOutline = true
     binding.blurView.clipToOutline = false
+    binding.symbolInput.setExpansionChangeListener { expanded, direction ->
+      if (direction == SymbolInputView.ExpandDirection.DOWN) {
+        quickInputOverlayActive = false
+      }
+      binding.quickInputToggle.text = if (expanded || quickInputOverlayActive) "⌄" else "⌃"
+    }
     binding.quickInputToggle.setOnClickListener {
       if (resolveTopContainerMode() != TopContainerMode.SYMBOL_INPUT) {
         return@setOnClickListener
@@ -306,7 +312,7 @@ constructor(
     val previousDirection = binding.symbolInput.expandDirection
     currentSheetOffset = sheetOffset
     updateQuickInputExpandDirection()
-    if (previousDirection != binding.symbolInput.expandDirection || binding.symbolInput.expandDirection == SymbolInputView.ExpandDirection.UP) {
+    if (previousDirection != binding.symbolInput.expandDirection) {
       binding.symbolInput.collapse()
     }
     binding.headerContainer.updatePaddingRelative(bottom = 0)
@@ -444,7 +450,7 @@ constructor(
     binding.cardView.scaleX = 1f
     binding.cardView.scaleY = 1f
     updateQuickInputExpandDirection()
-    if (!shouldUseDownExpansion()) {
+    if (!shouldUseDownExpansion() && !quickInputOverlayActive) {
       binding.symbolInput.collapse()
     }
     binding.quickInputToggle.text = if ((binding.symbolInput.isExpanded && shouldUseDownExpansion()) || quickInputOverlayActive) "⌄" else "⌃"
