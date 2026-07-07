@@ -19,11 +19,9 @@ package com.tom.rv2ide.ui
 
 import android.app.Activity
 import android.content.Context
-import android.graphics.RectF
 import android.text.TextUtils
 import android.util.AttributeSet
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -72,10 +70,8 @@ import java.nio.file.StandardOpenOption.WRITE
 import java.util.concurrent.Callable
 import kotlin.math.roundToInt
 import org.slf4j.LoggerFactory
-import eightbitlab.com.blurview.BlurView
 import eightbitlab.com.blurview.RenderScriptBlur
 import android.view.ViewOutlineProvider
-import android.os.Build
 import eightbitlab.com.blurview.BlurTarget
 
 /**
@@ -96,9 +92,6 @@ constructor(
     val localContext = getContext() ?: return@lazy 0f
     localContext.resources.getDimension(R.dimen.editor_sheet_collapsed_height)
   }
-  private val quickInputExpandedHeight: Int by lazy {
-    SizeUtils.dp2px(136f)
-  }
   private val behavior: BottomSheetBehavior<EditorBottomSheet> by lazy {
     BottomSheetBehavior.from(this).apply {
       isFitToContents = false
@@ -108,54 +101,19 @@ constructor(
 
   @JvmField var binding: LayoutEditorBottomSheetBinding
   val pagerAdapter: EditorBottomSheetTabAdapter
-
   private var anchorOffset = 0
   private var currentSheetOffset = 0f
   private var isImeVisible = false
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
+  private var currentSymbolInputEditor: CodeEditorView? = null
 
   private val insetBottom: Int
     get() = if (isImeVisible) 0 else windowInsets?.bottom ?: 0
 
-  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-    if (dispatchExpandedQuickInputTouch(event)) {
-      return true
-    }
-    return super.dispatchTouchEvent(event)
-  }
+  var requestShowQuickInputOverlay: (() -> Unit)? = null
+  private var quickInputOverlayActive = false
 
-  private fun dispatchExpandedQuickInputTouch(event: MotionEvent): Boolean {
-    if (!binding.symbolInput.isExpanded ||
-        binding.symbolInput.expandDirection != SymbolInputView.ExpandDirection.UP ||
-        binding.cardView.visibility != View.VISIBLE) {
-      return false
-    }
-
-    val cardRect = getDescendantRect(binding.cardView)
-    if (!cardRect.contains(event.x, event.y)) {
-      return false
-    }
-
-    val forwarded = MotionEvent.obtain(event)
-    forwarded.offsetLocation(-cardRect.left, -cardRect.top)
-    val handled = binding.cardView.dispatchTouchEvent(forwarded)
-    forwarded.recycle()
-    return handled ||
-        event.actionMasked == MotionEvent.ACTION_DOWN ||
-        event.actionMasked == MotionEvent.ACTION_MOVE ||
-        event.actionMasked == MotionEvent.ACTION_UP
-  }
-
-  private fun getDescendantRect(view: View): RectF {
-    val parentLocation = IntArray(2)
-    val childLocation = IntArray(2)
-    getLocationOnScreen(parentLocation)
-    view.getLocationOnScreen(childLocation)
-    val left = (childLocation[0] - parentLocation[0]).toFloat()
-    val top = (childLocation[1] - parentLocation[1]).toFloat()
-    return RectF(left, top, left + view.width, top + view.height)
-  }
 
   private enum class TopContainerMode {
     BASIC,
@@ -278,9 +236,10 @@ constructor(
     binding.cardView.scaleY = 0.9f
     binding.cardView.clipToOutline = true
     binding.blurView.clipToOutline = false
-    binding.symbolInput.bindToggleButton(binding.quickInputToggle)
-    binding.symbolInput.setExpansionChangeListener { expanded, direction ->
-      applyQuickInputExpansion(expanded, direction)
+    binding.quickInputToggle.setOnClickListener {
+      if (resolveTopContainerMode() == TopContainerMode.SYMBOL_INPUT && !quickInputOverlayActive) {
+        requestShowQuickInputOverlay?.invoke()
+      }
     }
 
     removeAllViews()
@@ -357,16 +316,16 @@ constructor(
   private fun shouldExpandQuickInputDown(): Boolean {
     return currentSheetOffset > 0.08f && currentSheetOffset < HIDE_CONTAINER_AT_OFFSET
   }
-
   private fun resolveTopContainerMode(): TopContainerMode {
     return if (shouldHideTopContainer()) {
       TopContainerMode.HIDDEN
-    } else if (isImeVisible) {
+    } else if (isImeVisible && !isTerminalTabSelected()) {
       TopContainerMode.SYMBOL_INPUT
     } else {
       TopContainerMode.BASIC
     }
   }
+
 
   private fun shouldHideTopContainer(): Boolean {
     return currentSheetOffset >= HIDE_CONTAINER_AT_OFFSET ||
@@ -461,32 +420,6 @@ constructor(
     updateQuickInputExpandDirection()
     setTopContainerHeight(height)
   }
-
-  private fun applyQuickInputExpansion(
-      expanded: Boolean,
-      direction: SymbolInputView.ExpandDirection,
-  ) {
-    val collapsed = collapsedHeight.roundToInt()
-    val targetHeight = if (expanded) quickInputExpandedHeight else collapsed
-    val expandUp = expanded && direction == SymbolInputView.ExpandDirection.UP
-    val expandDown = expanded && direction == SymbolInputView.ExpandDirection.DOWN
-    val shellHeight = if (expandDown) targetHeight else collapsed
-
-    binding.quickInputShell.bringToFront()
-    binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
-      height = shellHeight
-    }
-    binding.cardView.translationY = 0f
-    binding.quickInputToggle.translationY = 0f
-    binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
-      height = targetHeight
-      gravity = if (expandUp) android.view.Gravity.BOTTOM else android.view.Gravity.TOP
-    }
-    binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
-      height = targetHeight
-    }
-  }
-
   fun setActionText(text: CharSequence) {
     binding.bottomAction.actionText.text = text
   }
@@ -522,9 +455,25 @@ constructor(
   fun setSearchResultAdapter(adapter: SearchListAdapter) {
     runOnUiThread { pagerAdapter.searchResultFragment?.setAdapter(adapter) }
   }
-
   fun refreshSymbolInput(editor: CodeEditorView) {
+    currentSymbolInputEditor = editor
     binding.symbolInput.refresh(editor.editor, forFile(editor.file))
+  }
+
+  fun getCurrentQuickInputEditor(): CodeEditorView? = currentSymbolInputEditor
+
+  fun getQuickInputAnchorView(): View = binding.cardView
+
+  fun setQuickInputOverlayActive(active: Boolean) {
+    quickInputOverlayActive = active
+    binding.quickInputToggle.isEnabled = !active
+    binding.quickInputToggle.alpha = if (active) 0f else 1f
+    binding.cardView.alpha = if (active) 0.2f else 1f
+  }
+
+  fun isTerminalTabSelected(): Boolean {
+    val fragment = pagerAdapter.getFragmentAtIndex(binding.tabs.selectedTabPosition)
+    return fragment.javaClass.simpleName.contains("Terminal", ignoreCase = true)
   }
 
   fun onSoftInputChanged() {
@@ -532,13 +481,17 @@ constructor(
       log.error("Bottom sheet is not attached to an activity!")
       return
     }
-  
+
     binding.symbolInput.endItemAnimations()
-  
+
     val activity = context as Activity
     isImeVisible = KeyboardUtils.isSoftInputVisible(activity)
+    if (!isImeVisible) {
+      setQuickInputOverlayActive(false)
+    }
     applyTopContainerState(animated = true)
   }
+
   
   fun setStatus(text: CharSequence, @GravityInt gravity: Int) {
     runOnUiThread {

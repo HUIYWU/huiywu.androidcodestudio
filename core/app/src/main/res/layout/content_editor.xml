@@ -111,6 +111,16 @@
     app:behavior_peekHeight="@dimen/editor_sheet_peek_height"
     app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior" />
 
+  <FrameLayout
+    android:id="@+id/quick_input_overlay_host"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:visibility="gone"
+    android:clickable="false"
+    android:focusable="false"
+    android:clipChildren="false"
+    android:clipToPadding="false" />
+
   <include
     android:id="@+id/diagnosticInfo"
     layout="@layout/layout_diagnostic_info" />

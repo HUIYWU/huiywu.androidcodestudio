@@ -100,6 +100,7 @@ import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.tasks.cancelIfActive
 import com.tom.rv2ide.ui.CodeEditorView
 import com.tom.rv2ide.ui.ContentTranslatingDrawerLayout
+import com.tom.rv2ide.ui.EditorQuickInputOverlayController
 import com.tom.rv2ide.ui.SwipeRevealLayout
 import com.tom.rv2ide.uidesigner.UIDesignerActivity
 import com.tom.rv2ide.utils.ActionMenuUtils.createMenu
@@ -189,9 +190,15 @@ abstract class BaseEditorActivity :
   override val subscribeToEvents: Boolean
     get() = true
 
+  private var quickInputOverlayController: EditorQuickInputOverlayController? = null
+
   private val onBackPressedCallback: OnBackPressedCallback =
       object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
+          if (quickInputOverlayController?.handleBackPress() == true) {
+            content.bottomSheet.setQuickInputOverlayActive(false)
+            return
+          }
           if (binding.root.isDrawerOpen(GravityCompat.START)) {
             binding.root.closeDrawer(GravityCompat.START)
           } else if (editorBottomSheet?.state != BottomSheetBehavior.STATE_COLLAPSED) {
@@ -1457,12 +1464,24 @@ override fun onApplySystemBarInsets(insets: Insets) {
   }
 
   private fun setupBottomSheet() {
+    quickInputOverlayController = EditorQuickInputOverlayController(content.quickInputOverlayHost).apply {
+      onHidden = {
+        content.bottomSheet.setQuickInputOverlayActive(false)
+      }
+    }
+    content.bottomSheet.requestShowQuickInputOverlay = request@{
+      val editor = content.bottomSheet.getCurrentQuickInputEditor() ?: provideCurrentEditor() ?: return@request
+      quickInputOverlayController?.showFrom(content.bottomSheet.getQuickInputAnchorView(), editor)
+      content.bottomSheet.setQuickInputOverlayActive(true)
+    }
+
     editorBottomSheet = BottomSheetBehavior.from<View>(content.bottomSheet)
     editorBottomSheet?.addBottomSheetCallback(
         object : BottomSheetCallback() {
           override fun onStateChanged(bottomSheet: View, newState: Int) {
             content.bottomSheet.onStateChanged(newState)
             if (newState == BottomSheetBehavior.STATE_EXPANDED) {
+              quickInputOverlayController?.hide(false)
               val editor = provideCurrentEditor()
               editor?.editor?.ensureWindowsDismissed()
             }
@@ -1471,6 +1490,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
           override fun onSlide(bottomSheet: View, slideOffset: Float) {
             content.apply {
               val editorScale = 1 - slideOffset * (1 - EDITOR_CONTAINER_SCALE_FACTOR)
+              if (quickInputOverlayController?.isVisible() == true) {
+                quickInputOverlayController?.hide(false)
+              }
               this.bottomSheet.onSlide(slideOffset)
               this.viewContainer.scaleX = editorScale
               this.viewContainer.scaleY = editorScale
@@ -1517,6 +1539,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
   private fun onSoftInputChanged() {
     if (!isDestroying) {
       invalidateOptionsMenu()
+      if (!isImeVisible || content.bottomSheet.isTerminalTabSelected()) {
+        quickInputOverlayController?.hide(false)
+      }
       content.bottomSheet.onSoftInputChanged()
     }
   }
