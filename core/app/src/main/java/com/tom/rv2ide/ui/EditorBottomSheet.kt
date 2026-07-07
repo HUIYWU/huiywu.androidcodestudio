@@ -237,7 +237,7 @@ constructor(
     binding.cardView.clipToOutline = true
     binding.blurView.clipToOutline = false
     binding.quickInputToggle.setOnClickListener {
-      if (resolveTopContainerMode() == TopContainerMode.SYMBOL_INPUT && !quickInputOverlayActive) {
+      if (resolveTopContainerMode() == TopContainerMode.SYMBOL_INPUT) {
         requestShowQuickInputOverlay?.invoke()
       }
     }
@@ -462,12 +462,13 @@ constructor(
 
   fun getCurrentQuickInputEditor(): CodeEditorView? = currentSymbolInputEditor
 
-  fun getQuickInputAnchorView(): View = binding.cardView
+  fun getQuickInputAnchorView(): View = binding.quickInputShell
 
   fun setQuickInputOverlayActive(active: Boolean) {
     quickInputOverlayActive = active
-    binding.quickInputToggle.isEnabled = !active
-    binding.quickInputToggle.alpha = if (active) 0f else 1f
+    binding.quickInputToggle.isEnabled = true
+    binding.quickInputToggle.alpha = 1f
+    binding.quickInputToggle.text = if (active) "⌄" else "⌃"
     binding.cardView.alpha = if (active) 0.2f else 1f
   }
 

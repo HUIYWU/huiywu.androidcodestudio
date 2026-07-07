@@ -1470,6 +1470,10 @@ override fun onApplySystemBarInsets(insets: Insets) {
       }
     }
     content.bottomSheet.requestShowQuickInputOverlay = request@{
+      if (quickInputOverlayController?.isVisible() == true) {
+        quickInputOverlayController?.hide(true)
+        return@request
+      }
       val editor = content.bottomSheet.getCurrentQuickInputEditor() ?: provideCurrentEditor() ?: return@request
       quickInputOverlayController?.showFrom(content.bottomSheet.getQuickInputAnchorView(), editor)
       content.bottomSheet.setQuickInputOverlayActive(true)
