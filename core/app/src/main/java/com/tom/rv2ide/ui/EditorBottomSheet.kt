@@ -53,8 +53,6 @@ import com.tom.rv2ide.adapters.DiagnosticsAdapter
 import com.tom.rv2ide.adapters.EditorBottomSheetTabAdapter
 import com.tom.rv2ide.adapters.SearchListAdapter
 import com.tom.rv2ide.databinding.LayoutEditorBottomSheetBinding
-import com.tom.rv2ide.fragments.DiagnosticsListFragment
-import com.tom.rv2ide.fragments.SearchResultFragment
 import com.tom.rv2ide.fragments.output.ShareableOutputFragment
 import com.tom.rv2ide.models.LogLine
 import com.tom.rv2ide.resources.R.string
@@ -114,6 +112,7 @@ constructor(
   private var anchorOffset = 0
   private var currentSheetOffset = 0f
   private var isImeVisible = false
+  private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
 
   private val insetBottom: Int
@@ -158,10 +157,16 @@ constructor(
     return RectF(left, top, left + view.width, top + view.height)
   }
 
+  private enum class TopContainerMode {
+    BASIC,
+    SYMBOL_INPUT,
+    HIDDEN,
+  }
+
   companion object {
 
     private val log = LoggerFactory.getLogger(EditorBottomSheet::class.java)
-    private const val COLLAPSE_HEADER_AT_OFFSET = 0.5f
+    private const val HIDE_CONTAINER_AT_OFFSET = 0.92f
 
     const val CHILD_HEADER = 0
     const val CHILD_SYMBOL_INPUT = 1
@@ -170,12 +175,6 @@ constructor(
 
   private fun canShareOutput(fragment: Fragment?): Boolean {
     return fragment is ShareableOutputFragment
-  }
-
-  private fun shouldShowHeaderControls(fragment: Fragment?): Boolean {
-    return fragment is ShareableOutputFragment ||
-    fragment is DiagnosticsListFragment ||
-    fragment is SearchResultFragment
   }
 
   private fun initialize(context: FragmentActivity) {
@@ -209,14 +208,7 @@ constructor(
               binding.shareOutputFab.hide()
             }
 
-            if (shouldShowHeaderControls(fragment)) {
-              binding.headerContainer.visibility = View.VISIBLE
-            } else {
-              // Hide header immediately for pages that do not support header controls
-              if (behavior.state == BottomSheetBehavior.STATE_EXPANDED) {
-                binding.headerContainer.visibility = View.GONE
-              }
-            }
+            applyTopContainerState()
           }
     
           override fun onTabUnselected(tab: Tab) {}
@@ -300,6 +292,7 @@ constructor(
   fun setImeVisible(isVisible: Boolean) {
     isImeVisible = isVisible
     behavior.isGestureInsetBottomIgnored = isVisible
+    applyTopContainerState()
   }
 
   fun setOffsetAnchor(view: View) {
@@ -326,74 +319,29 @@ constructor(
     view.viewTreeObserver.addOnGlobalLayoutListener(listener)
   }
 
+  fun onStateChanged(newState: Int) {
+    currentSheetOffset =
+        when (newState) {
+          BottomSheetBehavior.STATE_EXPANDED -> 1f
+          BottomSheetBehavior.STATE_COLLAPSED -> 0f
+          else -> currentSheetOffset
+        }
+    applyTopContainerState()
+  }
+
   fun onSlide(sheetOffset: Float) {
     currentSheetOffset = sheetOffset
     updateQuickInputExpandDirection()
-    collapseQuickInputPanel()
-
-    val selectedTab = binding.tabs.selectedTabPosition
-    val fragment = pagerAdapter.getFragmentAtIndex(selectedTab)
-    val shouldShowHeader = shouldShowHeaderControls(fragment)
-    
-    if (!shouldShowHeader && behavior.state == BottomSheetBehavior.STATE_EXPANDED) {
-      binding.headerContainer.visibility = View.GONE
-      return
-    }
-    
-    binding.headerContainer.visibility = View.VISIBLE
-    
-    val heightScale = if (sheetOffset >= COLLAPSE_HEADER_AT_OFFSET) {
-      ((COLLAPSE_HEADER_AT_OFFSET - sheetOffset) + COLLAPSE_HEADER_AT_OFFSET) * 2f
-    } else {
-      1f
-    }
-  
-    val paddingScale = if (!isImeVisible && sheetOffset <= COLLAPSE_HEADER_AT_OFFSET) {
-      ((1f - sheetOffset) * 2f) - 1f
-    } else {
-      0f
-    }
-    
-    val padding = insetBottom * paddingScale
-    val headerHeight = ((collapsedHeight + padding) * heightScale).roundToInt().coerceAtLeast(0)
-    val headerVisible = headerHeight > 1
-
-    binding.quickInputShell.visibility = if (headerVisible) View.VISIBLE else View.GONE
-    binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
-      height = headerHeight
-    }
-    binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
-      height = headerHeight
-      gravity = android.view.Gravity.TOP
-    }
-    binding.headerContainer.apply {
-      updateLayoutParams<ViewGroup.LayoutParams> {
-        height = headerHeight
-      }
-      updatePaddingRelative(
-        bottom = padding.roundToInt()
-      )
-    }
+    binding.symbolInput.collapse()
+    binding.headerContainer.updatePaddingRelative(bottom = 0)
+    applyTopContainerState()
   }
 
   fun showChild(index: Int) {
-    binding.quickInputShell.visibility = View.VISIBLE
     if (index != CHILD_SYMBOL_INPUT) {
-      collapseQuickInputPanel()
+      basicContainerChild = index
     }
-    binding.headerContainer.displayedChild = index
-    updateQuickInputToggleVisibility(index == CHILD_SYMBOL_INPUT)
-  }
-
-  private fun updateQuickInputToggleVisibility(visible: Boolean) {
-    val visibility = if (visible) View.VISIBLE else View.GONE
-    binding.quickInputLeadingSpace.visibility = visibility
-    binding.quickInputToggle.visibility = visibility
-    binding.cardView.scaleX = if (visible) 1f else 0.9f
-    binding.cardView.scaleY = if (visible) 1f else 0.9f
-    if (visible) {
-      updateQuickInputExpandDirection()
-    }
+    applyTopContainerState()
   }
 
   private fun updateQuickInputExpandDirection() {
@@ -407,24 +355,80 @@ constructor(
   }
 
   private fun shouldExpandQuickInputDown(): Boolean {
-    return currentSheetOffset > 0.08f && currentSheetOffset < 0.92f
+    return currentSheetOffset > 0.08f && currentSheetOffset < HIDE_CONTAINER_AT_OFFSET
   }
 
-  private fun collapseQuickInputPanel() {
-    binding.symbolInput.collapse()
-    val collapsed = collapsedHeight.roundToInt()
-    binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
-      height = collapsed
+  private fun resolveTopContainerMode(): TopContainerMode {
+    return if (shouldHideTopContainer()) {
+      TopContainerMode.HIDDEN
+    } else if (isImeVisible) {
+      TopContainerMode.SYMBOL_INPUT
+    } else {
+      TopContainerMode.BASIC
     }
-    binding.cardView.translationY = 0f
-    binding.quickInputToggle.translationY = 0f
+  }
+
+  private fun shouldHideTopContainer(): Boolean {
+    return currentSheetOffset >= HIDE_CONTAINER_AT_OFFSET ||
+        behavior.state == BottomSheetBehavior.STATE_EXPANDED
+  }
+
+  private fun applyTopContainerState() {
+    when (resolveTopContainerMode()) {
+      TopContainerMode.HIDDEN -> hideTopContainer()
+      TopContainerMode.SYMBOL_INPUT -> showSymbolInputContainer()
+      TopContainerMode.BASIC -> showBasicContainer()
+    }
+  }
+
+  private fun setTopContainerHeight(height: Int) {
+    binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
+      this.height = height
+    }
     binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
-      height = collapsed
+      this.height = height
       gravity = android.view.Gravity.TOP
     }
     binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
-      height = collapsed
+      this.height = height
     }
+  }
+
+  private fun hideTopContainer() {
+    binding.symbolInput.collapse()
+    binding.quickInputShell.visibility = View.GONE
+    binding.headerContainer.visibility = View.GONE
+    binding.quickInputLeadingSpace.visibility = View.GONE
+    binding.quickInputToggle.visibility = View.GONE
+    binding.cardView.translationY = 0f
+    binding.quickInputToggle.translationY = 0f
+    setTopContainerHeight(0)
+  }
+
+  private fun showBasicContainer() {
+    binding.symbolInput.collapse()
+    binding.quickInputShell.visibility = View.VISIBLE
+    binding.headerContainer.visibility = View.VISIBLE
+    binding.headerContainer.displayedChild = basicContainerChild
+    binding.quickInputLeadingSpace.visibility = View.GONE
+    binding.quickInputToggle.visibility = View.GONE
+    binding.cardView.scaleX = 0.9f
+    binding.cardView.scaleY = 0.9f
+    binding.cardView.translationY = 0f
+    binding.quickInputToggle.translationY = 0f
+    setTopContainerHeight(collapsedHeight.roundToInt())
+  }
+
+  private fun showSymbolInputContainer() {
+    binding.quickInputShell.visibility = View.VISIBLE
+    binding.headerContainer.visibility = View.VISIBLE
+    binding.headerContainer.displayedChild = CHILD_SYMBOL_INPUT
+    binding.quickInputLeadingSpace.visibility = View.VISIBLE
+    binding.quickInputToggle.visibility = View.VISIBLE
+    binding.cardView.scaleX = 1f
+    binding.cardView.scaleY = 1f
+    updateQuickInputExpandDirection()
+    setTopContainerHeight(collapsedHeight.roundToInt())
   }
 
   private fun applyQuickInputExpansion(
@@ -506,32 +510,8 @@ constructor(
     )
   
     val activity = context as Activity
-    val selectedTab = binding.tabs.selectedTabPosition
-    val fragment = pagerAdapter.getFragmentAtIndex(selectedTab)
-    
-    val shouldShowHeader = shouldShowHeaderControls(fragment)
-    
-    if (KeyboardUtils.isSoftInputVisible(activity)) {
-      if (shouldShowHeader) {
-        binding.quickInputShell.visibility = View.VISIBLE
-        binding.headerContainer.visibility = View.VISIBLE
-        binding.headerContainer.displayedChild = CHILD_SYMBOL_INPUT
-        updateQuickInputToggleVisibility(true)
-      } else {
-        collapseQuickInputPanel()
-        updateQuickInputToggleVisibility(false)
-        binding.headerContainer.visibility = View.GONE
-      }
-    } else {
-      collapseQuickInputPanel()
-      updateQuickInputToggleVisibility(false)
-      if (shouldShowHeader || behavior.state == BottomSheetBehavior.STATE_COLLAPSED) {
-        binding.headerContainer.visibility = View.VISIBLE
-        binding.headerContainer.displayedChild = CHILD_HEADER
-      } else {
-        binding.headerContainer.visibility = View.GONE
-      }
-    }
+    isImeVisible = KeyboardUtils.isSoftInputVisible(activity)
+    applyTopContainerState()
   }
   
   fun setStatus(text: CharSequence, @GravityInt gravity: Int) {

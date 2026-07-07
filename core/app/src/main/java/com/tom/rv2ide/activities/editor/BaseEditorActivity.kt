@@ -1461,6 +1461,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
     editorBottomSheet?.addBottomSheetCallback(
         object : BottomSheetCallback() {
           override fun onStateChanged(bottomSheet: View, newState: Int) {
+            content.bottomSheet.onStateChanged(newState)
             if (newState == BottomSheetBehavior.STATE_EXPANDED) {
               val editor = provideCurrentEditor()
               editor?.editor?.ensureWindowsDismissed()
