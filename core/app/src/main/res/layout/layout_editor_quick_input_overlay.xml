@@ -25,7 +25,7 @@
             <com.tom.rv2ide.ui.SymbolInputView
                 android:id="@+id/symbol_input"
                 android:layout_width="match_parent"
-                android:layout_height="152dp" />
+                android:layout_height="wrap_content" />
 
         </eightbitlab.com.blurview.BlurView>
     </com.google.android.material.card.MaterialCardView>

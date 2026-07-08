@@ -72,6 +72,7 @@ class EditorQuickInputOverlayController(
 
             overlay.cardView.doOnLayout {
                 val expandedTop = localBottom - overlay.cardView.height
+                log.debug("Overlay.cardView measuredHeight={} symbolHeight={} expandedTop={} collapsedTop={} translationY={}", overlay.cardView.height, overlay.symbolInput.height, expandedTop, collapsedTop, (expandedTop - collapsedTop).toFloat())
                 overlay.cardView.translationY = 0f
                 overlay.cardView.animate()
                     .translationY((expandedTop - collapsedTop).toFloat())
