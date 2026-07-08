@@ -1,5 +1,6 @@
 package com.tom.rv2ide.ui
 
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.graphics.Rect
 import android.view.LayoutInflater
@@ -37,15 +38,6 @@ class EditorQuickInputOverlayController(
 
         overlay.root.isClickable = false
         overlay.root.isFocusable = false
-        overlay.root.setOnTouchListener { _, event ->
-            val container = overlay.overlayContainer
-            val x = event.x
-            val y = event.y
-            val inside = x >= container.x && x <= container.x + container.width &&
-                y >= container.y && y <= container.y + container.height
-            // Only consume events inside the container; let outside events pass through
-            inside
-        }
         overlay.overlayContainer.isClickable = true
         overlay.overlayContainer.isFocusable = true
         overlay.cardView.clipToOutline = true
@@ -84,32 +76,32 @@ class EditorQuickInputOverlayController(
                 val collapsedHeight = anchorRect.height()
                 val bottomY = localBottom
                 
-                // Set pivot at bottom so scaleY expands upward
-                overlay.overlayContainer.pivotY = expandedHeight.toFloat()
-                
-                // Initial state: full height but scaled down to collapsed proportion
-                val initialScale = collapsedHeight.toFloat() / expandedHeight.toFloat()
-                overlay.overlayContainer.y = (bottomY - expandedHeight).toFloat()
-                overlay.overlayContainer.scaleY = initialScale
+                // Set initial height to collapsed, position so bottom aligns
+                overlay.overlayContainer.layoutParams = (overlay.overlayContainer.layoutParams as FrameLayout.LayoutParams).apply {
+                    height = collapsedHeight
+                }
+                overlay.overlayContainer.y = (bottomY - collapsedHeight).toFloat()
                 overlay.overlayContainer.alpha = 0.8f
                 
-                // Fix touch feedback: ensure symbolInput has no scale transform interference
-                overlay.symbolInput.scaleY = 1f / initialScale
-                
-                // Animate: scale from collapsed to full, keeping bottom anchored
-                overlay.overlayContainer.animate()
-                    .scaleY(1f)
-                    .alpha(1f)
-                    .setDuration(250)
-                    .setInterpolator(DecelerateInterpolator(1.5f))
-                    .withStartAction {
-                        // Gradually restore symbolInput scale during animation
-                        overlay.symbolInput.animate()
-                            .scaleY(1f)
-                            .setDuration(250)
-                            .setInterpolator(DecelerateInterpolator(1.5f))
-                            .start()
+                // Animate height from collapsed to expanded, keeping bottom anchored
+                ValueAnimator.ofInt(collapsedHeight, expandedHeight).apply {
+                    duration = 250
+                    interpolator = DecelerateInterpolator(1.5f)
+                    addUpdateListener { animator ->
+                        val animatedHeight = animator.animatedValue as Int
+                        overlay.overlayContainer.layoutParams = (overlay.overlayContainer.layoutParams as FrameLayout.LayoutParams).apply {
+                            height = animatedHeight
+                        }
+                        // Keep bottom edge anchored
+                        overlay.overlayContainer.y = (bottomY - animatedHeight).toFloat()
                     }
+                    start()
+                }
+                
+                // Fade in alpha separately
+                overlay.overlayContainer.animate()
+                    .alpha(1f)
+                    .setDuration(150)
                     .start()
             }
         }
