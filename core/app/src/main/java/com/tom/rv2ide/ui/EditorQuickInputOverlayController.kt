@@ -41,8 +41,10 @@ class EditorQuickInputOverlayController(
             val container = overlay.overlayContainer
             val x = event.x
             val y = event.y
-            x >= container.x && x <= container.x + container.width &&
+            val inside = x >= container.x && x <= container.x + container.width &&
                 y >= container.y && y <= container.y + container.height
+            // Only consume events inside the container; let outside events pass through
+            inside
         }
         overlay.overlayContainer.isClickable = true
         overlay.overlayContainer.isFocusable = true
@@ -91,12 +93,23 @@ class EditorQuickInputOverlayController(
                 overlay.overlayContainer.scaleY = initialScale
                 overlay.overlayContainer.alpha = 0.8f
                 
+                // Fix touch feedback: ensure symbolInput has no scale transform interference
+                overlay.symbolInput.scaleY = 1f / initialScale
+                
                 // Animate: scale from collapsed to full, keeping bottom anchored
                 overlay.overlayContainer.animate()
                     .scaleY(1f)
                     .alpha(1f)
                     .setDuration(250)
                     .setInterpolator(DecelerateInterpolator(1.5f))
+                    .withStartAction {
+                        // Gradually restore symbolInput scale during animation
+                        overlay.symbolInput.animate()
+                            .scaleY(1f)
+                            .setDuration(250)
+                            .setInterpolator(DecelerateInterpolator(1.5f))
+                            .start()
+                    }
                     .start()
             }
         }
