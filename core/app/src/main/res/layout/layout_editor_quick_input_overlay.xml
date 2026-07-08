@@ -25,7 +25,9 @@
 
         <Space
             android:layout_width="40dp"
-            android:layout_height="1dp" />
+            android:layout_height="match_parent"
+            android:clickable="false"
+            android:focusable="false" />
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardView"

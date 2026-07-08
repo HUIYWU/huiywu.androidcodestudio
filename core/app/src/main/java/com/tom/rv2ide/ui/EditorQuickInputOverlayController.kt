@@ -46,11 +46,14 @@ class EditorQuickInputOverlayController(
         overlay.root.isClickable = false
         overlay.root.isFocusable = false
         overlay.root.setOnTouchListener(null)
-        overlay.overlayContainer.isClickable = true
-        overlay.overlayContainer.isFocusable = true
-        overlay.overlayContainer.setOnTouchListener { _, event ->
+        overlay.overlayContainer.isClickable = false
+        overlay.overlayContainer.isFocusable = false
+        overlay.overlayContainer.setOnTouchListener(null)
+        overlay.cardView.isClickable = false
+        overlay.cardView.isFocusable = false
+        overlay.cardView.setOnTouchListener { _, event ->
             if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
-                log.debug("Overlay.container touch down local=({}, {}) container={}x{} x={} y={}", event.x, event.y, overlay.overlayContainer.width, overlay.overlayContainer.height, overlay.overlayContainer.x, overlay.overlayContainer.y)
+                log.debug("Overlay.card touch down local=({}, {}) card={}x{} x={} y={}", event.x, event.y, overlay.cardView.width, overlay.cardView.height, overlay.cardView.x, overlay.cardView.y)
             }
             false
         }
