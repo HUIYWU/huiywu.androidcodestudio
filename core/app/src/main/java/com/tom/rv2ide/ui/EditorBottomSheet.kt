@@ -453,6 +453,9 @@ constructor(
     binding.cardView.scaleX = 1f
     binding.cardView.scaleY = 1f
     updateQuickInputExpandDirection()
+    if (quickInputOverlayActive) {
+      binding.quickInputToggle.text = "⌄"
+    }
     setTopContainerHeight(height)
   }
 
