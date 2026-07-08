@@ -1466,14 +1466,23 @@ override fun onApplySystemBarInsets(insets: Insets) {
   private fun setupBottomSheet() {
     quickInputOverlayController = EditorQuickInputOverlayController(content.quickInputOverlayHost).apply {
       onHidden = {
+        if (IdeLogConfig.shouldLogDebug()) {
+          log.debug("quickInputOverlay onHidden")
+        }
         content.bottomSheet.setQuickInputOverlayActive(false)
       }
     }
     content.bottomSheet.requestHideQuickInputOverlay = {
+      if (IdeLogConfig.shouldLogDebug()) {
+        log.debug("requestHideQuickInputOverlay")
+      }
       quickInputOverlayController?.hide(true)
     }
     content.bottomSheet.requestShowQuickInputOverlay = request@{
       val editor = content.bottomSheet.getCurrentQuickInputEditor() ?: provideCurrentEditor() ?: return@request
+      if (IdeLogConfig.shouldLogDebug()) {
+        log.debug("requestShowQuickInputOverlay: file={}", editor.file?.absolutePath)
+      }
       quickInputOverlayController?.showFrom(content.bottomSheet.getQuickInputAnchorView(), editor)
       content.bottomSheet.setQuickInputOverlayActive(true)
     }
