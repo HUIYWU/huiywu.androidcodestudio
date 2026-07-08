@@ -15,7 +15,6 @@ import com.tom.rv2ide.databinding.LayoutEditorQuickInputOverlayBinding
 import com.tom.rv2ide.utils.Symbols.forFile
 import eightbitlab.com.blurview.BlurTarget
 import eightbitlab.com.blurview.RenderScriptBlur
-import org.slf4j.LoggerFactory
 
 // Hosts only the UP expansion surface.
 // The regular quick input remains in the bottom sheet, while the overlay is used only for overflow that must
@@ -23,10 +22,6 @@ import org.slf4j.LoggerFactory
 class EditorQuickInputOverlayController(
     private val host: FrameLayout,
 ) {
-    companion object {
-        private val log = LoggerFactory.getLogger(EditorQuickInputOverlayController::class.java)
-    }
-
     private var binding: LayoutEditorQuickInputOverlayBinding? = null
     private var visible = false
     var onHidden: (() -> Unit)? = null
@@ -51,12 +46,7 @@ class EditorQuickInputOverlayController(
         overlay.overlayContainer.setOnTouchListener(null)
         overlay.cardView.isClickable = false
         overlay.cardView.isFocusable = false
-        overlay.cardView.setOnTouchListener { _, event ->
-            if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
-                log.debug("Overlay.card touch down local=({}, {}) card={}x{} x={} y={}", event.x, event.y, overlay.cardView.width, overlay.cardView.height, overlay.cardView.x, overlay.cardView.y)
-            }
-            false
-        }
+        overlay.cardView.setOnTouchListener(null)
         overlay.cardView.clipToOutline = true
         overlay.blurView.clipToOutline = false
         setupBlurEffect(overlay)
@@ -87,13 +77,11 @@ class EditorQuickInputOverlayController(
                 height = FrameLayout.LayoutParams.WRAP_CONTENT
             }
             overlay.overlayContainer.alpha = 0.8f
-            log.debug("Overlay.layout localLeft={} localTop={} localBottom={} width={} host={}x{}", localLeft, localTop, localBottom, anchorRect.width() + leadingSpaceWidth, host.width, host.height)
 
             overlay.overlayContainer.doOnLayout {
                 val expandedHeight = overlay.overlayContainer.height
                 val collapsedHeight = anchorRect.height()
                 val bottomY = localBottom
-                log.debug("Overlay.measured container={}x{} card={}x{} symbol={}x{}", overlay.overlayContainer.width, overlay.overlayContainer.height, overlay.cardView.width, overlay.cardView.height, overlay.symbolInput.width, overlay.symbolInput.height)
                 
                 // Set initial height to collapsed, position so bottom aligns
                 overlay.overlayContainer.layoutParams = (overlay.overlayContainer.layoutParams as FrameLayout.LayoutParams).apply {
