@@ -47,7 +47,6 @@ import com.google.android.material.tabs.TabLayout.Tab
 import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.transition.MaterialSharedAxis
 import com.tom.rv2ide.R
-import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.adapters.DiagnosticsAdapter
 import com.tom.rv2ide.adapters.EditorBottomSheetTabAdapter
 import com.tom.rv2ide.adapters.SearchListAdapter
@@ -92,6 +91,9 @@ constructor(
   private val collapsedHeight: Float by lazy {
     val localContext = getContext() ?: return@lazy 0f
     localContext.resources.getDimension(R.dimen.editor_sheet_collapsed_height)
+  }
+  private val quickInputExpandedHeight: Int by lazy {
+    SizeUtils.dp2px(136f)
   }
   private val behavior: BottomSheetBehavior<EditorBottomSheet> by lazy {
     BottomSheetBehavior.from(this).apply {
@@ -238,30 +240,17 @@ constructor(
     binding.cardView.scaleY = 0.9f
     binding.cardView.clipToOutline = true
     binding.blurView.clipToOutline = false
+    binding.symbolInput.bindToggleButton(binding.quickInputToggle)
     binding.symbolInput.setExpansionChangeListener { expanded, direction ->
+      applyQuickInputExpansion(expanded, direction)
       if (direction == SymbolInputView.ExpandDirection.DOWN) {
         quickInputOverlayActive = false
       }
-      binding.quickInputToggle.text = if (expanded || quickInputOverlayActive) "⌄" else "⌃"
+      binding.quickInputToggle.text =
+          if ((expanded && direction == SymbolInputView.ExpandDirection.DOWN) || quickInputOverlayActive) "⌄" else "⌃"
     }
     binding.quickInputToggle.setOnClickListener {
-      if (IdeLogConfig.shouldLogDebug()) {
-        log.debug(
-            "quickInputToggle click: mode={}, imeVisible={}, sheetOffset={}, useDown={}, overlayActive={}, symbolExpanded={}, terminal={}, child={}",
-            resolveTopContainerMode(),
-            isImeVisible,
-            currentSheetOffset,
-            shouldUseDownExpansion(),
-            quickInputOverlayActive,
-            binding.symbolInput.isExpanded,
-            isTerminalTabSelected(),
-            binding.headerContainer.displayedChild,
-        )
-      }
       if (resolveTopContainerMode() != TopContainerMode.SYMBOL_INPUT) {
-        if (IdeLogConfig.shouldLogDebug()) {
-          log.debug("quickInputToggle ignored: top container mode is not SYMBOL_INPUT")
-        }
         return@setOnClickListener
       }
       if (shouldUseDownExpansion()) {
@@ -269,25 +258,12 @@ constructor(
         binding.symbolInput.setExpandDirection(SymbolInputView.ExpandDirection.DOWN)
         binding.symbolInput.toggleExpanded()
         setQuickInputOverlayActive(false)
-        if (IdeLogConfig.shouldLogDebug()) {
-          log.debug(
-              "quickInputToggle DOWN applied: symbolExpanded={}, direction={}",
-              binding.symbolInput.isExpanded,
-              binding.symbolInput.expandDirection,
-          )
-        }
       } else {
         binding.symbolInput.collapse()
         if (quickInputOverlayActive) {
           requestHideQuickInputOverlay?.invoke()
-          if (IdeLogConfig.shouldLogDebug()) {
-            log.debug("quickInputToggle UP path: requested overlay hide")
-          }
         } else {
           requestShowQuickInputOverlay?.invoke()
-          if (IdeLogConfig.shouldLogDebug()) {
-            log.debug("quickInputToggle UP path: requested overlay show")
-          }
         }
       }
     }
@@ -302,9 +278,6 @@ constructor(
   fun setImeVisible(isVisible: Boolean) {
     isImeVisible = isVisible
     behavior.isGestureInsetBottomIgnored = isVisible
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug("setImeVisible: isVisible={}, gestureInsetIgnored={}", isVisible, behavior.isGestureInsetBottomIgnored)
-    }
   }
 
   fun setOffsetAnchor(view: View) {
@@ -342,22 +315,9 @@ constructor(
   }
 
   fun onSlide(sheetOffset: Float) {
-    val previousDirection = binding.symbolInput.expandDirection
     currentSheetOffset = sheetOffset
     updateQuickInputExpandDirection()
-    if (previousDirection != binding.symbolInput.expandDirection) {
-      binding.symbolInput.collapse()
-    }
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug(
-          "onSlide: offset={}, prevDirection={}, newDirection={}, symbolExpanded={}, overlayActive={}",
-          sheetOffset,
-          previousDirection,
-          binding.symbolInput.expandDirection,
-          binding.symbolInput.isExpanded,
-          quickInputOverlayActive,
-      )
-    }
+    binding.symbolInput.collapse()
     binding.headerContainer.updatePaddingRelative(bottom = 0)
     applyTopContainerState()
   }
@@ -429,21 +389,7 @@ constructor(
           MaterialSharedAxis(MaterialSharedAxis.Y, false),
       )
     }
-    val mode = resolveTopContainerMode()
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug(
-          "applyTopContainerState: mode={}, animated={}, imeVisible={}, sheetOffset={}, useDown={}, overlayActive={}, symbolExpanded={}, terminal={}",
-          mode,
-          animated,
-          isImeVisible,
-          currentSheetOffset,
-          shouldUseDownExpansion(),
-          quickInputOverlayActive,
-          binding.symbolInput.isExpanded,
-          isTerminalTabSelected(),
-      )
-    }
-    when (mode) {
+    when (resolveTopContainerMode()) {
       TopContainerMode.HIDDEN -> hideTopContainer()
       TopContainerMode.SYMBOL_INPUT -> showSymbolInputContainer()
       TopContainerMode.BASIC -> showBasicContainer()
@@ -507,11 +453,32 @@ constructor(
     binding.cardView.scaleX = 1f
     binding.cardView.scaleY = 1f
     updateQuickInputExpandDirection()
-    if (!shouldUseDownExpansion() && !quickInputOverlayActive) {
-      binding.symbolInput.collapse()
-    }
-    binding.quickInputToggle.text = if ((binding.symbolInput.isExpanded && shouldUseDownExpansion()) || quickInputOverlayActive) "⌄" else "⌃"
     setTopContainerHeight(height)
+  }
+
+  private fun applyQuickInputExpansion(
+      expanded: Boolean,
+      direction: SymbolInputView.ExpandDirection,
+  ) {
+    val collapsed = collapsedHeight.roundToInt()
+    val targetHeight = if (expanded) quickInputExpandedHeight else collapsed
+    val expandUp = expanded && direction == SymbolInputView.ExpandDirection.UP
+    val expandDown = expanded && direction == SymbolInputView.ExpandDirection.DOWN
+    val shellHeight = if (expandDown) targetHeight else collapsed
+
+    binding.quickInputShell.bringToFront()
+    binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
+      height = shellHeight
+    }
+    binding.cardView.translationY = 0f
+    binding.quickInputToggle.translationY = 0f
+    binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
+      height = targetHeight
+      gravity = if (expandUp) android.view.Gravity.BOTTOM else android.view.Gravity.TOP
+    }
+    binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
+      height = targetHeight
+    }
   }
   fun setActionText(text: CharSequence) {
     binding.bottomAction.actionText.text = text
@@ -551,9 +518,6 @@ constructor(
   fun refreshSymbolInput(editor: CodeEditorView) {
     currentSymbolInputEditor = editor
     binding.symbolInput.refresh(editor.editor, forFile(editor.file))
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug("refreshSymbolInput: file={}, symbolExpanded={}", editor.file?.absolutePath, binding.symbolInput.isExpanded)
-    }
   }
 
   fun getCurrentQuickInputEditor(): CodeEditorView? = currentSymbolInputEditor
@@ -566,9 +530,6 @@ constructor(
     binding.quickInputToggle.alpha = 1f
     binding.quickInputToggle.text = if (active) "⌄" else "⌃"
     binding.cardView.alpha = if (active) 0.2f else 1f
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug("setQuickInputOverlayActive: active={}, symbolExpanded={}", active, binding.symbolInput.isExpanded)
-    }
   }
 
   fun isTerminalTabSelected(): Boolean {
@@ -586,9 +547,6 @@ constructor(
 
     val activity = context as Activity
     isImeVisible = KeyboardUtils.isSoftInputVisible(activity)
-    if (IdeLogConfig.shouldLogDebug()) {
-      log.debug("onSoftInputChanged: keyboardVisible={}, overlayActiveBefore={}, symbolExpandedBefore={}", isImeVisible, quickInputOverlayActive, binding.symbolInput.isExpanded)
-    }
     if (!isImeVisible) {
       setQuickInputOverlayActive(false)
     }

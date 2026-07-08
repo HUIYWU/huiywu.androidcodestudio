@@ -9,18 +9,13 @@ import android.widget.FrameLayout
 import androidx.core.view.doOnLayout
 import com.tom.rv2ide.R
 import com.tom.rv2ide.databinding.LayoutEditorQuickInputOverlayBinding
-import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.utils.Symbols.forFile
 import eightbitlab.com.blurview.BlurTarget
 import eightbitlab.com.blurview.RenderScriptBlur
-import org.slf4j.LoggerFactory
 
 class EditorQuickInputOverlayController(
     private val host: FrameLayout,
 ) {
-    companion object {
-        private val log = LoggerFactory.getLogger(EditorQuickInputOverlayController::class.java)
-    }
     private var binding: LayoutEditorQuickInputOverlayBinding? = null
     private var visible = false
     var onHidden: (() -> Unit)? = null
@@ -31,9 +26,6 @@ class EditorQuickInputOverlayController(
         val overlay = ensureBinding()
         host.visibility = View.VISIBLE
         visible = true
-        if (IdeLogConfig.shouldLogDebug()) {
-            log.debug("Overlay.showFrom: file={}, anchorWidth={}, anchorHeight={}", editor.file?.absolutePath, anchorView.width, anchorView.height)
-        }
 
         overlay.root.isClickable = false
         overlay.root.isFocusable = false
@@ -62,9 +54,6 @@ class EditorQuickInputOverlayController(
             val localLeft = anchorRect.left - hostRect.left
             val localBottom = anchorRect.bottom - hostRect.top
             val collapsedTop = localBottom - anchorRect.height()
-            if (IdeLogConfig.shouldLogDebug()) {
-                log.debug("Overlay.anchor: left={}, bottom={}, collapsedTop={}, anchorRect={}x{}", localLeft, localBottom, collapsedTop, anchorRect.width(), anchorRect.height())
-            }
 
             overlay.cardView.layoutParams = (overlay.cardView.layoutParams as FrameLayout.LayoutParams).apply {
                 width = anchorRect.width()
@@ -86,9 +75,6 @@ class EditorQuickInputOverlayController(
     }
 
     fun hide(animated: Boolean = true) {
-        if (IdeLogConfig.shouldLogDebug()) {
-            log.debug("Overlay.hide: animated={}, visible={}", animated, visible)
-        }
         val overlay = binding
         if (overlay == null) {
             host.visibility = View.GONE
