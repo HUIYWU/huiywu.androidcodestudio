@@ -119,7 +119,8 @@
     android:clickable="false"
     android:focusable="false"
     android:clipChildren="false"
-    android:clipToPadding="false" />
+    android:clipToPadding="false"
+    android:importantForAccessibility="no" />
 
   <include
     android:id="@+id/diagnosticInfo"
