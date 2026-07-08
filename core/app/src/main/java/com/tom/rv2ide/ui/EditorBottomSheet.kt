@@ -531,7 +531,11 @@ constructor(
     quickInputOverlayActive = active
     binding.quickInputToggle.isEnabled = true
     binding.quickInputToggle.alpha = 1f
-    binding.quickInputToggle.text = if (active) "⌄" else "⌃"
+    if (active) {
+      binding.quickInputToggle.text = "⌄"
+    } else if (!binding.symbolInput.isExpanded) {
+      binding.quickInputToggle.text = "⌃"
+    }
     binding.cardView.alpha = if (active) 0.2f else 1f
   }
 
