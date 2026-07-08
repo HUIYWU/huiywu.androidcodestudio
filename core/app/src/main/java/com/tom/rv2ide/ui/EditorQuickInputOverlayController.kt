@@ -58,7 +58,7 @@ class EditorQuickInputOverlayController(
             val localBottom = anchorRect.bottom - hostRect.top
 
             val leadingSpaceWidth = SizeUtils.dp2px(40f)
-            overlay.overlayContainer.x = localLeft.toFloat()
+            overlay.overlayContainer.x = (localLeft - leadingSpaceWidth).toFloat()
             overlay.overlayContainer.y = localTop.toFloat()
             overlay.overlayContainer.layoutParams = overlay.overlayContainer.layoutParams.apply {
                 width = anchorRect.width() + leadingSpaceWidth
