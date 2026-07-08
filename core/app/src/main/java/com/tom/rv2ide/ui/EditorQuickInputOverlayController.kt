@@ -38,6 +38,15 @@ class EditorQuickInputOverlayController(
 
         overlay.root.isClickable = false
         overlay.root.isFocusable = false
+        overlay.root.setOnTouchListener { _, event ->
+            val x = event.x + overlay.root.scrollX
+            val y = event.y + overlay.root.scrollY
+            val left = overlay.overlayContainer.x
+            val top = overlay.overlayContainer.y
+            val right = left + overlay.overlayContainer.width
+            val bottom = top + overlay.overlayContainer.height
+            x >= left && x <= right && y >= top && y <= bottom
+        }
         overlay.overlayContainer.isClickable = true
         overlay.overlayContainer.isFocusable = true
         overlay.cardView.clipToOutline = true
@@ -65,7 +74,7 @@ class EditorQuickInputOverlayController(
             val leadingSpaceWidth = SizeUtils.dp2px(40f)
             overlay.overlayContainer.x = (localLeft - leadingSpaceWidth).toFloat()
             overlay.overlayContainer.y = localTop.toFloat()
-            overlay.overlayContainer.layoutParams = overlay.overlayContainer.layoutParams.apply {
+            overlay.overlayContainer.layoutParams = (overlay.overlayContainer.layoutParams as FrameLayout.LayoutParams).apply {
                 width = anchorRect.width() + leadingSpaceWidth
                 height = FrameLayout.LayoutParams.WRAP_CONTENT
             }
