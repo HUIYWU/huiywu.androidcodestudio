@@ -78,11 +78,22 @@ class EditorQuickInputOverlayController(
             overlay.overlayContainer.alpha = 0.8f
 
             overlay.overlayContainer.doOnLayout {
-                val collapsedTop = localBottom - anchorRect.height()
-                val expandedTop = localBottom - overlay.overlayContainer.height
-                overlay.overlayContainer.y = collapsedTop.toFloat()
+                val expandedHeight = overlay.overlayContainer.height
+                val collapsedHeight = anchorRect.height()
+                val bottomY = localBottom
+                
+                // Set pivot at bottom so scaleY expands upward
+                overlay.overlayContainer.pivotY = expandedHeight.toFloat()
+                
+                // Initial state: full height but scaled down to collapsed proportion
+                val initialScale = collapsedHeight.toFloat() / expandedHeight.toFloat()
+                overlay.overlayContainer.y = (bottomY - expandedHeight).toFloat()
+                overlay.overlayContainer.scaleY = initialScale
+                overlay.overlayContainer.alpha = 0.8f
+                
+                // Animate: scale from collapsed to full, keeping bottom anchored
                 overlay.overlayContainer.animate()
-                    .y(expandedTop.toFloat())
+                    .scaleY(1f)
                     .alpha(1f)
                     .setDuration(250)
                     .setInterpolator(DecelerateInterpolator(1.5f))
