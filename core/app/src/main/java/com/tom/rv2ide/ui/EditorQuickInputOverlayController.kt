@@ -23,6 +23,7 @@ class EditorQuickInputOverlayController(
     private val host: FrameLayout,
 ) {
     private var binding: LayoutEditorQuickInputOverlayBinding? = null
+    private var blurInitialized = false
     private var visible = false
     var onHidden: (() -> Unit)? = null
 
@@ -49,7 +50,10 @@ class EditorQuickInputOverlayController(
         overlay.cardView.setOnTouchListener(null)
         overlay.cardView.clipToOutline = true
         overlay.blurView.clipToOutline = false
-        setupBlurEffect(overlay)
+        if (!blurInitialized) {
+            setupBlurEffect(overlay)
+            blurInitialized = true
+        }
 
         overlay.symbolInput.refresh(editor.editor, forFile(editor.file))
         overlay.symbolInput.setExpandDirection(SymbolInputView.ExpandDirection.UP)
@@ -76,7 +80,7 @@ class EditorQuickInputOverlayController(
                 width = anchorRect.width() + leadingSpaceWidth
                 height = FrameLayout.LayoutParams.WRAP_CONTENT
             }
-            // overlay.overlayContainer.alpha = 0.8f
+            overlay.overlayContainer.alpha = 0.8f
 
             overlay.overlayContainer.doOnLayout {
                 val expandedHeight = overlay.overlayContainer.height
@@ -88,7 +92,7 @@ class EditorQuickInputOverlayController(
                     height = collapsedHeight
                 }
                 overlay.overlayContainer.y = (bottomY - collapsedHeight).toFloat()
-                // overlay.overlayContainer.alpha = 0.8f
+                overlay.overlayContainer.alpha = 0.8f
                 
                 // Animate height from collapsed to expanded, keeping bottom anchored
                 ValueAnimator.ofInt(collapsedHeight, expandedHeight).apply {
@@ -106,10 +110,10 @@ class EditorQuickInputOverlayController(
                 }
                 
                 // Fade in alpha separately
-                // overlay.overlayContainer.animate()
-                //     .alpha(1f)
-                //     .setDuration(150)
-                //     .start()
+                overlay.overlayContainer.animate()
+                    .alpha(1f)
+                    .setDuration(150)
+                    .start()
             }
         }
     }
@@ -124,8 +128,7 @@ class EditorQuickInputOverlayController(
         }
 
         val endAction = Runnable {
-            host.removeAllViews()
-            binding = null
+            binding?.root?.visibility = View.GONE
             host.visibility = View.GONE
             visible = false
             onHidden?.invoke()
@@ -150,7 +153,10 @@ class EditorQuickInputOverlayController(
     }
 
     private fun ensureBinding(): LayoutEditorQuickInputOverlayBinding {
-        binding?.let { return it }
+        binding?.let {
+            it.root.visibility = View.VISIBLE
+            return it
+        }
         val inflated = LayoutEditorQuickInputOverlayBinding.inflate(
             LayoutInflater.from(host.context),
             host,
@@ -158,6 +164,7 @@ class EditorQuickInputOverlayController(
         )
         host.removeAllViews()
         host.addView(inflated.root)
+        inflated.root.visibility = View.VISIBLE
         binding = inflated
         return inflated
     }
