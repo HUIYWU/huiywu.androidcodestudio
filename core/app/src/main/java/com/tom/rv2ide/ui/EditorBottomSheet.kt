@@ -240,6 +240,10 @@ constructor(
     binding.cardView.scaleY = 0.9f
     binding.cardView.clipToOutline = true
     binding.blurView.clipToOutline = false
+    // This view owns the in-container quick input state.
+    // DOWN expansion stays in this container so the bottom sheet can resize together with the panel.
+    // UP expansion is delegated to a separate overlay, so this view acts only as the trigger, state source,
+    // and geometry anchor for that path.
     binding.symbolInput.bindToggleButton(binding.quickInputToggle)
     binding.symbolInput.setExpansionChangeListener { expanded, direction ->
       applyQuickInputExpansion(expanded, direction)
@@ -254,11 +258,15 @@ constructor(
         return@setOnClickListener
       }
       if (shouldUseDownExpansion()) {
+        // Keep DOWN expansion inside the current container.
+        // The overlay must be hidden first so only one expanded surface is active at a time.
         requestHideQuickInputOverlay?.invoke()
         binding.symbolInput.setExpandDirection(SymbolInputView.ExpandDirection.DOWN)
         binding.symbolInput.toggleExpanded()
         setQuickInputOverlayActive(false)
       } else {
+        // Do not render UP overflow inside the header container.
+        // Collapse the local view and let the overlay own the expanded surface.
         binding.symbolInput.collapse()
         if (quickInputOverlayActive) {
           requestHideQuickInputOverlay?.invoke()
@@ -459,6 +467,9 @@ constructor(
     setTopContainerHeight(height)
   }
 
+  // Applies the container-side expansion model.
+  // The panel surface is defined by quickInputShell / cardView / headerContainer, not by SymbolInputView alone.
+  // This keeps size, gravity, and sheet interaction consistent for the in-container path.
   private fun applyQuickInputExpansion(
       expanded: Boolean,
       direction: SymbolInputView.ExpandDirection,

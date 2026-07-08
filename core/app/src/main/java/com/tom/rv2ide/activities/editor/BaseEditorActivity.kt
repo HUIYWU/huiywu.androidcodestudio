@@ -1469,6 +1469,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
         content.bottomSheet.setQuickInputOverlayActive(false)
       }
     }
+    // The bottom sheet decides which path is active.
+    // This layer connects the UP path to the overlay controller so the in-container path and the overlay path
+    // remain separate and can evolve independently.
     content.bottomSheet.requestHideQuickInputOverlay = {
       quickInputOverlayController?.hide(true)
     }

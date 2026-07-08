@@ -8,6 +8,11 @@
     android:clipChildren="false"
     android:clipToPadding="false">
 
+    <!--
+         Dedicated shell for the UP expansion surface.
+         The leading space preserves the same horizontal relationship as the in-container layout:
+         reserved space on the left, card content on the right, and the toggle kept outside the card width.
+    -->
     <LinearLayout
         android:id="@+id/overlay_container"
         android:layout_width="match_parent"

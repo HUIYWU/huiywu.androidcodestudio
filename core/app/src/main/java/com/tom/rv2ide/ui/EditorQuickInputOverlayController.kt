@@ -5,6 +5,7 @@ import android.graphics.Rect
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import androidx.core.view.doOnLayout
 import com.blankj.utilcode.util.SizeUtils
@@ -14,6 +15,9 @@ import com.tom.rv2ide.utils.Symbols.forFile
 import eightbitlab.com.blurview.BlurTarget
 import eightbitlab.com.blurview.RenderScriptBlur
 
+// Hosts only the UP expansion surface.
+// The regular quick input remains in the bottom sheet, while the overlay is used only for overflow that must
+// render above the editor area and receive input outside the sheet container.
 class EditorQuickInputOverlayController(
     private val host: FrameLayout,
 ) {
@@ -24,6 +28,9 @@ class EditorQuickInputOverlayController(
     fun isVisible(): Boolean = visible
 
     fun showFrom(anchorView: View, editor: CodeEditorView) {
+        // anchorView provides the starting bounds for the overlay path.
+        // It defines position and card width reference, but it is not the expanded surface itself.
+        // The toggle button stays outside the overlay card width.
         val overlay = ensureBinding()
         host.visibility = View.VISIBLE
         visible = true
@@ -57,6 +64,10 @@ class EditorQuickInputOverlayController(
             val localTop = anchorRect.top - hostRect.top
             val localBottom = anchorRect.bottom - hostRect.top
 
+            // overlay_container keeps a leading spacer so the overlay card matches the same horizontal relationship
+            // as the in-container card: reserved space on the left, card content on the right, toggle outside.
+            // The total overlay width includes that spacer, and x is shifted left by the same amount so the card
+            // itself stays aligned with the anchor card.
             val leadingSpaceWidth = SizeUtils.dp2px(40f)
             overlay.overlayContainer.x = (localLeft - leadingSpaceWidth).toFloat()
             overlay.overlayContainer.y = localTop.toFloat()
@@ -64,7 +75,7 @@ class EditorQuickInputOverlayController(
                 width = anchorRect.width() + leadingSpaceWidth
                 height = FrameLayout.LayoutParams.WRAP_CONTENT
             }
-            overlay.overlayContainer.alpha = 1f
+            overlay.overlayContainer.alpha = 0.8f
 
             overlay.overlayContainer.doOnLayout {
                 val collapsedTop = localBottom - anchorRect.height()
@@ -72,7 +83,9 @@ class EditorQuickInputOverlayController(
                 overlay.overlayContainer.y = collapsedTop.toFloat()
                 overlay.overlayContainer.animate()
                     .y(expandedTop.toFloat())
-                    .setDuration(180)
+                    .alpha(1f)
+                    .setDuration(250)
+                    .setInterpolator(DecelerateInterpolator(1.5f))
                     .start()
             }
         }
