@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import androidx.core.view.doOnLayout
+import com.blankj.utilcode.util.SizeUtils
 import com.tom.rv2ide.R
 import com.tom.rv2ide.databinding.LayoutEditorQuickInputOverlayBinding
 import com.tom.rv2ide.utils.Symbols.forFile
@@ -56,10 +57,11 @@ class EditorQuickInputOverlayController(
             val localTop = anchorRect.top - hostRect.top
             val localBottom = anchorRect.bottom - hostRect.top
 
+            val leadingSpaceWidth = SizeUtils.dp2px(40f)
             overlay.overlayContainer.x = localLeft.toFloat()
             overlay.overlayContainer.y = localTop.toFloat()
             overlay.overlayContainer.layoutParams = overlay.overlayContainer.layoutParams.apply {
-                width = anchorRect.width()
+                width = anchorRect.width() + leadingSpaceWidth
                 height = FrameLayout.LayoutParams.WRAP_CONTENT
             }
             overlay.overlayContainer.alpha = 1f
