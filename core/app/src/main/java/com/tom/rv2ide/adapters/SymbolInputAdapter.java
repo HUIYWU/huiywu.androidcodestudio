@@ -21,6 +21,7 @@ import static com.tom.rv2ide.utils.ResourceUtilsKt.resolveAttr;
 
 import android.annotation.SuppressLint;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -97,6 +98,16 @@ public class SymbolInputAdapter extends RecyclerView.Adapter<SymbolInputAdapter.
     holder.binding.symbol.setText(item.getLabel());
     holder.binding.symbol.setTextColor(
         resolveAttr(holder.binding.symbol.getContext(), R.attr.colorOnSurface));
+    holder.binding.symbol.setOnTouchListener(
+        (v, event) -> {
+          if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            v.setAlpha(0.6f);
+          } else if (event.getActionMasked() == MotionEvent.ACTION_UP
+              || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+            v.setAlpha(1f);
+          }
+          return false;
+        });
     holder.binding.symbol.setOnClickListener(
         __ -> {
           if (item instanceof SymbolQuickItem) {
@@ -147,6 +158,14 @@ public class SymbolInputAdapter extends RecyclerView.Adapter<SymbolInputAdapter.
             cur.getRightLine(), cur.getRightColumn() - (text.length() - selectionOffset));
       }
     }
+  }
+
+  @Override
+  public void onViewRecycled(@NonNull VH holder) {
+    holder.binding.symbol.setAlpha(1f);
+    holder.binding.symbol.setOnTouchListener(null);
+    holder.binding.symbol.setOnClickListener(null);
+    super.onViewRecycled(holder);
   }
 
   public static class VH extends RecyclerView.ViewHolder {
