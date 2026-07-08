@@ -43,23 +43,17 @@ class EditorQuickInputOverlayController(
         host.isFocusable = false
         visible = true
 
-        overlay.root.isClickable = true
+        overlay.root.isClickable = false
         overlay.root.isFocusable = false
-        overlay.root.setOnTouchListener { _, event ->
-            val x = event.x + overlay.root.scrollX
-            val y = event.y + overlay.root.scrollY
-            val left = overlay.overlayContainer.x
-            val top = overlay.overlayContainer.y
-            val right = left + overlay.overlayContainer.width
-            val bottom = top + overlay.overlayContainer.height
-            val inside = x >= left && x <= right && y >= top && y <= bottom
-            if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
-                log.debug("Overlay.touch down x={} y={} inside={} bounds=({}, {}, {}, {}) host={}x{} root={}x{} container={}x{}", x, y, inside, left, top, right, bottom, host.width, host.height, overlay.root.width, overlay.root.height, overlay.overlayContainer.width, overlay.overlayContainer.height)
-            }
-            inside
-        }
+        overlay.root.setOnTouchListener(null)
         overlay.overlayContainer.isClickable = true
         overlay.overlayContainer.isFocusable = true
+        overlay.overlayContainer.setOnTouchListener { _, event ->
+            if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                log.debug("Overlay.container touch down local=({}, {}) container={}x{} x={} y={}", event.x, event.y, overlay.overlayContainer.width, overlay.overlayContainer.height, overlay.overlayContainer.x, overlay.overlayContainer.y)
+            }
+            false
+        }
         overlay.cardView.clipToOutline = true
         overlay.blurView.clipToOutline = false
         setupBlurEffect(overlay)
