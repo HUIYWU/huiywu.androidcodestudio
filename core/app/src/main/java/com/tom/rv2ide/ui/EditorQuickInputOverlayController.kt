@@ -76,7 +76,7 @@ class EditorQuickInputOverlayController(
                 width = anchorRect.width() + leadingSpaceWidth
                 height = FrameLayout.LayoutParams.WRAP_CONTENT
             }
-            overlay.overlayContainer.alpha = 0.8f
+            // overlay.overlayContainer.alpha = 0.8f
 
             overlay.overlayContainer.doOnLayout {
                 val expandedHeight = overlay.overlayContainer.height
@@ -88,7 +88,7 @@ class EditorQuickInputOverlayController(
                     height = collapsedHeight
                 }
                 overlay.overlayContainer.y = (bottomY - collapsedHeight).toFloat()
-                overlay.overlayContainer.alpha = 0.8f
+                // overlay.overlayContainer.alpha = 0.8f
                 
                 // Animate height from collapsed to expanded, keeping bottom anchored
                 ValueAnimator.ofInt(collapsedHeight, expandedHeight).apply {
@@ -106,10 +106,10 @@ class EditorQuickInputOverlayController(
                 }
                 
                 // Fade in alpha separately
-                overlay.overlayContainer.animate()
-                    .alpha(1f)
-                    .setDuration(150)
-                    .start()
+                // overlay.overlayContainer.animate()
+                //     .alpha(1f)
+                //     .setDuration(150)
+                //     .start()
             }
         }
     }
