@@ -28,6 +28,7 @@ class EditorQuickInputOverlayController(
     private var lastCollapsedHeight = 0
     private var lastBottomY = 0
     var onHidden: (() -> Unit)? = null
+    var onHandoffProgress: ((Float) -> Unit)? = null
 
     fun isVisible(): Boolean = visible
 
@@ -131,11 +132,13 @@ class EditorQuickInputOverlayController(
         if (overlay == null) {
             host.visibility = View.GONE
             visible = false
+            onHandoffProgress?.invoke(1f)
             onHidden?.invoke()
             return
         }
 
         val endAction = Runnable {
+            onHandoffProgress?.invoke(1f)
             host.removeAllViews()
             binding = null
             host.visibility = View.GONE
@@ -174,6 +177,9 @@ class EditorQuickInputOverlayController(
                 // Nudge the overlay's collapsed row upward near handoff so it better matches
                 // the bottom-sheet host's folded baseline before ownership transfers back.
                 overlay.symbolInput.translationY = -(1f - clampedProgress) * collapsedTopOffset
+                val handoffStart = 0.2f
+                val handoffProgress = ((1f - clampedProgress) - handoffStart) / (1f - handoffStart)
+                onHandoffProgress?.invoke(handoffProgress.coerceIn(0f, 1f))
             }
             doOnEnd {
                 overlay.symbolInput.translationY = -collapsedTopOffset

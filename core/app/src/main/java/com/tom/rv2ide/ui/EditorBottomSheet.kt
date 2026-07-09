@@ -547,7 +547,11 @@ constructor(
     } else if (!binding.symbolInput.isExpanded) {
       binding.quickInputToggle.text = "⌃"
     }
-    binding.cardView.alpha = if (active) 0.2f else 1f
+    binding.cardView.alpha = if (active) 0f else 1f
+  }
+
+  fun setQuickInputOverlayHandoffProgress(progress: Float) {
+    binding.cardView.alpha = progress.coerceIn(0f, 1f)
   }
 
   fun isTerminalTabSelected(): Boolean {

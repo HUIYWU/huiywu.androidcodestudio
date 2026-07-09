@@ -1465,6 +1465,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
   private fun setupBottomSheet() {
     quickInputOverlayController = EditorQuickInputOverlayController(content.quickInputOverlayHost).apply {
+      onHandoffProgress = { progress ->
+        content.bottomSheet.setQuickInputOverlayHandoffProgress(progress)
+      }
       onHidden = {
         content.bottomSheet.setQuickInputOverlayActive(false)
       }
@@ -1477,6 +1480,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
     }
     content.bottomSheet.requestShowQuickInputOverlay = request@{
       val editor = content.bottomSheet.getCurrentQuickInputEditor() ?: provideCurrentEditor() ?: return@request
+      content.bottomSheet.setQuickInputOverlayHandoffProgress(0f)
       quickInputOverlayController?.showFrom(content.bottomSheet.getQuickInputAnchorView(), editor)
       content.bottomSheet.setQuickInputOverlayActive(true)
     }
