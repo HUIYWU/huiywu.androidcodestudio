@@ -155,6 +155,7 @@ class EditorQuickInputOverlayController(
         overlay.overlayContainer.animate().cancel()
         overlay.overlayContainer.alpha = 1f
 
+        val collapsedTopOffset = SizeUtils.dp2px(6f).toFloat()
         ValueAnimator.ofInt(startHeight, targetCollapsedHeight).apply {
             duration = 220
             interpolator = DecelerateInterpolator(1.5f)
@@ -168,9 +169,14 @@ class EditorQuickInputOverlayController(
                 val progress = if (startHeight == targetCollapsedHeight) 1f else {
                     (animatedHeight - targetCollapsedHeight).toFloat() / (startHeight - targetCollapsedHeight).toFloat()
                 }
-                overlay.overlayContainer.alpha = 0.8f + (0.2f * progress.coerceIn(0f, 1f))
+                val clampedProgress = progress.coerceIn(0f, 1f)
+                overlay.overlayContainer.alpha = 0.8f + (0.2f * clampedProgress)
+                // Nudge the overlay's collapsed row upward near handoff so it better matches
+                // the bottom-sheet host's folded baseline before ownership transfers back.
+                overlay.symbolInput.translationY = -(1f - clampedProgress) * collapsedTopOffset
             }
             doOnEnd {
+                overlay.symbolInput.translationY = -collapsedTopOffset
                 overlay.overlayContainer.animate()
                     .alpha(0f)
                     .setDuration(90)
