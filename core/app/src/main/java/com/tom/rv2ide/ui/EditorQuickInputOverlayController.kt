@@ -173,10 +173,15 @@ class EditorQuickInputOverlayController(
                     (animatedHeight - targetCollapsedHeight).toFloat() / (startHeight - targetCollapsedHeight).toFloat()
                 }
                 val clampedProgress = progress.coerceIn(0f, 1f)
-                val handoffStart = 0.1f
+                val handoffStart = 0.12f
                 val handoffProgress = (((1f - clampedProgress) - handoffStart) / (1f - handoffStart)).coerceIn(0f, 1f)
-                val overlayFadeMultiplier = 1f - (0.65f * handoffProgress)
-                overlay.overlayContainer.alpha = (0.8f + (0.2f * clampedProgress)) * overlayFadeMultiplier
+                val baseAlpha = 0.8f + (0.2f * clampedProgress)
+                val overlayAlpha = when {
+                    handoffProgress <= 0f -> baseAlpha
+                    handoffProgress < 0.35f -> baseAlpha * (1f - handoffProgress / 0.35f)
+                    else -> 0f
+                }
+                overlay.overlayContainer.alpha = overlayAlpha
                 // Nudge the overlay's collapsed row upward near handoff so it better matches
                 // the bottom-sheet host's folded baseline before ownership transfers back.
                 overlay.symbolInput.translationY = -(1f - clampedProgress) * collapsedTopOffset
