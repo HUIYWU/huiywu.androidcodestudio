@@ -536,14 +536,6 @@ constructor(
           height = animatedHeight
         }
 
-        val motionProgress = if (expanded) progress else (1f - progress)
-        val translationRange = SizeUtils.dp2px(10f).toFloat()
-        val scale = 0.96f + (0.04f * motionProgress)
-        binding.cardView.scaleX = scale
-        binding.cardView.scaleY = scale
-        binding.cardView.translationY = (1f - motionProgress) * translationRange
-        binding.quickInputToggle.translationY = binding.cardView.translationY
-
         val contentProgress = if (expanded) {
           ((progress - 0.2f) / 0.55f).coerceIn(0f, 1f)
         } else {
@@ -563,10 +555,6 @@ constructor(
         binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
           height = targetHeight
         }
-        binding.cardView.scaleX = if (expanded) 1f else 0.96f
-        binding.cardView.scaleY = if (expanded) 1f else 0.96f
-        binding.cardView.translationY = if (expanded) 0f else SizeUtils.dp2px(10f).toFloat()
-        binding.quickInputToggle.translationY = binding.cardView.translationY
         quickInputContainerAnimator = null
       }
       start()
