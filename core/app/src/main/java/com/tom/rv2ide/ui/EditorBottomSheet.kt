@@ -248,7 +248,7 @@ constructor(
     // DOWN expansion stays in this container so the bottom sheet can resize together with the panel.
     // UP expansion is delegated to a separate overlay, so this view acts only as the trigger, state source,
     // and geometry anchor for that path.
-    binding.symbolInput.bindToggleButton(null)
+    binding.symbolInput.bindToggleButton(binding.quickInputToggle)
     binding.symbolInput.setExpansionChangeListener { expanded, direction ->
       applyQuickInputExpansion(expanded, direction)
       if (direction == SymbolInputView.ExpandDirection.DOWN) {
@@ -453,7 +453,7 @@ constructor(
   }
 
   private fun showSymbolInputContainer() {
-    val height = currentTopContainerHeight()
+    val collapsedContainerHeight = currentTopContainerHeight()
     val progress = topContainerVisibilityProgress()
     binding.quickInputShell.visibility = View.VISIBLE
     binding.quickInputShell.alpha = progress
@@ -468,7 +468,13 @@ constructor(
     if (quickInputOverlayActive) {
       binding.quickInputToggle.text = "⌄"
     }
-    setTopContainerHeight(height)
+
+    val isDownExpanded =
+        binding.symbolInput.isExpanded() &&
+            binding.symbolInput.getExpandDirection() == SymbolInputView.ExpandDirection.DOWN
+    if (!isDownExpanded && quickInputContainerAnimator == null) {
+      setTopContainerHeight(collapsedContainerHeight)
+    }
   }
 
   // Applies the container-side expansion model.
