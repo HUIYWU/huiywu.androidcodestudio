@@ -173,12 +173,13 @@ class EditorQuickInputOverlayController(
                     (animatedHeight - targetCollapsedHeight).toFloat() / (startHeight - targetCollapsedHeight).toFloat()
                 }
                 val clampedProgress = progress.coerceIn(0f, 1f)
-                val handoffStart = 0.12f
+                val handoffStart = 0.08f
                 val handoffProgress = (((1f - clampedProgress) - handoffStart) / (1f - handoffStart)).coerceIn(0f, 1f)
-                val baseAlpha = 0.8f + (0.2f * clampedProgress)
+                val baseAlpha = 0.86f + (0.14f * clampedProgress)
                 val overlayAlpha = when {
                     handoffProgress <= 0f -> baseAlpha
-                    handoffProgress < 0.35f -> baseAlpha * (1f - handoffProgress / 0.35f)
+                    handoffProgress < 0.6f -> baseAlpha * (1f - 0.25f * (handoffProgress / 0.6f))
+                    handoffProgress < 0.9f -> baseAlpha * (1f - 0.25f - 0.75f * ((handoffProgress - 0.6f) / 0.3f))
                     else -> 0f
                 }
                 overlay.overlayContainer.alpha = overlayAlpha
