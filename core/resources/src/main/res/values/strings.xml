@@ -817,6 +817,35 @@
   <string name="skip_for_1_min">Skip for 1 min</string>
   <string name="update_all">Update All</string>
   <string name="warning">Warning</string>
+  <string name="dependency_update_warning_title">⚠️ Warning</string>
+  <string name="dependency_update_warning_single_message">You are about to update:
+
+%1$s:%2$s
+%3$s → %4$s
+
+Please note that newer versions may contain bugs, breaking changes, or be in alpha/beta stage. Always test thoroughly after updating.
+
+Do you want to proceed?</string>
+  <string name="dependency_update_warning_all_message">You are about to update %1$d dependencies.
+
+Please note that newer versions may contain bugs, breaking changes, or be in alpha/beta stage. Updating all dependencies at once can introduce compatibility issues.
+
+It is recommended to update and test dependencies individually.
+
+Do you want to proceed with updating all?</string>
+  <string name="dependency_update_confirm_title">Confirm Update</string>
+  <string name="dependency_update_confirm_message">%1$s:%2$s
+%3$s → %4$s
+
+Proceed with update?</string>
+  <string name="dependency_update_success_title">Success</string>
+  <string name="dependency_update_success_message">%1$s:%2$s updated to %3$s</string>
+  <string name="dependency_update_error_title">Error</string>
+  <string name="dependency_update_error_message">Failed to update: %1$s</string>
+  <string name="dependency_update_complete_title">Update Complete</string>
+  <string name="dependency_update_complete_message">Successfully updated: %1$d
+Failed: %2$d</string>
+  <string name="dependency_update_error_all_message">Failed to update dependencies: %1$s</string>
     
   <string
     name="ui_category_widgets"

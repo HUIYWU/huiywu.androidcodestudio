@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
   <!-- AndroidIDE -->
+  <string name="cfg_installed_ndk_version">已安装的 NDK 版本：%s</string>
+  <string name="cfg_installed_cmake_version">已安装的 CMake 版本：%s</string>
   <string name="copy" tools:override="true">复制</string>
   <string name="terminal_more">更多…</string>
   <string name="text_to_search">要搜索的文本</string>
@@ -555,9 +557,11 @@
   <string name="msg_experimental_flavor">您正在 %2$s 的设备上使用 AndroidIDE 的 %1$s 变体。此配置可能有效，但会使性能降低并可能导致安全漏洞。请尽可能避免使用此配置。</string>
   <string name="idepref_editor_pinLineNumbers_title">固定行号</string>
   <string name="idepref_editor_pinLineNumbers_summary">编辑器是否应在水平滚动时固定行号栏。</string>
-  <string name="theme_blue_wave">蓝色波浪</string>
-  <string name="theme_sunny_glow">阳光熠熠</string>
-  <string name="theme_material_you">Material You</string>
+<string name="theme_blue_wave">蓝色波浪</string>
+    <string name="theme_sunny_glow">阳光熠熠</string>
+    <string name="theme_greenish">绿意盎然</string>
+    <string name="theme_vscode">VS Code</string>
+    <string name="theme_material_you">Material You</string>
   <string name="idepref_general_localeSelector_title">语言</string>
   <string name="idepref_general_localeSelector_summary">选择 AndroidIDE 的语言。</string>
   <string name="locale_system_default">系统默认</string>
@@ -981,6 +985,35 @@
   <string name="module_config_compile_sdk">编译 SDK</string>
   <string name="ai_agent_simple_prompt_hint">向 AI 提问任何内容...</string>
   <string name="dependency_update_title">更新依赖项</string>
+  <string name="dependency_update_warning_title">⚠️ 警告</string>
+  <string name="dependency_update_warning_single_message">你即将更新：
+
+%1$s:%2$s
+%3$s → %4$s
+
+请注意，新版本可能包含缺陷、破坏性变更，或处于 Alpha/Beta 阶段。更新后请务必充分测试。
+
+要继续吗？</string>
+  <string name="dependency_update_warning_all_message">你即将更新 %1$d 个依赖项。
+
+请注意，新版本可能包含缺陷、破坏性变更，或处于 Alpha/Beta 阶段。一次性更新全部依赖项可能引入兼容性问题。
+
+建议逐个更新并测试依赖项。
+
+要继续更新全部吗？</string>
+  <string name="dependency_update_confirm_title">确认更新</string>
+  <string name="dependency_update_confirm_message">%1$s:%2$s
+%3$s → %4$s
+
+要继续更新吗？</string>
+  <string name="dependency_update_success_title">成功</string>
+  <string name="dependency_update_success_message">%1$s:%2$s 已更新到 %3$s</string>
+  <string name="dependency_update_error_title">错误</string>
+  <string name="dependency_update_error_message">更新失败：%1$s</string>
+  <string name="dependency_update_complete_title">更新完成</string>
+  <string name="dependency_update_complete_message">成功更新：%1$d
+失败：%2$d</string>
+  <string name="dependency_update_error_all_message">更新依赖项失败：%1$s</string>
   <string name="sub_module_maker_title">子模块创建器</string>
   <string name="sub_module_maker_subtitle">为项目创建新的子模块</string>
   <string name="sub_module_configuration">模块配置</string>

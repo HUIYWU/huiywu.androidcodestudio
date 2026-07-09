@@ -83,7 +83,7 @@ class MainActivity : EdgeToEdgeIDEActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     tomIDEUpdater = TomIDEUpdater(this)
-    tomIDEUpdater.checkForUpdates()
+    // tomIDEUpdater.checkForUpdates()
 
     openLastProject()
 
