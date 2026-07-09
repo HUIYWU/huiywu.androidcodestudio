@@ -39,17 +39,27 @@
             app:cardElevation="0dp"
             app:cardBackgroundColor="?attr/colorSurface">
 
-            <eightbitlab.com.blurview.BlurView
-                android:id="@+id/blurView"
+            <FrameLayout
+                android:id="@+id/quick_input_surface"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="wrap_content"
+                android:clipChildren="true"
+                android:clipToPadding="true">
+
+                <eightbitlab.com.blurview.BlurView
+                    android:id="@+id/blurView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clickable="false"
+                    android:focusable="false" />
 
                 <com.tom.rv2ide.ui.SymbolInputView
                     android:id="@+id/symbol_input"
                     android:layout_width="match_parent"
-                    android:layout_height="136dp" />
+                    android:layout_height="136dp"
+                    android:background="@android:color/transparent" />
 
-            </eightbitlab.com.blurview.BlurView>
+            </FrameLayout>
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
 </FrameLayout>

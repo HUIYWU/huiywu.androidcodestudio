@@ -23,7 +23,6 @@ class EditorQuickInputOverlayController(
     private val host: FrameLayout,
 ) {
     private var binding: LayoutEditorQuickInputOverlayBinding? = null
-    private var blurInitialized = false
     private var visible = false
     var onHidden: (() -> Unit)? = null
 
@@ -50,9 +49,11 @@ class EditorQuickInputOverlayController(
         overlay.cardView.setOnTouchListener(null)
         overlay.cardView.clipToOutline = true
         overlay.blurView.clipToOutline = false
-        if (!blurInitialized) {
-            setupBlurEffect(overlay)
-            blurInitialized = true
+        overlay.blurView.isClickable = false
+        overlay.blurView.isFocusable = false
+        setupBlurEffect(overlay)
+        overlay.blurView.post {
+            overlay.blurView.invalidate()
         }
 
         overlay.symbolInput.refresh(editor.editor, forFile(editor.file))
@@ -128,7 +129,8 @@ class EditorQuickInputOverlayController(
         }
 
         val endAction = Runnable {
-            binding?.root?.visibility = View.GONE
+            host.removeAllViews()
+            binding = null
             host.visibility = View.GONE
             visible = false
             onHidden?.invoke()
@@ -153,10 +155,7 @@ class EditorQuickInputOverlayController(
     }
 
     private fun ensureBinding(): LayoutEditorQuickInputOverlayBinding {
-        binding?.let {
-            it.root.visibility = View.VISIBLE
-            return it
-        }
+        binding?.let { return it }
         val inflated = LayoutEditorQuickInputOverlayBinding.inflate(
             LayoutInflater.from(host.context),
             host,
@@ -164,7 +163,6 @@ class EditorQuickInputOverlayController(
         )
         host.removeAllViews()
         host.addView(inflated.root)
-        inflated.root.visibility = View.VISIBLE
         binding = inflated
         return inflated
     }
