@@ -160,7 +160,7 @@ class EditorQuickInputOverlayController(
 
         val collapsedTopOffset = SizeUtils.dp2px(6f).toFloat()
         ValueAnimator.ofInt(startHeight, targetCollapsedHeight).apply {
-            duration = 220
+            duration = 250
             interpolator = DecelerateInterpolator(1.5f)
             addUpdateListener { animator ->
                 val animatedHeight = animator.animatedValue as Int
@@ -173,13 +173,13 @@ class EditorQuickInputOverlayController(
                     (animatedHeight - targetCollapsedHeight).toFloat() / (startHeight - targetCollapsedHeight).toFloat()
                 }
                 val clampedProgress = progress.coerceIn(0f, 1f)
-                val handoffStart = 0.08f
+                val handoffStart = 0.06f
                 val handoffProgress = (((1f - clampedProgress) - handoffStart) / (1f - handoffStart)).coerceIn(0f, 1f)
-                val baseAlpha = 0.86f + (0.14f * clampedProgress)
+                val baseAlpha = 0.9f + (0.1f * clampedProgress)
                 val overlayAlpha = when {
                     handoffProgress <= 0f -> baseAlpha
-                    handoffProgress < 0.6f -> baseAlpha * (1f - 0.25f * (handoffProgress / 0.6f))
-                    handoffProgress < 0.9f -> baseAlpha * (1f - 0.25f - 0.75f * ((handoffProgress - 0.6f) / 0.3f))
+                    handoffProgress < 0.7f -> baseAlpha * (1f - 0.18f * (handoffProgress / 0.7f))
+                    handoffProgress < 0.94f -> baseAlpha * (0.82f - 0.82f * ((handoffProgress - 0.7f) / 0.24f))
                     else -> 0f
                 }
                 overlay.overlayContainer.alpha = overlayAlpha
@@ -190,11 +190,11 @@ class EditorQuickInputOverlayController(
             }
             doOnEnd {
                 overlay.symbolInput.translationY = -collapsedTopOffset
-                overlay.overlayContainer.animate()
-                    .alpha(0f)
-                    .setDuration(90)
-                    .withEndAction(endAction)
-                    .start()
+            overlay.overlayContainer.animate()
+                .alpha(0f)
+                .setDuration(130)
+                .withEndAction(endAction)
+                .start()
             }
             start()
         }
