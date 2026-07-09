@@ -250,6 +250,13 @@ constructor(
     // and geometry anchor for that path.
     binding.symbolInput.bindToggleButton(binding.quickInputToggle)
     binding.symbolInput.setExpansionChangeListener { expanded, direction ->
+      log.info(
+          "quickInput expansion changed: expanded={}, direction={}, useDown={}, sheetOffset={}",
+          expanded,
+          direction,
+          shouldUseDownExpansion(),
+          currentSheetOffset,
+      )
       applyQuickInputExpansion(expanded, direction)
       if (direction == SymbolInputView.ExpandDirection.DOWN) {
         quickInputOverlayActive = false
@@ -453,7 +460,7 @@ constructor(
   }
 
   private fun showSymbolInputContainer() {
-    val collapsedContainerHeight = currentTopContainerHeight()
+    val height = currentTopContainerHeight()
     val progress = topContainerVisibilityProgress()
     binding.quickInputShell.visibility = View.VISIBLE
     binding.quickInputShell.alpha = progress
@@ -468,13 +475,7 @@ constructor(
     if (quickInputOverlayActive) {
       binding.quickInputToggle.text = "⌄"
     }
-
-    val isDownExpanded =
-        binding.symbolInput.isExpanded() &&
-            binding.symbolInput.getExpandDirection() == SymbolInputView.ExpandDirection.DOWN
-    if (!isDownExpanded && quickInputContainerAnimator == null) {
-      setTopContainerHeight(collapsedContainerHeight)
-    }
+    setTopContainerHeight(height)
   }
 
   // Applies the container-side expansion model.
