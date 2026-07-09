@@ -330,15 +330,48 @@ constructor(
           BottomSheetBehavior.STATE_COLLAPSED -> 0f
           else -> currentSheetOffset
         }
+    log.info(
+        "quickInput onStateChanged: newState={}, sheetOffset={}, topMode={}, symbolExpanded={}, contentExpanded={}, shellHeight={}, cardHeight={}, headerHeight={}",
+        newState,
+        currentSheetOffset,
+        resolveTopContainerMode(),
+        binding.symbolInput.isExpanded,
+        binding.symbolInput.isContentExpanded,
+        binding.quickInputShell.height,
+        binding.cardView.height,
+        binding.headerContainer.height,
+    )
     applyTopContainerState(animated = true)
   }
 
   fun onSlide(sheetOffset: Float) {
     currentSheetOffset = sheetOffset
+    log.info(
+        "quickInput onSlide(before): sheetOffset={}, topMode={}, useDown={}, symbolExpanded={}, contentExpanded={}, shellHeight={}, cardHeight={}, headerHeight={}",
+        currentSheetOffset,
+        resolveTopContainerMode(),
+        shouldUseDownExpansion(),
+        binding.symbolInput.isExpanded,
+        binding.symbolInput.isContentExpanded,
+        binding.quickInputShell.height,
+        binding.cardView.height,
+        binding.headerContainer.height,
+    )
     updateQuickInputExpandDirection()
     binding.symbolInput.collapse()
     binding.headerContainer.updatePaddingRelative(bottom = 0)
     applyTopContainerState()
+    log.info(
+        "quickInput onSlide(after): sheetOffset={}, topMode={}, useDown={}, symbolExpanded={}, contentExpanded={}, shellHeight={}, cardHeight={}, headerHeight={}",
+        currentSheetOffset,
+        resolveTopContainerMode(),
+        shouldUseDownExpansion(),
+        binding.symbolInput.isExpanded,
+        binding.symbolInput.isContentExpanded,
+        binding.quickInputShell.height,
+        binding.cardView.height,
+        binding.headerContainer.height,
+    )
   }
 
   fun showChild(index: Int) {
@@ -400,20 +433,33 @@ constructor(
   private fun currentTopContainerHeight(): Int {
     return (collapsedHeight * topContainerVisibilityProgress()).roundToInt().coerceAtLeast(0)
   }
-
-  private fun applyTopContainerState(animated: Boolean = false) {
+private fun applyTopContainerState(animated: Boolean = false) {
+    val topMode = resolveTopContainerMode()
+    log.info(
+        "quickInput applyTopContainerState: animated={}, topMode={}, sheetOffset={}, useDown={}, symbolExpanded={}, contentExpanded={}, shellHeight={}, cardHeight={}, headerHeight={}",
+        animated,
+        topMode,
+        currentSheetOffset,
+        shouldUseDownExpansion(),
+        binding.symbolInput.isExpanded,
+        binding.symbolInput.isContentExpanded,
+        binding.quickInputShell.height,
+        binding.cardView.height,
+        binding.headerContainer.height,
+    )
     if (animated) {
       TransitionManager.beginDelayedTransition(
           binding.root,
           MaterialSharedAxis(MaterialSharedAxis.Y, false),
       )
     }
-    when (resolveTopContainerMode()) {
+    when (topMode) {
       TopContainerMode.HIDDEN -> hideTopContainer()
       TopContainerMode.SYMBOL_INPUT -> showSymbolInputContainer()
       TopContainerMode.BASIC -> showBasicContainer()
     }
   }
+
 
   private fun setTopContainerHeight(height: Int) {
     binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
@@ -462,6 +508,18 @@ constructor(
   private fun showSymbolInputContainer() {
     val height = currentTopContainerHeight()
     val progress = topContainerVisibilityProgress()
+    log.info(
+        "quickInput showSymbolInputContainer: targetHeight={}, progress={}, sheetOffset={}, useDown={}, symbolExpanded={}, contentExpanded={}, shellHeight(before)={}, cardHeight(before)={}, headerHeight(before)={}",
+        height,
+        progress,
+        currentSheetOffset,
+        shouldUseDownExpansion(),
+        binding.symbolInput.isExpanded,
+        binding.symbolInput.isContentExpanded,
+        binding.quickInputShell.height,
+        binding.cardView.height,
+        binding.headerContainer.height,
+    )
     binding.quickInputShell.visibility = View.VISIBLE
     binding.quickInputShell.alpha = progress
     binding.quickInputShell.isEnabled = true
@@ -476,6 +534,12 @@ constructor(
       binding.quickInputToggle.text = "⌄"
     }
     setTopContainerHeight(height)
+    log.info(
+        "quickInput showSymbolInputContainer(applied): shellHeight(after)={}, cardHeight(after)={}, headerHeight(after)={}",
+        binding.quickInputShell.height,
+        binding.cardView.height,
+        binding.headerContainer.height,
+    )
   }
 
   // Applies the container-side expansion model.
@@ -490,6 +554,21 @@ constructor(
     val expandUp = expanded && direction == SymbolInputView.ExpandDirection.UP
     val expandDown = expanded && direction == SymbolInputView.ExpandDirection.DOWN
     val shellTargetHeight = if (expandDown) targetHeight else collapsed
+
+    log.info(
+        "quickInput applyQuickInputExpansion(start): expanded={}, direction={}, expandDown={}, expandUp={}, collapsed={}, targetHeight={}, shellTargetHeight={}, shellHeight(before)={}, cardHeight(before)={}, headerHeight(before)={}, animatorActive={}",
+        expanded,
+        direction,
+        expandDown,
+        expandUp,
+        collapsed,
+        targetHeight,
+        shellTargetHeight,
+        binding.quickInputShell.height,
+        binding.cardView.height,
+        binding.headerContainer.height,
+        quickInputContainerAnimator != null,
+    )
 
     quickInputContainerAnimator?.cancel()
     binding.quickInputShell.bringToFront()
@@ -510,6 +589,13 @@ constructor(
       binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
         height = targetHeight
       }
+      log.info(
+          "quickInput applyQuickInputExpansion(nonDownApplied): shellHeight(after)={}, cardHeight(after)={}, headerHeight(after)={}, contentExpanded={}",
+          binding.quickInputShell.height,
+          binding.cardView.height,
+          binding.headerContainer.height,
+          binding.symbolInput.isContentExpanded,
+      )
       return
     }
     val startCardHeight = binding.cardView.height.takeIf { it > 0 } ?: collapsed
@@ -517,6 +603,15 @@ constructor(
     if (!expanded) {
       binding.symbolInput.setContentTransitionProgress(1f)
     }
+
+    log.info(
+        "quickInput applyQuickInputExpansion(animatorInit): startCardHeight={}, startShellHeight={}, targetHeight={}, shellTargetHeight={}, collapsing={}",
+        startCardHeight,
+        startShellHeight,
+        targetHeight,
+        shellTargetHeight,
+        !expanded,
+    )
 
     quickInputContainerAnimator = ValueAnimator.ofInt(startCardHeight, targetHeight).apply {
       duration = 250
@@ -542,6 +637,18 @@ constructor(
           (1f - (progress / 0.8f)).coerceIn(0f, 1f)
         }
         binding.symbolInput.setContentTransitionProgress(contentProgress)
+
+        if (progress == 0f || progress >= 0.45f && progress <= 0.55f || progress == 1f) {
+          log.info(
+              "quickInput applyQuickInputExpansion(frame): progress={}, animatedHeight={}, shellAnimatedHeight={}, contentProgress={}, symbolExpanded={}, contentExpanded={}",
+              progress,
+              animatedHeight,
+              shellAnimatedHeight,
+              contentProgress,
+              binding.symbolInput.isExpanded,
+              binding.symbolInput.isContentExpanded,
+          )
+        }
       }
       doOnEnd {
         binding.symbolInput.setContentExpanded(expanded)
@@ -555,6 +662,14 @@ constructor(
         binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
           height = targetHeight
         }
+        log.info(
+            "quickInput applyQuickInputExpansion(end): expanded={}, shellHeight(after)={}, cardHeight(after)={}, headerHeight(after)={}, contentExpanded={}",
+            expanded,
+            binding.quickInputShell.height,
+            binding.cardView.height,
+            binding.headerContainer.height,
+            binding.symbolInput.isContentExpanded,
+        )
         quickInputContainerAnimator = null
       }
       start()

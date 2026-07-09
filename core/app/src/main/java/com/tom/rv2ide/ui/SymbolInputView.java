@@ -47,8 +47,6 @@ public class SymbolInputView extends FrameLayout {
   }
   private final RecyclerView collapsedList;
   private final RecyclerView expandedGrid;
-  private final LayoutParams collapsedLayoutParams;
-  private final LayoutParams expandedLayoutParams;
   @Nullable private TextView toggleButton;
   @Nullable private ExpansionChangeListener expansionChangeListener;
   private ExpandDirection expandDirection = ExpandDirection.UP;
@@ -81,15 +79,14 @@ public class SymbolInputView extends FrameLayout {
     expandedGrid.setClipToPadding(false);
     expandedGrid.setPadding(0, dp(8), 0, dp(8));
 
-    collapsedLayoutParams =
+    addView(
+        collapsedList,
         new LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    expandedLayoutParams =
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    addView(
+        expandedGrid,
         new LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-
-    addView(collapsedList, collapsedLayoutParams);
-    addView(expandedGrid, expandedLayoutParams);
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
     setExpanded(false);
   }
@@ -167,21 +164,13 @@ public class SymbolInputView extends FrameLayout {
     final float progress = Math.max(0f, Math.min(1f, expandedProgress));
     contentExpanded = progress >= 0.5f;
 
-    final int collapsedRowHeight = dp(40);
-    final int collapsedVisibleHeight = Math.max(1, Math.round(collapsedRowHeight * (1f - progress)));
-
-    collapsedLayoutParams.height = progress >= 1f ? 0 : collapsedVisibleHeight;
-    collapsedList.setLayoutParams(collapsedLayoutParams);
     collapsedList.setVisibility(progress >= 1f ? GONE : VISIBLE);
     collapsedList.setEnabled(progress < 0.5f);
     collapsedList.setAlpha(1f - progress);
 
-    expandedLayoutParams.height = progress <= 0f ? 0 : ViewGroup.LayoutParams.MATCH_PARENT;
-    expandedGrid.setLayoutParams(expandedLayoutParams);
     expandedGrid.setVisibility(progress <= 0f ? GONE : VISIBLE);
     expandedGrid.setEnabled(progress >= 0.5f);
     expandedGrid.setAlpha(progress);
-    expandedGrid.setTranslationY((1f - progress) * dp(12));
   }
 
   public boolean isContentExpanded() {
