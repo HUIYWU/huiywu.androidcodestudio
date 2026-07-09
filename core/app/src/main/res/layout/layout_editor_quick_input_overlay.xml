@@ -39,6 +39,11 @@
             app:cardElevation="0dp"
             app:cardBackgroundColor="?attr/colorSurface">
 
+            <!--
+                 BlurView stays as a background-only layer here.
+                 SymbolInputView must remain a sibling foreground layer, not a BlurView child,
+                 otherwise pressed/ripple feedback can disappear on the UP overlay path.
+            -->
             <FrameLayout
                 android:id="@+id/quick_input_surface"
                 android:layout_width="match_parent"

@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
+import androidx.core.animation.doOnEnd
 import androidx.core.view.doOnLayout
 import com.blankj.utilcode.util.SizeUtils
 import com.tom.rv2ide.R
@@ -24,6 +25,8 @@ class EditorQuickInputOverlayController(
 ) {
     private var binding: LayoutEditorQuickInputOverlayBinding? = null
     private var visible = false
+    private var lastCollapsedHeight = 0
+    private var lastBottomY = 0
     var onHidden: (() -> Unit)? = null
 
     fun isVisible(): Boolean = visible
@@ -48,6 +51,8 @@ class EditorQuickInputOverlayController(
         overlay.cardView.isFocusable = false
         overlay.cardView.setOnTouchListener(null)
         overlay.cardView.clipToOutline = true
+        // Keep BlurView as a pure background surface.
+        // The interactive SymbolInputView stays above it as a sibling so ripple/pressed feedback remains visible.
         overlay.blurView.clipToOutline = false
         overlay.blurView.isClickable = false
         overlay.blurView.isFocusable = false
@@ -87,7 +92,9 @@ class EditorQuickInputOverlayController(
                 val expandedHeight = overlay.overlayContainer.height
                 val collapsedHeight = anchorRect.height()
                 val bottomY = localBottom
-                
+                lastCollapsedHeight = collapsedHeight
+                lastBottomY = bottomY
+
                 // Set initial height to collapsed, position so bottom aligns
                 overlay.overlayContainer.layoutParams = (overlay.overlayContainer.layoutParams as FrameLayout.LayoutParams).apply {
                     height = collapsedHeight
@@ -141,11 +148,37 @@ class EditorQuickInputOverlayController(
             return
         }
 
-        overlay.overlayContainer.animate()
-            .alpha(0f)
-            .setDuration(120)
-            .withEndAction(endAction)
-            .start()
+        val targetCollapsedHeight = lastCollapsedHeight.takeIf { it > 0 } ?: overlay.cardView.height
+        val bottomY = lastBottomY.takeIf { it > 0 } ?: (overlay.overlayContainer.y + overlay.overlayContainer.height).toInt()
+        val startHeight = overlay.overlayContainer.height
+
+        overlay.overlayContainer.animate().cancel()
+        overlay.overlayContainer.alpha = 1f
+
+        ValueAnimator.ofInt(startHeight, targetCollapsedHeight).apply {
+            duration = 220
+            interpolator = DecelerateInterpolator(1.5f)
+            addUpdateListener { animator ->
+                val animatedHeight = animator.animatedValue as Int
+                overlay.overlayContainer.layoutParams =
+                    (overlay.overlayContainer.layoutParams as FrameLayout.LayoutParams).apply {
+                        height = animatedHeight
+                    }
+                overlay.overlayContainer.y = (bottomY - animatedHeight).toFloat()
+                val progress = if (startHeight == targetCollapsedHeight) 1f else {
+                    (animatedHeight - targetCollapsedHeight).toFloat() / (startHeight - targetCollapsedHeight).toFloat()
+                }
+                overlay.overlayContainer.alpha = 0.8f + (0.2f * progress.coerceIn(0f, 1f))
+            }
+            doOnEnd {
+                overlay.overlayContainer.animate()
+                    .alpha(0f)
+                    .setDuration(90)
+                    .withEndAction(endAction)
+                    .start()
+            }
+            start()
+        }
     }
 
     fun handleBackPress(): Boolean {
