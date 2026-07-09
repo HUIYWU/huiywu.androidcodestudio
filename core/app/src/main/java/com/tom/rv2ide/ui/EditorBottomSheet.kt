@@ -505,23 +505,18 @@ constructor(
       }
       return
     }
-
     val startCardHeight = binding.cardView.height.takeIf { it > 0 } ?: collapsed
     val startShellHeight = binding.quickInputShell.height.takeIf { it > 0 } ?: collapsed
-    val shouldSwitchToExpandedContent = expanded
-    val switchThreshold = if (expanded) 0.45f else 0.7f
     if (!expanded) {
-      binding.symbolInput.setContentExpanded(true)
+      binding.symbolInput.setContentTransitionProgress(1f)
     }
 
     quickInputContainerAnimator = ValueAnimator.ofInt(startCardHeight, targetHeight).apply {
       duration = 250
       interpolator = DecelerateInterpolator(1.5f)
       addUpdateListener { animator ->
-        val animatedHeight = animator.animatedValue as Int
-        val progress = if (startCardHeight == targetHeight) 1f else {
-          (animatedHeight - startCardHeight).toFloat() / (targetHeight - startCardHeight).toFloat()
-        }.coerceIn(0f, 1f)
+        val progress = animator.animatedFraction.coerceIn(0f, 1f)
+        val animatedHeight = (startCardHeight + ((targetHeight - startCardHeight) * progress)).roundToInt()
 
         val shellAnimatedHeight = (startShellHeight + ((shellTargetHeight - startShellHeight) * progress)).roundToInt()
         binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
@@ -534,17 +529,16 @@ constructor(
           height = animatedHeight
         }
 
-        val showExpandedContent = if (shouldSwitchToExpandedContent) {
-          progress >= switchThreshold
+        val contentProgress = if (expanded) {
+          ((progress - 0.2f) / 0.55f).coerceIn(0f, 1f)
         } else {
-          progress > switchThreshold
+          (1f - (progress / 0.8f)).coerceIn(0f, 1f)
         }
-        if (binding.symbolInput.isContentExpanded() != showExpandedContent) {
-          binding.symbolInput.setContentExpanded(showExpandedContent)
-        }
+        binding.symbolInput.setContentTransitionProgress(contentProgress)
       }
       doOnEnd {
         binding.symbolInput.setContentExpanded(expanded)
+
         binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
           height = shellTargetHeight
         }

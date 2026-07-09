@@ -158,18 +158,25 @@ public class SymbolInputView extends FrameLayout {
     applyContentExpanded(expanded);
   }
 
+  public void setContentTransitionProgress(float expandedProgress) {
+    final float progress = Math.max(0f, Math.min(1f, expandedProgress));
+    contentExpanded = progress >= 0.5f;
+
+    collapsedList.setVisibility(progress >= 1f ? GONE : VISIBLE);
+    collapsedList.setEnabled(progress < 0.5f);
+    collapsedList.setAlpha(1f - progress);
+
+    expandedGrid.setVisibility(progress <= 0f ? GONE : VISIBLE);
+    expandedGrid.setEnabled(progress >= 0.5f);
+    expandedGrid.setAlpha(progress);
+  }
+
   public boolean isContentExpanded() {
     return contentExpanded;
   }
 
   private void applyContentExpanded(boolean expanded) {
-    contentExpanded = expanded;
-    collapsedList.setVisibility(expanded ? GONE : VISIBLE);
-    collapsedList.setEnabled(!expanded);
-    collapsedList.setAlpha(expanded ? 0f : 1f);
-    expandedGrid.setVisibility(expanded ? VISIBLE : GONE);
-    expandedGrid.setEnabled(expanded);
-    expandedGrid.setAlpha(expanded ? 1f : 0f);
+    setContentTransitionProgress(expanded ? 1f : 0f);
   }
 
   public void endItemAnimations() {
