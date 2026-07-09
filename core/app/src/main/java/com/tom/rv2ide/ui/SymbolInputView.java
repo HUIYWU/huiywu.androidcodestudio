@@ -91,9 +91,11 @@ public class SymbolInputView extends FrameLayout {
     setExpanded(false);
   }
 
-  public void bindToggleButton(TextView button) {
+  public void bindToggleButton(@Nullable TextView button) {
     toggleButton = button;
-    toggleButton.setOnClickListener(__ -> toggleExpanded());
+    if (toggleButton != null) {
+      toggleButton.setOnClickListener(__ -> toggleExpanded());
+    }
     updateToggleButton();
   }
 
