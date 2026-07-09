@@ -552,13 +552,15 @@ private fun applyTopContainerState(animated: Boolean = false) {
     val collapsed = collapsedHeight.roundToInt()
     val targetHeight = if (expanded) quickInputExpandedHeight else collapsed
     val expandUp = expanded && direction == SymbolInputView.ExpandDirection.UP
-    val expandDown = expanded && direction == SymbolInputView.ExpandDirection.DOWN
+    val useDownPath = direction == SymbolInputView.ExpandDirection.DOWN
+    val expandDown = expanded && useDownPath
     val shellTargetHeight = if (expandDown) targetHeight else collapsed
 
     log.info(
-        "quickInput applyQuickInputExpansion(start): expanded={}, direction={}, expandDown={}, expandUp={}, collapsed={}, targetHeight={}, shellTargetHeight={}, shellHeight(before)={}, cardHeight(before)={}, headerHeight(before)={}, animatorActive={}",
+        "quickInput applyQuickInputExpansion(start): expanded={}, direction={}, useDownPath={}, expandDown={}, expandUp={}, collapsed={}, targetHeight={}, shellTargetHeight={}, shellHeight(before)={}, cardHeight(before)={}, headerHeight(before)={}, animatorActive={}",
         expanded,
         direction,
+        useDownPath,
         expandDown,
         expandUp,
         collapsed,
@@ -578,7 +580,7 @@ private fun applyTopContainerState(animated: Boolean = false) {
       gravity = if (expandUp) android.view.Gravity.BOTTOM else android.view.Gravity.TOP
     }
 
-    if (!expandDown) {
+    if (!useDownPath) {
       binding.symbolInput.setContentExpanded(expanded)
       binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
         height = shellTargetHeight
@@ -589,13 +591,15 @@ private fun applyTopContainerState(animated: Boolean = false) {
       binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
         height = targetHeight
       }
-      log.info(
-          "quickInput applyQuickInputExpansion(nonDownApplied): shellHeight(after)={}, cardHeight(after)={}, headerHeight(after)={}, contentExpanded={}",
-          binding.quickInputShell.height,
-          binding.cardView.height,
-          binding.headerContainer.height,
-          binding.symbolInput.isContentExpanded,
-      )
+      binding.quickInputShell.post {
+        log.info(
+            "quickInput applyQuickInputExpansion(nonDownApplied): shellHeight(after)={}, cardHeight(after)={}, headerHeight(after)={}, contentExpanded={}",
+            binding.quickInputShell.height,
+            binding.cardView.height,
+            binding.headerContainer.height,
+            binding.symbolInput.isContentExpanded,
+        )
+      }
       return
     }
     val startCardHeight = binding.cardView.height.takeIf { it > 0 } ?: collapsed
