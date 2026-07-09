@@ -52,6 +52,7 @@ public class SymbolInputView extends FrameLayout {
   @Nullable private ExpansionChangeListener expansionChangeListener;
   private ExpandDirection expandDirection = ExpandDirection.UP;
   private boolean expanded;
+  private boolean contentExpanded;
 
   public SymbolInputView(Context context) {
     this(context, null);
@@ -139,10 +140,7 @@ public class SymbolInputView extends FrameLayout {
     final boolean changed = this.expanded != expanded;
 
     this.expanded = expanded;
-    collapsedList.setVisibility(expanded ? GONE : VISIBLE);
-    collapsedList.setEnabled(!expanded);
-    expandedGrid.setVisibility(expanded ? VISIBLE : GONE);
-    expandedGrid.setEnabled(expanded);
+    applyContentExpanded(expanded);
     collapsedList.clearFocus();
     expandedGrid.clearFocus();
     if (toggleButton != null) {
@@ -154,6 +152,24 @@ public class SymbolInputView extends FrameLayout {
     if (changed && expansionChangeListener != null) {
       expansionChangeListener.onExpansionChanged(expanded, expandDirection);
     }
+  }
+
+  public void setContentExpanded(boolean expanded) {
+    applyContentExpanded(expanded);
+  }
+
+  public boolean isContentExpanded() {
+    return contentExpanded;
+  }
+
+  private void applyContentExpanded(boolean expanded) {
+    contentExpanded = expanded;
+    collapsedList.setVisibility(expanded ? GONE : VISIBLE);
+    collapsedList.setEnabled(!expanded);
+    collapsedList.setAlpha(expanded ? 0f : 1f);
+    expandedGrid.setVisibility(expanded ? VISIBLE : GONE);
+    expandedGrid.setEnabled(expanded);
+    expandedGrid.setAlpha(expanded ? 1f : 0f);
   }
 
   public void endItemAnimations() {

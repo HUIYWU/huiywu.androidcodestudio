@@ -25,11 +25,14 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.animation.ValueAnimator
+import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import androidx.annotation.GravityInt
 import androidx.appcompat.widget.TooltipCompat
 import androidx.core.graphics.Insets
+import androidx.core.animation.doOnEnd
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
@@ -107,6 +110,7 @@ constructor(
   private var anchorOffset = 0
   private var currentSheetOffset = 0f
   private var isImeVisible = false
+  private var quickInputContainerAnimator: ValueAnimator? = null
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
   private var currentSymbolInputEditor: CodeEditorView? = null
@@ -478,20 +482,81 @@ constructor(
     val targetHeight = if (expanded) quickInputExpandedHeight else collapsed
     val expandUp = expanded && direction == SymbolInputView.ExpandDirection.UP
     val expandDown = expanded && direction == SymbolInputView.ExpandDirection.DOWN
-    val shellHeight = if (expandDown) targetHeight else collapsed
+    val shellTargetHeight = if (expandDown) targetHeight else collapsed
 
+    quickInputContainerAnimator?.cancel()
     binding.quickInputShell.bringToFront()
-    binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
-      height = shellHeight
-    }
     binding.cardView.translationY = 0f
     binding.quickInputToggle.translationY = 0f
     binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
-      height = targetHeight
       gravity = if (expandUp) android.view.Gravity.BOTTOM else android.view.Gravity.TOP
     }
-    binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
-      height = targetHeight
+
+    if (!expandDown) {
+      binding.symbolInput.setContentExpanded(expanded)
+      binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
+        height = shellTargetHeight
+      }
+      binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
+        height = targetHeight
+      }
+      binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
+        height = targetHeight
+      }
+      return
+    }
+
+    val startCardHeight = binding.cardView.height.takeIf { it > 0 } ?: collapsed
+    val startShellHeight = binding.quickInputShell.height.takeIf { it > 0 } ?: collapsed
+    val shouldSwitchToExpandedContent = expanded
+    val switchThreshold = if (expanded) 0.45f else 0.7f
+    if (!expanded) {
+      binding.symbolInput.setContentExpanded(true)
+    }
+
+    quickInputContainerAnimator = ValueAnimator.ofInt(startCardHeight, targetHeight).apply {
+      duration = 250
+      interpolator = DecelerateInterpolator(1.5f)
+      addUpdateListener { animator ->
+        val animatedHeight = animator.animatedValue as Int
+        val progress = if (startCardHeight == targetHeight) 1f else {
+          (animatedHeight - startCardHeight).toFloat() / (targetHeight - startCardHeight).toFloat()
+        }.coerceIn(0f, 1f)
+
+        val shellAnimatedHeight = (startShellHeight + ((shellTargetHeight - startShellHeight) * progress)).roundToInt()
+        binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
+          height = shellAnimatedHeight
+        }
+        binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
+          height = animatedHeight
+        }
+        binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
+          height = animatedHeight
+        }
+
+        val showExpandedContent = if (shouldSwitchToExpandedContent) {
+          progress >= switchThreshold
+        } else {
+          progress > switchThreshold
+        }
+        if (binding.symbolInput.isContentExpanded() != showExpandedContent) {
+          binding.symbolInput.setContentExpanded(showExpandedContent)
+        }
+      }
+      doOnEnd {
+        binding.symbolInput.setContentExpanded(expanded)
+        binding.quickInputShell.updateLayoutParams<ViewGroup.LayoutParams> {
+          height = shellTargetHeight
+        }
+        binding.cardView.updateLayoutParams<LinearLayout.LayoutParams> {
+          height = targetHeight
+        }
+        binding.headerContainer.updateLayoutParams<ViewGroup.LayoutParams> {
+          height = targetHeight
+        }
+        quickInputContainerAnimator = null
+      }
+      start()
     }
   }
   fun setActionText(text: CharSequence) {
