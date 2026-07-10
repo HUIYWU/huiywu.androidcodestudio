@@ -38,13 +38,17 @@ object EditorQuickInputProvider {
     return symbolItems + expandedActionItems()
   }
 
+  /**
+   * Grid labels stay compact: use at most four ASCII characters or two Asian characters.
+   * The first English action set uses abbreviations so items do not collapse to an ellipsis.
+   */
   fun expandedActionItems(): List<ActionQuickItem> {
     return listOf(
-        ActionQuickItem("action:comment-line", "Comment", "ide.editor.text.commentline"),
-        ActionQuickItem("action:duplicate-line", "Duplicate", "ide.editor.text.duplicateline"),
-        ActionQuickItem("action:delete-line", "Delete", "ide.editor.text.deleteline"),
-        ActionQuickItem("action:indent-line", "Indent", "ide.editor.text.indentline"),
-        ActionQuickItem("action:unindent-line", "Unindent", "ide.editor.text.unindentline"),
+        ActionQuickItem("action:comment-line", "Comm", "ide.editor.text.commentline"),
+        ActionQuickItem("action:duplicate-line", "Dupl", "ide.editor.text.duplicateline"),
+        ActionQuickItem("action:delete-line", "Del", "ide.editor.text.deleteline"),
+        ActionQuickItem("action:indent-line", "Ind", "ide.editor.text.indentline"),
+        ActionQuickItem("action:unindent-line", "Out", "ide.editor.text.unindentline"),
     )
   }
 
