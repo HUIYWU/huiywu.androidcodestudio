@@ -1014,6 +1014,10 @@
   <string name="dependency_update_complete_message">成功更新：%1$d
 失败：%2$d</string>
   <string name="dependency_update_error_all_message">更新依赖项失败：%1$s</string>
+  <string name="updates_available">%s 个依赖项可更新</string>
+  <string name="you_have_new_dependency_update">发现可用的依赖项更新。</string>
+  <string name="skip_for_1_min">跳过 1 分钟</string>
+  <string name="update_all">全部更新</string>
   <string name="sub_module_maker_title">子模块创建器</string>
   <string name="sub_module_maker_subtitle">为项目创建新的子模块</string>
   <string name="sub_module_configuration">模块配置</string>
