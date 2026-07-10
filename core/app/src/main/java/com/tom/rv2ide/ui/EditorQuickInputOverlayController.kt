@@ -164,7 +164,8 @@ class EditorQuickInputOverlayController(
 
         val collapsedTopOffset = SizeUtils.dp2px(6f).toFloat()
         ValueAnimator.ofInt(startHeight, targetCollapsedHeight).apply {
-            duration = 250
+            // Give the UP-to-host handoff slightly more time than entry without reintroducing a trailing fade.
+            duration = 300
             interpolator = DecelerateInterpolator(1.5f)
             addUpdateListener { animator ->
                 val animatedHeight = animator.animatedValue as Int
