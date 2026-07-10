@@ -65,6 +65,8 @@ class EditorQuickInputOverlayController(
         overlay.symbolInput.refresh(editor.editor, forFile(editor.file))
         overlay.symbolInput.setExpandDirection(SymbolInputView.ExpandDirection.UP)
         overlay.symbolInput.expand()
+        // Keep the collapsed row visible until the expanding overlay has enough room for the grid.
+        overlay.symbolInput.setContentTransitionProgress(0f)
 
         host.doOnLayout {
             val anchorRect = Rect()
@@ -108,21 +110,23 @@ class EditorQuickInputOverlayController(
                     duration = 250
                     interpolator = DecelerateInterpolator(1.5f)
                     addUpdateListener { animator ->
+                        val progress = animator.animatedFraction.coerceIn(0f, 1f)
                         val animatedHeight = animator.animatedValue as Int
                         overlay.overlayContainer.layoutParams = (overlay.overlayContainer.layoutParams as FrameLayout.LayoutParams).apply {
                             height = animatedHeight
                         }
-                        // Keep bottom edge anchored
+                        // Keep the bottom edge anchored while the grid fades in after the shell starts growing.
                         overlay.overlayContainer.y = (bottomY - animatedHeight).toFloat()
+                        overlay.overlayContainer.alpha = 0.8f + (0.2f * progress)
+                        overlay.symbolInput.setContentTransitionProgress(
+                            ((progress - 0.2f) / 0.55f).coerceIn(0f, 1f),
+                        )
+                    }
+                    doOnEnd {
+                        overlay.symbolInput.setContentExpanded(true)
                     }
                     start()
                 }
-                
-                // Fade in alpha separately
-                overlay.overlayContainer.animate()
-                    .alpha(1f)
-                    .setDuration(150)
-                    .start()
             }
         }
     }
@@ -174,27 +178,20 @@ class EditorQuickInputOverlayController(
                 }
                 val clampedProgress = progress.coerceIn(0f, 1f)
                 val handoffStart = 0.06f
-                val handoffProgress = (((1f - clampedProgress) - handoffStart) / (1f - handoffStart)).coerceIn(0f, 1f)
-                val baseAlpha = 0.9f + (0.1f * clampedProgress)
-                val overlayAlpha = when {
-                    handoffProgress <= 0f -> baseAlpha
-                    handoffProgress < 0.7f -> baseAlpha * (1f - 0.18f * (handoffProgress / 0.7f))
-                    handoffProgress < 0.94f -> baseAlpha * (0.82f - 0.82f * ((handoffProgress - 0.7f) / 0.24f))
-                    else -> 0f
-                }
-                overlay.overlayContainer.alpha = overlayAlpha
-                // Nudge the overlay's collapsed row upward near handoff so it better matches
-                // the bottom-sheet host's folded baseline before ownership transfers back.
+                val handoffProgress =
+                    (((1f - clampedProgress) - handoffStart) / (1f - handoffStart))
+                        .coerceIn(0f, 1f)
+                // Fade the overlay and restore the in-container card on the same height-animation timeline.
+                overlay.overlayContainer.alpha = (0.9f + (0.1f * clampedProgress)) * (1f - handoffProgress)
+                overlay.symbolInput.setContentTransitionProgress(
+                    (1f - (animator.animatedFraction / 0.8f)).coerceIn(0f, 1f),
+                )
+                // Nudge the collapsed row toward the host baseline before ownership transfers back.
                 overlay.symbolInput.translationY = -(1f - clampedProgress) * collapsedTopOffset
                 onHandoffProgress?.invoke(handoffProgress)
             }
             doOnEnd {
-                overlay.symbolInput.translationY = -collapsedTopOffset
-            overlay.overlayContainer.animate()
-                .alpha(0f)
-                .setDuration(130)
-                .withEndAction(endAction)
-                .start()
+                endAction.run()
             }
             start()
         }
