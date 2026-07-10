@@ -45,10 +45,16 @@ public class SymbolInputView extends FrameLayout {
   public interface ExpansionChangeListener {
     void onExpansionChanged(boolean expanded, ExpandDirection direction);
   }
+
+  public interface ActionClickListener {
+    void onActionClick(String actionId);
+  }
+
   private final RecyclerView collapsedList;
   private final RecyclerView expandedGrid;
   @Nullable private TextView toggleButton;
   @Nullable private ExpansionChangeListener expansionChangeListener;
+  @Nullable private ActionClickListener actionClickListener;
   private ExpandDirection expandDirection = ExpandDirection.UP;
   private boolean expanded;
   private boolean contentExpanded;
@@ -111,14 +117,20 @@ public class SymbolInputView extends FrameLayout {
     expansionChangeListener = listener;
   }
 
+  /** Forwards action-item clicks without coupling this view to activity-level action execution. */
+  public void setActionClickListener(@Nullable ActionClickListener listener) {
+    actionClickListener = listener;
+  }
+
   public void refresh(IDEEditor editor, List<Symbol> symbols) {
-    final var quickItems =
+    final var collapsedItems =
         symbols == null || symbols.isEmpty()
             ? EditorQuickInputProvider.INSTANCE.plainTextItems()
             : EditorQuickInputProvider.INSTANCE.toQuickItems(symbols);
+    final var expandedItems = EditorQuickInputProvider.INSTANCE.expandedItems(collapsedItems);
 
-    refreshAdapter(collapsedList, editor, quickItems);
-    refreshAdapter(expandedGrid, editor, quickItems);
+    refreshAdapter(collapsedList, editor, collapsedItems);
+    refreshAdapter(expandedGrid, editor, expandedItems);
     setExpanded(false);
   }
 
@@ -196,7 +208,15 @@ public class SymbolInputView extends FrameLayout {
     if (adapter instanceof SymbolInputAdapter) {
       ((SymbolInputAdapter) adapter).refresh(editor, quickItems);
     } else {
-      recyclerView.setAdapter(new SymbolInputAdapter(editor, quickItems));
+      recyclerView.setAdapter(
+          new SymbolInputAdapter(
+              editor,
+              quickItems,
+              actionId -> {
+                if (actionClickListener != null) {
+                  actionClickListener.onActionClick(actionId);
+                }
+              }));
     }
   }
 

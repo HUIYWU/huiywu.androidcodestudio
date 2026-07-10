@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.utils
 
+import com.tom.rv2ide.models.ActionQuickItem
 import com.tom.rv2ide.models.EditorQuickItem
 import com.tom.rv2ide.models.Symbol
 import com.tom.rv2ide.models.SymbolQuickItem
@@ -30,6 +31,21 @@ object EditorQuickInputProvider {
 
   fun plainTextItems(): List<EditorQuickItem> {
     return Symbols.plainTextSymbols.toQuickItems()
+  }
+
+  /** Expanded panels append only low-risk, high-frequency editor actions to the current symbols. */
+  fun expandedItems(symbolItems: List<EditorQuickItem>): List<EditorQuickItem> {
+    return symbolItems + expandedActionItems()
+  }
+
+  fun expandedActionItems(): List<ActionQuickItem> {
+    return listOf(
+        ActionQuickItem("action:comment-line", "Comment", "ide.editor.text.commentline"),
+        ActionQuickItem("action:duplicate-line", "Duplicate", "ide.editor.text.duplicateline"),
+        ActionQuickItem("action:delete-line", "Delete", "ide.editor.text.deleteline"),
+        ActionQuickItem("action:indent-line", "Indent", "ide.editor.text.indentline"),
+        ActionQuickItem("action:unindent-line", "Unindent", "ide.editor.text.unindentline"),
+    )
   }
 
   fun Symbol.toQuickItem(): SymbolQuickItem {

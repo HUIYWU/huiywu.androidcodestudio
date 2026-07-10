@@ -120,6 +120,7 @@ constructor(
 
   var requestShowQuickInputOverlay: (() -> Unit)? = null
   var requestHideQuickInputOverlay: (() -> Unit)? = null
+  var onQuickInputActionClick: ((String) -> Unit)? = null
   private var quickInputOverlayActive = false
 
 
@@ -249,6 +250,7 @@ constructor(
     // UP expansion is delegated to a separate overlay, so this view acts only as the trigger, state source,
     // and geometry anchor for that path.
     binding.symbolInput.bindToggleButton(binding.quickInputToggle)
+    binding.symbolInput.setActionClickListener { actionId -> onQuickInputActionClick?.invoke(actionId) }
     binding.symbolInput.setExpansionChangeListener { expanded, direction ->
       applyQuickInputExpansion(expanded, direction)
       if (direction == SymbolInputView.ExpandDirection.DOWN) {

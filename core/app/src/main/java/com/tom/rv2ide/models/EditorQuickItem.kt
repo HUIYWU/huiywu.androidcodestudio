@@ -28,3 +28,10 @@ data class SymbolQuickItem(
     val commit: String,
     val offset: Int,
 ) : EditorQuickItem
+
+/** References an existing editor action by ID; execution remains owned by the activity action system. */
+data class ActionQuickItem(
+    override val id: String,
+    override val label: CharSequence,
+    val actionId: String,
+) : EditorQuickItem

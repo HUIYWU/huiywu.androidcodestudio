@@ -72,13 +72,19 @@ import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayout.Tab
 import com.tom.rv2ide.R
 import com.tom.rv2ide.R.string
+import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_FILE_TABS
+import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_TOOLBAR
+import com.tom.rv2ide.actions.ActionsRegistry
+import com.tom.rv2ide.actions.etc.TextActionMenuAction
+import com.tom.rv2ide.actions.internal.DefaultActionsRegistry
 import com.tom.rv2ide.adapters.DiagnosticsAdapter
 import com.tom.rv2ide.adapters.SearchListAdapter
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.databinding.ActivityEditorBinding
 import com.tom.rv2ide.databinding.ContentEditorBinding
 import com.tom.rv2ide.databinding.LayoutDiagnosticInfoBinding
+import com.tom.rv2ide.editor.ui.IDEEditor
 import com.tom.rv2ide.events.InstallationResultEvent
 import com.tom.rv2ide.fragments.SearchResultFragment
 import com.tom.rv2ide.fragments.sidebar.EditorSidebarFragment
@@ -1463,6 +1469,28 @@ override fun onApplySystemBarInsets(insets: Insets) {
     sb.append('\n')
   }
 
+  /** Executes a quick-panel action through the existing Edit-menu action instance. */
+  private fun executeQuickInputAction(actionId: String) {
+    val editorView = provideCurrentEditor() ?: return
+    val registry = ActionsRegistry.getInstance()
+    val textMenu =
+        registry.findAction(EDITOR_TOOLBAR, "ide.editor.text.actions") as? TextActionMenuAction
+            ?: return
+    val action = textMenu.findAction(actionId) ?: return
+    val data = ActionData().apply {
+      put(Context::class.java, this@BaseEditorActivity)
+      put(CodeEditorView::class.java, editorView)
+      put(IDEEditor::class.java, editorView.editor)
+      put(File::class.java, editorView.file)
+    }
+
+    action.prepare(data)
+    if (!action.visible || !action.enabled) {
+      return
+    }
+    (registry as? DefaultActionsRegistry)?.executeAction(action, data)
+  }
+
   private fun setupBottomSheet() {
     quickInputOverlayController = EditorQuickInputOverlayController(content.quickInputOverlayHost).apply {
       onHandoffProgress = { progress ->
@@ -1471,7 +1499,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
       onHidden = {
         content.bottomSheet.setQuickInputOverlayActive(false)
       }
+      onQuickInputActionClick = ::executeQuickInputAction
     }
+    content.bottomSheet.onQuickInputActionClick = ::executeQuickInputAction
     // The bottom sheet decides which path is active.
     // This layer connects the UP path to the overlay controller so the in-container path and the overlay path
     // remain separate and can evolve independently.

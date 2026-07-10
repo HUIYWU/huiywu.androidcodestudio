@@ -27,6 +27,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.tom.rv2ide.R;
 import com.tom.rv2ide.databinding.LayoutSymbolItemBinding;
 import com.tom.rv2ide.editor.ui.IDEEditor;
+import com.tom.rv2ide.models.ActionQuickItem;
 import com.tom.rv2ide.models.EditorQuickItem;
 import com.tom.rv2ide.models.SymbolQuickItem;
 import io.github.rosemoe.sora.widget.SelectionMovement;
@@ -35,6 +36,10 @@ import java.util.List;
 import java.util.Objects;
 
 public class SymbolInputAdapter extends RecyclerView.Adapter<SymbolInputAdapter.VH> {
+
+  public interface ActionClickListener {
+    void onActionClick(String actionId);
+  }
 
   private static final List<Character> pairs;
 
@@ -50,14 +55,21 @@ public class SymbolInputAdapter extends RecyclerView.Adapter<SymbolInputAdapter.
 
   private IDEEditor editor;
   private final List<EditorQuickItem> items;
+  private final ActionClickListener actionClickListener;
 
   public SymbolInputAdapter(IDEEditor editor) {
-    this(editor, null);
+    this(editor, null, null);
   }
 
   public SymbolInputAdapter(IDEEditor editor, List<EditorQuickItem> items) {
+    this(editor, items, null);
+  }
+
+  public SymbolInputAdapter(
+      IDEEditor editor, List<EditorQuickItem> items, ActionClickListener actionClickListener) {
     this.editor = editor;
     this.items = new ArrayList<>();
+    this.actionClickListener = actionClickListener;
     this.updateItems(items);
   }
 
@@ -102,6 +114,8 @@ public class SymbolInputAdapter extends RecyclerView.Adapter<SymbolInputAdapter.
           if (item instanceof SymbolQuickItem) {
             final var symbol = (SymbolQuickItem) item;
             insertSymbol(symbol.getCommit(), symbol.getOffset());
+          } else if (item instanceof ActionQuickItem && actionClickListener != null) {
+            actionClickListener.onActionClick(((ActionQuickItem) item).getActionId());
           }
         });
   }

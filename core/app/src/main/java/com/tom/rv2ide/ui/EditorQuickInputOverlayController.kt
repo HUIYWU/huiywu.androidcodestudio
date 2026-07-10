@@ -29,6 +29,7 @@ class EditorQuickInputOverlayController(
     private var lastBottomY = 0
     var onHidden: (() -> Unit)? = null
     var onHandoffProgress: ((Float) -> Unit)? = null
+    var onQuickInputActionClick: ((String) -> Unit)? = null
 
     fun isVisible(): Boolean = visible
 
@@ -62,6 +63,7 @@ class EditorQuickInputOverlayController(
             overlay.blurView.invalidate()
         }
 
+        overlay.symbolInput.setActionClickListener { actionId -> onQuickInputActionClick?.invoke(actionId) }
         overlay.symbolInput.refresh(editor.editor, forFile(editor.file))
         overlay.symbolInput.setExpandDirection(SymbolInputView.ExpandDirection.UP)
         overlay.symbolInput.expand()
