@@ -18,6 +18,7 @@ import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputLayout
+import com.tom.rv2ide.R as AppR
 import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.resources.R.string
@@ -148,8 +149,8 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
     inputType = InputType.TYPE_NULL
     isFocusable = false
     isClickable = true
-    setAdapter(ArrayAdapter(context, R.layout.item_atc_dropdown, functionOptions))
-    setDropDownBackgroundDrawable(ContextCompat.getDrawable(context, R.drawable.bg_atc_dropdown_popup))
+    setAdapter(ArrayAdapter(context, AppR.layout.item_atc_dropdown, functionOptions))
+    setDropDownBackgroundDrawable(ContextCompat.getDrawable(context, AppR.drawable.bg_atc_dropdown_popup))
     setText(functionOptions[selectedFunctionIndex], false)
   }
   val functionLayout = TextInputLayout(context).apply {
