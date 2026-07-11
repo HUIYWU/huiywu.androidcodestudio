@@ -39,17 +39,23 @@ object EditorQuickInputProvider {
   }
 
   /**
-   * Grid labels stay compact: use at most four ASCII characters or two Asian characters.
-   * The first English action set uses abbreviations so items do not collapse to an ellipsis.
+   * Grid labels stay compact: use at most three ASCII characters or two Asian characters.
+   * User configuration supplies only action IDs; labels remain built in so wording changes do not
+   * require preference migration.
    */
   fun expandedActionItems(): List<ActionQuickItem> {
-    return listOf(
-        ActionQuickItem("action:comment-line", "Comm", "ide.editor.text.commentline"),
-        ActionQuickItem("action:duplicate-line", "Dupl", "ide.editor.text.duplicateline"),
-        ActionQuickItem("action:delete-line", "Del", "ide.editor.text.deleteline"),
-        ActionQuickItem("action:indent-line", "Ind", "ide.editor.text.indentline"),
-        ActionQuickItem("action:unindent-line", "Out", "ide.editor.text.unindentline"),
-    )
+    return EditorQuickInputPreferences.expandedActionIds.map(::actionItemForId)
+  }
+
+  private fun actionItemForId(actionId: String): ActionQuickItem {
+    return when (actionId) {
+      "ide.editor.text.commentline" -> ActionQuickItem("action:comment-line", "Com", actionId)
+      "ide.editor.text.duplicateline" -> ActionQuickItem("action:duplicate-line", "Dup", actionId)
+      "ide.editor.text.deleteline" -> ActionQuickItem("action:delete-line", "Del", actionId)
+      "ide.editor.text.indentline" -> ActionQuickItem("action:indent-line", "Ind", actionId)
+      "ide.editor.text.unindentline" -> ActionQuickItem("action:unindent-line", "Out", actionId)
+      else -> error("Unsupported quick-input action: $actionId")
+    }
   }
 
   fun Symbol.toQuickItem(): SymbolQuickItem {
