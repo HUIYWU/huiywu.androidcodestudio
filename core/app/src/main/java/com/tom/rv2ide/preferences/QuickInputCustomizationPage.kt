@@ -24,7 +24,7 @@ import kotlinx.parcelize.RawValue
 internal const val QUICK_INPUT_CUSTOMIZE_SCREEN_KEY = "idepref_editor_quickInputCustomize"
 internal const val QUICK_INPUT_CUSTOMIZE_REFRESH_RESULT = "quickInputCustomizeRefresh"
 
-internal enum class QuickInputTextType(val displayName: String) {
+enum class QuickInputTextType(val displayName: String) {
   PLAIN_TEXT("Plain text"), JAVA_JVM("Java / JVM"), XML("XML")
 }
 
@@ -123,17 +123,17 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
   }
   val functions = RadioGroup(context)
   val insertionId = View.generateViewId()
-  functions.addView(RadioButton(context).apply { id = insertionId; text = context.getString(string.idepref_editor_quickInputEdit_insert) })
+  functions.addView(RadioButton(context).apply { id = insertionId; this.text = context.getString(string.idepref_editor_quickInputEdit_insert) })
   val actionIds = mutableMapOf<Int, String>()
   EditorQuickInputPreferences.supportedExpandedActions.forEach { action ->
     val id = View.generateViewId(); actionIds[id] = action.id
-    functions.addView(RadioButton(context).apply { this.id = id; text = action.label })
+    functions.addView(RadioButton(context).apply { this.id = id; this.text = action.label })
   }
   functions.check(actionIds.entries.firstOrNull { it.value == existing?.actionId }?.key ?: insertionId)
   fun updateTextEnabled() { text.isEnabled = functions.checkedRadioButtonId == insertionId }
   functions.setOnCheckedChangeListener { _, _ -> updateTextEnabled() }; updateTextEnabled()
   content.addView(name); content.addView(text)
-  content.addView(TextView(context).apply { text = context.getString(string.idepref_editor_quickInputEdit_function) })
+  content.addView(TextView(context).apply { this.text = context.getString(string.idepref_editor_quickInputEdit_function) })
   content.addView(functions)
   val view = ScrollView(context).apply { addView(content, ViewGroup.LayoutParams(-1, -2)) }
   val dialog = MaterialAlertDialogBuilder(context).setTitle(string.idepref_editor_quickInputEdit_title)
