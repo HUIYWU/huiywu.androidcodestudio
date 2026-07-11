@@ -113,7 +113,7 @@ class MainActivity : EdgeToEdgeIDEActivity() {
   }
 
   override fun onApplySystemBarInsets(insets: Insets) {
-    binding.fragmentContainersParent.setPadding(insets.left, 0, insets.right, insets.bottom)
+    _binding?.fragmentContainersParent?.setPadding(insets.left, 0, insets.right, insets.bottom)
   }
 
   private fun onScreenChanged(screen: Int?) {

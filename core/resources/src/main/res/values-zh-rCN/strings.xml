@@ -568,6 +568,9 @@
   <string name="idepref_editor_quickInputOrder_summary">调整已启用快捷输入操作的显示顺序。</string>
   <string name="idepref_editor_quickInputTextType_title">文本类型</string>
   <string name="idepref_editor_quickInputTextType_summary">选择要自定义的符号和操作配置。</string>
+  <string name="idepref_editor_quickInputType_plainText">纯文本</string>
+  <string name="idepref_editor_quickInputType_javaJvm">Java / JVM</string>
+  <string name="idepref_editor_quickInputType_xml">XML</string>
   <string name="idepref_editor_quickInputReset_title">重置当前类型</string>
   <string name="idepref_editor_quickInputReset_summary">将所选文本类型恢复为默认输入项。</string>
   <string name="idepref_editor_quickInputReset_confirm">要将当前文本类型恢复为默认输入项吗？</string>
@@ -580,7 +583,7 @@
   <string name="idepref_editor_quickInputEdit_name">名称 / 简名</string>
   <string name="idepref_editor_quickInputEdit_text">文本</string>
   <string name="idepref_editor_quickInputEdit_name_hint">最多 3 个窄字符或 2 个宽字符。</string>
-  <string name="idepref_editor_quickInputEdit_text_hint">第一个未转义的 | 用于设置光标位置。使用 \| 输入 |，使用 \\ 输入 \。</string>
+  <string name="idepref_editor_quickInputEdit_text_hint">第一个未转义的 | 用于设置光标位置。使用 \\| 输入 |，使用 \\\\ 输入 \。</string>
   <string name="idepref_editor_quickInputEdit_name_error">请输入规范名称。</string>
   <string name="idepref_editor_quickInputEdit_text_error">请输入插入文本。</string>
   <string name="idepref_editor_quickInputEdit_function">功能</string>

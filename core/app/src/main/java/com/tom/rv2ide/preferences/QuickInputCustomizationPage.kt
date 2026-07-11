@@ -29,8 +29,10 @@ import kotlinx.parcelize.RawValue
 internal const val QUICK_INPUT_CUSTOMIZE_SCREEN_KEY = "idepref_editor_quickInputCustomize"
 internal const val QUICK_INPUT_CUSTOMIZE_REFRESH_RESULT = "quickInputCustomizeRefresh"
 
-enum class QuickInputTextType(val displayName: String) {
-  PLAIN_TEXT("Plain text"), JAVA_JVM("Java / JVM"), XML("XML")
+enum class QuickInputTextType(val displayName: String, val titleRes: Int) {
+  PLAIN_TEXT("Plain text", string.idepref_editor_quickInputType_plainText),
+  JAVA_JVM("Java / JVM", string.idepref_editor_quickInputType_javaJvm),
+  XML("XML", string.idepref_editor_quickInputType_xml)
 }
 
 internal fun quickInputCustomizeChildren(): List<IPreference> {
@@ -39,8 +41,8 @@ internal fun quickInputCustomizeChildren(): List<IPreference> {
   return buildList {
     add(QuickInputTextTypeSelector())
     add(ResetQuickInputTextType())
-    addAll(items.mapIndexed { index, item -> QuickInputItemPreference(index, item) })
     add(AddQuickInputItem(items.size))
+    add(QuickInputItemsGroup(type, items.mapIndexed { index, item -> QuickInputItemPreference(index, item) }))
   }
 }
 
@@ -85,6 +87,14 @@ private class ResetQuickInputTextType(
     return true
   }
 }
+
+@Parcelize
+private class QuickInputItemsGroup(
+    private val type: QuickInputTextType,
+    override val children: List<IPreference>,
+    override val key: String = "idepref_editor_quickInputItems:${type.name}",
+    override val title: Int = type.titleRes,
+) : IPreferenceGroup()
 
 @Parcelize
 private class QuickInputItemPreference(

@@ -1505,8 +1505,11 @@ Add a remote to push/pull changes</string>
    <string name="idepref_editor_quickInputOrder_title">Quick input action order</string>
 <string name="idepref_editor_quickInputOrder_summary">Adjust the order of enabled quick input actions.</string>
    <string name="idepref_editor_quickInputTextType_title">Text type</string>
-   <string name="idepref_editor_quickInputTextType_summary">Choose the symbol and action configuration to customize.</string>
-   <string name="idepref_editor_quickInputReset_title">Reset current type</string>
+<string name="idepref_editor_quickInputTextType_summary">Choose the symbol and action configuration to customize.</string>
+    <string name="idepref_editor_quickInputType_plainText">Plain text</string>
+    <string name="idepref_editor_quickInputType_javaJvm">Java / JVM</string>
+    <string name="idepref_editor_quickInputType_xml">XML</string>
+    <string name="idepref_editor_quickInputReset_title">Reset current type</string>
    <string name="idepref_editor_quickInputReset_summary">Restore the selected text type to its default input items.</string>
    <string name="idepref_editor_quickInputReset_confirm">Restore the current text type to its default input items?</string>
    <string name="idepref_editor_quickInputItem_title">Input item</string>
@@ -1518,7 +1521,7 @@ Add a remote to push/pull changes</string>
    <string name="idepref_editor_quickInputEdit_name">Name / short label</string>
 <string name="idepref_editor_quickInputEdit_text">Text</string>
     <string name="idepref_editor_quickInputEdit_name_hint">Up to 3 narrow characters or 2 wide characters.</string>
-    <string name="idepref_editor_quickInputEdit_text_hint">The first unescaped | sets the cursor position. Use \| for | and \\ for \.</string>
+    <string name="idepref_editor_quickInputEdit_text_hint">The first unescaped | sets the cursor position. Use \\| for | and \\\\ for \.</string>
     <string name="idepref_editor_quickInputEdit_name_error">Please enter a valid name.</string>
     <string name="idepref_editor_quickInputEdit_text_error">Please enter insertion text.</string>
     <string name="idepref_editor_quickInputEdit_function">Function</string>
