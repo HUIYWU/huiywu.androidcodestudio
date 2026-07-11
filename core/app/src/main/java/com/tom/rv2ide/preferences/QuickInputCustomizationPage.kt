@@ -12,6 +12,7 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.isVisible
 import androidx.fragment.app.FragmentActivity
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -91,7 +92,8 @@ private class QuickInputItemPreference(
   override fun onCreateView(context: Context): Preference = Preference(context).apply {
     key = this@QuickInputItemPreference.key
     title = item.label
-    summary = item.actionId?.let(EditorQuickInputPreferences::labelForActionId) ?: item.text.orEmpty()
+    summary = item.actionId?.let { EditorQuickInputPreferences.labelForActionId(context, it) } ?: item.text.orEmpty()
+    isIconSpaceReserved = false
     setOnPreferenceClickListener { showItemEditor(context, index, item); true }
   }
 }
@@ -121,20 +123,40 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
     setText(existing?.let(::displayInsertionText).orEmpty()); minLines = 2
     inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
   }
-  val functions = RadioGroup(context)
+  val functions = RadioGroup(context).apply { isVisible = false }
   val insertionId = View.generateViewId()
-  functions.addView(RadioButton(context).apply { id = insertionId; this.text = context.getString(string.idepref_editor_quickInputEdit_insert) })
+  functions.addView(RadioButton(context).apply {
+    id = insertionId
+    this.text = context.getString(string.idepref_editor_quickInputEdit_insert)
+  })
   val actionIds = mutableMapOf<Int, String>()
   EditorQuickInputPreferences.supportedExpandedActions.forEach { action ->
-    val id = View.generateViewId(); actionIds[id] = action.id
-    functions.addView(RadioButton(context).apply { this.id = id; this.text = action.label })
+    val id = View.generateViewId()
+    actionIds[id] = action.id
+    functions.addView(RadioButton(context).apply {
+      this.id = id
+      this.text = context.getString(action.labelRes)
+    })
   }
   functions.check(actionIds.entries.firstOrNull { it.value == existing?.actionId }?.key ?: insertionId)
-  fun updateTextEnabled() { text.isEnabled = functions.checkedRadioButtonId == insertionId }
-  functions.setOnCheckedChangeListener { _, _ -> updateTextEnabled() }; updateTextEnabled()
-  content.addView(name); content.addView(text)
-  content.addView(TextView(context).apply { this.text = context.getString(string.idepref_editor_quickInputEdit_function) })
+  val functionSelector = TextView(context).apply { isClickable = true; setPadding(0, padding, 0, padding) }
+  fun updateFunctionSelection() {
+    val actionId = actionIds[functions.checkedRadioButtonId]
+    val selected = actionId?.let { EditorQuickInputPreferences.labelForActionId(context, it) }
+        ?: context.getString(string.idepref_editor_quickInputEdit_insert)
+    functionSelector.text = "${context.getString(string.idepref_editor_quickInputEdit_function)}: $selected"
+    text.isVisible = actionId == null
+  }
+  functionSelector.setOnClickListener { functions.isVisible = !functions.isVisible }
+  functions.setOnCheckedChangeListener { _, _ ->
+    updateFunctionSelection()
+    functions.isVisible = false
+  }
+  updateFunctionSelection()
+  content.addView(name)
+  content.addView(functionSelector)
   content.addView(functions)
+  content.addView(text)
   val view = ScrollView(context).apply { addView(content, ViewGroup.LayoutParams(-1, -2)) }
   val dialog = MaterialAlertDialogBuilder(context).setTitle(string.idepref_editor_quickInputEdit_title)
       .setView(view).setPositiveButton(string.action_save, null)

@@ -1,9 +1,12 @@
 package com.tom.rv2ide.utils
 
+import android.content.Context
+import androidx.annotation.StringRes
 import com.tom.rv2ide.models.ActionQuickItem
 import com.tom.rv2ide.models.EditorQuickItem
 import com.tom.rv2ide.models.SymbolQuickItem
 import com.tom.rv2ide.preferences.QuickInputTextType
+import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.preferences.internal.EditorPreferences
 import org.json.JSONArray
 import org.json.JSONObject
@@ -14,24 +17,24 @@ import java.util.UUID
 object EditorQuickInputPreferences {
   const val MAX_ITEMS = 30
 
-  data class ExpandedAction(val id: String, val label: String)
+  data class ExpandedAction(val id: String, @StringRes val labelRes: Int)
   val supportedExpandedActions = listOf(
-      ExpandedAction("ide.editor.text.uppercase", "Convert to uppercase"),
-      ExpandedAction("ide.editor.text.lowercase", "Convert to lowercase"),
-      ExpandedAction("ide.editor.text.deleteline", "Delete line"),
-      ExpandedAction("ide.editor.text.duplicateline", "Duplicate line"),
-      ExpandedAction("ide.editor.text.copyline", "Copy line"),
-      ExpandedAction("ide.editor.text.commentline", "Comment line"),
-      ExpandedAction("ide.editor.text.movelineup", "Move line up"),
-      ExpandedAction("ide.editor.text.movelinedown", "Move line down"),
-      ExpandedAction("ide.editor.text.insertlineabove", "Insert line above"),
-      ExpandedAction("ide.editor.text.insertlinebelow", "Insert line below"),
-      ExpandedAction("ide.editor.text.selectline", "Select line"),
-      ExpandedAction("ide.editor.text.trimtrailingwhitespace", "Trim trailing whitespace"),
-      ExpandedAction("ide.editor.text.indentline", "Indent line"),
-      ExpandedAction("ide.editor.text.unindentline", "Unindent line"),
-      ExpandedAction("ide.editor.text.joinlines", "Join lines"),
-      ExpandedAction("ide.editor.text.clearall", "Clear all"),
+      ExpandedAction("ide.editor.text.uppercase", R.string.action_convert_to_uppercase),
+      ExpandedAction("ide.editor.text.lowercase", R.string.action_convert_to_lowercase),
+      ExpandedAction("ide.editor.text.deleteline", R.string.action_delete_line),
+      ExpandedAction("ide.editor.text.duplicateline", R.string.action_duplicate_line),
+      ExpandedAction("ide.editor.text.copyline", R.string.action_copy_line),
+      ExpandedAction("ide.editor.text.commentline", R.string.action_comment_line),
+      ExpandedAction("ide.editor.text.movelineup", R.string.action_move_line_up),
+      ExpandedAction("ide.editor.text.movelinedown", R.string.action_move_line_down),
+      ExpandedAction("ide.editor.text.insertlineabove", R.string.action_insert_line_above),
+      ExpandedAction("ide.editor.text.insertlinebelow", R.string.action_insert_line_below),
+      ExpandedAction("ide.editor.text.selectline", R.string.action_select_line),
+      ExpandedAction("ide.editor.text.trimtrailingwhitespace", R.string.action_trim_trailing_whitespace),
+      ExpandedAction("ide.editor.text.indentline", R.string.action_indent_line),
+      ExpandedAction("ide.editor.text.unindentline", R.string.action_unindent_line),
+      ExpandedAction("ide.editor.text.joinlines", R.string.action_join_lines),
+      ExpandedAction("ide.editor.text.clearall", R.string.action_clear_all),
   )
   val defaultExpandedActionIds = listOf(
       "ide.editor.text.commentline", "ide.editor.text.duplicateline",
@@ -40,7 +43,8 @@ object EditorQuickInputPreferences {
   )
   private val supportedIds = supportedExpandedActions.map(ExpandedAction::id).toSet()
 
-  fun labelForActionId(id: String) = supportedExpandedActions.first { it.id == id }.label
+  fun labelForActionId(context: Context, id: String): String =
+      context.getString(supportedExpandedActions.first { it.id == id }.labelRes)
   val expandedActionIds: List<String>
     get() = legacyActionIds()
 
