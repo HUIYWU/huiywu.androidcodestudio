@@ -446,9 +446,14 @@
   <string
     name="idepref_editor_category_common"
     translatable="false">@string/title_common</string>
-  <string
-    name="idepref_editor_category_java"
-    translatable="false">Java</string>
+<string name="idepref_editor_category_quickInput">Quick input</string>
+   <string name="idepref_editor_quickInputExpand_title">Enable expanded panel</string>
+   <string name="idepref_editor_quickInputExpand_summary">Show the expanded quick input panel from the editor symbol bar.</string>
+   <string name="idepref_editor_quickInputCustomize_title">Customize input items</string>
+   <string name="idepref_editor_quickInputCustomize_summary">Choose and order text actions shown in the expanded panel.</string>
+   <string
+     name="idepref_editor_category_java"
+     translatable="false">Java</string>
   <string name="title_files_unsaved">Unsaved files</string>
   <string name="msg_files_unsaved">Some files are not saved. Would you like to save them before closing? Unsaved files are: \n%s</string>
   <string name="idepref_editor_autoSave_title">Save before closing files</string>

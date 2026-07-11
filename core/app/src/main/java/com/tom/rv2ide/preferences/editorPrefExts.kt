@@ -43,6 +43,7 @@ import com.tom.rv2ide.preferences.internal.EditorPreferences.FONT_LIGATURES
 import com.tom.rv2ide.preferences.internal.EditorPreferences.FONT_SIZE
 import com.tom.rv2ide.preferences.internal.EditorPreferences.KEY_STRING_EXT_HELPER
 import com.tom.rv2ide.preferences.internal.EditorPreferences.PIN_LINE_NUMBERS
+import com.tom.rv2ide.preferences.internal.EditorPreferences.QUICK_INPUT_EXPANSION_ENABLED
 import com.tom.rv2ide.preferences.internal.EditorPreferences.PRINTABLE_CHARS
 import com.tom.rv2ide.preferences.internal.EditorPreferences.STICKY_SCROLL_ENABLED
 import com.tom.rv2ide.preferences.internal.EditorPreferences.TAB_SIZE
@@ -73,6 +74,7 @@ class EditorPreferencesScreen(
   init {
     addPreference(LSPPreferencesScreen())
     addPreference(CommonConfigurations())
+    addPreference(QuickInputPreferencesScreen())
     addPreference(JavaCodeConfigurations())
     addPreference(XMLPreferencesScreen())
   }
@@ -104,9 +106,47 @@ private class CommonConfigurations(
     addPreference(DeleteTabs())
     addPreference(StickyScrollEnabled())
     addPreference(PinLineNumbersEnabled())
+    addPreference(CompletionsMatchLower())
+  }
+}
+
+@Parcelize
+private class QuickInputPreferencesScreen(
+    override val key: String = "idepref_editor_quickInput",
+    override val title: Int = string.idepref_editor_category_quickInput,
+    override val children: List<IPreference> = mutableListOf(),
+) : IPreferenceGroup() {
+
+  init {
+    addPreference(QuickInputExpansionEnabled())
+    addPreference(QuickInputCustomizeScreen())
+  }
+}
+
+@Parcelize
+private class QuickInputExpansionEnabled(
+    override val key: String = QUICK_INPUT_EXPANSION_ENABLED,
+    override val title: Int = string.idepref_editor_quickInputExpand_title,
+    override val summary: Int? = string.idepref_editor_quickInputExpand_summary,
+    override val icon: Int? = drawable.ic_expand,
+) :
+    SwitchPreference(
+        setValue = EditorPreferences::quickInputExpansionEnabled::set,
+        getValue = EditorPreferences::quickInputExpansionEnabled::get,
+    )
+
+@Parcelize
+private class QuickInputCustomizeScreen(
+    override val key: String = "idepref_editor_quickInputCustomize",
+    override val title: Int = string.idepref_editor_quickInputCustomize_title,
+    override val summary: Int? = string.idepref_editor_quickInputCustomize_summary,
+    override val icon: Int? = drawable.ic_customise,
+    override val children: List<IPreference> = mutableListOf(),
+) : IPreferenceScreen() {
+
+  init {
     addPreference(QuickInputActions())
     addPreference(QuickInputActionOrder())
-    addPreference(CompletionsMatchLower())
   }
 }
 

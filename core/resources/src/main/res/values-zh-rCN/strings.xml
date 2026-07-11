@@ -266,7 +266,12 @@
   <string name="action_expand_selection">扩选</string>
   <string name="idepref_java_matchLower_title">代码补全匹配小写字母</string>
   <string name="title_common">常规</string>
-  <string name="title_files_unsaved">未保存文件</string>
+  <string name="idepref_editor_category_quickInput">快捷输入</string>
+  <string name="idepref_editor_quickInputExpand_title">启用展开面板</string>
+  <string name="idepref_editor_quickInputExpand_summary">从编辑器符号栏显示展开的快捷输入面板。</string>
+  <string name="idepref_editor_quickInputCustomize_title">自定义输入项</string>
+  <string name="idepref_editor_quickInputCustomize_summary">选择并排列展开面板中显示的文本操作。</string>
+<string name="title_files_unsaved">未保存文件</string>
   <string name="msg_files_unsaved">部分文件并未保存，是否在关闭项目之前保存？未保存的文件：\n%s</string>
   <string name="idepref_editor_autoSave_title">关闭文件前自动保存</string>
   <string name="idepref_editor_autoSave_summary">在关闭文件之前自动保存文件。这是一个实验性功能，您应该自己保存这些文件。</string>

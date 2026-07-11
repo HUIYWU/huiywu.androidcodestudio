@@ -56,6 +56,7 @@ import com.tom.rv2ide.adapters.SearchListAdapter
 import com.tom.rv2ide.databinding.LayoutEditorBottomSheetBinding
 import com.tom.rv2ide.fragments.output.ShareableOutputFragment
 import com.tom.rv2ide.models.LogLine
+import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.tasks.TaskExecutor.CallbackWithError
 import com.tom.rv2ide.tasks.TaskExecutor.executeAsync
@@ -265,7 +266,8 @@ constructor(
           }
     }
     binding.quickInputToggle.setOnClickListener {
-      if (resolveTopContainerMode() != TopContainerMode.SYMBOL_INPUT) {
+      if (!EditorPreferences.quickInputExpansionEnabled ||
+          resolveTopContainerMode() != TopContainerMode.SYMBOL_INPUT) {
         return@setOnClickListener
       }
       if (shouldUseDownExpansion()) {
@@ -461,13 +463,20 @@ constructor(
   private fun showSymbolInputContainer() {
     val height = currentTopContainerHeight()
     val progress = topContainerVisibilityProgress()
+    val expansionEnabled = EditorPreferences.quickInputExpansionEnabled
+    if (!expansionEnabled) {
+      binding.symbolInput.collapse()
+      requestHideQuickInputOverlay?.invoke()
+      setQuickInputOverlayActive(false)
+    }
     binding.quickInputShell.visibility = View.VISIBLE
     binding.quickInputShell.alpha = progress
     binding.quickInputShell.isEnabled = true
     binding.headerContainer.visibility = View.VISIBLE
     binding.headerContainer.displayedChild = CHILD_SYMBOL_INPUT
-    binding.quickInputLeadingSpace.visibility = View.VISIBLE
-    binding.quickInputToggle.visibility = View.VISIBLE
+    binding.quickInputLeadingSpace.visibility =
+        if (expansionEnabled) View.VISIBLE else View.GONE
+    binding.quickInputToggle.visibility = if (expansionEnabled) View.VISIBLE else View.GONE
     binding.cardView.scaleX = 1f
     binding.cardView.scaleY = 1f
     updateQuickInputExpandDirection()
