@@ -1518,7 +1518,9 @@ Add a remote to push/pull changes</string>
    <string name="idepref_editor_quickInputEdit_name">Name / short label</string>
    <string name="idepref_editor_quickInputEdit_text">Text; the first unescaped | sets the cursor position</string>
    <string name="idepref_editor_quickInputEdit_function">Function</string>
-   <string name="idepref_editor_quickInputEdit_insert">Text insertion</string>
+  <string name="idepref_editor_quickInputEdit_function_hint">Tap to choose a function</string>
+  <string name="idepref_editor_quickInputEdit_selectFunction">Select function\nTap to return to editing</string>
+  <string name="idepref_editor_quickInputEdit_insert">Text insertion</string>
    <string name="idepref_editor_quickInputEdit_invalid">Enter a name and insertion text.</string>
     <string name="theme_blue_wave">Blue Wave</string>
   <string name="theme_sunny_glow">Sunny Glow</string>

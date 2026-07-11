@@ -477,7 +477,8 @@ constructor(
     // Keep the left spacer when the toggle is hidden so the collapsed symbol card retains
     // the same centered width as the expandable layout.
     binding.quickInputLeadingSpace.visibility = View.VISIBLE
-    binding.quickInputToggle.visibility = if (expansionEnabled) View.VISIBLE else View.GONE
+    // Preserve the toggle's width when expansion is disabled so the symbol card stays centered.
+    binding.quickInputToggle.visibility = if (expansionEnabled) View.VISIBLE else View.INVISIBLE
     binding.cardView.scaleX = 1f
     binding.cardView.scaleY = 1f
     updateQuickInputExpandDirection()
