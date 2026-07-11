@@ -229,11 +229,15 @@ object EditorPreferences {
 
   var quickInputCustomizeTextType: String
     get() = prefManager.getString(QUICK_INPUT_CUSTOMIZE_TEXT_TYPE, "PLAIN_TEXT") ?: "PLAIN_TEXT"
-    set(value) = prefManager.putString(QUICK_INPUT_CUSTOMIZE_TEXT_TYPE, value)
+    set(value) {
+      prefManager.putString(QUICK_INPUT_CUSTOMIZE_TEXT_TYPE, value)
+    }
 
   var quickInputProfiles: String?
     get() = prefManager.getString(QUICK_INPUT_PROFILES, null)
-    set(value) = prefManager.putString(QUICK_INPUT_PROFILES, value)
+    set(value) {
+      prefManager.putString(QUICK_INPUT_PROFILES, value)
+    }
 
   var quickInputExpandedActionIds: String?
     get() = prefManager.getString(QUICK_INPUT_EXPANDED_ACTION_IDS, null)
