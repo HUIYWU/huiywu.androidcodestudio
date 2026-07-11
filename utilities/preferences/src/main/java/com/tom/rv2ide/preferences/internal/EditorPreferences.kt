@@ -53,6 +53,8 @@ object EditorPreferences {
   const val STICKY_SCROLL_ENABLED = "idepref_editor_stickyScrollEnabled"
   const val PIN_LINE_NUMBERS = "idepref_editor_pinLineNumbers"
   const val QUICK_INPUT_EXPANSION_ENABLED = "idepref_editor_quickInputExpansionEnabled"
+  const val QUICK_INPUT_CUSTOMIZE_TEXT_TYPE = "idepref_editor_quickInputCustomizeTextType"
+  const val QUICK_INPUT_PROFILES = "idepref_editor_quickInputProfiles"
   const val QUICK_INPUT_EXPANDED_ACTION_IDS = "idepref_editor_quickInputExpandedActionIds"
 
   const val COLOR_SCHEME = "idepref_editor_colorScheme"
@@ -224,6 +226,14 @@ object EditorPreferences {
   var quickInputExpansionEnabled: Boolean
     get() = prefManager.getBoolean(QUICK_INPUT_EXPANSION_ENABLED, true)
     set(value) = prefManager.putBoolean(QUICK_INPUT_EXPANSION_ENABLED, value)
+
+  var quickInputCustomizeTextType: String
+    get() = prefManager.getString(QUICK_INPUT_CUSTOMIZE_TEXT_TYPE, "PLAIN_TEXT") ?: "PLAIN_TEXT"
+    set(value) = prefManager.putString(QUICK_INPUT_CUSTOMIZE_TEXT_TYPE, value)
+
+  var quickInputProfiles: String?
+    get() = prefManager.getString(QUICK_INPUT_PROFILES, null)
+    set(value) = prefManager.putString(QUICK_INPUT_PROFILES, value)
 
   var quickInputExpandedActionIds: String?
     get() = prefManager.getString(QUICK_INPUT_EXPANDED_ACTION_IDS, null)

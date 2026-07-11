@@ -18,10 +18,6 @@
 package com.tom.rv2ide.preferences
 
 import android.view.LayoutInflater
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
@@ -55,7 +51,6 @@ import com.tom.rv2ide.preferences.internal.EditorPreferences.WORD_WRAP
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.utils.EditorFontImporter
-import com.tom.rv2ide.utils.EditorQuickInputPreferences
 import com.tom.rv2ide.utils.Environment
 import kotlin.reflect.KMutableProperty0
 import kotlinx.parcelize.IgnoredOnParcel
@@ -116,7 +111,6 @@ private class QuickInputPreferencesScreen(
     override val title: Int = string.idepref_editor_category_quickInput,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceGroup() {
-
   init {
     addPreference(QuickInputExpansionEnabled())
     addPreference(QuickInputCustomizeScreen())
@@ -129,26 +123,19 @@ private class QuickInputExpansionEnabled(
     override val title: Int = string.idepref_editor_quickInputExpand_title,
     override val summary: Int? = string.idepref_editor_quickInputExpand_summary,
     override val icon: Int? = drawable.ic_expand,
-) :
-    SwitchPreference(
-        setValue = EditorPreferences::quickInputExpansionEnabled::set,
-        getValue = EditorPreferences::quickInputExpansionEnabled::get,
-    )
+) : SwitchPreference(
+    setValue = EditorPreferences::quickInputExpansionEnabled::set,
+    getValue = EditorPreferences::quickInputExpansionEnabled::get,
+)
 
 @Parcelize
 private class QuickInputCustomizeScreen(
-    override val key: String = "idepref_editor_quickInputCustomize",
+    override val key: String = QUICK_INPUT_CUSTOMIZE_SCREEN_KEY,
     override val title: Int = string.idepref_editor_quickInputCustomize_title,
     override val summary: Int? = string.idepref_editor_quickInputCustomize_summary,
     override val icon: Int? = drawable.ic_customise,
     override val children: List<IPreference> = mutableListOf(),
-) : IPreferenceScreen() {
-
-  init {
-    addPreference(QuickInputActions())
-    addPreference(QuickInputActionOrder())
-  }
-}
+) : IPreferenceScreen()
 
 @Parcelize
 private class TextSize(
@@ -544,108 +531,3 @@ private class PinLineNumbersEnabled(
         setValue = EditorPreferences::pinLineNumbers::set,
         getValue = EditorPreferences::pinLineNumbers::get,
     )
-
-@Parcelize
-private class QuickInputActions(
-    override val key: String = "idepref_editor_quickInputActions",
-    override val title: Int = string.idepref_editor_quickInputActions_title,
-    override val summary: Int? = string.idepref_editor_quickInputActions_summary,
-) : MultiChoicePreference() {
-
-  override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
-    val enabledIds = EditorQuickInputPreferences.expandedActionIds.toSet()
-    return EditorQuickInputPreferences.supportedExpandedActions
-        .map { action -> PreferenceChoices.Entry(action.label, action.id in enabledIds, action.id) }
-        .toTypedArray()
-  }
-
-  override fun onChoicesConfirmed(
-      preference: Preference,
-      entries: Array<PreferenceChoices.Entry>,
-  ) {
-    val selectedIds = entries.filter { it.isChecked }.map { it.data as String }.toSet()
-    val currentIds = EditorQuickInputPreferences.expandedActionIds
-    val preservedOrder = currentIds.filter { it in selectedIds }
-    val newlyEnabledIds =
-        EditorQuickInputPreferences.defaultExpandedActionIds.filter {
-          it in selectedIds && it !in preservedOrder
-        }
-    EditorQuickInputPreferences.setExpandedActionIds(preservedOrder + newlyEnabledIds)
-  }
-
-  override fun onConfigureDialogActions(
-      preference: Preference,
-      dialog: MaterialAlertDialogBuilder,
-  ) {
-    dialog.setNeutralButton(string.reset) { dialogInterface, _ ->
-      dialogInterface.dismiss()
-      EditorQuickInputPreferences.resetExpandedActionIds()
-    }
-  }
-}
-
-@Parcelize
-private class QuickInputActionOrder(
-    override val key: String = "idepref_editor_quickInputOrder",
-    override val title: Int = string.idepref_editor_quickInputOrder_title,
-    override val summary: Int? = string.idepref_editor_quickInputOrder_summary,
-) : DialogPreference() {
-
-  override val dialogCancellable = true
-
-  override fun onConfigureDialog(preference: Preference, dialog: MaterialAlertDialogBuilder) {
-    val context = preference.context
-    val density = context.resources.displayMetrics.density
-    val padding = (20 * density).toInt()
-    val actions = EditorQuickInputPreferences.expandedActionIds.toMutableList()
-    val container = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-
-    fun renderActions() {
-      container.removeAllViews()
-      actions.forEachIndexed { index, actionId ->
-        val row = LinearLayout(context).apply {
-          orientation = LinearLayout.HORIZONTAL
-          gravity = android.view.Gravity.CENTER_VERTICAL
-          setPadding(padding, 0, padding, 0)
-        }
-        row.addView(
-            TextView(context).apply { text = EditorQuickInputPreferences.labelForActionId(actionId) },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
-        )
-        row.addView(
-            Button(context).apply {
-              text = "↑"
-              isEnabled = index > 0
-              setOnClickListener {
-                actions[index] = actions[index - 1].also { actions[index - 1] = actions[index] }
-                renderActions()
-              }
-            },
-        )
-        row.addView(
-            Button(context).apply {
-              text = "↓"
-              isEnabled = index < actions.lastIndex
-              setOnClickListener {
-                actions[index] = actions[index + 1].also { actions[index + 1] = actions[index] }
-                renderActions()
-              }
-            },
-        )
-        container.addView(row)
-      }
-    }
-
-    renderActions()
-    dialog.setView(container)
-    dialog.setPositiveButton(android.R.string.ok) { dialogInterface, _ ->
-      dialogInterface.dismiss()
-      EditorQuickInputPreferences.setExpandedActionIds(actions)
-    }
-    dialog.setNegativeButton(android.R.string.cancel, null)
-    dialog.setNeutralButton(string.reset) { dialogInterface, _ ->
-      dialogInterface.dismiss()
-      EditorQuickInputPreferences.resetExpandedActionIds()
-    }
-  }
-}

@@ -474,8 +474,9 @@ constructor(
     binding.quickInputShell.isEnabled = true
     binding.headerContainer.visibility = View.VISIBLE
     binding.headerContainer.displayedChild = CHILD_SYMBOL_INPUT
-    binding.quickInputLeadingSpace.visibility =
-        if (expansionEnabled) View.VISIBLE else View.GONE
+    // Keep the left spacer when the toggle is hidden so the collapsed symbol card retains
+    // the same centered width as the expandable layout.
+    binding.quickInputLeadingSpace.visibility = View.VISIBLE
     binding.quickInputToggle.visibility = if (expansionEnabled) View.VISIBLE else View.GONE
     binding.cardView.scaleX = 1f
     binding.cardView.scaleY = 1f
@@ -610,7 +611,7 @@ constructor(
   }
   fun refreshSymbolInput(editor: CodeEditorView) {
     currentSymbolInputEditor = editor
-    binding.symbolInput.refresh(editor.editor, forFile(editor.file))
+    binding.symbolInput.refresh(editor.editor, editor.file, forFile(editor.file))
   }
 
   fun getCurrentQuickInputEditor(): CodeEditorView? = currentSymbolInputEditor

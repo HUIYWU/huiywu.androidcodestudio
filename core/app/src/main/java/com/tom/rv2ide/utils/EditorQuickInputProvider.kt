@@ -33,29 +33,9 @@ object EditorQuickInputProvider {
     return Symbols.plainTextSymbols.toQuickItems()
   }
 
-  /** Expanded panels append only low-risk, high-frequency editor actions to the current symbols. */
-  fun expandedItems(symbolItems: List<EditorQuickItem>): List<EditorQuickItem> {
-    return symbolItems + expandedActionItems()
-  }
-
-  /**
-   * Grid labels stay compact: use at most three ASCII characters or two Asian characters.
-   * User configuration supplies only action IDs; labels remain built in so wording changes do not
-   * require preference migration.
-   */
-  fun expandedActionItems(): List<ActionQuickItem> {
-    return EditorQuickInputPreferences.expandedActionIds.map(::actionItemForId)
-  }
-
-  private fun actionItemForId(actionId: String): ActionQuickItem {
-    return when (actionId) {
-      "ide.editor.text.commentline" -> ActionQuickItem("action:comment-line", "Com", actionId)
-      "ide.editor.text.duplicateline" -> ActionQuickItem("action:duplicate-line", "Dup", actionId)
-      "ide.editor.text.deleteline" -> ActionQuickItem("action:delete-line", "Del", actionId)
-      "ide.editor.text.indentline" -> ActionQuickItem("action:indent-line", "Ind", actionId)
-      "ide.editor.text.unindentline" -> ActionQuickItem("action:unindent-line", "Out", actionId)
-      else -> error("Unsupported quick-input action: $actionId")
-    }
+  /** Resolves the expanded grid from the active file-type profile. */
+  fun expandedItems(file: File?, symbolItems: List<EditorQuickItem>): List<EditorQuickItem> {
+    return EditorQuickInputPreferences.itemsFor(file, symbolItems)
   }
 
   fun Symbol.toQuickItem(): SymbolQuickItem {

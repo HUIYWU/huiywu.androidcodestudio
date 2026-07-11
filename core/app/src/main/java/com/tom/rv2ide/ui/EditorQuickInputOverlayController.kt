@@ -64,7 +64,7 @@ class EditorQuickInputOverlayController(
         }
 
         overlay.symbolInput.setActionClickListener { actionId -> onQuickInputActionClick?.invoke(actionId) }
-        overlay.symbolInput.refresh(editor.editor, forFile(editor.file))
+        overlay.symbolInput.refresh(editor.editor, editor.file, forFile(editor.file))
         overlay.symbolInput.setExpandDirection(SymbolInputView.ExpandDirection.UP)
         overlay.symbolInput.expand()
         // Keep the collapsed row visible until the expanding overlay has enough room for the grid.

@@ -27,11 +27,15 @@ import com.google.android.material.transition.MaterialSharedAxis
 import com.tom.rv2ide.preferences.IPreference
 import com.tom.rv2ide.preferences.IPreferenceGroup
 import com.tom.rv2ide.preferences.IPreferenceScreen
+import com.tom.rv2ide.preferences.QUICK_INPUT_CUSTOMIZE_REFRESH_RESULT
+import com.tom.rv2ide.preferences.QUICK_INPUT_CUSTOMIZE_SCREEN_KEY
+import com.tom.rv2ide.preferences.quickInputCustomizeChildren
 import com.tom.rv2ide.preferences.observers.LSPStateObserver
 
 class IDEPreferencesFragment : BasePreferenceFragment() {
 
   private var children: List<IPreference> = emptyList()
+  private var screenKey: String? = null
 
   private val serverStateListener = {
     refreshPreferences()
@@ -71,6 +75,17 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
 
     @Suppress("DEPRECATION")
     this.children = arguments?.getParcelableArrayList(EXTRA_CHILDREN) ?: emptyList()
+    screenKey = arguments?.getString(EXTRA_SCREEN_KEY)
+    if (screenKey == QUICK_INPUT_CUSTOMIZE_SCREEN_KEY) {
+      this.children = quickInputCustomizeChildren()
+      parentFragmentManager.setFragmentResultListener(
+          QUICK_INPUT_CUSTOMIZE_REFRESH_RESULT,
+          this,
+      ) { _, _ ->
+        this.children = quickInputCustomizeChildren()
+        refreshPreferences()
+      }
+    }
 
     preferenceScreen.removeAll()
     addChildren(this.children, preferenceScreen)
@@ -100,6 +115,7 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
       val preference = child.onCreateView(requireContext())
       if (child is IPreferenceScreen) {
         preference.fragment = IDEPreferencesFragment::class.java.name
+        preference.extras.putString(EXTRA_SCREEN_KEY, child.key)
         preference.extras.putParcelableArrayList(EXTRA_CHILDREN, ArrayList(child.children))
         pref.addPreference(preference)
         continue
@@ -117,5 +133,6 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
 
   companion object {
     const val EXTRA_CHILDREN = "ide.preferences.fragment.children"
+    const val EXTRA_SCREEN_KEY = "ide.preferences.fragment.screenKey"
   }
 }

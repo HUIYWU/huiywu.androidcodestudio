@@ -18,6 +18,7 @@
 package com.tom.rv2ide.utils
 
 import com.tom.rv2ide.models.Symbol
+import com.tom.rv2ide.preferences.QuickInputTextType
 import java.io.File
 
 object Symbols {
@@ -36,6 +37,15 @@ object Symbols {
 
       "xml" -> xmlSymbols
       else -> plainTextSymbols
+    }
+  }
+
+  /** Mirrors [forFile] categories for quick-input profile configuration. */
+  internal fun forQuickInputTextType(type: QuickInputTextType): List<Symbol> {
+    return when (type) {
+      QuickInputTextType.PLAIN_TEXT -> plainTextSymbols
+      QuickInputTextType.JAVA_JVM -> javaSymbols
+      QuickInputTextType.XML -> xmlSymbols
     }
   }
 

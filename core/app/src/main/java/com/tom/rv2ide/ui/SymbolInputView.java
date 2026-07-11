@@ -31,6 +31,7 @@ import com.tom.rv2ide.editor.ui.IDEEditor;
 import com.tom.rv2ide.models.EditorQuickItem;
 import com.tom.rv2ide.models.Symbol;
 import com.tom.rv2ide.utils.EditorQuickInputProvider;
+import java.io.File;
 import java.util.List;
 
 public class SymbolInputView extends FrameLayout {
@@ -122,12 +123,12 @@ public class SymbolInputView extends FrameLayout {
     actionClickListener = listener;
   }
 
-  public void refresh(IDEEditor editor, List<Symbol> symbols) {
+  public void refresh(IDEEditor editor, File file, List<Symbol> symbols) {
     final var collapsedItems =
         symbols == null || symbols.isEmpty()
             ? EditorQuickInputProvider.INSTANCE.plainTextItems()
             : EditorQuickInputProvider.INSTANCE.toQuickItems(symbols);
-    final var expandedItems = EditorQuickInputProvider.INSTANCE.expandedItems(collapsedItems);
+    final var expandedItems = EditorQuickInputProvider.INSTANCE.expandedItems(file, collapsedItems);
 
     refreshAdapter(collapsedList, editor, collapsedItems);
     refreshAdapter(expandedGrid, editor, expandedItems);
