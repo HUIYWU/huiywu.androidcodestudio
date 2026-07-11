@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.FragmentActivity
 import androidx.preference.Preference
@@ -18,6 +19,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.preferences.internal.EditorPreferences
+import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.utils.EditorQuickInputPreferences
 import kotlinx.parcelize.Parcelize
@@ -93,7 +95,8 @@ private class QuickInputItemPreference(
   override fun onCreateView(context: Context): Preference = Preference(context).apply {
     key = this@QuickInputItemPreference.key
     title = item.label
-    summary = item.actionId?.let { EditorQuickInputPreferences.labelForActionId(context, it) } ?: item.text.orEmpty()
+    summary = item.actionId?.let { EditorQuickInputPreferences.labelForActionId(context, it) }
+        ?: context.getString(string.idepref_editor_quickInputEdit_insert)
     isIconSpaceReserved = false
     setOnPreferenceClickListener { showItemEditor(context, index, item); true }
   }
@@ -118,11 +121,20 @@ private class AddQuickInputItem(
 private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickInputPreferences.StoredItem?) {
   val padding = (20 * context.resources.displayMetrics.density).toInt()
   val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, 0, padding, 0) }
-  val name = EditText(context).apply { hint = context.getString(string.idepref_editor_quickInputEdit_name); setText(existing?.label.orEmpty()) }
+  val name = EditText(context).apply { setText(existing?.label.orEmpty()) }
+  val nameLayout = TextInputLayout(context).apply {
+    hint = context.getString(string.idepref_editor_quickInputEdit_name)
+    helperText = context.getString(string.idepref_editor_quickInputEdit_name_hint)
+    addView(name)
+  }
   val text = EditText(context).apply {
-    hint = context.getString(string.idepref_editor_quickInputEdit_text)
     setText(existing?.let(::displayInsertionText).orEmpty()); minLines = 2
     inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+  }
+  val textLayout = TextInputLayout(context).apply {
+    hint = context.getString(string.idepref_editor_quickInputEdit_text)
+    helperText = context.getString(string.idepref_editor_quickInputEdit_text_hint)
+    addView(text)
   }
   val functionOptions = buildList {
     add(context.getString(string.idepref_editor_quickInputEdit_insert))
@@ -136,27 +148,27 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
     inputType = InputType.TYPE_NULL
     isFocusable = false
     isClickable = true
-    setAdapter(ArrayAdapter(context, android.R.layout.simple_list_item_1, functionOptions))
+    setAdapter(ArrayAdapter(context, R.layout.item_atc_dropdown, functionOptions))
+    setDropDownBackgroundDrawable(ContextCompat.getDrawable(context, R.drawable.bg_atc_dropdown_popup))
     setText(functionOptions[selectedFunctionIndex], false)
   }
   val functionLayout = TextInputLayout(context).apply {
     hint = context.getString(string.idepref_editor_quickInputEdit_function)
-    helperText = context.getString(string.idepref_editor_quickInputEdit_function_hint)
     endIconMode = TextInputLayout.END_ICON_DROPDOWN_MENU
     addView(functionInput)
   }
   var selectedFunction = selectedFunctionIndex
   fun updateFunctionSelection() {
-    text.isVisible = selectedFunction == 0
+    textLayout.isVisible = selectedFunction == 0
   }
   functionInput.setOnItemClickListener { _, _, position, _ ->
     selectedFunction = position
     updateFunctionSelection()
   }
   updateFunctionSelection()
-  content.addView(name)
+  content.addView(nameLayout)
   content.addView(functionLayout)
-  content.addView(text)
+  content.addView(textLayout)
   val view = ScrollView(context).apply { addView(content, ViewGroup.LayoutParams(-1, -2)) }
   val dialog = MaterialAlertDialogBuilder(context).setTitle(string.idepref_editor_quickInputEdit_title)
       .setView(view).setPositiveButton(string.action_save, null)
@@ -184,8 +196,11 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
         actionId != null -> EditorQuickInputPreferences.StoredItem(existing?.id ?: EditorQuickInputPreferences.newItemId(), label, actionId = actionId)
         else -> parseInsertion(label, text.text.toString(), existing?.id)
       }
-      if (saved == null || !isCompactLabel(label)) {
-        name.error = context.getString(string.idepref_editor_quickInputEdit_invalid)
+      val nameValid = label.isNotEmpty() && isCompactLabel(label)
+      val textValid = actionId != null || !saved?.text.isNullOrEmpty()
+      nameLayout.error = if (nameValid) null else context.getString(string.idepref_editor_quickInputEdit_name_error)
+      textLayout.error = if (textValid) null else context.getString(string.idepref_editor_quickInputEdit_text_error)
+      if (!nameValid || !textValid || saved == null) {
         return@setOnClickListener
       }
       val type = selectedQuickInputTextType()

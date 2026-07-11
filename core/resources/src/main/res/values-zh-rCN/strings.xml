@@ -578,10 +578,13 @@
   <string name="idepref_editor_quickInputEdit_title">编辑</string>
   <string name="idepref_editor_quickInputEdit_pending">“%1$s”的编辑功能将在下一步自定义中提供。</string>
   <string name="idepref_editor_quickInputEdit_name">名称 / 简名</string>
-  <string name="idepref_editor_quickInputEdit_text">文本；第一个未转义的 | 用于设置光标位置</string>
+  <string name="idepref_editor_quickInputEdit_text">文本</string>
+  <string name="idepref_editor_quickInputEdit_name_hint">最多 3 个窄字符或 2 个宽字符。</string>
+  <string name="idepref_editor_quickInputEdit_text_hint">第一个未转义的 | 用于设置光标位置。使用 \| 输入 |，使用 \\ 输入 \。</string>
+  <string name="idepref_editor_quickInputEdit_name_error">请输入规范名称。</string>
+  <string name="idepref_editor_quickInputEdit_text_error">请输入插入文本。</string>
   <string name="idepref_editor_quickInputEdit_function">功能</string>
   <string name="idepref_editor_quickInputEdit_insert">文本插入</string>
-  <string name="idepref_editor_quickInputEdit_invalid">请输入名称和插入文本。</string>
 <string name="theme_blue_wave">蓝色波浪</string>
     <string name="theme_sunny_glow">阳光熠熠</string>
     <string name="theme_greenish">绿意盎然</string>
