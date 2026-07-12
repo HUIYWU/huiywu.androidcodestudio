@@ -161,7 +161,6 @@ private class GradleDistrubution(
   override fun onConfigureTextInput(input: TextInputLayout) {
     input.setStartIconDrawable(drawable.ic_gradle)
     input.setHint(string.msg_gradle_installation_path)
-    input.helperText = input.context.getString(string.msg_gradle_installation_input_help)
     input.isCounterEnabled = false
     input.editText!!.setText(gradleInstallationDir)
   }
