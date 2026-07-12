@@ -288,24 +288,46 @@ private fun showDialogElementDiagnostic(context: Context, stage: Int) {
   DialogAnimationDiagnostics.afterShow(dialog, label, animationStartedAt)
 }
 
+private fun createQuickInputHelper(context: Context, text: Int): TextView {
+  val horizontalInset = (12 * context.resources.displayMetrics.density).toInt()
+  return TextView(context).apply {
+    setText(text)
+    setTextAppearance(AppR.style.TextAppearance_Material3_BodySmall)
+    includeFontPadding = false
+    layoutParams = LinearLayout.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.WRAP_CONTENT,
+    ).apply {
+      marginStart = horizontalInset
+      marginEnd = horizontalInset
+    }
+  }
+}
+
 private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickInputPreferences.StoredItem?) {
   val padding = (20 * context.resources.displayMetrics.density).toInt()
   val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, 0, padding, 0) }
   val name = EditText(context).apply { setText(existing?.label.orEmpty()) }
   val nameLayout = TextInputLayout(context).apply {
     hint = context.getString(string.idepref_editor_quickInputEdit_name)
-    helperText = context.getString(string.idepref_editor_quickInputEdit_name_hint)
     addView(name)
   }
+  val nameHelper = createQuickInputHelper(
+    context,
+    string.idepref_editor_quickInputEdit_name_hint,
+  )
   val text = EditText(context).apply {
     setText(existing?.let(::displayInsertionText).orEmpty()); minLines = 2
     inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
   }
   val textLayout = TextInputLayout(context).apply {
     hint = context.getString(string.idepref_editor_quickInputEdit_text)
-    helperText = context.getString(string.idepref_editor_quickInputEdit_text_hint)
     addView(text)
   }
+  val textHelper = createQuickInputHelper(
+    context,
+    string.idepref_editor_quickInputEdit_text_hint,
+  )
   val functionOptions = buildList {
     add(context.getString(string.idepref_editor_quickInputEdit_insert))
     addAll(EditorQuickInputPreferences.supportedExpandedActions.map { context.getString(it.labelRes) })
@@ -330,7 +352,9 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
   var functionPopup: ListPopupWindow? = null
   var dialogClosing = false
   fun updateFunctionSelection() {
-    textLayout.isVisible = selectedFunction == 0
+    val showTextInput = selectedFunction == 0
+    textLayout.isVisible = showTextInput
+    textHelper.isVisible = showTextInput
   }
   fun dismissFunctionPopup() {
     functionPopup?.dismiss()
@@ -359,8 +383,10 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
   functionLayout.setEndIconOnClickListener { showFunctionPopup() }
   updateFunctionSelection()
   content.addView(nameLayout)
+  content.addView(nameHelper)
   content.addView(functionLayout)
   content.addView(textLayout)
+  content.addView(textHelper)
   val view = ScrollView(context).apply { addView(content, ViewGroup.LayoutParams(-1, -2)) }
   val dialog = MaterialAlertDialogBuilder(context).setTitle(string.idepref_editor_quickInputEdit_title)
       .setView(view).setPositiveButton(string.action_save, null)
