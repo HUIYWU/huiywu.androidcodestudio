@@ -31,7 +31,6 @@ import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.utils.DialogAnimationDiagnostics
-import com.tom.rv2ide.utils.DialogImeEntranceGuard
 import com.tom.rv2ide.utils.EditorQuickInputPreferences
 import kotlinx.parcelize.Parcelize
 import kotlinx.parcelize.RawValue
@@ -52,6 +51,7 @@ internal fun quickInputCustomizeChildren(): List<IPreference> {
     add(QuickInputTextTypeSelector())
     add(ResetQuickInputTextType())
     add(AddQuickInputItem(items.size))
+    add(QuickInputDialogElementDiagnostic())
     add(QuickInputItemsPreference(type, items))
   }
 }
@@ -228,6 +228,88 @@ private class AddQuickInputItem(
   }
 }
 
+@Parcelize
+private class QuickInputDialogElementDiagnostic(
+    override val key: String = "idepref_editor_quickInputDialogDiagnostic",
+    override val title: Int = string.idepref_editor_quickInputDialogDiagnostic_title,
+    override val summary: Int? = string.idepref_editor_quickInputDialogDiagnostic_summary,
+) : BasePreference() {
+  override fun onCreatePreference(context: Context) = Preference(context)
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val stages = intArrayOf(
+        string.idepref_editor_quickInputDialogDiagnostic_stage_basic,
+        string.idepref_editor_quickInputDialogDiagnostic_stage_name,
+        string.idepref_editor_quickInputDialogDiagnostic_stage_helper,
+        string.idepref_editor_quickInputDialogDiagnostic_stage_function,
+        string.idepref_editor_quickInputDialogDiagnostic_stage_text,
+    ).map(context::getString).toTypedArray()
+    MaterialAlertDialogBuilder(context)
+        .setTitle(string.idepref_editor_quickInputDialogDiagnostic_stage_title)
+        .setItems(stages) { _, stage -> showDialogElementDiagnostic(context, stage) }
+        .show()
+    return true
+  }
+}
+
+private fun showDialogElementDiagnostic(context: Context, stage: Int) {
+  val padding = (20 * context.resources.displayMetrics.density).toInt()
+  val content = LinearLayout(context).apply {
+    orientation = LinearLayout.VERTICAL
+    setPadding(padding, 0, padding, 0)
+  }
+  if (stage >= 1) {
+    val name = EditText(context)
+    val nameLayout = TextInputLayout(context).apply {
+      hint = context.getString(string.idepref_editor_quickInputEdit_name)
+      addView(name)
+    }
+    if (stage >= 2) {
+      nameLayout.setStartIconDrawable(R.drawable.ic_customise)
+      nameLayout.helperText = context.getString(string.idepref_editor_quickInputEdit_name_hint)
+    }
+    content.addView(nameLayout)
+  }
+  if (stage >= 3) {
+    val functionInput = MaterialAutoCompleteTextView(context).apply {
+      keyListener = null
+      inputType = InputType.TYPE_NULL
+      isFocusable = false
+      setText(context.getString(string.idepref_editor_quickInputEdit_insert), false)
+    }
+    content.addView(TextInputLayout(context).apply {
+      hint = context.getString(string.idepref_editor_quickInputEdit_function)
+      endIconMode = TextInputLayout.END_ICON_CUSTOM
+      endIconDrawable = ContextCompat.getDrawable(context, AppR.drawable.ic_dropdown_arrow)
+      addView(functionInput)
+    })
+  }
+  if (stage >= 4) {
+    content.addView(TextInputLayout(context).apply {
+      hint = context.getString(string.idepref_editor_quickInputEdit_text)
+      helperText = context.getString(string.idepref_editor_quickInputEdit_text_hint)
+      addView(EditText(context).apply {
+        minLines = 2
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+      })
+    })
+  }
+  val dialog = MaterialAlertDialogBuilder(context)
+      .setTitle(string.idepref_editor_quickInputDialogDiagnostic_title)
+      .setView(if (stage == 0) null else ScrollView(context).apply { addView(content) })
+      .setPositiveButton(android.R.string.ok, null)
+      .setNegativeButton(android.R.string.cancel, null)
+      .create()
+  val label = "QuickInputDialogDiagnostic:stage$stage"
+  val animationStartedAt = DialogAnimationDiagnostics.beforeShow(dialog, label)
+  dialog.setOnDismissListener {
+    DialogAnimationDiagnostics.dismissed(dialog, label, animationStartedAt)
+  }
+  dialog.show()
+  DialogAnimationDiagnostics.afterShow(dialog, label, animationStartedAt)
+}
+
 private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickInputPreferences.StoredItem?) {
   val padding = (20 * context.resources.displayMetrics.density).toInt()
   val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, 0, padding, 0) }
@@ -317,7 +399,6 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
         }
       }
       .create()
-  DialogImeEntranceGuard.prepare(dialog)
   val animationStartedAt = DialogAnimationDiagnostics.beforeShow(dialog, "QuickInputEditor")
   dialog.setOnShowListener {
     dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -355,7 +436,6 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
     DialogAnimationDiagnostics.dismissed(dialog, "QuickInputEditor", animationStartedAt)
   }
   dialog.show()
-  DialogImeEntranceGuard.releaseAfterEntrance(dialog, "QuickInputEditor", animationStartedAt)
   DialogAnimationDiagnostics.afterShow(dialog, "QuickInputEditor", animationStartedAt)
 }
 
