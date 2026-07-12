@@ -24,7 +24,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.preferences.databinding.LayoutDialogTextInputBinding
 import com.tom.rv2ide.utils.DialogAnimationDiagnostics
-import com.tom.rv2ide.utils.DialogEntranceAnimator
 import com.tom.rv2ide.utils.DialogUtils
 
 /**
@@ -44,13 +43,11 @@ abstract class EditTextPreference : DialogPreference() {
     val dialog = builder.create()
     // Keep IME-driven layout changes out of the window animation's first frame.
     dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
-    DialogEntranceAnimator.prepare(dialog)
     val animationStartedAt = DialogAnimationDiagnostics.beforeShow(dialog, "EditTextPreference:$key")
     dialog.setOnDismissListener {
       DialogAnimationDiagnostics.dismissed(dialog, "EditTextPreference:$key", animationStartedAt)
     }
     dialog.show()
-    DialogEntranceAnimator.start(dialog)
     DialogAnimationDiagnostics.afterShow(dialog, "EditTextPreference:$key", animationStartedAt)
     return true
   }

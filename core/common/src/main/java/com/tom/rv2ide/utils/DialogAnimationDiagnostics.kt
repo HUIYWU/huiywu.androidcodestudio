@@ -17,10 +17,12 @@
 package com.tom.rv2ide.utils
 
 import android.app.Dialog
+import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.View
+import android.view.WindowInsets
 
 /** Temporary logcat instrumentation for dialog window animation investigations. */
 object DialogAnimationDiagnostics {
@@ -48,6 +50,12 @@ object DialogAnimationDiagnostics {
   private fun log(dialog: Dialog, label: String, event: String, startedAt: Long) {
     val window = dialog.window
     val decor: View? = window?.decorView
+    val focusedView = decor?.findFocus()
+    val imeVisible = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      decor?.rootWindowInsets?.isVisible(WindowInsets.Type.ime())
+    } else {
+      null
+    }
     val elapsed = SystemClock.uptimeMillis() - startedAt
     val animatorScale = runCatching {
       Settings.Global.getFloat(dialog.context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE)
@@ -62,7 +70,11 @@ object DialogAnimationDiagnostics {
             "softInputMode=${window?.attributes?.softInputMode} dimAmount=${window?.attributes?.dimAmount} " +
             "size=${decor?.width}x${decor?.height} laidOut=${decor?.isLaidOut} " +
             "visibility=${decor?.visibility} alpha=${decor?.alpha} scale=${decor?.scaleX},${decor?.scaleY} " +
-            "focused=${decor?.hasFocus()} animatorScale=$animatorScale transitionScale=$transitionScale", 
+            "focused=${decor?.hasFocus()} focusView=${focusedView?.javaClass?.simpleName} " +
+            "textEditor=${focusedView?.onCheckIsTextEditor()} imeVisible=$imeVisible " +
+            "flags=${window?.attributes?.flags} type=${window?.attributes?.type} " +
+            "gravity=${window?.attributes?.gravity} format=${window?.attributes?.format} " +
+            "animatorScale=$animatorScale transitionScale=$transitionScale", 
     )
   }
 }
