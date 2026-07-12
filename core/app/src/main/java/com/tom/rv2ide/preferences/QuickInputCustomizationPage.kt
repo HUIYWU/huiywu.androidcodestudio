@@ -30,6 +30,7 @@ import com.tom.rv2ide.R as AppR
 import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.resources.R.string
+import com.tom.rv2ide.utils.DialogAnimationDiagnostics
 import com.tom.rv2ide.utils.EditorQuickInputPreferences
 import kotlinx.parcelize.Parcelize
 import kotlinx.parcelize.RawValue
@@ -83,7 +84,7 @@ private class ResetQuickInputTextType(
 ) : BasePreference() {
   override fun onCreatePreference(context: Context) = Preference(context)
   override fun onPreferenceClick(preference: Preference): Boolean {
-    MaterialAlertDialogBuilder(preference.context)
+    val dialog = MaterialAlertDialogBuilder(preference.context)
         .setTitle(string.idepref_editor_quickInputReset_title)
         .setMessage(string.idepref_editor_quickInputReset_confirm)
         .setPositiveButton(string.reset) { _, _ ->
@@ -91,7 +92,13 @@ private class ResetQuickInputTextType(
           requestPageRefresh(preference.context)
         }
         .setNegativeButton(android.R.string.cancel, null)
-        .show()
+        .create()
+    val animationStartedAt = DialogAnimationDiagnostics.beforeShow(dialog, "QuickInputReset")
+    dialog.setOnDismissListener {
+      DialogAnimationDiagnostics.dismissed(dialog, "QuickInputReset", animationStartedAt)
+    }
+    dialog.show()
+    DialogAnimationDiagnostics.afterShow(dialog, "QuickInputReset", animationStartedAt)
     return true
   }
 }
@@ -309,6 +316,7 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
         }
       }
       .create()
+  val animationStartedAt = DialogAnimationDiagnostics.beforeShow(dialog, "QuickInputEditor")
   dialog.setOnShowListener {
     dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
       val label = name.text.toString().trim()
@@ -340,8 +348,12 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
     dismissFunctionPopup()
   }
   dialog.setOnCancelListener { closeFunctionPopup() }
-  dialog.setOnDismissListener { closeFunctionPopup() }
+  dialog.setOnDismissListener {
+    closeFunctionPopup()
+    DialogAnimationDiagnostics.dismissed(dialog, "QuickInputEditor", animationStartedAt)
+  }
   dialog.show()
+  DialogAnimationDiagnostics.afterShow(dialog, "QuickInputEditor", animationStartedAt)
 }
 
 private fun displayInsertionText(item: EditorQuickInputPreferences.StoredItem): String {

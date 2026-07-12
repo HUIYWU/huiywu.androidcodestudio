@@ -28,7 +28,6 @@
   </style>
 
   <style name="Theme.AndroidIDE.Styled" parent="Theme.AndroidIDE.Base">
-    <item name="materialAlertDialogTheme">@style/AppTheme.MaterialAlertDialog</item>
     <item name="switchPreferenceStyle">@style/AppTheme.SwitchPreference</item>
     <item name="shapeAppearanceLargeComponent">@style/AppTheme.ShapeOverlay.Large</item>
     <item name="textAppearanceBodySmall">@style/TextAppearance.AndroidIDE.BodySmall</item>
@@ -101,14 +100,10 @@
   </style>
 
   <!-- Alert Dialog -->
-  <style name="AppTheme.DialogWindowAnimation" parent="">
-    <item name="android:windowEnterAnimation">@anim/dialog_in</item>
-    <item name="android:windowExitAnimation">@anim/dialog_out</item>
-  </style>
-
   <style name="AppTheme.MaterialAlertDialog" parent="@style/ThemeOverlay.Material3.MaterialAlertDialog">
     <item name="shapeAppearanceOverlay">@style/MaterialDialog.ShapeAppearance</item>
-    <item name="android:windowAnimationStyle">@style/AppTheme.DialogWindowAnimation</item>
+    <item name="android:windowEnterAnimation">@animator/dialog_in</item>
+    <item name="android:windowExitAnimation">@animator/dialog_out</item>
   </style>
 
   <style name="MaterialDialog.ShapeAppearance" parent="">

@@ -19,6 +19,7 @@ package com.tom.rv2ide.preferences
 
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.tom.rv2ide.utils.DialogAnimationDiagnostics
 import com.tom.rv2ide.utils.DialogUtils
 
 /**
@@ -40,7 +41,13 @@ abstract class DialogPreference : SimplePreference() {
     dialogMessage?.let { dialog.setMessage(it) }
     dialog.setCancelable(this.dialogCancellable)
     onConfigureDialog(preference, dialog)
-    dialog.show()
+    val shownDialog = dialog.create()
+    val animationStartedAt = DialogAnimationDiagnostics.beforeShow(shownDialog, "DialogPreference:$key")
+    shownDialog.setOnDismissListener {
+      DialogAnimationDiagnostics.dismissed(shownDialog, "DialogPreference:$key", animationStartedAt)
+    }
+    shownDialog.show()
+    DialogAnimationDiagnostics.afterShow(shownDialog, "DialogPreference:$key", animationStartedAt)
     return true
   }
 
