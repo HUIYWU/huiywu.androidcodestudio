@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ListPopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -18,6 +19,7 @@ import androidx.core.view.isVisible
 import androidx.fragment.app.FragmentActivity
 import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
+import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -114,7 +116,13 @@ private class QuickInputItemsPreference(
       val recyclerView = holder.itemView.findViewById<RecyclerView>(AppR.id.quick_input_items_list)
       recyclerView.layoutManager = LinearLayoutManager(context)
       recyclerView.isNestedScrollingEnabled = false
-      recyclerView.itemAnimator = null
+      recyclerView.itemAnimator = DefaultItemAnimator().apply {
+        moveDuration = 180
+        addDuration = 0
+        removeDuration = 0
+        changeDuration = 0
+        supportsChangeAnimations = false
+      }
       recyclerView.adapter = QuickInputItemsAdapter(context, type, items.toMutableList())
     }
   }
@@ -242,23 +250,45 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
     inputType = InputType.TYPE_NULL
     isFocusable = false
     isClickable = true
-    setAdapter(ArrayAdapter(context, AppR.layout.item_atc_dropdown, functionOptions))
-    setDropDownBackgroundDrawable(ContextCompat.getDrawable(context, AppR.drawable.bg_atc_dropdown_popup))
     setText(functionOptions[selectedFunctionIndex], false)
   }
   val functionLayout = TextInputLayout(context).apply {
     hint = context.getString(string.idepref_editor_quickInputEdit_function)
-    endIconMode = TextInputLayout.END_ICON_DROPDOWN_MENU
+    endIconMode = TextInputLayout.END_ICON_CUSTOM
+    endIconDrawable = ContextCompat.getDrawable(context, AppR.drawable.ic_dropdown_arrow)
     addView(functionInput)
   }
   var selectedFunction = selectedFunctionIndex
+  var functionPopup: ListPopupWindow? = null
+  var dialogClosing = false
   fun updateFunctionSelection() {
     textLayout.isVisible = selectedFunction == 0
   }
-  functionInput.setOnItemClickListener { _, _, position, _ ->
-    selectedFunction = position
-    updateFunctionSelection()
+  fun dismissFunctionPopup() {
+    functionPopup?.dismiss()
+    functionPopup = null
   }
+  fun showFunctionPopup() {
+    if (dialogClosing) return
+    dismissFunctionPopup()
+    functionPopup = ListPopupWindow(context).apply {
+      anchorView = functionInput
+      isModal = true
+      width = functionInput.width
+      setAdapter(ArrayAdapter(context, AppR.layout.item_atc_dropdown, functionOptions))
+      setBackgroundDrawable(ContextCompat.getDrawable(context, AppR.drawable.bg_atc_dropdown_popup))
+      setOnItemClickListener { _, _, position, _ ->
+        selectedFunction = position
+        functionInput.setText(functionOptions[position], false)
+        updateFunctionSelection()
+        dismissFunctionPopup()
+      }
+      setOnDismissListener { functionPopup = null }
+      show()
+    }
+  }
+  functionInput.setOnClickListener { showFunctionPopup() }
+  functionLayout.setEndIconOnClickListener { showFunctionPopup() }
   updateFunctionSelection()
   content.addView(nameLayout)
   content.addView(functionLayout)
@@ -304,6 +334,13 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
       dialog.dismiss(); requestPageRefresh(context)
     }
     }
+  fun closeFunctionPopup() {
+    dialogClosing = true
+    functionInput.isEnabled = false
+    dismissFunctionPopup()
+  }
+  dialog.setOnCancelListener { closeFunctionPopup() }
+  dialog.setOnDismissListener { closeFunctionPopup() }
   dialog.show()
 }
 

@@ -18,10 +18,12 @@
 package com.tom.rv2ide.preferences
 
 import android.view.LayoutInflater
+import android.view.WindowManager
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.preferences.databinding.LayoutDialogTextInputBinding
+import com.tom.rv2ide.utils.DialogUtils
 
 /**
  * A preference which shows an edittext
@@ -29,6 +31,20 @@ import com.tom.rv2ide.preferences.databinding.LayoutDialogTextInputBinding
  * @author Akash Yadav
  */
 abstract class EditTextPreference : DialogPreference() {
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val builder = DialogUtils.newMaterialDialogBuilder(preference.context)
+    builder.setTitle(dialogTitle)
+    dialogMessage?.let(builder::setMessage)
+    builder.setCancelable(dialogCancellable)
+    onConfigureDialog(preference, builder)
+
+    val dialog = builder.create()
+    // Keep IME-driven layout changes out of the window animation's first frame.
+    dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+    dialog.show()
+    return true
+  }
 
   override fun onConfigureDialog(preference: Preference, dialog: MaterialAlertDialogBuilder) {
     super.onConfigureDialog(preference, dialog)
