@@ -167,6 +167,7 @@ private class GradleDistrubution(
     input.editText!!.setText(gradleInstallationDir)
   }
 
+  // Avoid TextInputLayout.helperText because its indicator subtree destabilizes dialog entrance animation.
   override fun onConfigureTextHelper(helper: TextView) {
     helper.text = helper.context.getString(string.msg_gradle_installation_input_help)
     helper.visibility = View.VISIBLE

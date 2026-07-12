@@ -24,7 +24,6 @@ import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.preferences.databinding.LayoutDialogTextInputBinding
-import com.tom.rv2ide.utils.DialogAnimationDiagnostics
 import com.tom.rv2ide.utils.DialogUtils
 
 /**
@@ -42,12 +41,7 @@ abstract class EditTextPreference : DialogPreference() {
     onConfigureDialog(preference, builder)
 
     val dialog = builder.create()
-    val animationStartedAt = DialogAnimationDiagnostics.beforeShow(dialog, "EditTextPreference:$key")
-    dialog.setOnDismissListener {
-      DialogAnimationDiagnostics.dismissed(dialog, "EditTextPreference:$key", animationStartedAt)
-    }
     dialog.show()
-    DialogAnimationDiagnostics.afterShow(dialog, "EditTextPreference:$key", animationStartedAt)
     return true
   }
 

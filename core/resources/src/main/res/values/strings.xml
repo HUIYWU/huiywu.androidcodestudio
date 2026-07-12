@@ -1526,15 +1526,7 @@ Add a remote to push/pull changes</string>
     <string name="idepref_editor_quickInputEdit_text_error">Please enter insertion text.</string>
     <string name="idepref_editor_quickInputEdit_function">Function</string>
  <string name="idepref_editor_quickInputEdit_insert">Text insertion</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_title">Dialog element diagnostic</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_summary">Test dialog entrance with progressively added elements.</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_stage_title">Test stage</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_stage_basic">Title and buttons</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_stage_name">Add name input</string>
-<string name="idepref_editor_quickInputDialogDiagnostic_stage_helper">Add icon and helper text</string>
-    <string name="idepref_editor_quickInputDialogDiagnostic_stage_without_icon">Remove icon</string>
-    <string name="idepref_editor_quickInputDialogDiagnostic_stage_without_helper">Remove helper text</string>
- <string name="theme_blue_wave">Blue Wave</string>
+<string name="theme_blue_wave">Blue Wave</string>
   <string name="theme_sunny_glow">Sunny Glow</string>
   <string name="theme_greenish">Greenish</string>
   <string name="theme_vscode">VS Code</string>
