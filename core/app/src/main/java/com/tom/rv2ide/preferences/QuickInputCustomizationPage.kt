@@ -242,8 +242,8 @@ private class QuickInputDialogElementDiagnostic(
         string.idepref_editor_quickInputDialogDiagnostic_stage_basic,
         string.idepref_editor_quickInputDialogDiagnostic_stage_name,
         string.idepref_editor_quickInputDialogDiagnostic_stage_helper,
-        string.idepref_editor_quickInputDialogDiagnostic_stage_function,
-        string.idepref_editor_quickInputDialogDiagnostic_stage_text,
+        string.idepref_editor_quickInputDialogDiagnostic_stage_without_icon,
+        string.idepref_editor_quickInputDialogDiagnostic_stage_without_helper,
     ).map(context::getString).toTypedArray()
     MaterialAlertDialogBuilder(context)
         .setTitle(string.idepref_editor_quickInputDialogDiagnostic_stage_title)
@@ -265,35 +265,13 @@ private fun showDialogElementDiagnostic(context: Context, stage: Int) {
       hint = context.getString(string.idepref_editor_quickInputEdit_name)
       addView(name)
     }
-    if (stage >= 2) {
+    if (stage >= 2 && stage != 3) {
       nameLayout.setStartIconDrawable(R.drawable.ic_customise)
+    }
+    if (stage >= 2 && stage != 4) {
       nameLayout.helperText = context.getString(string.idepref_editor_quickInputEdit_name_hint)
     }
     content.addView(nameLayout)
-  }
-  if (stage >= 3) {
-    val functionInput = MaterialAutoCompleteTextView(context).apply {
-      keyListener = null
-      inputType = InputType.TYPE_NULL
-      isFocusable = false
-      setText(context.getString(string.idepref_editor_quickInputEdit_insert), false)
-    }
-    content.addView(TextInputLayout(context).apply {
-      hint = context.getString(string.idepref_editor_quickInputEdit_function)
-      endIconMode = TextInputLayout.END_ICON_CUSTOM
-      endIconDrawable = ContextCompat.getDrawable(context, AppR.drawable.ic_dropdown_arrow)
-      addView(functionInput)
-    })
-  }
-  if (stage >= 4) {
-    content.addView(TextInputLayout(context).apply {
-      hint = context.getString(string.idepref_editor_quickInputEdit_text)
-      helperText = context.getString(string.idepref_editor_quickInputEdit_text_hint)
-      addView(EditText(context).apply {
-        minLines = 2
-        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-      })
-    })
   }
   val dialog = MaterialAlertDialogBuilder(context)
       .setTitle(string.idepref_editor_quickInputDialogDiagnostic_title)

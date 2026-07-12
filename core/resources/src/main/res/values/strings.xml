@@ -1531,9 +1531,9 @@ Add a remote to push/pull changes</string>
  <string name="idepref_editor_quickInputDialogDiagnostic_stage_title">Test stage</string>
  <string name="idepref_editor_quickInputDialogDiagnostic_stage_basic">Title and buttons</string>
  <string name="idepref_editor_quickInputDialogDiagnostic_stage_name">Add name input</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_stage_helper">Add icon and helper text</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_stage_function">Add function selector</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_stage_text">Add multiline text input</string>
+<string name="idepref_editor_quickInputDialogDiagnostic_stage_helper">Add icon and helper text</string>
+    <string name="idepref_editor_quickInputDialogDiagnostic_stage_without_icon">Remove icon</string>
+    <string name="idepref_editor_quickInputDialogDiagnostic_stage_without_helper">Remove helper text</string>
  <string name="theme_blue_wave">Blue Wave</string>
   <string name="theme_sunny_glow">Sunny Glow</string>
   <string name="theme_greenish">Greenish</string>

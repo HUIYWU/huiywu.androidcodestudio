@@ -593,9 +593,9 @@
  <string name="idepref_editor_quickInputDialogDiagnostic_stage_title">测试阶段</string>
  <string name="idepref_editor_quickInputDialogDiagnostic_stage_basic">标题和按钮</string>
  <string name="idepref_editor_quickInputDialogDiagnostic_stage_name">添加名称输入框</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_stage_helper">添加图标和辅助文本</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_stage_function">添加功能选择框</string>
- <string name="idepref_editor_quickInputDialogDiagnostic_stage_text">添加多行文本输入框</string>
+<string name="idepref_editor_quickInputDialogDiagnostic_stage_helper">添加图标和辅助文本</string>
+    <string name="idepref_editor_quickInputDialogDiagnostic_stage_without_icon">去除图标</string>
+    <string name="idepref_editor_quickInputDialogDiagnostic_stage_without_helper">去除辅助文本</string>
  <string name="theme_blue_wave">蓝色波浪</string>
     <string name="theme_sunny_glow">阳光熠熠</string>
     <string name="theme_greenish">绿意盎然</string>
