@@ -3,6 +3,8 @@ package com.tom.rv2ide.preferences
 import android.content.Context
 import android.os.Bundle
 import android.text.InputType
+import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
@@ -15,6 +17,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.FragmentActivity
 import androidx.preference.Preference
+import androidx.preference.PreferenceViewHolder
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputLayout
@@ -42,7 +48,7 @@ internal fun quickInputCustomizeChildren(): List<IPreference> {
     add(QuickInputTextTypeSelector())
     add(ResetQuickInputTextType())
     add(AddQuickInputItem(items.size))
-    add(QuickInputItemsGroup(type, items.mapIndexed { index, item -> QuickInputItemPreference(index, item) }))
+    add(QuickInputItemsPreference(type, items))
   }
 }
 
@@ -89,28 +95,104 @@ private class ResetQuickInputTextType(
 }
 
 @Parcelize
-private class QuickInputItemsGroup(
+private class QuickInputItemsPreference(
     private val type: QuickInputTextType,
-    override val children: List<IPreference>,
+    private val items: @RawValue List<EditorQuickInputPreferences.StoredItem>,
     override val key: String = "idepref_editor_quickInputItems:${type.name}",
-    override val title: Int = type.titleRes,
-) : IPreferenceGroup()
-
-@Parcelize
-private class QuickInputItemPreference(
-    private val index: Int,
-    private val item: @RawValue EditorQuickInputPreferences.StoredItem,
-    override val key: String = "idepref_editor_quickInputItem:${item.id}",
     override val title: Int = string.idepref_editor_quickInputItem_title,
 ) : IPreference() {
-  override fun onCreateView(context: Context): Preference = Preference(context).apply {
-    key = this@QuickInputItemPreference.key
-    title = item.label
-    summary = item.actionId?.let { EditorQuickInputPreferences.labelForActionId(context, it) }
+  override fun onCreateView(context: Context): Preference = object : Preference(context) {
+    init {
+      layoutResource = AppR.layout.preference_quick_input_items
+      isSelectable = false
+      isIconSpaceReserved = false
+    }
+
+    override fun onBindViewHolder(holder: PreferenceViewHolder) {
+      super.onBindViewHolder(holder)
+      holder.itemView.findViewById<TextView>(AppR.id.quick_input_items_title).setText(type.titleRes)
+      val recyclerView = holder.itemView.findViewById<RecyclerView>(AppR.id.quick_input_items_list)
+      recyclerView.layoutManager = LinearLayoutManager(context)
+      recyclerView.isNestedScrollingEnabled = false
+      recyclerView.itemAnimator = null
+      recyclerView.adapter = QuickInputItemsAdapter(context, type, items.toMutableList())
+    }
+  }
+}
+
+private class QuickInputItemsAdapter(
+    private val context: Context,
+    private val type: QuickInputTextType,
+    private val items: MutableList<EditorQuickInputPreferences.StoredItem>,
+) : RecyclerView.Adapter<QuickInputItemsAdapter.ViewHolder>() {
+  private val dragHelper: ItemTouchHelper
+
+  init {
+    setHasStableIds(true)
+    dragHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
+      override fun isLongPressDragEnabled() = false
+
+      override fun onMove(
+          recyclerView: RecyclerView,
+          source: RecyclerView.ViewHolder,
+          target: RecyclerView.ViewHolder,
+      ): Boolean {
+        val from = source.bindingAdapterPosition
+        val to = target.bindingAdapterPosition
+        if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
+        items.add(to, items.removeAt(from))
+        notifyItemMoved(from, to)
+        return true
+      }
+
+      override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+
+      override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+        super.clearView(recyclerView, viewHolder)
+        EditorQuickInputPreferences.saveItems(type, items)
+      }
+    })
+  }
+
+  override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
+    super.onAttachedToRecyclerView(recyclerView)
+    dragHelper.attachToRecyclerView(recyclerView)
+  }
+
+  override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+    dragHelper.attachToRecyclerView(null)
+    super.onDetachedFromRecyclerView(recyclerView)
+  }
+
+  override fun getItemId(position: Int) = items[position].id.hashCode().toLong()
+
+  override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder = ViewHolder(
+      LayoutInflater.from(parent.context).inflate(AppR.layout.item_quick_input_customization, parent, false),
+  )
+
+  override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+    val item = items[position]
+    holder.title.text = item.label
+    holder.summary.text = item.actionId?.let { EditorQuickInputPreferences.labelForActionId(context, it) }
         ?: context.getString(string.idepref_editor_quickInputEdit_insert)
-    isIconSpaceReserved = false
-    widgetLayoutResource = AppR.layout.preference_quick_input_drag_handle
-    setOnPreferenceClickListener { showItemEditor(context, index, item); true }
+    holder.itemView.setOnClickListener {
+      val currentPosition = holder.bindingAdapterPosition
+      if (currentPosition != RecyclerView.NO_POSITION) {
+        showItemEditor(context, currentPosition, items[currentPosition])
+      }
+    }
+    holder.handle.setOnTouchListener { _, event ->
+      if (event.actionMasked == MotionEvent.ACTION_DOWN) dragHelper.startDrag(holder)
+      true
+    }
+  }
+
+  override fun getItemCount() = items.size
+
+  class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+    val title: TextView = view.findViewById(AppR.id.quick_input_item_title)
+    val summary: TextView = view.findViewById(AppR.id.quick_input_item_summary)
+    val handle: View = view.findViewById(AppR.id.quick_input_drag_handle)
   }
 }
 
