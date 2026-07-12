@@ -1515,7 +1515,6 @@ Add a remote to push/pull changes</string>
    <string name="idepref_editor_quickInputItem_title">Input item</string>
    <string name="idepref_editor_quickInputAdd_title">Add item</string>
 <string name="idepref_editor_quickInputAdd_summary">Add a text insertion or text action item.</string>
-    <string name="idepref_editor_quickInputDrag_handle">Drag to reorder</string>
     <string name="idepref_editor_quickInputLimit_message">A quick input panel can contain at most 30 items.</string>
    <string name="idepref_editor_quickInputEdit_title">Edit</string>
    <string name="idepref_editor_quickInputEdit_pending">Editing %1$s will be available in the next customization step.</string>

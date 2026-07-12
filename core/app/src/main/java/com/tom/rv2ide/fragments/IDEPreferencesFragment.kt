@@ -158,7 +158,8 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
           removeAt(sourceIndex)
           add(targetIndex, sourceId)
         }
-        recyclerView.adapter?.notifyItemMoved(source.bindingAdapterPosition, target.bindingAdapterPosition)
+        // Keep the adapter's immutable preference order intact during the gesture.
+        // The reordered profile is applied once when the drag ends.
         dragged = true
         return true
       }
