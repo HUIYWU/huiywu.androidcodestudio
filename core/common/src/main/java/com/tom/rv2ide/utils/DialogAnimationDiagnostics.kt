@@ -36,8 +36,9 @@ object DialogAnimationDiagnostics {
     log(dialog, label, "afterShow", startedAt)
     val decor = dialog.window?.decorView ?: return
     decor.post { log(dialog, label, "decorPost", startedAt) }
-    decor.postOnAnimation { log(dialog, label, "firstFrame", startedAt) }
-    decor.postOnAnimation { decor.postOnAnimation { log(dialog, label, "secondFrame", startedAt) } }
+    intArrayOf(16, 32, 64, 100, 150, 200).forEach { delayMs ->
+      decor.postDelayed({ log(dialog, label, "sample${delayMs}ms", startedAt) }, delayMs.toLong())
+    }
   }
 
   fun dismissed(dialog: Dialog, label: String, startedAt: Long) {
@@ -58,9 +59,10 @@ object DialogAnimationDiagnostics {
         TAG,
         "$label event=$event elapsedMs=$elapsed showing=${dialog.isShowing} " +
             "windowAnimations=${window?.attributes?.windowAnimations} " +
-            "size=${decor?.width}x${decor?.height} alpha=${decor?.alpha} " +
-            "scale=${decor?.scaleX},${decor?.scaleY} focused=${decor?.hasFocus()} " +
-            "animatorScale=$animatorScale transitionScale=$transitionScale",
+            "softInputMode=${window?.attributes?.softInputMode} dimAmount=${window?.attributes?.dimAmount} " +
+            "size=${decor?.width}x${decor?.height} laidOut=${decor?.isLaidOut} " +
+            "visibility=${decor?.visibility} alpha=${decor?.alpha} scale=${decor?.scaleX},${decor?.scaleY} " +
+            "focused=${decor?.hasFocus()} animatorScale=$animatorScale transitionScale=$transitionScale", 
     )
   }
 }
