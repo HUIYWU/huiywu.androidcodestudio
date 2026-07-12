@@ -31,6 +31,7 @@ import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.utils.DialogAnimationDiagnostics
+import com.tom.rv2ide.utils.DialogImeEntranceGuard
 import com.tom.rv2ide.utils.EditorQuickInputPreferences
 import kotlinx.parcelize.Parcelize
 import kotlinx.parcelize.RawValue
@@ -316,6 +317,7 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
         }
       }
       .create()
+  DialogImeEntranceGuard.prepare(dialog)
   val animationStartedAt = DialogAnimationDiagnostics.beforeShow(dialog, "QuickInputEditor")
   dialog.setOnShowListener {
     dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -353,6 +355,7 @@ private fun showItemEditor(context: Context, index: Int?, existing: EditorQuickI
     DialogAnimationDiagnostics.dismissed(dialog, "QuickInputEditor", animationStartedAt)
   }
   dialog.show()
+  DialogImeEntranceGuard.releaseAfterEntrance(dialog, "QuickInputEditor", animationStartedAt)
   DialogAnimationDiagnostics.afterShow(dialog, "QuickInputEditor", animationStartedAt)
 }
 

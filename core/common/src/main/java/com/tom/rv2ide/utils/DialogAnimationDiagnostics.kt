@@ -47,6 +47,10 @@ object DialogAnimationDiagnostics {
     log(dialog, label, "dismissed", startedAt)
   }
 
+  fun event(dialog: Dialog, label: String, event: String, startedAt: Long) {
+    log(dialog, label, event, startedAt)
+  }
+
   private fun log(dialog: Dialog, label: String, event: String, startedAt: Long) {
     val window = dialog.window
     val decor: View? = window?.decorView
