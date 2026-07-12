@@ -19,23 +19,31 @@ package com.tom.rv2ide.fragments
 
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceGroup
+import androidx.preference.PreferenceGroupAdapter
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.transition.MaterialSharedAxis
 import com.tom.rv2ide.preferences.IPreference
 import com.tom.rv2ide.preferences.IPreferenceGroup
 import com.tom.rv2ide.preferences.IPreferenceScreen
+import com.tom.rv2ide.R
 import com.tom.rv2ide.preferences.QUICK_INPUT_CUSTOMIZE_REFRESH_RESULT
 import com.tom.rv2ide.preferences.QUICK_INPUT_CUSTOMIZE_SCREEN_KEY
 import com.tom.rv2ide.preferences.quickInputCustomizeChildren
+import com.tom.rv2ide.preferences.selectedQuickInputTextType
+import com.tom.rv2ide.utils.EditorQuickInputPreferences
 import com.tom.rv2ide.preferences.observers.LSPStateObserver
 
 class IDEPreferencesFragment : BasePreferenceFragment() {
 
   private var children: List<IPreference> = emptyList()
   private var screenKey: String? = null
+  private var quickInputDragHelper: ItemTouchHelper? = null
 
   private val serverStateListener = {
     refreshPreferences()
@@ -64,6 +72,13 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
       savedInstanceState: Bundle?,
   ): View {
     return super.onCreateView(inflater, container, savedInstanceState)
+  }
+
+  override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+    super.onViewCreated(view, savedInstanceState)
+    if (arguments?.getString(EXTRA_SCREEN_KEY) == QUICK_INPUT_CUSTOMIZE_SCREEN_KEY) {
+      installQuickInputDragging()
+    }
   }
 
   override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -99,6 +114,105 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
   override fun onPause() {
     super.onPause()
     LSPStateObserver.removeListener(serverStateListener)
+  }
+
+  private fun installQuickInputDragging() {
+    if (quickInputDragHelper != null) return
+
+    val recyclerView = listView
+    val adapter = recyclerView.adapter as? PreferenceGroupAdapter ?: return
+    var orderedIds = emptyList<String>()
+    var dragged = false
+
+    fun itemId(holder: RecyclerView.ViewHolder): String? =
+        holder.itemView.getTag(R.id.quick_input_drag_handle) as? String
+
+    val callback = object : ItemTouchHelper.Callback() {
+      override fun isLongPressDragEnabled() = false
+
+      override fun isItemViewSwipeEnabled() = false
+
+      override fun getMovementFlags(
+          recyclerView: RecyclerView,
+          viewHolder: RecyclerView.ViewHolder,
+      ): Int {
+        return if (itemId(viewHolder) != null) {
+          makeMovementFlags(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0)
+        } else {
+          0
+        }
+      }
+
+      override fun onMove(
+          recyclerView: RecyclerView,
+          source: RecyclerView.ViewHolder,
+          target: RecyclerView.ViewHolder,
+      ): Boolean {
+        val sourceId = itemId(source) ?: return false
+        val targetId = itemId(target) ?: return false
+        val sourceIndex = orderedIds.indexOf(sourceId)
+        val targetIndex = orderedIds.indexOf(targetId)
+        if (sourceIndex < 0 || targetIndex < 0 || sourceIndex == targetIndex) return false
+
+        orderedIds = orderedIds.toMutableList().apply {
+          removeAt(sourceIndex)
+          add(targetIndex, sourceId)
+        }
+        recyclerView.adapter?.notifyItemMoved(source.bindingAdapterPosition, target.bindingAdapterPosition)
+        dragged = true
+        return true
+      }
+
+      override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+
+      override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+        super.onSelectedChanged(viewHolder, actionState)
+        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && itemId(viewHolder ?: return) != null) {
+          orderedIds = EditorQuickInputPreferences.customizationItems(selectedQuickInputTextType())
+              .map(EditorQuickInputPreferences.StoredItem::id)
+          dragged = false
+        }
+      }
+
+      override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+        super.clearView(recyclerView, viewHolder)
+        if (!dragged) return
+
+        val type = selectedQuickInputTextType()
+        val itemsById = EditorQuickInputPreferences.customizationItems(type).associateBy(
+            EditorQuickInputPreferences.StoredItem::id,
+        )
+        EditorQuickInputPreferences.saveItems(type, orderedIds.mapNotNull(itemsById::get))
+        dragged = false
+        this@IDEPreferencesFragment.children = quickInputCustomizeChildren()
+        refreshPreferences()
+      }
+    }
+
+    quickInputDragHelper = ItemTouchHelper(callback).also { it.attachToRecyclerView(recyclerView) }
+    fun bindDragHandle(view: View) {
+      val holder = recyclerView.getChildViewHolder(view)
+      val position = holder.bindingAdapterPosition
+      if (position == RecyclerView.NO_POSITION) return
+      val key = adapter.getItem(position).key ?: return
+      if (!key.startsWith("idepref_editor_quickInputItem:")) return
+
+      view.setTag(R.id.quick_input_drag_handle, key.substringAfter(':'))
+      view.findViewById<View>(R.id.quick_input_drag_handle)?.setOnTouchListener { _, event ->
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+          quickInputDragHelper?.startDrag(holder)
+        }
+        true
+      }
+    }
+    recyclerView.addOnChildAttachStateChangeListener(object : RecyclerView.OnChildAttachStateChangeListener {
+      override fun onChildViewAttachedToWindow(view: View) = bindDragHandle(view)
+
+      override fun onChildViewDetachedFromWindow(view: View) = Unit
+    })
+    for (index in 0 until recyclerView.childCount) {
+      bindDragHandle(recyclerView.getChildAt(index))
+    }
   }
 
   private fun refreshPreferences() {

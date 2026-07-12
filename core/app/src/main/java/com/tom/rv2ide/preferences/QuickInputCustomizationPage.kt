@@ -46,7 +46,7 @@ internal fun quickInputCustomizeChildren(): List<IPreference> {
   }
 }
 
-private fun selectedQuickInputTextType(): QuickInputTextType = runCatching {
+internal fun selectedQuickInputTextType(): QuickInputTextType = runCatching {
   QuickInputTextType.valueOf(EditorPreferences.quickInputCustomizeTextType)
 }.getOrDefault(QuickInputTextType.PLAIN_TEXT)
 
@@ -109,6 +109,7 @@ private class QuickInputItemPreference(
     summary = item.actionId?.let { EditorQuickInputPreferences.labelForActionId(context, it) }
         ?: context.getString(string.idepref_editor_quickInputEdit_insert)
     isIconSpaceReserved = false
+    widgetLayoutResource = AppR.layout.preference_quick_input_drag_handle
     setOnPreferenceClickListener { showItemEditor(context, index, item); true }
   }
 }
