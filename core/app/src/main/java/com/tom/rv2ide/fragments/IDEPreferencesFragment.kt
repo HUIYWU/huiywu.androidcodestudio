@@ -194,7 +194,7 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
       val holder = recyclerView.getChildViewHolder(view)
       val position = holder.bindingAdapterPosition
       if (position == RecyclerView.NO_POSITION) return
-      val key = adapter.getItem(position).key ?: return
+      val key = adapter.getItem(position)?.key ?: return
       if (!key.startsWith("idepref_editor_quickInputItem:")) return
 
       view.setTag(R.id.quick_input_drag_handle, key.substringAfter(':'))
