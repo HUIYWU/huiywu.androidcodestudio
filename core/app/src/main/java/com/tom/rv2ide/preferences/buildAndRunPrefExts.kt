@@ -18,6 +18,8 @@
 package com.tom.rv2ide.preferences
 
 import android.content.Context
+import android.view.View
+import android.widget.TextView
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
@@ -159,12 +161,15 @@ private class GradleDistrubution(
   }
 
   override fun onConfigureTextInput(input: TextInputLayout) {
-    input.minimumHeight = (80 * input.resources.displayMetrics.density).toInt()
     input.setStartIconDrawable(drawable.ic_gradle)
     input.setHint(string.msg_gradle_installation_path)
-    input.helperText = input.context.getString(string.msg_gradle_installation_input_help)
     input.isCounterEnabled = false
     input.editText!!.setText(gradleInstallationDir)
+  }
+
+  override fun onConfigureTextHelper(helper: TextView) {
+    helper.text = helper.context.getString(string.msg_gradle_installation_input_help)
+    helper.visibility = View.VISIBLE
   }
 }
 

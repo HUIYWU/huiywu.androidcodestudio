@@ -18,6 +18,8 @@
 package com.tom.rv2ide.preferences
 
 import android.view.LayoutInflater
+import android.view.View
+import android.widget.TextView
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
@@ -53,6 +55,7 @@ abstract class EditTextPreference : DialogPreference() {
     super.onConfigureDialog(preference, dialog)
     val binding = LayoutDialogTextInputBinding.inflate(LayoutInflater.from(dialog.context))
     onConfigureTextInput(binding.name)
+    onConfigureTextHelper(binding.helper)
     dialog.setView(binding.root)
     dialog.setPositiveButton(android.R.string.ok) { iface, _ ->
       iface.dismiss()
@@ -62,4 +65,8 @@ abstract class EditTextPreference : DialogPreference() {
   }
 
   protected open fun onConfigureTextInput(input: TextInputLayout) {}
+
+  protected open fun onConfigureTextHelper(helper: TextView) {
+    helper.visibility = View.GONE
+  }
 }
