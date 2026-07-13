@@ -36,6 +36,7 @@ import com.tom.rv2ide.lsp.models.ReferenceResult
 import com.tom.rv2ide.lsp.models.SignatureHelp
 import com.tom.rv2ide.lsp.models.SignatureHelpParams
 import com.tom.rv2ide.lsp.util.NoCompletionsProvider
+import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticsService
 import com.tom.rv2ide.lsp.xml.models.XMLServerSettings
 import com.tom.rv2ide.lsp.xml.providers.AdvancedEditProvider.onContentChange
 import com.tom.rv2ide.lsp.xml.providers.CodeFormatProvider
@@ -60,6 +61,8 @@ class XMLLanguageServer : ILanguageServer {
     private set
 
   private var settings: IServerSettings? = null
+
+  private val diagnosticsService = XmlDiagnosticsService()
 
   override val serverId: String = SERVER_ID
 
@@ -117,7 +120,13 @@ class XMLLanguageServer : ILanguageServer {
   }
 
   override suspend fun analyze(file: Path): DiagnosticResult {
-    return DiagnosticResult.NO_UPDATE
+    if (!DocumentUtils.isXmlFile(file)) {
+      return DiagnosticResult.NO_UPDATE
+    }
+    if (!getSettings().diagnosticsEnabled()) {
+      return DiagnosticResult(file, emptyList(), XmlDiagnosticsService.CHANNEL)
+    }
+    return diagnosticsService.analyze(file)
   }
 
   override fun formatCode(params: FormatCodeParams?): CodeFormatResult {
