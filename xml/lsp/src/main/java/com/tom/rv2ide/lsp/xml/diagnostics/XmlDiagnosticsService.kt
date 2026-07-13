@@ -22,7 +22,6 @@ import com.android.aaptcompiler.AttributeResource
 import com.android.aaptcompiler.ConfigDescription
 import com.android.aaptcompiler.Styleable
 import com.android.aaptcompiler.extractPathData
-import com.android.aaptcompiler.isValidResourceEntryName
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.lsp.models.DiagnosticResult
@@ -214,7 +213,7 @@ internal class XmlDiagnosticsService {
         )
         return@forEach
       }
-      if (!isValidResourceEntryName(name)) {
+      if (!isValidValuesResourceName(name)) {
         collector.errorValue(
             code = CODE_VALUES_INVALID_NAME,
             message = "'$name' is not a valid Android resource name",
@@ -231,6 +230,31 @@ internal class XmlDiagnosticsService {
         )
       }
     }
+  }
+
+  /**
+   * Lightweight equivalent of AAPT's resource-entry-name check.
+   *
+   * The AAPT helper is not exposed through `xml:lsp`'s transitive API classpath, so this uses JDK
+   * Unicode identifier predicates and retains AAPT's extra `_`, `.` and `-` allowances.
+   */
+  private fun isValidValuesResourceName(name: String): Boolean {
+    if (name.isEmpty()) {
+      return false
+    }
+    val first = name.codePointAt(0)
+    if (!Character.isUnicodeIdentifierStart(first) && first != '_'.code) {
+      return false
+    }
+    var offset = Character.charCount(first)
+    while (offset < name.length) {
+      val codePoint = name.codePointAt(offset)
+      if (!Character.isUnicodeIdentifierPart(codePoint) && codePoint != '.'.code && codePoint != '-'.code) {
+        return false
+      }
+      offset += Character.charCount(codePoint)
+    }
+    return true
   }
 
   private fun checkDuplicateAttributes(element: DOMElement, collector: XmlDiagnosticCollector) {
