@@ -16,8 +16,12 @@
  */
 package com.tom.rv2ide.lsp.xml
 
+import android.os.Handler
 import androidx.annotation.RestrictTo
 import com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent
+import com.tom.rv2ide.eventbus.events.editor.DocumentCloseEvent
+import com.tom.rv2ide.eventbus.events.editor.DocumentOpenEvent
+import com.tom.rv2ide.eventbus.events.editor.DocumentSelectedEvent
 import com.tom.rv2ide.lsp.api.ICompletionProvider
 import com.tom.rv2ide.lsp.api.ILanguageClient
 import com.tom.rv2ide.lsp.api.ILanguageServer
@@ -45,6 +49,12 @@ import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.utils.DocumentUtils
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -63,6 +73,12 @@ class XMLLanguageServer : ILanguageServer {
   private var settings: IServerSettings? = null
 
   private val diagnosticsService = XmlDiagnosticsService()
+  private val diagnosticHandler = Handler()
+  private val analyzeGeneration = AtomicLong(0)
+  private val analyzeLaunchInFlight = AtomicBoolean(false)
+  private val analyzeRerunRequested = AtomicBoolean(false)
+  private var selectedFile: Path? = null
+  private val analyzeRunnable = Runnable { analyzeSelected() }
 
   override val serverId: String = SERVER_ID
 
@@ -71,6 +87,8 @@ class XMLLanguageServer : ILanguageServer {
   }
 
   override fun shutdown() {
+    diagnosticHandler.removeCallbacks(analyzeRunnable)
+    selectedFile = null
     if (EventBus.getDefault().isRegistered(this)) {
       EventBus.getDefault().unregister(this)
     }
@@ -139,6 +157,84 @@ class XMLLanguageServer : ILanguageServer {
       return
     }
     onContentChange(event)
+    selectedFile = event.changedFile
+    scheduleDiagnosticAnalysis()
+  }
+
+  @Subscribe(threadMode = ThreadMode.BACKGROUND)
+  fun onDocumentOpen(event: DocumentOpenEvent) {
+    if (!DocumentUtils.isXmlFile(event.openedFile)) {
+      return
+    }
+    selectedFile = event.openedFile
+    scheduleDiagnosticAnalysis()
+  }
+
+  @Subscribe(threadMode = ThreadMode.BACKGROUND)
+  fun onDocumentSelected(event: DocumentSelectedEvent) {
+    selectedFile = event.selectedFile
+    if (DocumentUtils.isXmlFile(event.selectedFile)) {
+      scheduleDiagnosticAnalysis()
+    } else {
+      // Do not allow an already queued XML result to publish after the user leaves XML editing.
+      analyzeGeneration.incrementAndGet()
+      diagnosticHandler.removeCallbacks(analyzeRunnable)
+    }
+  }
+
+  @Subscribe(threadMode = ThreadMode.BACKGROUND)
+  fun onDocumentClose(event: DocumentCloseEvent) {
+    if (!DocumentUtils.isXmlFile(event.closedFile)) {
+      return
+    }
+    if (selectedFile == event.closedFile) {
+      selectedFile = null
+      analyzeGeneration.incrementAndGet()
+      diagnosticHandler.removeCallbacks(analyzeRunnable)
+    }
+  }
+
+  private fun scheduleDiagnosticAnalysis() {
+    val file = selectedFile
+    if (file == null || !DocumentUtils.isXmlFile(file)) {
+      return
+    }
+    analyzeGeneration.incrementAndGet()
+    diagnosticHandler.removeCallbacks(analyzeRunnable)
+    diagnosticHandler.postDelayed(analyzeRunnable, DIAGNOSTIC_ANALYSIS_DELAY_MS)
+  }
+
+  private fun analyzeSelected() {
+    val fileToAnalyze = selectedFile ?: return
+    if (client == null || !DocumentUtils.isXmlFile(fileToAnalyze)) {
+      return
+    }
+    val requestedGeneration = analyzeGeneration.get()
+    if (!analyzeLaunchInFlight.compareAndSet(false, true)) {
+      analyzeRerunRequested.set(true)
+      return
+    }
+    CoroutineScope(Dispatchers.Default).launch {
+      try {
+        if (requestedGeneration != analyzeGeneration.get()) {
+          return@launch
+        }
+        val result = analyze(fileToAnalyze)
+        if (requestedGeneration != analyzeGeneration.get() || result == DiagnosticResult.NO_UPDATE) {
+          return@launch
+        }
+        withContext(Dispatchers.Main) {
+          if (requestedGeneration == analyzeGeneration.get()) {
+            client?.publishDiagnostics(result)
+          }
+        }
+      } finally {
+        analyzeLaunchInFlight.set(false)
+        if (analyzeRerunRequested.compareAndSet(true, false)) {
+          scheduleDiagnosticAnalysis()
+        }
+      }
+    }
   }
 
   override fun handleFailure(failure: LSPFailure?): Boolean {
@@ -148,5 +244,6 @@ class XMLLanguageServer : ILanguageServer {
   companion object {
 
     const val SERVER_ID = "ide.lsp.xml"
+    private const val DIAGNOSTIC_ANALYSIS_DELAY_MS = 400L
   }
 }

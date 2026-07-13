@@ -30,6 +30,7 @@ import com.tom.rv2ide.lsp.models.DiagnosticSeverity.ERROR
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity.WARNING
 import com.tom.rv2ide.models.Position
 import com.tom.rv2ide.models.Range
+import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.xml.res.IResourceGroup
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import com.tom.rv2ide.xml.widgets.Widget
@@ -60,7 +61,9 @@ internal class XmlDiagnosticsService {
     runCatching { setupLookupForCompletion(file) }
         .onFailure { error -> log.debug("Unable to prepare XML diagnostic lookup for {}", file, error) }
 
-    val text = runCatching { file.toFile().readText() }.getOrElse { error ->
+    // Active editor documents may contain unsaved changes. FileManager returns that in-memory
+    // snapshot when present and falls back to disk for inactive files.
+    val text = runCatching { FileManager.getDocumentContents(file) }.getOrElse { error ->
       log.warn("Unable to read XML file for diagnostics: {}", file, error)
       return DiagnosticResult(file, emptyList(), CHANNEL)
     }
@@ -432,14 +435,21 @@ internal class XmlDiagnosticsService {
       widgetTable.getWidget(superclass)?.also { addStyleable(styleables, it.simpleName, suffix, result) }
     }
 
-    if (includeLayoutParams && node.parentNode is DOMElement) {
-      val parent = node.parentNode as DOMElement
-      widgetFor(parent.tagName ?: "", widgetTable)?.let {
-        result.addAll(styleablesFor(it, parent, widgetTable, styleables, false, LAYOUT_SUFFIX))
-      } ?: run {
+    if (includeLayoutParams) {
+      val parent = node.parentNode as? DOMElement
+      if (parent != null) {
+        widgetFor(parent.tagName ?: "", widgetTable)?.let {
+          result.addAll(styleablesFor(it, parent, widgetTable, styleables, false, LAYOUT_SUFFIX))
+        } ?: run {
+          addStyleable(styleables, VIEW_GROUP, LAYOUT_SUFFIX, result)
+          addStyleable(styleables, VIEW_GROUP, MARGIN_LAYOUT_SUFFIX, result)
+          addStyleable(styleables, parent.tagName ?: "", LAYOUT_SUFFIX, result)
+        }
+      } else {
+        // A layout root has DOMDocument as its parent. It still legitimately uses the base
+        // ViewGroup LayoutParams attributes, such as android:layout_width and layout_height.
         addStyleable(styleables, VIEW_GROUP, LAYOUT_SUFFIX, result)
         addStyleable(styleables, VIEW_GROUP, MARGIN_LAYOUT_SUFFIX, result)
-        addStyleable(styleables, parent.tagName ?: "", LAYOUT_SUFFIX, result)
       }
     }
     return result
