@@ -336,6 +336,12 @@ internal class XmlDiagnosticsService {
         return@forEach
       }
       val localName = name.removePrefix(ANDROID_ATTRIBUTE_PREFIX)
+      // LayoutParams are defined by the parent. This resolver currently contains only framework
+      // styleables, so an AndroidX/custom parent (for example CoordinatorLayout) cannot be used
+      // to conclusively reject its android:layout_* attributes.
+      if (localName.startsWith(LAYOUT_ATTRIBUTE_PREFIX) && hasNonFrameworkParent(element)) {
+        return@forEach
+      }
       if (localName !in allowedAttributes) {
         collector.error(
             code = CODE_UNKNOWN_LAYOUT_ATTRIBUTE,
@@ -418,6 +424,12 @@ internal class XmlDiagnosticsService {
     return if (tagName.contains('.')) widgetTable.getWidget(tagName) else widgetTable.findWidgetWithSimpleName(tagName)
   }
 
+  private fun hasNonFrameworkParent(element: DOMElement): Boolean {
+    val parentTag = (element.parentNode as? DOMElement)?.tagName ?: return false
+    // Framework class tags can be simple (FrameLayout) or fully qualified android.* names.
+    return parentTag.contains('.') && !parentTag.startsWith(ANDROID_VIEW_PACKAGE_PREFIX)
+  }
+
   private fun styleablesFor(
       widget: Widget,
       node: DOMElement,
@@ -430,6 +442,9 @@ internal class XmlDiagnosticsService {
     addStyleable(styleables, widget.simpleName, suffix, result)
     widget.superclasses.forEach { superclass ->
       if (superclass == VIEW_GROUP_CLASS) {
+        // FrameLayout, LinearLayout, etc. inherit ViewGroup's own attributes such as
+        // clipChildren and clipToPadding, in addition to the base margin LayoutParams.
+        addStyleable(styleables, VIEW_GROUP, suffix, result)
         addStyleable(styleables, VIEW_GROUP, MARGIN_LAYOUT_SUFFIX, result)
       }
       widgetTable.getWidget(superclass)?.also { addStyleable(styleables, it.simpleName, suffix, result) }
@@ -625,6 +640,8 @@ internal class XmlDiagnosticsService {
     const val CODE_MANIFEST_ROOT = "MANIFEST001"
     const val CODE_MANIFEST_MISSING_COMPONENT_NAME = "MANIFEST003"
     const val ANDROID_ATTRIBUTE_PREFIX = "android:"
+    const val LAYOUT_ATTRIBUTE_PREFIX = "layout_"
+    const val ANDROID_VIEW_PACKAGE_PREFIX = "android."
     const val VIEW_GROUP_CLASS = "android.view.ViewGroup"
     const val VIEW_GROUP = "ViewGroup"
     const val LAYOUT_SUFFIX = "_Layout"
