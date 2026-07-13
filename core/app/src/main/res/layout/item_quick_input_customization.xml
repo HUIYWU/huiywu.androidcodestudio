@@ -35,5 +35,6 @@
         android:layout_width="48dp"
         android:layout_height="match_parent"
         android:padding="12dp"
-        android:src="@drawable/dot_matrix" />
+        android:src="@drawable/dot_matrix"
+        android:tint="?attr/colorOnSurfaceVariant" />
 </LinearLayout>
