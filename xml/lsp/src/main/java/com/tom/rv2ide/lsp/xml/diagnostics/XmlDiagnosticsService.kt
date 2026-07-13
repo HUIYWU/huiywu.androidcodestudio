@@ -25,6 +25,7 @@ import com.android.aaptcompiler.extractPathData
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.lsp.models.DiagnosticResult
+import com.tom.rv2ide.lsp.util.setupLookupForCompletion
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity.ERROR
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity.WARNING
 import com.tom.rv2ide.models.Position
@@ -53,6 +54,12 @@ internal class XmlDiagnosticsService {
   private val resourceResolver = XmlResourceResolver()
 
   fun analyze(file: Path): DiagnosticResult {
+    // Diagnostics use the same resource and widget snapshots as completion. Without this setup,
+    // Android-specific rules only become eligible after another feature or tooling warm-up happens
+    // to populate Lookup, making diagnostics appear to depend on a build.
+    runCatching { setupLookupForCompletion(file) }
+        .onFailure { error -> log.debug("Unable to prepare XML diagnostic lookup for {}", file, error) }
+
     val text = runCatching { file.toFile().readText() }.getOrElse { error ->
       log.warn("Unable to read XML file for diagnostics: {}", file, error)
       return DiagnosticResult(file, emptyList(), CHANNEL)
@@ -129,6 +136,12 @@ internal class XmlDiagnosticsService {
     if (!element.hasStartTag() || tagName == null) {
       return false
     }
+    // LemMinX records a `/>` token as self-closed but may leave startTagCloseOffset unset.
+    // A self-closed element is nevertheless syntactically complete and must not be diagnosed as
+    // an unclosed start tag.
+    if (element.isSelfClosed) {
+      return false
+    }
     if (!element.isStartTagClosed) {
       collector.errorRange(
           code = CODE_XML_SYNTAX,
@@ -156,7 +169,8 @@ internal class XmlDiagnosticsService {
       child is DOMElement &&
           (child.isOrphanEndTag ||
               (child.hasStartTag() &&
-                  (!child.isStartTagClosed || (!child.isSelfClosed && !child.isClosed))))
+                  !child.isSelfClosed &&
+                  (!child.isStartTagClosed || !child.isClosed)))
     }
   }
 
