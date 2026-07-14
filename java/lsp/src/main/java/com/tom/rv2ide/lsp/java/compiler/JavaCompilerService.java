@@ -53,6 +53,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -652,10 +653,17 @@ public class JavaCompilerService implements CompilerProvider {
     firstAttempt.borrow.close();
 
     List<JavaFileObject> moreSources = new ArrayList<>(sources);
-    for (Path add : addFiles) {
-      moreSources.add(new SourceFileObject(add));
+    final Set<String> sourceUris = new HashSet<>();
+    for (JavaFileObject source : sources) {
+      sourceUris.add(source.toUri().normalize().toString());
     }
-
+    for (Path add : addFiles) {
+      final SourceFileObject additionalSource = new SourceFileObject(add);
+      if (sourceUris.add(additionalSource.toUri().normalize().toString())) {
+        moreSources.add(additionalSource);
+      }
+    }
+ 
     return new CompileBatch(this, moreSources, expandedRequest);
   }
 

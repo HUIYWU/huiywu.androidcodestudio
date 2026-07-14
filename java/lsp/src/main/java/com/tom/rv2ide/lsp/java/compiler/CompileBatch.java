@@ -72,6 +72,8 @@ public class CompileBatch implements AutoCloseable {
   protected final ReusableBorrow borrow;
   protected final JavacTaskImpl task;
   protected final List<CompilationUnitTree> roots;
+  /** Source URIs already accepted from the javac parse result. */
+  private final Set<String> processedSourceUris = new HashSet<>();
   protected final Map<String, List<Pair<Range, TreePath>>> methodPositions = new HashMap<>();
   protected DiagnosticListenerImpl diagnosticListener;
   /** Indicates the task that requested the compilation is finished with it. */
@@ -119,10 +121,17 @@ public class CompileBatch implements AutoCloseable {
     config.setFiles(null);
   }
   private void processCompilationUnit(final CompilationUnitTree root) {
+    final String sourceUri = root.getSourceFile().toUri().normalize().toString();
+    if (!processedSourceUris.add(sourceUri)) {
+      if (IdeLogConfig.shouldLogDebug()) {
+        LOG.debug("Ignoring duplicate CompilationUnitTree source={}", sourceUri);
+      }
+      return;
+    }
     roots.add(root);
     updatePositions(root, false);
   }
-
+  
 
   void updatePositions(CompilationUnitTree tree, boolean allowDuplicate) {
     final StopWatch watch = new StopWatch("Scan method positions");
