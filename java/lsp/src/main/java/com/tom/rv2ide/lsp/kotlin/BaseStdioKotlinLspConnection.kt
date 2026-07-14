@@ -95,14 +95,14 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
       onProcessStarted(startedProcess, classpathProvider)
       if (startedProcess.waitFor(150, TimeUnit.MILLISECONDS)) {
         KslLogs.error(
-            "{} exited during launch readiness check: pid={}, exitCode={}; initialize will not be sent",
+            "{} exited during launch readiness check: processId={}, exitCode={}; initialize will not be sent",
             logPrefix(),
-            startedProcess.pid(),
+            processId(startedProcess),
             startedProcess.exitValue(),
         )
         return false
       }
-      KslLogs.info("{} transport ready: pid={}", logPrefix(), startedProcess.pid())
+      KslLogs.info("{} transport ready: processId={}", logPrefix(), processId(startedProcess))
       return true
     } catch (e: Exception) {
       onProcessStartFailed(e)
@@ -215,6 +215,8 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
         .start()
   }
 
+  private fun processId(process: Process): String = Integer.toHexString(System.identityHashCode(process))
+
   private fun startExitWatcher(startedProcess: Process) {
     Thread(
             {
@@ -227,9 +229,9 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
                   pendingRequests.clear()
                 }
                 KslLogs.error(
-                    "{} process exited: pid={}, exitCode={}. Review preceding '{} stderr' lines for the root cause.",
+                    "{} process exited: processId={}, exitCode={}. Review preceding '{} stderr' lines for the root cause.",
                     logPrefix(),
-                    startedProcess.pid(),
+                    processId(startedProcess),
                     exitCode,
                     logPrefix(),
                 )
