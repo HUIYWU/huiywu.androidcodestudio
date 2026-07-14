@@ -14,6 +14,7 @@ import com.android.aapt.Resources.Attribute.FormatFlags.COLOR
 import com.android.aapt.Resources.Attribute.FormatFlags.DIMENSION
 import com.android.aapt.Resources.Attribute.FormatFlags.ENUM
 import com.android.aapt.Resources.Attribute.FormatFlags.FLAGS
+import com.android.aapt.Resources.Attribute.FormatFlags.REFERENCE
 import com.android.aapt.Resources.Attribute.FormatFlags.STRING
 import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.LAYOUT
@@ -110,8 +111,11 @@ internal class XmlDiagnosticsService {
           checkLayoutTag(node, collector)
           checkLayoutAttributes(node, collector)
           checkLayoutAttributeValues(node, collector)
+          checkLayoutReferenceCompatibility(node, collector)
         }
         if (isManifestFile) {
+          checkManifestParent(node, collector)
+          checkManifestAttributes(node, collector)
           checkManifestComponentName(node, collector)
         }
       }
@@ -185,6 +189,99 @@ internal class XmlDiagnosticsService {
             message = "The root element of an Android manifest must be <$MANIFEST_ROOT_TAG>",
             element = it,
         )
+      }
+    }
+  }
+
+  /**
+   * Checks only parent relationships that Android's manifest schema defines unambiguously.
+   * Unknown/new tags are intentionally ignored: Manifest Merger and AAPT2 remain authoritative.
+   */
+  private fun checkManifestParent(element: DOMElement, collector: XmlDiagnosticCollector) {
+    if (!element.isStartTagClosed) {
+      return
+    }
+    val tagName = element.tagName ?: return
+    val parentName = (element.parentNode as? DOMElement)?.tagName ?: return
+    val expectedParent =
+        when {
+          tagName in MANIFEST_APPLICATION_COMPONENT_TAGS -> "<$MANIFEST_APPLICATION_TAG>"
+          tagName == MANIFEST_INTENT_FILTER_TAG -> "<activity>, <activity-alias>, <service>, or <receiver>"
+          tagName in MANIFEST_INTENT_FILTER_CHILD_TAGS -> "<$MANIFEST_INTENT_FILTER_TAG>"
+          tagName == MANIFEST_USES_LIBRARY_TAG -> "<$MANIFEST_APPLICATION_TAG>"
+          else -> return
+        }
+    val isValid =
+        when (tagName) {
+          in MANIFEST_APPLICATION_COMPONENT_TAGS, MANIFEST_USES_LIBRARY_TAG ->
+              parentName == MANIFEST_APPLICATION_TAG
+          MANIFEST_INTENT_FILTER_TAG -> parentName in MANIFEST_INTENT_FILTER_PARENTS
+          else -> parentName == MANIFEST_INTENT_FILTER_TAG
+        }
+    if (!isValid) {
+      collector.errorTag(
+          code = CODE_MANIFEST_INVALID_PARENT,
+          message = "Manifest <$tagName> must be a child of $expectedParent",
+          element = element,
+      )
+    }
+  }
+
+  /**
+   * Validates only android: attributes whose enclosing manifest tag has a platform styleable entry.
+   * If the table/tag is unavailable, no conclusion can be made and the rule deliberately skips it.
+   */
+  private fun checkManifestAttributes(element: DOMElement, collector: XmlDiagnosticCollector) {
+    if (!element.isStartTagClosed) {
+      return
+    }
+    val tagName = element.tagName ?: return
+    val styleables =
+        Lookup.getDefault()
+            .lookup(ResourceTableRegistry.COMPLETION_MANIFEST_ATTR_RES)
+            ?.findPackage(ResourceTableRegistry.PCK_ANDROID)
+            ?.findGroup(STYLEABLE)
+            ?: return
+    val styleable =
+        styleables
+            .findEntry(manifestStyleableEntryName(tagName))
+            ?.findValue(ConfigDescription())
+            ?.value as? Styleable
+            ?: return
+    val allowedAttributes = styleable.entries.mapNotNull { it.name.entry }.toSet()
+    if (allowedAttributes.isEmpty()) {
+      return
+    }
+    element.attributeNodes.orEmpty().forEach { attribute ->
+      val name = attribute.name ?: return@forEach
+      if (!name.startsWith(ANDROID_ATTRIBUTE_PREFIX)) {
+        return@forEach
+      }
+      val localName = name.removePrefix(ANDROID_ATTRIBUTE_PREFIX)
+      if (localName !in allowedAttributes) {
+        collector.error(
+            code = CODE_MANIFEST_UNKNOWN_ATTRIBUTE,
+            message = "Unknown attribute '$name' for manifest <$tagName>",
+            attribute = attribute,
+        )
+      }
+    }
+  }
+
+  private fun manifestStyleableEntryName(tagName: String): String {
+    if (tagName == MANIFEST_ROOT_TAG) {
+      return MANIFEST_STYLEABLE_PREFIX
+    }
+    return buildString(MANIFEST_STYLEABLE_PREFIX.length + tagName.length) {
+      append(MANIFEST_STYLEABLE_PREFIX)
+      var capitalizeNext = true
+      tagName.forEach { character ->
+        if (character == '-') {
+          capitalizeNext = true
+        } else {
+          append(if (capitalizeNext) character.uppercaseChar() else character)
+          capitalizeNext = false
+        }
       }
     }
   }
@@ -324,8 +421,11 @@ internal class XmlDiagnosticsService {
         Lookup.getDefault().lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES) ?: return
     val androidPackage = frameworkTable.findPackage(ResourceTableRegistry.PCK_ANDROID) ?: return
     val styleables = androidPackage.findGroup(STYLEABLE) ?: return
-    val allowedAttributes = styleablesFor(widget, element, widgetTable, styleables)
-        .flatMapTo(mutableSetOf()) { styleable -> styleable.entries.mapNotNull { it.name.entry } }
+    val dependencyParentLayoutAttributes = dependencyParentLayoutAttributes(element)
+    val allowedAttributes =
+        styleablesFor(widget, element, widgetTable, styleables)
+            .flatMapTo(mutableSetOf()) { styleable -> styleable.entries.mapNotNull { it.name.entry } }
+            .apply { addAll(dependencyParentLayoutAttributes) }
     if (allowedAttributes.isEmpty()) {
       return
     }
@@ -336,10 +436,14 @@ internal class XmlDiagnosticsService {
         return@forEach
       }
       val localName = name.removePrefix(ANDROID_ATTRIBUTE_PREFIX)
-      // LayoutParams are defined by the parent. This resolver currently contains only framework
-      // styleables, so an AndroidX/custom parent (for example CoordinatorLayout) cannot be used
-      // to conclusively reject its android:layout_* attributes.
-      if (localName.startsWith(LAYOUT_ATTRIBUTE_PREFIX) && hasNonFrameworkParent(element)) {
+      // LayoutParams are defined by the parent. For AndroidX/custom parents, only report an
+      // android:layout_* attribute when its `SimpleName_Layout` styleable was found in the
+      // module/dependency resource snapshots; otherwise the result remains unknown.
+      if (
+          localName.startsWith(LAYOUT_ATTRIBUTE_PREFIX) &&
+              hasNonFrameworkParent(element) &&
+              dependencyParentLayoutAttributes.isEmpty()
+      ) {
         return@forEach
       }
       if (localName !in allowedAttributes) {
@@ -391,6 +495,51 @@ internal class XmlDiagnosticsService {
     }
   }
 
+  /**
+   * Rejects only complete resource references supplied to attributes whose platform format does not
+   * include REFERENCE. More specific resource-type compatibility (for example color vs layout)
+   * cannot be inferred safely from AttributeResource.typeMask alone.
+   */
+  private fun checkLayoutReferenceCompatibility(element: DOMElement, collector: XmlDiagnosticCollector) {
+    if (!element.isClosed) {
+      return
+    }
+    val tagName = element.tagName ?: return
+    val widgetTable = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return
+    if (widgetFor(tagName, widgetTable) == null) {
+      return
+    }
+    val attrs =
+        Lookup.getDefault()
+            .lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES)
+            ?.findPackage(ResourceTableRegistry.PCK_ANDROID)
+            ?.findGroup(ATTR)
+            ?: return
+    element.attributeNodes.orEmpty().forEach { attribute ->
+      val name = attribute.name ?: return@forEach
+      if (!name.startsWith(ANDROID_ATTRIBUTE_PREFIX)) {
+        return@forEach
+      }
+      val reference = XmlResourceReference.parse(attribute.value ?: return@forEach) ?: return@forEach
+      // A missing reference already has the more precise AXML003 diagnostic.
+      if (resourceResolver.resolve(reference) != XmlResourceResolver.Resolution.Resolved) {
+        return@forEach
+      }
+      val attr =
+          attrs.findEntry(name.removePrefix(ANDROID_ATTRIBUTE_PREFIX))
+              ?.findValue(ConfigDescription())
+              ?.value as? AttributeResource
+              ?: return@forEach
+      if (!attr.hasAnyType(REFERENCE)) {
+        collector.errorValue(
+            code = CODE_INCOMPATIBLE_REFERENCE,
+            message = "'${reference.text}' is not allowed because '$name' does not accept resource references",
+            attribute = attribute,
+        )
+      }
+    }
+  }
+
   private fun validateLiteralAttributeValue(attr: AttributeResource, value: String): String? {
     if (attr.hasAnyType(STRING, COLOR, DIMENSION)) {
       return null
@@ -428,6 +577,32 @@ internal class XmlDiagnosticsService {
     val parentTag = (element.parentNode as? DOMElement)?.tagName ?: return false
     // Framework class tags can be simple (FrameLayout) or fully qualified android.* names.
     return parentTag.contains('.') && !parentTag.startsWith(ANDROID_VIEW_PACKAGE_PREFIX)
+  }
+
+  /**
+   * Resolves a non-framework parent's `SimpleName_Layout` styleable from source/dependency resource
+   * snapshots. Android libraries publish these through `<declare-styleable>` in their AAR res/values
+   * files (for example `CoordinatorLayout_Layout`). If the snapshot has no matching styleable, the
+   * caller keeps the existing low-false-positive fallback for `android:layout_*`.
+   */
+  private fun dependencyParentLayoutAttributes(element: DOMElement): Set<String> {
+    val parentTag = (element.parentNode as? DOMElement)?.tagName ?: return emptySet()
+    if (!parentTag.contains('.') || parentTag.startsWith(ANDROID_VIEW_PACKAGE_PREFIX)) {
+      return emptySet()
+    }
+    val styleableName = "${parentTag.substringAfterLast('.')}$LAYOUT_SUFFIX"
+    val lookup = Lookup.getDefault()
+    val tables =
+        (lookup.lookup(ResourceTableRegistry.COMPLETION_MODULE_RES).orEmpty() +
+                lookup.lookup(ResourceTableRegistry.COMPLETION_DEP_RES).orEmpty())
+            .toSet()
+    return tables
+        .flatMap { table -> table.packages }
+        .mapNotNull { resourcePackage ->
+          resourcePackage.findGroup(STYLEABLE)?.findEntry(styleableName)
+              ?.findValue(ConfigDescription())?.value as? Styleable
+        }
+        .flatMapTo(mutableSetOf()) { styleable -> styleable.entries.mapNotNull { it.name.entry } }
   }
 
   private fun styleablesFor(
@@ -633,12 +808,15 @@ internal class XmlDiagnosticsService {
     const val CODE_UNKNOWN_LAYOUT_TAG = "AXML001"
     const val CODE_UNKNOWN_LAYOUT_ATTRIBUTE = "AXML002"
     const val CODE_INVALID_ATTRIBUTE_VALUE = "AXML004"
+    const val CODE_INCOMPATIBLE_REFERENCE = "AXML005"
     const val CODE_VALUES_ROOT = "VALUES001"
     const val CODE_VALUES_MISSING_NAME = "VALUES002"
     const val CODE_VALUES_INVALID_NAME = "VALUES003"
     const val CODE_VALUES_DUPLICATE_NAME = "VALUES004"
     const val CODE_MANIFEST_ROOT = "MANIFEST001"
+    const val CODE_MANIFEST_INVALID_PARENT = "MANIFEST002"
     const val CODE_MANIFEST_MISSING_COMPONENT_NAME = "MANIFEST003"
+    const val CODE_MANIFEST_UNKNOWN_ATTRIBUTE = "MANIFEST004"
     const val ANDROID_ATTRIBUTE_PREFIX = "android:"
     const val LAYOUT_ATTRIBUTE_PREFIX = "layout_"
     const val ANDROID_VIEW_PACKAGE_PREFIX = "android."
@@ -650,9 +828,19 @@ internal class XmlDiagnosticsService {
     const val VALUES_ROOT_TAG = "resources"
     const val RESOURCE_NAME_ATTRIBUTE = "name"
     const val ANDROID_MANIFEST_FILE_NAME = "AndroidManifest.xml"
+    const val MANIFEST_STYLEABLE_PREFIX = "AndroidManifest"
     const val MANIFEST_ROOT_TAG = "manifest"
     const val ANDROID_NAME_ATTRIBUTE = "android:name"
-    val MANIFEST_NAMED_COMPONENT_TAGS = setOf("activity", "activity-alias", "service", "receiver", "provider", "instrumentation")
+    const val MANIFEST_APPLICATION_TAG = "application"
+    const val MANIFEST_INTENT_FILTER_TAG = "intent-filter"
+    const val MANIFEST_USES_LIBRARY_TAG = "uses-library"
+    val MANIFEST_APPLICATION_COMPONENT_TAGS =
+        setOf("activity", "activity-alias", "service", "receiver", "provider")
+    val MANIFEST_NAMED_COMPONENT_TAGS =
+        MANIFEST_APPLICATION_COMPONENT_TAGS + "instrumentation"
+    val MANIFEST_INTENT_FILTER_PARENTS =
+        setOf("activity", "activity-alias", "service", "receiver")
+    val MANIFEST_INTENT_FILTER_CHILD_TAGS = setOf("action", "category", "data")
     val VALUES_NAMED_TAGS =
         setOf(
             "string",
