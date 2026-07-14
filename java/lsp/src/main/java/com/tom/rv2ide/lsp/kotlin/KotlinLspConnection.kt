@@ -32,8 +32,14 @@ import com.tom.rv2ide.lsp.models.DiagnosticResult
  */
 interface KotlinLspConnection {
   fun setDiagnosticsCallback(callback: (DiagnosticResult) -> Unit)
+  /**
+   * Starts the backend process.
+   *
+   * @return true only when the transport is ready to receive JSON-RPC messages. Callers must not
+   *   send initialize or other requests when this returns false.
+   */
+  fun startServer(classpathProvider: KotlinClasspathProvider): Boolean
 
-  fun startServer(classpathProvider: KotlinClasspathProvider)
 
   fun sendRequest(method: String, params: JsonObject, callback: (JsonObject?) -> Unit)
 

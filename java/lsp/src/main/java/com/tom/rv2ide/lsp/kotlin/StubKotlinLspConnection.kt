@@ -35,11 +35,12 @@ class StubKotlinLspConnection(context: Context) : KotlinLspConnection {
     KslLogs.info("Stub Kotlin backend installed diagnostics callback")
   }
 
-  override fun startServer(classpathProvider: KotlinClasspathProvider) {
+  override fun startServer(classpathProvider: KotlinClasspathProvider): Boolean {
     KslLogs.warn(
         "Stub Kotlin backend selected. No real Kotlin language server process will be started. projectFilesDir={}",
         appContext.filesDir.absolutePath,
     )
+    return false
   }
 
   override fun sendRequest(method: String, params: JsonObject, callback: (JsonObject?) -> Unit) {

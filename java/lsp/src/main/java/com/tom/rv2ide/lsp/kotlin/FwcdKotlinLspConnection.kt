@@ -67,6 +67,23 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
         buildKotlinLanguageServerOpts(serverHome, classpathProvider, sqliteNativeConfig, xdgCacheHome)
     val androidClasspath = classpathProvider.getClasspath()
     val command = buildLauncherCommand(launcher)
+    val javaHome = Environment.JAVA_HOME?.absolutePath ?: Environment.PREFIX.absolutePath
+    val javaExecutable = File(javaHome, "bin/java")
+    KslLogs.info(
+        "FWCD KLS launch preflight: runtimeDir={} exists={} readable={} launcher={} exists={} readable={} executable={} command={} javaHome={} javaExists={} classpathEntries={} sqliteOverride={}",
+        serverHome.absolutePath,
+        serverHome.exists(),
+        serverHome.canRead(),
+        launcher.absolutePath,
+        launcher.exists(),
+        launcher.canRead(),
+        launcher.canExecute(),
+        command.joinToString(" "),
+        javaHome,
+        javaExecutable.exists(),
+        androidClasspath.split(':').count { it.isNotBlank() },
+        sqliteNativeConfig?.let { "${it.libPath}/${it.libName}" } ?: "none",
+    )
 
     return try {
       ProcessBuilder(command).apply {

@@ -97,7 +97,16 @@ class KotlinWorkspaceSetup(
     KslLogs.debugThrottled("kls:cache-stats", 5000L, "{}", indexCache.getCacheStats())
 
     backendConfigurator.beforeServerStart(processManager, classpathProvider)
-    processManager.startServer(classpathProvider)
+    if (!processManager.startServer(classpathProvider)) {
+      val message = "Kotlin language server failed to start; initialize request was not sent. Check KLS logs for launcher stderr and exit code."
+      KslLogs.error(message)
+      if (hasKotlinSources) {
+        Index.setIsIndexing(false)
+        Index.setProgressMessage("Kotlin language server failed to start")
+        LogStream.emitLineBlocking(message)
+      }
+      return
+    }
 
     val initParams = createInitParams(workspaceRoot)
     logInitializeSummary(initParams)

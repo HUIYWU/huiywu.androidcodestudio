@@ -26,6 +26,7 @@ import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -65,14 +66,17 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
     notificationHandler.setDiagnosticsCallback(callback)
   }
 
-  override fun startServer(classpathProvider: KotlinClasspathProvider) {
+  override fun startServer(classpathProvider: KotlinClasspathProvider): Boolean {
     if (process?.isAlive == true) {
       KslLogs.debugThrottled("kls:already-running", 3000L, "{} already running", logPrefix())
-      return
+      return true
     }
 
     try {
-      val startedProcess = startProcess(classpathProvider) ?: return
+      val startedProcess = startProcess(classpathProvider) ?: run {
+        KslLogs.error("{} launch did not produce a process; initialize will not be sent", logPrefix())
+        return false
+      }
       process = startedProcess
       writer =
           BufferedWriter(
@@ -87,9 +91,22 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
 
       startReaderThread()
       startErrorReaderThread(startedProcess)
+      startExitWatcher(startedProcess)
       onProcessStarted(startedProcess, classpathProvider)
+      if (startedProcess.waitFor(150, TimeUnit.MILLISECONDS)) {
+        KslLogs.error(
+            "{} exited during launch readiness check: pid={}, exitCode={}; initialize will not be sent",
+            logPrefix(),
+            startedProcess.pid(),
+            startedProcess.exitValue(),
+        )
+        return false
+      }
+      KslLogs.info("{} transport ready: pid={}", logPrefix(), startedProcess.pid())
+      return true
     } catch (e: Exception) {
       onProcessStartFailed(e)
+      return false
     }
   }
 
@@ -195,6 +212,36 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
             "kls-jsonrpc-reader",
         )
         .apply { priority = Thread.MAX_PRIORITY }
+        .start()
+  }
+
+  private fun startExitWatcher(startedProcess: Process) {
+    Thread(
+            {
+              try {
+                val exitCode = startedProcess.waitFor()
+                if (process === startedProcess) {
+                  process = null
+                  writer = null
+                  reader = null
+                  pendingRequests.clear()
+                }
+                KslLogs.error(
+                    "{} process exited: pid={}, exitCode={}. Review preceding '{} stderr' lines for the root cause.",
+                    logPrefix(),
+                    startedProcess.pid(),
+                    exitCode,
+                    logPrefix(),
+                )
+              } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+              } catch (e: Exception) {
+                KslLogs.error("Failed while waiting for ${logPrefix()} process exit", e)
+              }
+            },
+            "kls-process-exit-watcher",
+        )
+        .apply { isDaemon = true }
         .start()
   }
 
