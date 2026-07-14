@@ -233,6 +233,13 @@ class KotlinClasspathProvider {
     val classpaths = mutableSetOf<String>()
     val compilerServicePaths = mutableListOf<String>()
     val projectDerivedFallbackAdded = mutableSetOf<String>()
+    // Keep provenance only for this collection pass. It is diagnostic data used to
+    // distinguish project dependencies from Kotlin compiler/tooling implementation jars.
+    val classpathOrigins = mutableMapOf<String, MutableSet<String>>()
+
+    fun recordClasspathOrigin(file: File, origin: String) {
+      classpathOrigins.getOrPut(file.absolutePath) { mutableSetOf() }.add(origin)
+    }
 
     // First, try to get classpaths from the compiler service
     val service = compilerService
@@ -242,6 +249,7 @@ class KotlinClasspathProvider {
         for (cp in allClassPaths) {
           compilerServicePaths.add(cp.absolutePath)
           addClasspathEntry(cp, classpaths)
+          recordClasspathOrigin(cp, "compilerService")
         }
       } catch (e: Exception) {
         KslLogs.error("Failed to get classpath from compiler service", e)
@@ -264,12 +272,14 @@ class KotlinClasspathProvider {
             val compileClasspaths = project.getCompileClasspaths()
             for (cp in compileClasspaths) {
               addClasspathEntry(cp, classpaths)
+              recordClasspathOrigin(cp, "moduleCompile:${project.path}")
             }
 
             // Add module-specific classpaths (includes external dependencies)
             val moduleClasspaths = project.getModuleClasspaths()
             for (cp in moduleClasspaths) {
               addClasspathEntry(cp, classpaths)
+              recordClasspathOrigin(cp, "moduleDirect:${project.path}")
             }
 
             // If it's an Android module, add additional Android-specific classpaths
@@ -318,6 +328,7 @@ class KotlinClasspathProvider {
     val existingPaths = classpaths.filter { File(it).exists() }.toList()
     logCompilerServiceClasspathDiff(compilerServicePaths, existingPaths)
     logClasspathLayerSummary(existingPaths, projectDerivedFallbackAdded, scriptingFallbackAdded)
+    logCompilerToolingClasspathOrigins(existingPaths, classpathOrigins)
     KslLogs.info("Total classpath entries: {}, existing: {}", classpaths.size, existingPaths.size)
 
     cachedClasspathList = existingPaths
@@ -363,6 +374,32 @@ class KotlinClasspathProvider {
         providerOnlyInteresting.size,
         providerOnlyInteresting.take(20).joinToString(prefix = "[", postfix = if (providerOnlyInteresting.size > 20) ", ...]" else "]"),
     )
+  }
+
+  private fun logCompilerToolingClasspathOrigins(
+      existingPaths: List<String>,
+      classpathOrigins: Map<String, Set<String>>,
+  ) {
+    val toolingPaths = existingPaths.filter(::isKotlinCompilerToolingArtifact)
+    val preview = toolingPaths.take(24).joinToString(prefix = "[", postfix = if (toolingPaths.size > 24) ", ...]" else "]") { path ->
+      val origins = classpathOrigins[path].orEmpty().sorted().joinToString("|").ifBlank { "unknown" }
+      "${File(path).name} <= $origins"
+    }
+    KslLogs.info(
+        "KLS compiler/tooling classpath audit: entries={}, preview={}",
+        toolingPaths.size,
+        preview,
+    )
+  }
+
+  private fun isKotlinCompilerToolingArtifact(path: String): Boolean {
+    val name = File(path).name.lowercase()
+    return name.contains("kotlin-compiler") ||
+        name.contains("kotlin-daemon") ||
+        name.contains("kotlin-scripting-compiler") ||
+        name.contains("kotlin-gradle-plugin") ||
+        name.contains("dokka") ||
+        name.startsWith("asm-")
   }
 
   private fun logClasspathLayerSummary(

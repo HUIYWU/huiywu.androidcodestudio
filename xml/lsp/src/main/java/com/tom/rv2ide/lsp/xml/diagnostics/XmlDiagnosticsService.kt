@@ -766,9 +766,10 @@ internal class XmlDiagnosticsService {
         end: Int,
     ) {
       val key = "$code:$start:$end"
-      if (!keys.add(key)) {
+      if (key in keys || diagnostics.size >= MAX_DIAGNOSTICS_PER_FILE) {
         return
       }
+      keys.add(key)
 
       diagnostics +=
           DiagnosticItem(
@@ -800,6 +801,7 @@ internal class XmlDiagnosticsService {
 
     const val CHANNEL = "xml-lsp"
     const val SOURCE = "xml-lsp"
+    private const val MAX_DIAGNOSTICS_PER_FILE = 100
     const val CODE_XML_SYNTAX = "XML001"
     const val CODE_DUPLICATE_ATTRIBUTE = "XML002"
     const val CODE_UNDECLARED_NAMESPACE = "XML003"
