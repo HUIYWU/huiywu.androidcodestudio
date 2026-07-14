@@ -58,4 +58,7 @@ dependencies {
 
     compileOnly(projects.core.common)
     compileOnly(libs.common.antlr4)
+
+    testImplementation(libs.tests.junit)
+    testImplementation(libs.tests.google.truth)
 }

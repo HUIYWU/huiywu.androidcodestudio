@@ -1,10 +1,18 @@
 /*
- *  This file is part of AndroidIDE.
+ *  This file is part of AndroidCodeStudio.
  *
- *  AndroidIDE is free software: you can redistribute it and/or modify
+ *  AndroidCodeStudio is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
+ *
+ *  AndroidCodeStudio is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
 package com.tom.rv2ide.lsp.xml.diagnostics
 
@@ -68,28 +76,41 @@ internal class XmlResourceResolver {
   }
 }
 
-/** A complete, non-creating Android resource reference such as `@string/title`. */
+/**
+ * A complete Android resource reference such as `@string/title`, or a theme attribute reference
+ * such as `?attr/colorPrimary`. The caller may additionally recognize local creating ID references
+ * (`@+id/...`). Special values (`@null`, `@empty`) intentionally remain unsupported and are ignored
+ * by the lightweight checker.
+ */
 internal data class XmlResourceReference(
     val text: String,
     val packageName: String?,
     val type: AaptResourceType,
     val entry: String,
+    val isThemeAttribute: Boolean,
 ) {
   companion object {
     private val expression =
-        Regex("^@(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_]*)$")
+        Regex("^([@?])(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_]*)$")
 
     fun parse(value: String): XmlResourceReference? {
       val match = expression.matchEntire(value) ?: return null
-      val type = AaptResourceType.values().firstOrNull { it.tagName == match.groupValues[2] } ?: return null
+      val marker = match.groupValues[1]
+      val typeName = match.groupValues[3]
+      // Theme references are always attributes: `?attr/name` or `?android:attr/name`.
+      if (marker == "?" && typeName != AaptResourceType.ATTR.tagName) {
+        return null
+      }
+      val type = AaptResourceType.values().firstOrNull { it.tagName == typeName } ?: return null
       if (type == AaptResourceType.UNKNOWN) {
         return null
       }
       return XmlResourceReference(
           text = value,
-          packageName = match.groupValues[1].ifBlank { null },
+          packageName = match.groupValues[2].ifBlank { null },
           type = type,
-          entry = match.groupValues[3],
+          entry = match.groupValues[4],
+          isThemeAttribute = marker == "?",
       )
     }
   }

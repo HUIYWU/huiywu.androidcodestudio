@@ -1,10 +1,18 @@
 /*
- *  This file is part of AndroidIDE.
+ *  This file is part of AndroidCodeStudio.
  *
- *  AndroidIDE is free software: you can redistribute it and/or modify
+ *  AndroidCodeStudio is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
+ *
+ *  AndroidCodeStudio is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
 package com.tom.rv2ide.lsp.xml.diagnostics
 
@@ -17,6 +25,7 @@ import com.android.aapt.Resources.Attribute.FormatFlags.FLAGS
 import com.android.aapt.Resources.Attribute.FormatFlags.REFERENCE
 import com.android.aapt.Resources.Attribute.FormatFlags.STRING
 import com.android.aaptcompiler.AaptResourceType.ATTR
+import com.android.aaptcompiler.AaptResourceType.ID
 import com.android.aaptcompiler.AaptResourceType.LAYOUT
 import com.android.aaptcompiler.AaptResourceType.STYLEABLE
 import com.android.aaptcompiler.AttributeResource
@@ -83,13 +92,16 @@ internal class XmlDiagnosticsService {
     val isValuesFile = pathData?.resourceDirectory == VALUES_DIRECTORY
     val isManifestFile = pathData?.file?.name == ANDROID_MANIFEST_FILE_NAME
     val collector = XmlDiagnosticCollector(text)
+    // Resource tables may lag behind an unsaved edit. Preserve local @+id declarations from this
+    // document so later @id references do not become false AXML003 errors before a resource refresh.
+    val declaredIds = collectLocalIdDeclarations(document)
     if (isValuesFile) {
       checkValuesDocument(document.documentElement, collector)
     }
     if (isManifestFile) {
       checkManifestDocument(document.documentElement, collector)
     }
-    visit(document, collector, isLayoutFile, isManifestFile)
+    visit(document, collector, isLayoutFile, isManifestFile, declaredIds)
 
     return DiagnosticResult(file, collector.build(), CHANNEL)
   }
@@ -99,6 +111,7 @@ internal class XmlDiagnosticsService {
       collector: XmlDiagnosticCollector,
       isLayoutFile: Boolean,
       isManifestFile: Boolean,
+      declaredIds: Set<String>,
   ) {
     if (node is DOMElement) {
       val hasSyntaxRecovery = checkSyntaxRecovery(node, collector)
@@ -106,7 +119,7 @@ internal class XmlDiagnosticsService {
         checkDuplicateAttributes(node, collector)
         checkUndeclaredAttributePrefixes(node, collector)
         checkAndroidNamespace(node, collector)
-        checkResourceReferences(node, collector)
+        checkResourceReferences(node, collector, declaredIds)
         if (isLayoutFile) {
           checkLayoutTag(node, collector)
           checkLayoutAttributes(node, collector)
@@ -121,7 +134,33 @@ internal class XmlDiagnosticsService {
       }
     }
 
-    node.children.forEach { child -> visit(child, collector, isLayoutFile, isManifestFile) }
+    node.children.forEach { child ->
+      visit(child, collector, isLayoutFile, isManifestFile, declaredIds)
+    }
+  }
+
+  /** Collects unqualified IDs created in this document before resource tables are refreshed. */
+  internal fun collectLocalIdDeclarations(document: DOMNode): Set<String> {
+    val declaredIds = mutableSetOf<String>()
+
+    fun collect(node: DOMNode) {
+      if (node is DOMElement) {
+        node.attributeNodes.orEmpty().forEach { attribute ->
+          val value = attribute.value ?: return@forEach
+          if (!value.startsWith("@+")) {
+            return@forEach
+          }
+          val reference = XmlResourceReference.parse(value.removePrefix("@+")) ?: return@forEach
+          if (reference.packageName == null && !reference.isThemeAttribute && reference.type == ID) {
+            declaredIds.add(reference.entry)
+          }
+        }
+      }
+      node.children.forEach(::collect)
+    }
+
+    collect(document)
+    return declaredIds
   }
 
   /**
@@ -521,6 +560,10 @@ internal class XmlDiagnosticsService {
         return@forEach
       }
       val reference = XmlResourceReference.parse(attribute.value ?: return@forEach) ?: return@forEach
+      // Theme attributes have separate resolution semantics; AXML005 only checks @type/name values.
+      if (reference.isThemeAttribute) {
+        return@forEach
+      }
       // A missing reference already has the more precise AXML003 diagnostic.
       if (resourceResolver.resolve(reference) != XmlResourceResolver.Resolution.Resolved) {
         return@forEach
@@ -673,7 +716,11 @@ internal class XmlDiagnosticsService {
     }
   }
 
-  private fun checkResourceReferences(element: DOMElement, collector: XmlDiagnosticCollector) {
+  private fun checkResourceReferences(
+      element: DOMElement,
+      collector: XmlDiagnosticCollector,
+      declaredIds: Set<String>,
+  ) {
     element.attributeNodes.orEmpty().forEach { attribute ->
       val value = attribute.value ?: return@forEach
       if (value.startsWith("@{") || value.startsWith("@={")) {
@@ -681,6 +728,10 @@ internal class XmlDiagnosticsService {
       }
 
       val reference = XmlResourceReference.parse(value) ?: return@forEach
+      if (reference.packageName == null && !reference.isThemeAttribute &&
+          reference.type == ID && reference.entry in declaredIds) {
+        return@forEach
+      }
       if (resourceResolver.resolve(reference) == XmlResourceResolver.Resolution.NotFound) {
         collector.errorValue(
             code = CODE_UNRESOLVED_RESOURCE,
