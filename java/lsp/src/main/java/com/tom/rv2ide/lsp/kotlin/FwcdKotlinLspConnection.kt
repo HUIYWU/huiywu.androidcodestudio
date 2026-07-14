@@ -141,9 +141,40 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
             )
           }
     } catch (e: Exception) {
+      // Some Android log backends omit Throwable stack traces. Keep the actionable exception
+      // details in the message itself, since this is before the child process exists and hence
+      // there can be no launcher stderr or exit code yet.
+      KslLogs.error(
+          "FWCD KLS ProcessBuilder.start failed: exception={} message={} causes={}; runtimeDir={} dirExists={} dirReadable={} dirWritable={} launcher={} launcherExists={} launcherReadable={} launcherExecutable={} shellExists={} javaHome={} javaExists={} command={}",
+          e.javaClass.name,
+          e.message ?: "<no message>",
+          throwableSummary(e),
+          serverHome.absolutePath,
+          serverHome.exists(),
+          serverHome.canRead(),
+          serverHome.canWrite(),
+          launcher.absolutePath,
+          launcher.exists(),
+          launcher.canRead(),
+          launcher.canExecute(),
+          File("/system/bin/sh").exists(),
+          javaHome,
+          javaExecutable.exists(),
+          command.joinToString(" "),
+      )
       KslLogs.error("Failed to start FWCD Kotlin language server", e)
       null
     }
+  }
+
+  private fun throwableSummary(error: Throwable): String {
+    val parts = mutableListOf<String>()
+    var current: Throwable? = error
+    while (current != null && parts.size < 4) {
+      parts += "${current.javaClass.simpleName}: ${current.message ?: "<no message>"}"
+      current = current.cause
+    }
+    return parts.joinToString(" <- ")
   }
 
   override fun logPrefix(): String = "FWCD Kotlin LSP"
