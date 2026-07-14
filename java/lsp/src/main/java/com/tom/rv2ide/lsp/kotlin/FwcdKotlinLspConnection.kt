@@ -70,7 +70,7 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
     val javaHome = Environment.JAVA_HOME?.absolutePath ?: Environment.PREFIX.absolutePath
     val javaExecutable = File(javaHome, "bin/java")
     KslLogs.info(
-        "FWCD KLS launch preflight: runtimeDir={} exists={} readable={} launcher={} exists={} readable={} executable={} command={} javaHome={} javaExists={} classpathEntries={} sqliteOverride={}",
+        "FWCD KLS launch preflight: runtimeDir={} exists={} readable={} launcher={} exists={} readable={} executable={} command={} javaHome={} javaExists={} classpathEntries={} classpathChars={} sqliteOverride={}",
         serverHome.absolutePath,
         serverHome.exists(),
         serverHome.canRead(),
@@ -82,6 +82,7 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
         javaHome,
         javaExecutable.exists(),
         androidClasspath.split(':').count { it.isNotBlank() },
+        androidClasspath.length,
         sqliteNativeConfig?.let { "${it.libPath}/${it.libName}" } ?: "none",
     )
 
@@ -105,20 +106,25 @@ class FwcdKotlinLspConnection : BaseStdioKotlinLspConnection() {
               put("XDG_CONFIG_HOME", xdgConfigHome.absolutePath)
               put("XDG_CACHE_HOME", xdgCacheHome.absolutePath)
 
-              put("KOTLIN_LSP_CLASSPATH", androidClasspath)
-              put("CLASSPATH", androidClasspath)
-              // Important: keep the launcher shell patch minimal. The official start script remains
-              // responsible for eval/set/main-class ordering; AndroidCodeStudio should only inject JVM
-              // properties and predefined classpath hints here.
+// Do not place the project classpath in environment variables. Android's execve
+               // accounts for argv + all environment values, and large Android projects exceed that
+               // limit before the launcher can start (E2BIG / "Argument list too long"). Remove any
+               // inherited values too. FWCD receives the same classpath after startup in
+               // initialize.initializationOptions.classpath and workspace/didChangeConfiguration.
+               remove("KOTLIN_LSP_CLASSPATH")
+               remove("CLASSPATH")
+               remove("KOTLIN_LANGUAGE_SERVER_PREDEFINED_CLASSPATH")
+               // Important: keep the launcher shell patch minimal. The official start script remains
+               // responsible for eval/set/main-class ordering; AndroidCodeStudio should only inject JVM
+               // properties here.
               put("KOTLIN_LANGUAGE_SERVER_OPTS", kotlinLanguageServerOpts)
               // Important: on Android the official launcher may not reliably propagate all JVM opts
               // through KOTLIN_LANGUAGE_SERVER_OPTS alone. _JAVA_OPTIONS / JAVA_TOOL_OPTIONS are the
               // stable fallback that finally made sqlite-jdbc honor tmpdir/lib overrides.
               put("_JAVA_OPTIONS", kotlinLanguageServerOpts)
               put("JAVA_TOOL_OPTIONS", kotlinLanguageServerOpts)
-              put("KOTLIN_LANGUAGE_SERVER_SKIP_CLASSPATH_RESOLUTION", "true")
-              put("KOTLIN_LANGUAGE_SERVER_PREDEFINED_CLASSPATH", androidClasspath)
-              if (sqliteNativeConfig != null) {
+put("KOTLIN_LANGUAGE_SERVER_SKIP_CLASSPATH_RESOLUTION", "true")
+               if (sqliteNativeConfig != null) {
                 // Keep these env vars for the patched launcher to translate into -Dorg.sqlite.* when needed.
                 // The actual runtime success signal on Android is still JVM pickup via _JAVA_OPTIONS / JAVA_TOOL_OPTIONS.
                 put("KOTLIN_LANGUAGE_SERVER_SQLITE_LIB_PATH", sqliteNativeConfig.libPath)
