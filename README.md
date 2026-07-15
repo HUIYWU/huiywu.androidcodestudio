@@ -1,8 +1,13 @@
-<p align="left">
-  <img src="images/icon.png" alt="Android Code Studio" width="80" height="80"/>
-</p>
-
-<h2 align="left"><b>Android Code Studio</b></h2>
+<table>
+  <tr>
+    <td>
+      <img src="images/icon.png" alt="Android Code Studio" width="80" height="80"/>
+    </td>
+    <td>
+      <h2><b>Android Code Studio</b></h2>
+    </td>
+  </tr>
+</table>
 <p align="left">
   An IDE to develop real, Gradle-based Android applications on Android devices.
 <p><br>
