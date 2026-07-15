@@ -17,14 +17,13 @@
 package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.google.common.truth.Truth.assertThat
+import junit.framework.TestCase
 import org.eclipse.lemminx.dom.DOMParser
 import org.eclipse.lemminx.uriresolver.URIResolverExtensionManager
-import org.junit.Test
 
-class XmlDiagnosticsServiceLocalIdTest {
+class XmlDiagnosticsServiceLocalIdTest : TestCase() {
 
-  @Test
-  fun collectsCreatingIdsFromFixtureForLaterLocalReferences() {
+  fun testCollectsCreatingIdsFromFixtureForLaterLocalReferences() {
     val document =
         DOMParser.getInstance()
             .parse(
@@ -38,8 +37,7 @@ class XmlDiagnosticsServiceLocalIdTest {
     assertThat(declaredIds).containsExactly("title", "action")
   }
 
-  @Test
-  fun excludesQualifiedCreatingIdsFromLocalDeclarations() {
+  fun testExcludesQualifiedCreatingIdsFromLocalDeclarations() {
     val document =
         DOMParser.getInstance()
             .parse(

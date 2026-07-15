@@ -61,8 +61,4 @@ dependencies {
 
     testImplementation(libs.tests.junit)
     testImplementation(libs.tests.google.truth)
-
-    // KAPT generates Java stubs for Android local unit-test Kotlin sources. Keep JUnit's @Test
-    // annotation on that variant-specific stub-generation classpath as well.
-    add("kaptDebugUnitTest", libs.tests.junit)
 }

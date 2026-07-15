@@ -20,12 +20,11 @@ import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.ID
 import com.android.aaptcompiler.AaptResourceType.STRING
 import com.google.common.truth.Truth.assertThat
-import org.junit.Test
+import junit.framework.TestCase
 
-class XmlResourceReferenceTest {
+class XmlResourceReferenceTest : TestCase() {
 
-  @Test
-  fun parsesUnqualifiedResourceReference() {
+  fun testParsesUnqualifiedResourceReference() {
     val reference = XmlResourceReference.parse("@string/title")
 
     assertThat(reference).isNotNull()
@@ -35,8 +34,7 @@ class XmlResourceReferenceTest {
     assertThat(reference.isThemeAttribute).isFalse()
   }
 
-  @Test
-  fun parsesFrameworkThemeAttributeReference() {
+  fun testParsesFrameworkThemeAttributeReference() {
     val reference = XmlResourceReference.parse("?android:attr/textColorPrimary")
 
     assertThat(reference).isNotNull()
@@ -46,21 +44,18 @@ class XmlResourceReferenceTest {
     assertThat(reference.isThemeAttribute).isTrue()
   }
 
-  @Test
-  fun rejectsThemeReferenceToNonAttributeType() {
+  fun testRejectsThemeReferenceToNonAttributeType() {
     assertThat(XmlResourceReference.parse("?color/primary")).isNull()
   }
 
-  @Test
-  fun parsesIdReferenceAfterCreatingMarkerIsRemoved() {
+  fun testParsesIdReferenceAfterCreatingMarkerIsRemoved() {
     val reference = XmlResourceReference.parse("id/title")
 
     assertThat(reference).isNull()
     assertThat(XmlResourceReference.parse("@id/title")!!.type).isEqualTo(ID)
   }
 
-  @Test
-  fun rejectsSpecialAndDataBindingValues() {
+  fun testRejectsSpecialAndDataBindingValues() {
     assertThat(XmlResourceReference.parse("@null")).isNull()
     assertThat(XmlResourceReference.parse("@empty")).isNull()
     assertThat(XmlResourceReference.parse("@{viewModel.title}")).isNull()
