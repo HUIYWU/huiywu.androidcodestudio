@@ -242,7 +242,7 @@ class KotlinWorkspaceSetup(
                 name.startsWith("kotlin-scripting-compiler-embeddable-") ||
                 name.startsWith("dokka-core-")
           }
-          .sortedBy(File::name)
+          .sortedBy { file -> file.name }
           .forEach { file ->
             add(
                 JsonObject().apply {
