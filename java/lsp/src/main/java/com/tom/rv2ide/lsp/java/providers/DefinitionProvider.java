@@ -24,6 +24,7 @@ import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
 import com.tom.rv2ide.lsp.java.providers.definition.ErroneousDefinitionProvider;
 import com.tom.rv2ide.lsp.java.providers.definition.IJavaDefinitionProvider;
+import com.tom.rv2ide.lsp.java.providers.definition.KotlinDefinitionFallback;
 import com.tom.rv2ide.lsp.java.providers.definition.LocalDefinitionProvider;
 import com.tom.rv2ide.lsp.java.providers.definition.RemoteDefinitionProvider;
 import com.tom.rv2ide.lsp.java.utils.NavigationHelper;
