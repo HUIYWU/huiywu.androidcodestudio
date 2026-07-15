@@ -241,6 +241,12 @@ class KotlinClasspathProvider {
       classpathOrigins.getOrPut(file.absolutePath) { mutableSetOf() }.add(origin)
     }
 
+    fun recordNewClasspathOrigins(before: Set<String>, origin: String) {
+      (classpaths - before).forEach { path ->
+        classpathOrigins.getOrPut(path) { mutableSetOf() }.add(origin)
+      }
+    }
+
     // First, try to get classpaths from the compiler service
     val service = compilerService
     if (service != null) {
@@ -287,6 +293,7 @@ class KotlinClasspathProvider {
               // Add boot classpaths (android.jar, etc.)
               for (bootCp in project.bootClassPaths) {
                 addClasspathEntry(bootCp, classpaths)
+                recordClasspathOrigin(bootCp, "androidBoot:${project.path}")
               }
 
               // resolveVersionCatalogDependencies(project, classpaths)
@@ -295,6 +302,7 @@ class KotlinClasspathProvider {
               val generatedJar = project.getGeneratedJar()
               if (generatedJar.exists()) {
                 addClasspathEntry(generatedJar, classpaths)
+                recordClasspathOrigin(generatedJar, "androidGeneratedJar:${project.path}")
                 KslLogs.info("Added generated JAR: {}", generatedJar.absolutePath)
               }
 
@@ -303,11 +311,13 @@ class KotlinClasspathProvider {
               if (variant != null) {
                 for (classJar in variant.mainArtifact.classJars) {
                   addClasspathEntry(classJar, classpaths)
+                  recordClasspathOrigin(classJar, "androidVariantJar:${project.path}")
                 }
               }
 
               val beforeAndroidGenerated = classpaths.toSet()
               addAndroidGeneratedSources(project, classpaths)
+              recordNewClasspathOrigins(beforeAndroidGenerated, "androidGenerated:${project.path}")
               projectDerivedFallbackAdded.addAll(classpaths.toSet() - beforeAndroidGenerated)
             }
           }
@@ -320,6 +330,7 @@ class KotlinClasspathProvider {
     val beforeScriptingFallback = classpaths.toSet()
     if (enableGradleCacheScriptingFallback) {
       addKotlinScriptingJarsFromGradleCache(classpaths)
+      recordNewClasspathOrigins(beforeScriptingFallback, "gradleScriptingFallback")
     } else {
       KslLogs.debug("Gradle cache scripting fallback disabled")
     }

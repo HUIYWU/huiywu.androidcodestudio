@@ -231,9 +231,31 @@ class KotlinWorkspaceSetup(
     }
   }
 
+  private fun createDependencyIndexCandidates(classpaths: List<String>): JsonArray =
+    JsonArray().apply {
+      classpaths
+          .asSequence()
+          .map(::File)
+          .filter { file ->
+            val name = file.name.lowercase()
+            name.startsWith("kotlin-compiler-embeddable-") ||
+                name.startsWith("kotlin-scripting-compiler-embeddable-") ||
+                name.startsWith("dokka-core-")
+          }
+          .sortedBy(File::name)
+          .forEach { file ->
+            add(
+                JsonObject().apply {
+                  addProperty("path", file.absolutePath)
+                  addProperty("artifact", file.name)
+                },
+            )
+          }
+    }
+
   private fun createAcsMetadata(
-      effectiveClassPaths: List<String>,
-      javaSourceRoots: List<String>,
+    effectiveClassPaths: List<String>,
+    javaSourceRoots: List<String>,
   ): JsonObject {
     val workspaceRoot = workspace.getProjectDir().absolutePath
     val modules = workspace.getSubProjects().filterIsInstance<ModuleProject>().sortedBy { it.path }
@@ -358,6 +380,9 @@ class KotlinWorkspaceSetup(
           },
       )
       add("generatedSources", generatedSourcesArray)
+      // Candidates constrain only dependency symbol enumeration. FWCD keeps the complete
+      // classpath for compiler-backed source analysis, completion, and diagnostics.
+      add("dependencyIndexCandidates", createDependencyIndexCandidates(effectiveClassPaths))
     }
   }
 
@@ -371,6 +396,11 @@ class KotlinWorkspaceSetup(
     val acsMetadata = createAcsMetadata(effectiveClassPaths, javaSourceRoots)
 
     return JsonObject().apply {
+      // Send the classpath again after initialize via workspace/didChangeConfiguration.
+      // initializationOptions establishes FWCD's compiler model before the server is ready;
+      // this runtime notification keeps that model synchronized after startup, classpath reloads,
+      // and cache-restore/indexing flows. The full list must stay in JSON-RPC rather than launcher
+      // environment variables: on Android, their combined size can make execve fail with E2BIG.
       add(
           "settings",
           JsonObject().apply {
@@ -912,7 +942,10 @@ class KotlinWorkspaceSetup(
                     },
                 )
 
-                // Classpath settings
+                // First classpath delivery: initialize must provide it so FWCD can construct its
+                // predefined compiler classpath during startup. createFwcdRuntimeConfig() sends the
+                // same settings after initialization for runtime synchronization; do not move this
+                // large payload back into process environment variables (Android execve can hit E2BIG).
                 addProperty("usePredefinedClasspath", true)
                 addProperty("disableDependencyResolution", true)
                 add("classpath", classpathArray)
