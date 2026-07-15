@@ -84,8 +84,8 @@ public class DefinitionProvider extends CancelableServiceProvider {
         compile.get(task -> NavigationHelper.findElement(task, file, line, column, this));
 
     if (element == null) {
-      LOG.error("Cannot find element at line: {} and column: {}", line, column);
-      return NOT_SUPPORTED;
+      LOG.debug("Cannot find javac element at line: {} and column: {}; trying Kotlin fallback", line, column);
+      return KotlinDefinitionFallback.find(compiler, file, line - 1, column - 1);
     }
 
     IJavaDefinitionProvider provider = null;
@@ -99,14 +99,14 @@ public class DefinitionProvider extends CancelableServiceProvider {
     if (provider == null) {
       final String className = className(element);
       if (TextUtils.isEmpty(className)) {
-        LOG.error("No class name found for element: {}", element);
-        return NOT_SUPPORTED;
+        LOG.debug("No Java class name found for element: {}; trying Kotlin fallback", element);
+        return KotlinDefinitionFallback.find(compiler, file, line - 1, column - 1);
       }
 
       final Optional<JavaFileObject> optional = compiler.findAnywhere(className);
       if (!optional.isPresent()) {
-        LOG.error("Cannot find source file for class: {}", className);
-        return NOT_SUPPORTED;
+        LOG.debug("Cannot find Java source file for class: {}; trying Kotlin fallback", className);
+        return KotlinDefinitionFallback.find(compiler, file, line - 1, column - 1);
       }
 
       final JavaFileObject jfo = optional.get();
@@ -118,7 +118,11 @@ public class DefinitionProvider extends CancelableServiceProvider {
       }
     }
 
-    return provider.findDefinition(element);
+    final List<Location> locations = provider.findDefinition(element);
+    if (!locations.isEmpty()) {
+      return locations;
+    }
+    return KotlinDefinitionFallback.find(compiler, file, line - 1, column - 1);
   }
 
   private String className(Element element) {

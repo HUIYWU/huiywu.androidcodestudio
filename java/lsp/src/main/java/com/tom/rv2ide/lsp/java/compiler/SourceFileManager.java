@@ -24,6 +24,8 @@ import androidx.annotation.NonNull;
 import com.blankj.utilcode.util.CloseUtils;
 import com.tom.rv2ide.javac.config.JavacConfigProvider;
 import com.tom.rv2ide.javac.services.fs.AndroidFsProviderImpl;
+import com.tom.rv2ide.lsp.java.kotlin.KotlinClassOutputProvider;
+import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.projects.android.AndroidModule;
 import com.tom.rv2ide.projects.ModuleProject;
 import com.tom.rv2ide.common.logging.IdeLogConfig;
@@ -109,7 +111,11 @@ public class SourceFileManager extends ForwardingJavaFileManager<JavacFileManage
       setLocationLogError(StandardLocation.PLATFORM_CLASS_PATH, androidModule.getBootClassPaths());
     }
 
-    return module.getCompileClasspaths();
+    final Set<File> classpaths = new java.util.LinkedHashSet<>(module.getCompileClasspaths());
+    if (JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()) {
+      classpaths.addAll(KotlinClassOutputProvider.findCompileOutputs(module));
+    }
+    return classpaths;
   }
 
   private static JavacFileManager createDelegateFileManager() {

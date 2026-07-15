@@ -26,8 +26,10 @@ import com.tom.rv2ide.javac.services.compiler.ReusableCompiler;
 import com.tom.rv2ide.javac.services.partial.CompilationInfo;
 import com.tom.rv2ide.javac.services.partial.PartialReparser;
 import com.tom.rv2ide.javac.services.partial.PartialReparserImpl;
+import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
 import com.tom.rv2ide.lsp.java.models.PartialReparseRequest;
+import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.lsp.java.parser.ParseTask;
 import com.tom.rv2ide.lsp.java.parser.Parser;
 import com.tom.rv2ide.lsp.java.utils.Extractors;
@@ -200,6 +202,9 @@ public class JavaCompilerService implements CompilerProvider {
     final int bootClassPathCount = bootClasspathClasses.size();
     all.addAll(classPathClasses);
     all.addAll(bootClasspathClasses);
+    if (module != null && JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()) {
+      all.addAll(KotlinJvmTypeIndex.publicTopLevelTypes(module));
+    }
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
           "publicTopLevelTypes source={} classpath={} boot={} total={} hasString={} hasInteger={} hasDouble={}",

@@ -17,7 +17,11 @@
 
 package com.tom.rv2ide.preferences
 
+import androidx.preference.Preference
 import com.tom.rv2ide.R
+import com.tom.rv2ide.lsp.java.JavaCompilerProvider
+import com.tom.rv2ide.lsp.java.compiler.SourceFileManager
+import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex
 import com.tom.rv2ide.preferences.internal.JavaPreferences
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
@@ -33,7 +37,9 @@ internal class JavaCodeConfigurations(
   init {
     addPreference(GoogleCodeStyle())
     addPreference(JavaDiagnosticsEnabled())
+    addPreference(JavaKotlinRecognitionEnabled())
     addPreference(JavaIncrementalReparseEnabled())
+
   }
 }
 
@@ -61,6 +67,30 @@ private class JavaDiagnosticsEnabled(
         getValue = JavaPreferences::isJavaDiagnosticsEnabled::get,
         setValue = JavaPreferences::isJavaDiagnosticsEnabled::set,
     )
+
+@Parcelize
+private class JavaKotlinRecognitionEnabled(
+    override val key: String = JavaPreferences.JAVA_KOTLIN_RECOGNITION_ENABLED,
+    override val title: Int = string.idepref_java_kotlinRecognitionEnabled_title,
+    override val summary: Int? = string.idepref_java_kotlinRecognitionEnabled_summary,
+    override val icon: Int? = drawable.ic_compilation_error,
+) :
+    SwitchPreference(
+        getValue = JavaPreferences::isJavaKotlinRecognitionEnabled::get,
+        setValue = JavaPreferences::isJavaKotlinRecognitionEnabled::set,
+    ) {
+  override fun onPreferenceChanged(preference: Preference, newValue: Any?): Boolean {
+    val enabled = newValue as? Boolean ?: JavaPreferences.isJavaKotlinRecognitionEnabled
+    JavaPreferences.isJavaKotlinRecognitionEnabled = enabled
+
+    // CLASS_PATH is fixed when SourceFileManager is created. Recreate Java analysis state so the
+    // next request observes the newly enabled/disabled Kotlin source and class-output bridges.
+    JavaCompilerProvider.getInstance().destroy()
+    SourceFileManager.clearCache()
+    KotlinJvmTypeIndex.clear()
+    return true
+  }
+}
 
 @Parcelize
 private class JavaIncrementalReparseEnabled(

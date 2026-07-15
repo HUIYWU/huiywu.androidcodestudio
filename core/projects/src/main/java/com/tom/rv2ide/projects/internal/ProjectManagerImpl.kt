@@ -339,6 +339,11 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
         return@apply
       }
 
+      if (extension == "kt" || extension == "kts") {
+        getWorkspace()?.findModuleForFile(this, false)?.bumpSourceIndexVersion()
+        return@apply
+      }
+
       if (extension != "xml") {
         return@apply
       }
@@ -376,6 +381,10 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
   fun onFileCreated(event: FileCreationEvent) {
     generateSourcesIfNecessary(event)
 
+    if (DocumentUtils.isKotlinFile(event.file.toPath())) {
+      getWorkspace()?.findModuleForFile(event.file, false)?.bumpSourceIndexVersion()
+    }
+
     if (DocumentUtils.isJavaFile(event.file.toPath())) {
       getWorkspace()?.findModuleForFile(event.file, false)?.let {
         val sourceRoot = it.findSourceRoot(event.file) ?: return@let
@@ -395,6 +404,10 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     // Remove the source node entry
     // Do not check for Java file DocumentUtils.isJavaFile(...) as it checks for file existence as
     // well. As the file is already deleted, it will always return false
+    if (event.file.extension == "kt" || event.file.extension == "kts") {
+      getWorkspace()?.findModuleForFile(event.file, false)?.bumpSourceIndexVersion()
+    }
+
     if (event.file.extension == "java") {
       getWorkspace()
           ?.findModuleForFile(event.file, false)
@@ -416,6 +429,10 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
 
     // Do not check for Java file DocumentUtils.isJavaFile(...) as it checks for file existence as
     // well. As the file is already renamed to another filename, it will always return false
+    if (event.file.extension == "kt" || event.file.extension == "kts") {
+      getWorkspace()?.findModuleForFile(event.file, false)?.bumpSourceIndexVersion()
+    }
+
     if (event.file.extension == "java") {
       // remove the source node entry
       getWorkspace()
@@ -428,6 +445,10 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
                   module.bumpSourceIndexVersion()
                 }
           }
+    }
+
+    if (DocumentUtils.isKotlinFile(event.newFile.toPath())) {
+      getWorkspace()?.findModuleForFile(event.newFile, false)?.bumpSourceIndexVersion()
     }
 
     if (DocumentUtils.isJavaFile(event.newFile.toPath())) {

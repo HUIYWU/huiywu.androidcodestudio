@@ -32,6 +32,7 @@ import com.tom.rv2ide.lsp.internal.model.CachedCompletion
 import com.tom.rv2ide.lsp.java.actions.JavaCodeActionsMenu
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.lsp.java.compiler.SourceFileManager
+import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex
 import com.tom.rv2ide.lsp.java.models.JavaServerSettings
 import com.tom.rv2ide.lsp.java.providers.CodeFormatProvider
 import com.tom.rv2ide.lsp.java.providers.CompletionProvider
@@ -131,6 +132,7 @@ class JavaLanguageServer : ILanguageServer {
   override fun shutdown() {
     JavaCompilerProvider.getInstance().destroy()
     SourceFileManager.clearCache()
+    KotlinJvmTypeIndex.clear()
     CacheFSInfoSingleton.clearCache()
     clearCache()
     EventBus.getDefault().unregister(this)
@@ -152,8 +154,9 @@ class JavaLanguageServer : ILanguageServer {
     // Destory the NO_MODULE_COMPILER instance
     JavaCompilerService.NO_MODULE_COMPILER.destroy()
 
-    // Clear cached file managers
+    // Clear cached file managers and Kotlin source symbol snapshots.
     SourceFileManager.clearCache()
+    KotlinJvmTypeIndex.clear()
 
     // Clear cached JAR file system for R.jar
     // Using the cached instance will result in completions not being updated for updated resources

@@ -1,0 +1,266 @@
+/*
+ * This file is part of AndroidCodeStudio.
+ */
+package com.tom.rv2ide.lsp.java.kotlin;
+
+import com.tom.rv2ide.projects.ModuleProject;
+import com.tom.rv2ide.utils.DocumentUtils;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * A lightweight Kotlin-as-Java type index used by the Java language server.
+ *
+ * <p>This deliberately does not expose Kotlin files through javac's {@code SOURCE_PATH}. javac
+ * cannot parse Kotlin source. It only supplies JVM-visible top-level names to Java completion and
+ * import-oriented features. A future ABI/stub provider can replace this scanner without changing
+ * those consumers.
+ */
+public final class KotlinJvmTypeIndex {
+
+  private static final Logger LOG = LoggerFactory.getLogger(KotlinJvmTypeIndex.class);
+  private static final ConcurrentHashMap<ModuleProject, CachedTypes> CACHE =
+      new ConcurrentHashMap<>();
+
+  private static final Pattern PACKAGE_PATTERN =
+      Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_][\\w]*(?:\\.[A-Za-z_][\\w]*)*)");
+  private static final Pattern FILE_JVM_NAME_PATTERN =
+      Pattern.compile("(?m)^\\s*@file:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)");
+  private static final Pattern TYPE_PATTERN =
+      Pattern.compile(
+          "^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|enum|"
+              + "annotation|value|expect|actual)\\s+)*)"
+              + "(?:class|interface|object)\\s+([A-Za-z_][\\w]*)");
+  private static final Pattern TOP_LEVEL_MEMBER_PATTERN =
+      Pattern.compile("^\\s*(?:(?:public|private|protected|internal|inline|suspend|const|lateinit|"
+          + "tailrec|operator|infix|external|override)\\s+)*(?:fun|val|var)\\s+");
+
+  private KotlinJvmTypeIndex() {}
+
+  /** Returns Kotlin declarations which Java can use as top-level class names or file facades. */
+  public static Set<String> publicTopLevelTypes(ModuleProject module) {
+    if (module == null) {
+      return Collections.emptySet();
+    }
+
+    final long revision = module.getSourceIndexVersion();
+    final CachedTypes cached = CACHE.get(module);
+    if (cached != null && cached.revision == revision) {
+      return cached.types;
+    }
+
+    final Set<String> indexed = new LinkedHashSet<>();
+    for (java.io.File root : module.getCompileSourceDirectories()) {
+      if (root == null || !root.isDirectory()) {
+        continue;
+      }
+      try (Stream<Path> paths = Files.walk(root.toPath())) {
+        paths.filter(DocumentUtils::isKotlinFile)
+            .filter(path -> path.getFileName().toString().endsWith(".kt"))
+            .forEach(path -> indexFile(path, indexed));
+      } catch (IOException error) {
+        LOG.debug("Unable to scan Kotlin source root {}", root, error);
+      }
+    }
+
+    final Set<String> immutable = Collections.unmodifiableSet(indexed);
+    CACHE.put(module, new CachedTypes(revision, immutable));
+    LOG.debug("Indexed {} Kotlin JVM top-level types for module {}", immutable.size(), module.getPath());
+    return immutable;
+  }
+
+  /**
+   * Finds the source declaration for a JVM-visible Kotlin top-level type or file facade.
+   * This is intentionally used only by explicit navigation requests; completion continues to use
+   * the cached name-only index above.
+   */
+  public static KotlinTypeDeclaration findDeclaration(ModuleProject module, String qualifiedName) {
+    if (module == null || qualifiedName == null || qualifiedName.isEmpty()) {
+      return null;
+    }
+    for (java.io.File root : module.getCompileSourceDirectories()) {
+      if (root == null || !root.isDirectory()) {
+        continue;
+      }
+      try (Stream<Path> paths = Files.walk(root.toPath())) {
+        final java.util.Iterator<Path> iterator = paths
+            .filter(DocumentUtils::isKotlinFile)
+            .filter(path -> path.getFileName().toString().endsWith(".kt"))
+            .iterator();
+        while (iterator.hasNext()) {
+          final KotlinTypeDeclaration declaration = findDeclarationInFile(iterator.next(), qualifiedName);
+          if (declaration != null) {
+            return declaration;
+          }
+        }
+      } catch (IOException error) {
+        LOG.debug("Unable to scan Kotlin source root {} for {}", root, qualifiedName, error);
+      }
+    }
+    return null;
+  }
+
+  /** Removes cached Kotlin source symbols for a module, e.g. after a source-root change. */
+  public static void invalidate(ModuleProject module) {
+    if (module != null) {
+      CACHE.remove(module);
+    }
+  }
+
+  public static void clear() {
+    CACHE.clear();
+  }
+
+  private static void indexFile(Path path, Set<String> result) {
+    final String source;
+    try {
+      source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+    } catch (IOException error) {
+      LOG.debug("Unable to read Kotlin source {}", path, error);
+      return;
+    }
+
+    final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
+    final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
+    final String[] lines = source.split("\\R");
+    int braceDepth = 0;
+    boolean hasTopLevelMember = false;
+
+    for (String line : lines) {
+      if (braceDepth == 0) {
+        final Matcher typeMatcher = TYPE_PATTERN.matcher(line);
+        if (typeMatcher.find() && !containsPrivateModifier(typeMatcher.group(1))) {
+          result.add(qualifiedName(packageName, typeMatcher.group(2)));
+        }
+        if (TOP_LEVEL_MEMBER_PATTERN.matcher(line).find() && !line.matches("^\\s*private\\s+.*")) {
+          hasTopLevelMember = true;
+        }
+      }
+      braceDepth += braceDelta(line);
+      if (braceDepth < 0) {
+        braceDepth = 0;
+      }
+    }
+
+    if (hasTopLevelMember) {
+      final Matcher jvmNameMatcher = FILE_JVM_NAME_PATTERN.matcher(source);
+      final String facade = jvmNameMatcher.find()
+          ? jvmNameMatcher.group(1)
+          : path.getFileName().toString().substring(0, path.getFileName().toString().length() - 3) + "Kt";
+      result.add(qualifiedName(packageName, facade));
+    }
+  }
+
+  private static KotlinTypeDeclaration findDeclarationInFile(Path path, String qualifiedName) {
+    final String source;
+    try {
+      source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+    } catch (IOException error) {
+      return null;
+    }
+    final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
+    final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
+    final String[] lines = source.split("\\R", -1);
+    int braceDepth = 0;
+    int offset = 0;
+    boolean hasTopLevelMember = false;
+    for (String line : lines) {
+      if (braceDepth == 0) {
+        final Matcher typeMatcher = TYPE_PATTERN.matcher(line);
+        if (typeMatcher.find() && !containsPrivateModifier(typeMatcher.group(1))) {
+          final String name = typeMatcher.group(2);
+          if (qualifiedName.equals(qualifiedName(packageName, name))) {
+            return new KotlinTypeDeclaration(path, offset + typeMatcher.start(2), name.length());
+          }
+        }
+        if (TOP_LEVEL_MEMBER_PATTERN.matcher(line).find() && !line.matches("^\\s*private\\s+.*")) {
+          hasTopLevelMember = true;
+        }
+      }
+      braceDepth += braceDelta(line);
+      if (braceDepth < 0) {
+        braceDepth = 0;
+      }
+      offset += line.length() + 1;
+    }
+    if (!hasTopLevelMember) {
+      return null;
+    }
+    final Matcher jvmNameMatcher = FILE_JVM_NAME_PATTERN.matcher(source);
+    final String facade = jvmNameMatcher.find()
+        ? jvmNameMatcher.group(1)
+        : path.getFileName().toString().substring(0, path.getFileName().toString().length() - 3) + "Kt";
+    if (!qualifiedName.equals(qualifiedName(packageName, facade))) {
+      return null;
+    }
+    final int declarationOffset = jvmNameMatcher.find(0) ? jvmNameMatcher.start(1) : 0;
+    return new KotlinTypeDeclaration(path, declarationOffset, facade.length());
+  }
+
+  public static final class KotlinTypeDeclaration {
+    public final Path file;
+    public final int offset;
+    public final int length;
+
+    KotlinTypeDeclaration(Path file, int offset, int length) {
+      this.file = file;
+      this.offset = offset;
+      this.length = length;
+    }
+  }
+
+  private static boolean containsPrivateModifier(String modifiers) {
+    return modifiers != null && Pattern.compile("(?:^|\\s)private(?:\\s|$)").matcher(modifiers).find();
+  }
+
+  private static String qualifiedName(String packageName, String simpleName) {
+    return packageName.isEmpty() ? simpleName : packageName + "." + simpleName;
+  }
+
+  // This intentionally stays conservative. It is only used to avoid publishing clearly nested
+  // declarations as package-level classes; ABI-accurate nested declarations belong to a later stub phase.
+  private static int braceDelta(String line) {
+    boolean quoted = false;
+    boolean escaped = false;
+    int delta = 0;
+    for (int i = 0; i < line.length(); i++) {
+      char current = line.charAt(i);
+      if (quoted) {
+        if (current == '"' && !escaped) {
+          quoted = false;
+        }
+        escaped = current == '\\' && !escaped;
+        continue;
+      }
+      if (current == '"') {
+        quoted = true;
+      } else if (current == '{') {
+        delta++;
+      } else if (current == '}') {
+        delta--;
+      }
+    }
+    return delta;
+  }
+
+  private static final class CachedTypes {
+    final long revision;
+    final Set<String> types;
+
+    CachedTypes(long revision, Set<String> types) {
+      this.revision = revision;
+      this.types = types;
+    }
+  }
+}
