@@ -349,6 +349,12 @@ class JavaLanguageServer : ILanguageServer {
   @Subscribe(threadMode = ThreadMode.ASYNC)
   @Suppress("unused")
   fun onContentChange(event: DocumentChangeEvent) {
+    if (DocumentUtils.isKotlinFile(event.changedFile)) {
+      val module = getInstance().getWorkspace()?.findModuleForFile(event.changedFile, true)
+      KotlinJvmTypeIndex.invalidate(module)
+      cachedCompletion = CachedCompletion.EMPTY
+      return
+    }
     if (!DocumentUtils.isJavaFile(event.changedFile)) {
       return
     }

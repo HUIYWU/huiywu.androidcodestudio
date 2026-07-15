@@ -3,10 +3,10 @@
  */
 package com.tom.rv2ide.lsp.java.kotlin;
 
+import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.projects.ModuleProject;
 import com.tom.rv2ide.utils.DocumentUtils;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -123,13 +123,7 @@ public final class KotlinJvmTypeIndex {
   }
 
   private static void indexFile(Path path, Set<String> result) {
-    final String source;
-    try {
-      source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
-    } catch (IOException error) {
-      LOG.debug("Unable to read Kotlin source {}", path, error);
-      return;
-    }
+    final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
 
     final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
     final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
@@ -163,12 +157,7 @@ public final class KotlinJvmTypeIndex {
   }
 
   private static KotlinTypeDeclaration findDeclarationInFile(Path path, String qualifiedName) {
-    final String source;
-    try {
-      source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
-    } catch (IOException error) {
-      return null;
-    }
+    final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
     final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
     final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
     final String[] lines = source.split("\\R", -1);

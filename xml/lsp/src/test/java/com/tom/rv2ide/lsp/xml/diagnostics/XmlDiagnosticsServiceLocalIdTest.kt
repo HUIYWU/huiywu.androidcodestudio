@@ -28,7 +28,7 @@ class XmlDiagnosticsServiceLocalIdTest : TestCase() {
         DOMParser.getInstance()
             .parse(
                 fixtureText("diagnostics/local_id_references.xml"),
-                ANDROID_NAMESPACE_URI,
+                ANDROID_NAMESPACE_URI_FOR_TEST,
                 URIResolverExtensionManager(),
             )
 
@@ -47,7 +47,7 @@ class XmlDiagnosticsServiceLocalIdTest : TestCase() {
                     android:tag="@+android:id/framework"
                     android:contentDescription="@+other.package:id/external" />
                 """.trimIndent(),
-                ANDROID_NAMESPACE_URI,
+                ANDROID_NAMESPACE_URI_FOR_TEST,
                 URIResolverExtensionManager(),
             )
 
@@ -62,5 +62,9 @@ class XmlDiagnosticsServiceLocalIdTest : TestCase() {
         }
         .bufferedReader()
         .use { it.readText() }
+  }
+
+  private companion object {
+    const val ANDROID_NAMESPACE_URI_FOR_TEST = "http://schemas.android.com/apk/res/android"
   }
 }

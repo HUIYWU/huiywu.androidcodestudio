@@ -150,7 +150,9 @@ internal class XmlDiagnosticsService {
           if (!value.startsWith("@+")) {
             return@forEach
           }
-          val reference = XmlResourceReference.parse(value.removePrefix("@+")) ?: return@forEach
+          // Reinterpret the creating form @+id/name as a regular @id/name reference
+          // solely to reuse the complete-reference parser for its type/package validation.
+          val reference = XmlResourceReference.parse("@${value.removePrefix("@+")}") ?: return@forEach
           if (reference.packageName == null && !reference.isThemeAttribute && reference.type == ID) {
             declaredIds.add(reference.entry)
           }
@@ -221,7 +223,9 @@ internal class XmlDiagnosticsService {
   }
 
   private fun checkManifestDocument(root: DOMElement?, collector: XmlDiagnosticCollector) {
-    if (root == null || !root.isStartTagClosed || root.tagName != MANIFEST_ROOT_TAG) {
+    // LemMinX represents a valid self-closing <manifest/> with isSelfClosed, without necessarily
+    // setting isStartTagClosed. Treat both closed forms as valid, as the XML syntax rule does.
+    if (root == null || (!root.isStartTagClosed && !root.isSelfClosed) || root.tagName != MANIFEST_ROOT_TAG) {
       root?.let {
         collector.errorTag(
             code = CODE_MANIFEST_ROOT,
@@ -245,7 +249,8 @@ internal class XmlDiagnosticsService {
     val expectedParent =
         when {
           tagName in MANIFEST_APPLICATION_COMPONENT_TAGS -> "<$MANIFEST_APPLICATION_TAG>"
-          tagName == MANIFEST_INTENT_FILTER_TAG -> "<activity>, <activity-alias>, <service>, or <receiver>"
+          tagName == MANIFEST_INTENT_FILTER_TAG ->
+              "<activity>, <activity-alias>, <service>, <receiver>, or <provider>"
           tagName in MANIFEST_INTENT_FILTER_CHILD_TAGS -> "<$MANIFEST_INTENT_FILTER_TAG>"
           tagName == MANIFEST_USES_LIBRARY_TAG -> "<$MANIFEST_APPLICATION_TAG>"
           else -> return
@@ -892,7 +897,7 @@ internal class XmlDiagnosticsService {
     val MANIFEST_NAMED_COMPONENT_TAGS =
         MANIFEST_APPLICATION_COMPONENT_TAGS + "instrumentation"
     val MANIFEST_INTENT_FILTER_PARENTS =
-        setOf("activity", "activity-alias", "service", "receiver")
+    setOf("activity", "activity-alias", "service", "receiver", "provider")
     val MANIFEST_INTENT_FILTER_CHILD_TAGS = setOf("action", "category", "data")
     val VALUES_NAMED_TAGS =
         setOf(
