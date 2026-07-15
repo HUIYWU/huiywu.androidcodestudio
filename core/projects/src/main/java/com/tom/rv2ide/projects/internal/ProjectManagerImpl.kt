@@ -47,7 +47,6 @@ import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.withStopWatch
 import com.tom.rv2ide.utils.GradleFileParser
 import java.io.File
-import java.util.Locale
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
 import kotlin.io.path.pathString
@@ -213,21 +212,18 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
                 return@flatMap emptyList()
               }
 
-              val mainArtifact = variant.mainArtifact
-              val variantNameCapitalized =
-                  variant.name.replaceFirstChar {
-                    if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString()
-                  }
+val mainArtifact = variant.mainArtifact
 
-              return@flatMap listOf(
-                      mainArtifact.resGenTaskName,
-                      mainArtifact.sourceGenTaskName,
-                      if (module.viewBindingOptions.isEnabled)
-                          "dataBindingGenBaseClasses$variantNameCapitalized"
-                      else null,
-                      "process${variantNameCapitalized}Resources",
-                  )
-                  .mapNotNull { it?.let { "${module.path}:${it}" } }
+              // Only execute task names supplied by the Android tooling model. AGP task names are not
+              // stable across plugins/features (for example Navigation adds a suffix), so guessing
+              // process<Variant>Resources or dataBindingGenBaseClasses<Variant> can invoke an
+              // ambiguous Gradle task or fail outright.
+              return@flatMap listOf(mainArtifact.resGenTaskName, mainArtifact.sourceGenTaskName)
+                  .mapNotNull { taskName ->
+                    taskName
+                        ?.takeIf(String::isNotBlank)
+                        ?.let { name -> module.tasks.firstOrNull { it.name == name }?.path }
+                  }
             }
             ?.distinct()
             ?.toList() ?: emptyList()
@@ -320,14 +316,17 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
 
     onUpdated(buildVariants)
   }
-  private fun generateSourcesIfNecessary(event: FileEvent) {
-    val builder = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return
+  private fun refreshResourcesIfNecessary(event: FileEvent) {
+    val workspace = getWorkspace() ?: return
     val file = event.file
-    if (getWorkspace()?.isAndroidResource(file) != true) {
+    if (!workspace.isAndroidResource(file)) {
       return
     }
 
-    generateSources(builder)
+    // Resource edits must not trigger a workspace-wide Gradle warm-up. AGP produces generated
+    // binding/navigation sources during initialization or an explicit build; editor file events
+    // only need the owning module's resource table refreshed for completion and diagnostics.
+    (workspace.findModuleForFile(file, false) as? AndroidModule)?.updateResourceTable()
   }
 
 
@@ -379,7 +378,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
   @Suppress("unused")
   @Subscribe(threadMode = ThreadMode.BACKGROUND)
   fun onFileCreated(event: FileCreationEvent) {
-    generateSourcesIfNecessary(event)
+    refreshResourcesIfNecessary(event)
 
     if (DocumentUtils.isKotlinFile(event.file.toPath())) {
       getWorkspace()?.findModuleForFile(event.file, false)?.bumpSourceIndexVersion()
@@ -399,7 +398,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
   @Suppress("unused")
   @Subscribe(threadMode = ThreadMode.BACKGROUND)
   fun onFileDeleted(event: FileDeletionEvent) {
-    generateSourcesIfNecessary(event)
+    refreshResourcesIfNecessary(event)
 
     // Remove the source node entry
     // Do not check for Java file DocumentUtils.isJavaFile(...) as it checks for file existence as
@@ -425,7 +424,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
   @Suppress("unused")
   @Subscribe(threadMode = ThreadMode.BACKGROUND)
   fun onFileRenamed(event: FileRenameEvent) {
-    generateSourcesIfNecessary(event)
+    refreshResourcesIfNecessary(event)
 
     // Do not check for Java file DocumentUtils.isJavaFile(...) as it checks for file existence as
     // well. As the file is already renamed to another filename, it will always return false

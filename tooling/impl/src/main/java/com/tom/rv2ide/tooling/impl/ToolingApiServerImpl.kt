@@ -376,6 +376,7 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       val variantNameCapitalized: String,
       val metadata: com.tom.rv2ide.tooling.api.models.AndroidProjectMetadata?,
       val artifact: com.tom.rv2ide.tooling.api.models.AndroidArtifactMetadata,
+      val availableTasks: List<com.tom.rv2ide.tooling.api.models.GradleTask>,
       val generatedRootsOnDisk: Set<String>,
   )
 
@@ -399,8 +400,9 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
               projectPath = projectPath,
               variantNameCapitalized = variantNameCapitalized,
               metadata = metadata,
-              artifact = variant.mainArtifact,
-              generatedRootsOnDisk = collectExistingGeneratedRoots(variant.mainArtifact),
+artifact = variant.mainArtifact,
+               availableTasks = androidProject.getTasks().get().orEmpty(),
+               generatedRootsOnDisk = collectExistingGeneratedRoots(variant.mainArtifact),
           )
 
       // Warm-up is driven by generated output categories instead of a single databinding task.
@@ -451,16 +453,11 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       tasks: MutableSet<String>,
   ) {
     if (AndroidGeneratedOutputCategory.CORE_RESOURCES in missingCategories) {
-      context.artifact.resGenTaskName.takeIf { !it.isNullOrBlank() }?.let {
-        tasks.add("${context.projectPath}:$it")
-      }
-      tasks.add("${context.projectPath}:process${context.variantNameCapitalized}Resources")
+      context.exactTaskPath(context.artifact.resGenTaskName)?.let(tasks::add)
     }
 
     if (AndroidGeneratedOutputCategory.CORE_SOURCES in missingCategories) {
-      context.artifact.sourceGenTaskName.takeIf { !it.isNullOrBlank() }?.let {
-        tasks.add("${context.projectPath}:$it")
-      }
+      context.exactTaskPath(context.artifact.sourceGenTaskName)?.let(tasks::add)
     }
   }
 
@@ -470,8 +467,16 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       tasks: MutableSet<String>,
   ) {
     if (AndroidGeneratedOutputCategory.BINDING_SOURCES in missingCategories) {
-      tasks.add("${context.projectPath}:dataBindingGenBaseClasses${context.variantNameCapitalized}")
+      context.exactTaskPath("dataBindingGenBaseClasses${context.variantNameCapitalized}")?.let(tasks::add)
     }
+  }
+
+  /** Returns a task only when the tooling model confirms the exact task name for this module. */
+  private fun AndroidWarmupContext.exactTaskPath(taskName: String?): String? {
+    if (taskName.isNullOrBlank()) {
+      return null
+    }
+    return availableTasks.firstOrNull { it.name == taskName }?.path
   }
 
   private data class AndroidNativeWarmupContext(
