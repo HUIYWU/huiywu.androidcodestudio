@@ -45,6 +45,7 @@ import com.tom.rv2ide.lsp.java.providers.completion.MemberSelectCompletionProvid
 import com.tom.rv2ide.lsp.java.providers.completion.SwitchConstantCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContext;
 import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContextClassifier;
+import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.lsp.java.utils.ASTFixer;
 import com.tom.rv2ide.lsp.java.utils.CancelChecker;
 import com.tom.rv2ide.lsp.java.visitors.FindCompletionsAt;
@@ -431,16 +432,22 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
 
+    final boolean requiresKotlinAbi = JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled();
     LOG.warn(
-        "Kotlin ABI TRACE completionCompile file={} cursor={} partialRequestPresent={} allowPartialReparse=true compilerModule={}",
+        "Kotlin ABI TRACE completionCompile file={} cursor={} partialRequestPresent={} allowPartialReparse={} requiresKotlinAbi={} compilerModule={}",
         file,
         cursor,
         partialRequest != null,
+        !requiresKotlinAbi,
+        requiresKotlinAbi,
         compiler.getModule() == null ? null : compiler.getModule().getPath());
+    // Kotlin source ABI stubs must be part of the same javac task that performs member completion.
+    // Partial reparse intentionally excludes synthetic sources, so recognition-enabled completion
+    // uses the normal full-compile path.
     final CompilationRequest request = new CompilationRequest(
         Collections.singletonList(source),
         partialRequest,
-        true);
+        !requiresKotlinAbi);
     request.configureContext = ctx -> {
       final var config = JavaCompilerConfig.instance(ctx);
       config.setCompletionInfo(new CompletionInfo(params.getPosition()));

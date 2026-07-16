@@ -52,10 +52,26 @@ final class KotlinJvmAbiStubGenerator {
               + "operator|infix|inline|tailrec|external)\\s+)*)fun\\s+(?:<[^>]+>\\s*)?"
               + "([A-Za-z_][\\w]*(?:<[^>]+>)?\\??)\\.([A-Za-z_][\\w]*)\\s*\\(([^)]*)\\)"
               + "\\s*(?::\\s*([^=\\{]+))?.*$");
-  private static final Pattern PROPERTY_PATTERN =
+private static final Pattern PROPERTY_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|override|const|lateinit)\\s+)*)"
               + "(val|var)\\s+([A-Za-z_][\\w]*)\\s*(?::\\s*([^=\\{]+))?.*$");
+  private static final Pattern JVM_STATIC_FUNCTION_PATTERN =
+      Pattern.compile(
+          "(?s)@JvmStatic\\s*(?:\\([^)]*\\))?\\s*"
+              + "((?:(?:public|protected|internal|private|open|abstract|final|override|suspend|"
+              + "operator|infix|inline|tailrec|external)\\s+)*)fun\\s+(?:<[^>]+>\\s*)?"
+              + "([A-Za-z_][\\w]*)\\s*\\(([^)]*)\\)\\s*(?::\\s*([^=\\{]+))?");
+  private static final Pattern JVM_STATIC_PROPERTY_PATTERN =
+      Pattern.compile(
+          "(?s)@JvmStatic\\s*(?:\\([^)]*\\))?\\s*"
+              + "((?:(?:public|protected|internal|private|open|override|const|lateinit)\\s+)*)"
+              + "(val|var)\\s+([A-Za-z_][\\w]*)\\s*(?::\\s*([^=\\{]+))?");
+  private static final Pattern JVM_FIELD_PROPERTY_PATTERN =
+      Pattern.compile(
+          "(?s)@JvmField\\s*(?:\\([^)]*\\))?\\s*"
+              + "((?:(?:public|protected|internal|private|open|override|const|lateinit)\\s+)*)"
+              + "(val|var)\\s+([A-Za-z_][\\w]*)\\s*(?::\\s*([^=\\{]+))?");
 
   private KotlinJvmAbiStubGenerator() {}
 
@@ -150,42 +166,21 @@ final class KotlinJvmAbiStubGenerator {
         out, companionBody.replace("@JvmStatic", "").replace("@JvmField", ""), false, false);
     out.append("  }\n");
     out.append("  public static final Companion Companion = null;\n");
-    final String[] lines = companionBody.split("\\R");
-    boolean jvmStatic = false;
-    boolean jvmField = false;
-    for (String line : lines) {
-      final boolean hasJvmStatic = line.contains("@JvmStatic");
-      final boolean hasJvmField = line.contains("@JvmField");
-      final String declarationLine =
-          line.replace("@JvmStatic", "").replace("@JvmField", "").trim();
-      if (hasJvmStatic) {
-        jvmStatic = true;
-      }
-      if (hasJvmField) {
-        jvmField = true;
-      }
-      final Matcher function = FUNCTION_PATTERN.matcher(declarationLine);
-      if (jvmStatic && function.matches() && !isPrivate(function.group(1))) {
-        appendStaticFunction(out, function);
-        jvmStatic = false;
-        continue;
-      }
-      final Matcher property = PROPERTY_PATTERN.matcher(declarationLine);
-      if (property.matches() && !isPrivate(property.group(1))) {
-        if (jvmField) {
-          appendStaticField(out, property);
-        } else if (jvmStatic) {
-          appendStaticProperty(out, property);
-        }
-        jvmStatic = false;
-        jvmField = false;
-        continue;
-      }
-      if (!declarationLine.isEmpty() && !declarationLine.startsWith("@")) {
-        jvmStatic = false;
-        jvmField = false;
+    // Do not depend on annotations and declarations sharing a particular line layout. Kotlin permits
+    // @JvmStatic, its use-site arguments, whitespace and the declaration to span separate lines.
+    final Matcher staticFunction = JVM_STATIC_FUNCTION_PATTERN.matcher(companionBody);
+    while (staticFunction.find()) {
+      if (!isPrivate(staticFunction.group(1))) {
+        appendStaticFunction(out, staticFunction);
       }
     }
+    final Matcher staticProperty = JVM_STATIC_PROPERTY_PATTERN.matcher(companionBody);
+    while (staticProperty.find()) {
+      if (!isPrivate(staticProperty.group(1))) {
+        appendStaticProperty(out, staticProperty);
+      }
+    }
+    appendJvmFields(out, companionBody);
   }
 
   private static void appendExtensionFunction(
@@ -245,6 +240,15 @@ final class KotlinJvmAbiStubGenerator {
     out.append("  public static ").append(javaType(function.group(4))).append(' ')
         .append(function.group(2)).append(parameterList("(" + function.group(3) + ")"))
         .append(methodBody(function.group(4)));
+  }
+
+  private static void appendJvmFields(StringBuilder out, String companionBody) {
+    final Matcher field = JVM_FIELD_PROPERTY_PATTERN.matcher(companionBody);
+    while (field.find()) {
+      if (!isPrivate(field.group(1))) {
+        appendStaticField(out, field);
+      }
+    }
   }
 
   private static void appendStaticField(StringBuilder out, Matcher property) {
