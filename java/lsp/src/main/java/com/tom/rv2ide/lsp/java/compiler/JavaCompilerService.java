@@ -627,6 +627,13 @@ public class JavaCompilerService implements CompilerProvider {
     // Kotlin stubs are diagnostics/full-compile input only. Partial reparse is deliberately kept
     // isolated from cross-language synthetic sources because its cached javac state is not
     // diagnostics-grade and cannot safely track Kotlin document revisions.
+    LOG.warn(
+        "Kotlin ABI TRACE performCompilation module={} requestSources={} expandedSources={} allowPartialReparse={} kotlinRecognition={}",
+        module == null ? null : module.getPath(),
+        request.sources == null ? -1 : request.sources.size(),
+        expandedRequest.sources == null ? -1 : expandedRequest.sources.size(),
+        expandedRequest.allowPartialReparse,
+        JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled());
     if (module != null
         && JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()
         && !expandedRequest.allowPartialReparse) {

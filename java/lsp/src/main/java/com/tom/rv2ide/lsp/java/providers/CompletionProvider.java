@@ -431,6 +431,12 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
 
+    LOG.warn(
+        "Kotlin ABI TRACE completionCompile file={} cursor={} partialRequestPresent={} allowPartialReparse=true compilerModule={}",
+        file,
+        cursor,
+        partialRequest != null,
+        compiler.getModule() == null ? null : compiler.getModule().getPath());
     final CompilationRequest request = new CompilationRequest(
         Collections.singletonList(source),
         partialRequest,

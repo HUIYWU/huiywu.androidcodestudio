@@ -28,6 +28,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import jdkx.tools.JavaFileObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Produces conservative Kotlin-as-Java stubs for javac full compilations.
@@ -41,6 +43,7 @@ import jdkx.tools.JavaFileObject;
  */
 public final class KotlinSourceStubProvider {
 
+  private static final Logger LOG = LoggerFactory.getLogger(KotlinSourceStubProvider.class);
   private static final Pattern JAVA_IMPORT =
       Pattern.compile("(?m)^\\s*import\\s+([A-Za-z_][\\w]*(?:\\.[A-Za-z_][\\w]*)*)\\s*;");
   private static final Pattern JAVA_STAR_IMPORT =
@@ -71,20 +74,44 @@ public final class KotlinSourceStubProvider {
     final Set<String> classOutputTypes = KotlinClassOutputProvider.publicDependencyTopLevelTypes(module);
     addOnDemandTypes(sourceTypes, starImports, referencedNames, imports);
     addOnDemandTypes(sourceTypes, sourcePackages, referencedNames, imports);
+    LOG.warn(
+        "Kotlin ABI TRACE stubsFor module={} javaSources={} explicitImports={} starImports={} javaPackages={} referencedNames={} sourceTypes={} dependencyClassTypes={}",
+        module.getPath(),
+        javaSources.size(),
+        imports,
+        starImports,
+        sourcePackages,
+        referencedNames,
+        sourceTypes,
+        classOutputTypes);
     final List<JavaFileObject> stubs = new ArrayList<>();
     for (String imported : imports) {
       // A real Kotlin class output has precedence. Do not create a duplicate javac type.
       if (!sourceTypes.contains(imported) || classOutputTypes.contains(imported)) {
+        LOG.warn(
+            "Kotlin ABI TRACE stubSkip type={} sourceIndexed={} dependencyClassOutput={}",
+            imported,
+            sourceTypes.contains(imported),
+            classOutputTypes.contains(imported));
         continue;
       }
       final KotlinJvmTypeIndex.KotlinTypeDeclaration declaration =
           KotlinJvmTypeIndex.findDeclaration(module, imported);
       if (declaration == null) {
+        LOG.warn("Kotlin ABI TRACE stubSkip type={} reason=noDeclaration", imported);
         continue;
       }
       final String stub = generateStub(imported, declaration.file);
       if (stub != null) {
+        LOG.warn(
+            "Kotlin ABI TRACE stubGenerated type={} kotlinFile={} revision={} source=<<<{}>>>",
+            imported,
+            declaration.file,
+            module.getSourceIndexVersion(),
+            stub);
         stubs.add(new KotlinAbiStubJavaFileObject(imported, stub, module.getSourceIndexVersion()));
+      } else {
+        LOG.warn("Kotlin ABI TRACE stubSkip type={} reason=generatorReturnedNull kotlinFile={}", imported, declaration.file);
       }
     }
     return stubs;

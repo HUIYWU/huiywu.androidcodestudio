@@ -357,6 +357,13 @@ class JavaLanguageServer : ILanguageServer {
   @Suppress("unused")
   fun onContentChange(event: DocumentChangeEvent) {
     if (DocumentUtils.isKotlinFile(event.changedFile)) {
+      log.warn(
+        "Kotlin ABI TRACE contentChanged file={} version={} delta={} selectedFile={}",
+        event.changedFile,
+        event.version,
+        event.changeDelta,
+        selectedFile,
+      )
       invalidateKotlinAbi(event.changedFile, clearFileManagers = false)
       return
     }
@@ -434,6 +441,7 @@ class JavaLanguageServer : ILanguageServer {
   @Subscribe(threadMode = ThreadMode.ASYNC)
   @Suppress("unused")
   fun onKotlinFileCreated(event: FileCreationEvent) {
+    log.warn("Kotlin ABI TRACE fileCreated file={} isKotlin={}", event.file, DocumentUtils.isKotlinFile(event.file.toPath()))
     if (DocumentUtils.isKotlinFile(event.file.toPath())) {
       invalidateKotlinAbi(event.file.toPath(), clearFileManagers = false)
     }
@@ -442,6 +450,7 @@ class JavaLanguageServer : ILanguageServer {
   @Subscribe(threadMode = ThreadMode.ASYNC)
   @Suppress("unused")
   fun onKotlinFileDeleted(event: FileDeletionEvent) {
+    log.warn("Kotlin ABI TRACE fileDeleted file={} extension={}", event.file, event.file.extension)
     if (event.file.extension == "kt" || event.file.extension == "kts") {
       invalidateKotlinAbi(event.file.toPath(), clearFileManagers = false)
     }
@@ -458,12 +467,20 @@ class JavaLanguageServer : ILanguageServer {
   }
 
   private fun invalidateKotlinAbi(kotlinFile: Path, clearFileManagers: Boolean) {
+    log.warn(
+      "Kotlin ABI TRACE invalidateStart file={} enabled={} selectedFile={} clearFileManagers={}",
+      kotlinFile,
+      JavaPreferences.isJavaKotlinRecognitionEnabled,
+      selectedFile,
+      clearFileManagers,
+    )
     if (!JavaPreferences.isJavaKotlinRecognitionEnabled) {
       return
     }
     val workspace = getInstance().getWorkspace()
     val module = workspace?.findModuleForFile(kotlinFile.toFile(), false)
         ?: workspace?.findModuleForFile(kotlinFile.toFile(), true)
+    log.warn("Kotlin ABI TRACE invalidateResolved file={} module={}", kotlinFile, module?.path)
     if (module != null) {
       KotlinJvmTypeIndex.invalidate(module)
       JavaCompilerProvider.getInstance().destroy(module)
@@ -479,8 +496,17 @@ class JavaLanguageServer : ILanguageServer {
       SourceFileManager.clearCache()
     }
     val currentJavaFile = selectedFile
-    if (currentJavaFile != null && DocumentUtils.isJavaFile(currentJavaFile)
-        && (module == null || module.isFromThisModule(currentJavaFile))) {
+    val schedulesJavaDiagnostics = currentJavaFile != null
+        && DocumentUtils.isJavaFile(currentJavaFile)
+        && (module == null || module.isFromThisModule(currentJavaFile))
+    log.warn(
+      "Kotlin ABI TRACE invalidateFinish file={} module={} selectedJavaFile={} schedulesDiagnostics={}",
+      kotlinFile,
+      module?.path,
+      currentJavaFile,
+      schedulesJavaDiagnostics,
+    )
+    if (schedulesJavaDiagnostics) {
       lastJavaChangeDelta = 0
       startOrRestartAnalyzeTimer(forceRestart = true)
     }
