@@ -1,5 +1,5 @@
 <h2>
-  <img src="images/icon.png" alt="Android Code Studio" width="48" height="48"/>
+  <img src="images/icon.png" alt="Android Code Studio" width="48" height="48" align="middle"/>
   <b>Android Code Studio</b>
 </h2>
 <p align="left">

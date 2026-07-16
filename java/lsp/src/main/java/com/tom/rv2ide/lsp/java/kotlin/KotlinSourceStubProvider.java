@@ -32,9 +32,10 @@ import jdkx.tools.JavaFileObject;
 /**
  * Produces conservative Kotlin-as-Java stubs for javac full compilations.
  *
- * <p>The initial implementation intentionally handles only explicitly imported top-level Kotlin
- * types and only emits type shells. It is a safe bridge for unresolved Kotlin types while the
- * richer symbol scanner and member ABI projection are introduced incrementally.
+ * <p>It intentionally handles only explicitly imported top-level Kotlin JVM types. The source
+ * projection covers common constructors, functions and properties, but remains conservative: a
+ * real Kotlin class output always takes precedence and unsupported Kotlin signatures degrade to
+ * {@code Object} rather than being guessed incorrectly.
  */
 public final class KotlinSourceStubProvider {
 
@@ -70,7 +71,7 @@ public final class KotlinSourceStubProvider {
       if (declaration == null) {
         continue;
       }
-      final String stub = generateTypeShell(imported, declaration.file);
+      final String stub = generateStub(imported, declaration.file);
       if (stub != null) {
         stubs.add(new KotlinAbiStubJavaFileObject(imported, stub, module.getSourceIndexVersion()));
       }
@@ -91,45 +92,8 @@ public final class KotlinSourceStubProvider {
     }
   }
 
-  private static String generateTypeShell(String qualifiedName, Path kotlinFile) {
+  private static String generateStub(String qualifiedName, Path kotlinFile) {
     final String source = FileManager.INSTANCE.getDocumentContents(kotlinFile).toString();
-    final String packageName = qualifiedName.substring(0, Math.max(0, qualifiedName.lastIndexOf('.')));
-    final String simpleName = qualifiedName.substring(qualifiedName.lastIndexOf('.') + 1);
-    final String declaration = findDeclarationLine(source, simpleName);
-    if (declaration == null) {
-      return null;
-    }
-
-    final String kind;
-    if (declaration.matches(".*\\binterface\\s+" + Pattern.quote(simpleName) + "\\b.*")) {
-      kind = "interface";
-    } else if (declaration.matches(".*\\benum\\s+class\\s+" + Pattern.quote(simpleName) + "\\b.*")) {
-      kind = "enum";
-    } else if (declaration.matches(".*\\bannotation\\s+class\\s+" + Pattern.quote(simpleName) + "\\b.*")) {
-      kind = "@interface";
-    } else {
-      kind = "class";
-    }
-
-    final StringBuilder stub = new StringBuilder();
-    if (!packageName.isEmpty()) {
-      stub.append("package ").append(packageName).append(";\n\n");
-    }
-    if ("enum".equals(kind)) {
-      stub.append("public enum ").append(simpleName).append(" { ; }\n");
-    } else if ("@interface".equals(kind)) {
-      stub.append("public @interface ").append(simpleName).append(" {}\n");
-    } else {
-      stub.append("public ").append(kind).append(' ').append(simpleName).append(" {}\n");
-    }
-    return stub.toString();
-  }
-
-  private static String findDeclarationLine(String source, String simpleName) {
-    final Pattern declaration = Pattern.compile(
-        "(?m)^\\s*(?:(?:public|protected|internal|private|open|abstract|sealed|data|enum|annotation|value)\\s+)*"
-            + "(?:class|interface|object)\\s+" + Pattern.quote(simpleName) + "\\b.*$");
-    final Matcher matcher = declaration.matcher(source);
-    return matcher.find() ? matcher.group() : null;
+    return KotlinJvmAbiStubGenerator.generate(qualifiedName, source);
   }
 }
