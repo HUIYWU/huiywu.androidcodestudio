@@ -46,6 +46,12 @@ final class KotlinJvmAbiStubGenerator {
           "^\\s*((?:(?:public|protected|internal|private|open|abstract|final|override|suspend|"
               + "operator|infix|inline|tailrec|external)\\s+)*)fun\\s+(?:<[^>]+>\\s*)?"
               + "([A-Za-z_][\\w]*)\\s*\\(([^)]*)\\)\\s*(?::\\s*([^=\\{]+))?.*$");
+  private static final Pattern EXTENSION_FUNCTION_PATTERN =
+      Pattern.compile(
+          "^\\s*((?:(?:public|protected|internal|private|open|abstract|final|override|suspend|"
+              + "operator|infix|inline|tailrec|external)\\s+)*)fun\\s+(?:<[^>]+>\\s*)?"
+              + "([A-Za-z_][\\w]*(?:<[^>]+>)?\\??)\\.([A-Za-z_][\\w]*)\\s*\\(([^)]*)\\)"
+              + "\\s*(?::\\s*([^=\\{]+))?.*$");
   private static final Pattern PROPERTY_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|override|const|lateinit)\\s+)*)"
@@ -53,7 +59,7 @@ final class KotlinJvmAbiStubGenerator {
 
   private KotlinJvmAbiStubGenerator() {}
 
-  static String generate(String qualifiedName, String source) {
+  static String generate(String qualifiedName, String kotlinFileName, String source) {
     final int separator = qualifiedName.lastIndexOf('.');
     final String packageName = separator < 0 ? "" : qualifiedName.substring(0, separator);
     final String simpleName = separator < 0 ? qualifiedName : qualifiedName.substring(separator + 1);
@@ -69,7 +75,9 @@ final class KotlinJvmAbiStubGenerator {
         return generateType(packageName, simpleName, typeMatcher, source);
       }
     }
-    return isFacadeName(simpleName, source) ? generateFacade(packageName, simpleName, source) : null;
+    return isFacadeName(simpleName, kotlinFileName, source)
+        ? generateFacade(packageName, simpleName, source)
+        : null;
   }
 
   private static String generateType(
@@ -106,7 +114,9 @@ final class KotlinJvmAbiStubGenerator {
     if (bodyStart >= 0) {
       final int bodyEnd = matchingBrace(source, bodyStart);
       if (bodyEnd > bodyStart) {
-        appendMembers(out, source.substring(bodyStart + 1, bodyEnd), isInterface, false);
+        final String body = source.substring(bodyStart + 1, bodyEnd);
+        appendMembers(out, body, isInterface, false);
+        appendCompanionMembers(out, body);
       }
     }
     out.append("}\n");
@@ -120,6 +130,138 @@ final class KotlinJvmAbiStubGenerator {
     appendMembers(out, source, false, true);
     out.append("}\n");
     return out.toString();
+  }
+
+  private static void appendCompanionMembers(StringBuilder out, String body) {
+    final Matcher companion = Pattern.compile("(?s)companion\\s+object(?:\\s+[A-Za-z_][\\w]*)?\\s*\\{").matcher(body);
+    if (!companion.find()) {
+      return;
+    }
+    final int bodyStart = companion.end() - 1;
+    final int bodyEnd = matchingBrace(body, bodyStart);
+    if (bodyEnd <= bodyStart) {
+      return;
+    }
+    final String companionBody = body.substring(bodyStart + 1, bodyEnd);
+    // Kotlin exposes the companion itself as Foo.Companion. Keep that normal JVM surface in
+    // addition to the direct host-class methods created only for @JvmStatic declarations.
+    out.append("  public static final class Companion {\n");
+    appendMembers(
+        out, companionBody.replace("@JvmStatic", "").replace("@JvmField", ""), false, false);
+    out.append("  }\n");
+    out.append("  public static final Companion Companion = null;\n");
+    final String[] lines = companionBody.split("\\R");
+    boolean jvmStatic = false;
+    boolean jvmField = false;
+    for (String line : lines) {
+      final boolean hasJvmStatic = line.contains("@JvmStatic");
+      final boolean hasJvmField = line.contains("@JvmField");
+      final String declarationLine =
+          line.replace("@JvmStatic", "").replace("@JvmField", "").trim();
+      if (hasJvmStatic) {
+        jvmStatic = true;
+      }
+      if (hasJvmField) {
+        jvmField = true;
+      }
+      final Matcher function = FUNCTION_PATTERN.matcher(declarationLine);
+      if (jvmStatic && function.matches() && !isPrivate(function.group(1))) {
+        appendStaticFunction(out, function);
+        jvmStatic = false;
+        continue;
+      }
+      final Matcher property = PROPERTY_PATTERN.matcher(declarationLine);
+      if (property.matches() && !isPrivate(property.group(1))) {
+        if (jvmField) {
+          appendStaticField(out, property);
+        } else if (jvmStatic) {
+          appendStaticProperty(out, property);
+        }
+        jvmStatic = false;
+        jvmField = false;
+        continue;
+      }
+      if (!declarationLine.isEmpty() && !declarationLine.startsWith("@")) {
+        jvmStatic = false;
+        jvmField = false;
+      }
+    }
+  }
+
+  private static void appendExtensionFunction(
+      StringBuilder out, Matcher extension, boolean interfaceType, boolean topLevel) {
+    out.append("  public ");
+    if (topLevel) {
+      out.append("static ");
+    }
+    final List<String> parameters = new ArrayList<>();
+    parameters.add(javaType(extension.group(2)) + " receiver");
+    final String ordinaryParameters = javaParameterList(splitParameters(extension.group(4)));
+    if (ordinaryParameters.length() > 2) {
+      parameters.add(ordinaryParameters.substring(1, ordinaryParameters.length() - 1));
+    }
+    out.append(javaType(extension.group(5))).append(' ').append(extension.group(3))
+        .append("(").append(String.join(", ", parameters)).append(")");
+    out.append(interfaceType && !topLevel ? ";\n" : methodBody(extension.group(5)));
+  }
+
+  private static void appendFunction(
+      StringBuilder out, Matcher function, boolean interfaceType, boolean topLevel) {
+    out.append("  public ");
+    if (topLevel) {
+      out.append("static ");
+    }
+    out.append(javaType(function.group(4))).append(' ').append(function.group(2))
+        .append(parameterList("(" + function.group(3) + ")"));
+    out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
+  }
+
+  private static void appendFunctionOverloads(
+      StringBuilder out, Matcher function, boolean interfaceType, boolean topLevel) {
+    final List<String> parameters = splitParameters(function.group(3));
+    int firstOmittable = parameters.size();
+    for (int index = parameters.size() - 1;
+        index >= 0 && hasDefaultValue(parameters.get(index));
+        index--) {
+      firstOmittable = index;
+    }
+    // Kotlin only creates overloads by dropping a contiguous trailing suffix of default-valued
+    // parameters. A default value before a required parameter does not create a Java overload.
+    if (firstOmittable == parameters.size()) {
+      return;
+    }
+    for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
+      out.append("  public ");
+      if (topLevel) {
+        out.append("static ");
+      }
+      out.append(javaType(function.group(4))).append(' ').append(function.group(2))
+          .append(javaParameterList(parameters.subList(0, count)));
+      out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
+    }
+  }
+
+  private static void appendStaticFunction(StringBuilder out, Matcher function) {
+    out.append("  public static ").append(javaType(function.group(4))).append(' ')
+        .append(function.group(2)).append(parameterList("(" + function.group(3) + ")"))
+        .append(methodBody(function.group(4)));
+  }
+
+  private static void appendStaticField(StringBuilder out, Matcher property) {
+    out.append("  public static ").append(javaType(property.group(4))).append(' ')
+        .append(property.group(3)).append(";\n");
+  }
+
+  private static void appendStaticProperty(StringBuilder out, Matcher property) {
+    final String type = javaType(property.group(4));
+    final String name = property.group(3);
+    final String accessor = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+    out.append("  public static ").append(type).append(" get").append(accessor).append("()")
+        .append(" { return ").append(defaultValue(property.group(4))).append("; }\n");
+    if ("var".equals(property.group(2))) {
+      out.append("  public static void set").append(accessor).append('(').append(type)
+          .append(" value) {}\n");
+    }
   }
 
   private static void appendConstructorProperties(StringBuilder out, String kotlinParameters) {
@@ -155,20 +297,41 @@ final class KotlinJvmAbiStubGenerator {
   private static void appendMembers(
       StringBuilder out, String source, boolean interfaceType, boolean topLevel) {
     int depth = 0;
+    boolean jvmOverloads = false;
     for (String line : source.split("\\R")) {
       if (depth == 0) {
-        final Matcher function = FUNCTION_PATTERN.matcher(line);
-        if (function.matches() && !isPrivate(function.group(1))) {
-          out.append("  public ");
-          if (topLevel) {
-            out.append("static ");
-          }
-          out.append(javaType(function.group(4))).append(' ').append(function.group(2))
-              .append(parameterList("(" + function.group(3) + ")"));
-          out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
+        final boolean hasJvmOverloads = line.contains("@JvmOverloads");
+        final String declarationLine = line.replace("@JvmOverloads", "").trim();
+        if (hasJvmOverloads) {
+          jvmOverloads = true;
+        }
+        final Matcher extensionFunction = EXTENSION_FUNCTION_PATTERN.matcher(declarationLine);
+        if (extensionFunction.matches() && !isPrivate(extensionFunction.group(1))) {
+          appendExtensionFunction(out, extensionFunction, interfaceType, topLevel);
+          jvmOverloads = false;
         } else {
-          final Matcher property = PROPERTY_PATTERN.matcher(line);
+          final Matcher function = FUNCTION_PATTERN.matcher(declarationLine);
+          if (function.matches() && !isPrivate(function.group(1))) {
+            appendFunction(out, function, interfaceType, topLevel);
+            if (jvmOverloads) {
+              appendFunctionOverloads(out, function, interfaceType, topLevel);
+            }
+            jvmOverloads = false;
+            depth += braceDelta(line);
+            if (depth < 0) {
+              depth = 0;
+            }
+            continue;
+          }
+          if (jvmOverloads
+              && !declarationLine.isEmpty()
+              && !declarationLine.startsWith("@")
+              && !PROPERTY_PATTERN.matcher(declarationLine).matches()) {
+            jvmOverloads = false;
+          }
+          final Matcher property = PROPERTY_PATTERN.matcher(declarationLine);
           if (property.matches() && !isPrivate(property.group(1))) {
+            jvmOverloads = false;
             final String type = javaType(property.group(4));
             final String name = property.group(3);
             final String accessor = Character.toUpperCase(name.charAt(0)) + name.substring(1);
@@ -200,21 +363,78 @@ final class KotlinJvmAbiStubGenerator {
     if (kotlinParameters == null || kotlinParameters.length() < 2) {
       return "()";
     }
-    final String content = kotlinParameters.substring(1, kotlinParameters.length() - 1).trim();
-    if (content.isEmpty()) {
-      return "()";
-    }
+    return javaParameterList(
+        splitParameters(kotlinParameters.substring(1, kotlinParameters.length() - 1)));
+  }
+
+  private static String javaParameterList(List<String> kotlinParameters) {
     final List<String> parameters = new ArrayList<>();
-    int index = 0;
-    for (String raw : content.split(",")) {
-      String part = raw.trim().replaceAll("^(?:val|var|crossinline|noinline)\\s+", "");
+    for (int index = 0; index < kotlinParameters.size(); index++) {
+      String part = kotlinParameters.get(index).trim()
+          .replaceAll("^(?:val|var|crossinline|noinline)\\s+", "");
       final int colon = part.indexOf(':');
       final String name = colon < 0 ? "arg" + index : part.substring(0, colon).trim();
       final String type = colon < 0 ? "Object" : javaType(part.substring(colon + 1));
       parameters.add(type + " " + safeName(name, index));
-      index++;
     }
     return "(" + String.join(", ", parameters) + ")";
+  }
+
+  private static List<String> splitParameters(String parameterText) {
+    final List<String> parameters = new ArrayList<>();
+    if (parameterText == null || parameterText.trim().isEmpty()) {
+      return parameters;
+    }
+    int start = 0;
+    int nesting = 0;
+    boolean quoted = false;
+    boolean escaped = false;
+    for (int index = 0; index < parameterText.length(); index++) {
+      final char current = parameterText.charAt(index);
+      if (quoted) {
+        if (current == '"' && !escaped) {
+          quoted = false;
+        }
+        escaped = current == '\\' && !escaped;
+        continue;
+      }
+      if (current == '"') {
+        quoted = true;
+      } else if (current == '(' || current == '<' || current == '[' || current == '{') {
+        nesting++;
+      } else if (current == ')' || current == '>' || current == ']' || current == '}') {
+        nesting = Math.max(0, nesting - 1);
+      } else if (current == ',' && nesting == 0) {
+        parameters.add(parameterText.substring(start, index));
+        start = index + 1;
+      }
+    }
+    parameters.add(parameterText.substring(start));
+    return parameters;
+  }
+
+  private static boolean hasDefaultValue(String parameter) {
+    int nesting = 0;
+    boolean quoted = false;
+    boolean escaped = false;
+    for (int index = 0; index < parameter.length(); index++) {
+      final char current = parameter.charAt(index);
+      if (quoted) {
+        if (current == '"' && !escaped) {
+          quoted = false;
+        }
+        escaped = current == '\\' && !escaped;
+      } else if (current == '"') {
+        quoted = true;
+      } else if (current == '(' || current == '<' || current == '[' || current == '{') {
+        nesting++;
+      } else if (current == ')' || current == '>' || current == ']' || current == '}') {
+        nesting = Math.max(0, nesting - 1);
+      } else if (current == '=' && nesting == 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static String javaType(String kotlinType) {
@@ -258,10 +478,16 @@ final class KotlinJvmAbiStubGenerator {
     return "null";
   }
 
-  private static boolean isFacadeName(String simpleName, String source) {
+  private static boolean isFacadeName(String simpleName, String kotlinFileName, String source) {
     final Matcher jvmName = FILE_JVM_NAME_PATTERN.matcher(source);
-    if (jvmName.find()) return simpleName.equals(jvmName.group(1));
-    return simpleName.endsWith("Kt");
+    if (jvmName.find()) {
+      return simpleName.equals(jvmName.group(1));
+    }
+    if (kotlinFileName == null || !kotlinFileName.endsWith(".kt")) {
+      return false;
+    }
+    final String fileBaseName = kotlinFileName.substring(0, kotlinFileName.length() - 3);
+    return simpleName.equals(fileBaseName + "Kt");
   }
 
   private static StringBuilder header(String packageName) {
