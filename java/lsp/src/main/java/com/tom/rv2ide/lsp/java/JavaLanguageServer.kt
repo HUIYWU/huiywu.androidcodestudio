@@ -44,6 +44,7 @@ import com.tom.rv2ide.lsp.java.providers.ReferenceProvider
 import com.tom.rv2ide.lsp.java.providers.SignatureProvider
 import com.tom.rv2ide.lsp.java.providers.snippet.JavaSnippetRepository.init
 import com.tom.rv2ide.lsp.java.utils.AnalyzeTimer
+import com.tom.rv2ide.preferences.internal.JavaPreferences
 import com.tom.rv2ide.lsp.java.utils.CancelChecker.Companion.isCancelled
 import com.tom.rv2ide.lsp.models.CodeFormatResult
 import com.tom.rv2ide.lsp.models.CompletionParams
@@ -353,9 +354,23 @@ class JavaLanguageServer : ILanguageServer {
   @Suppress("unused")
   fun onContentChange(event: DocumentChangeEvent) {
     if (DocumentUtils.isKotlinFile(event.changedFile)) {
-      val module = getInstance().getWorkspace()?.findModuleForFile(event.changedFile, true)
+      val workspace = getInstance().getWorkspace()
+      val module = workspace?.findModuleForFile(event.changedFile, true)
       KotlinJvmTypeIndex.invalidate(module)
       cachedCompletion = CachedCompletion.EMPTY
+
+      // Full Java diagnostics may include Kotlin-as-Java ABI stubs. Their source comes from the
+      // active Kotlin document, so retaining the old javac task would keep stale ABI declarations.
+      // Do not route this through partial reparse: it is intentionally not diagnostics-grade.
+      if (module != null && JavaPreferences.isJavaKotlinRecognitionEnabled) {
+        JavaCompilerProvider.getInstance().destroy(module)
+        val currentJavaFile = selectedFile
+        if (currentJavaFile != null && DocumentUtils.isJavaFile(currentJavaFile)
+            && module.isFromThisModule(currentJavaFile)) {
+          lastJavaChangeDelta = 0
+          startOrRestartAnalyzeTimer(forceRestart = false)
+        }
+      }
       return
     }
     if (!DocumentUtils.isJavaFile(event.changedFile)) {

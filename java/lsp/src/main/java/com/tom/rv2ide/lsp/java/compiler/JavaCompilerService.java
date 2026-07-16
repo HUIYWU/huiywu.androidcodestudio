@@ -28,6 +28,7 @@ import com.tom.rv2ide.javac.services.partial.PartialReparser;
 import com.tom.rv2ide.javac.services.partial.PartialReparserImpl;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinClassOutputProvider;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex;
+import com.tom.rv2ide.lsp.java.kotlin.KotlinSourceStubProvider;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
 import com.tom.rv2ide.lsp.java.models.PartialReparseRequest;
 import com.tom.rv2ide.preferences.internal.JavaPreferences;
@@ -622,7 +623,20 @@ public class JavaCompilerService implements CompilerProvider {
   private CompileBatch performCompilation(CompilationRequest request) {
     final CompilationRequest expandedRequest =
         compilationWorkingSetBuilder.expand(this, request);
-    final Collection<? extends JavaFileObject> sources = expandedRequest.sources;
+    Collection<? extends JavaFileObject> sources = expandedRequest.sources;
+    // Kotlin stubs are diagnostics/full-compile input only. Partial reparse is deliberately kept
+    // isolated from cross-language synthetic sources because its cached javac state is not
+    // diagnostics-grade and cannot safely track Kotlin document revisions.
+    if (module != null
+        && JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()
+        && !expandedRequest.allowPartialReparse) {
+      final Collection<JavaFileObject> kotlinStubs = KotlinSourceStubProvider.stubsFor(module, sources);
+      if (!kotlinStubs.isEmpty()) {
+        final List<JavaFileObject> withKotlinStubs = new ArrayList<>(sources);
+        withKotlinStubs.addAll(kotlinStubs);
+        sources = withKotlinStubs;
+      }
+    }
     lastExpandedSourceCount = sources == null ? -1 : sources.size();
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(

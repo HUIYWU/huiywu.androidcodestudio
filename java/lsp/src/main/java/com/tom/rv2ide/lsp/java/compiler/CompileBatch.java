@@ -28,6 +28,7 @@ import androidx.annotation.NonNull;
 import androidx.core.util.Pair;
 import com.tom.rv2ide.builder.model.IJavaCompilerSettings;
 import com.tom.rv2ide.common.logging.IdeLogConfig;
+import com.tom.rv2ide.lsp.java.kotlin.KotlinAbiStubJavaFileObject;
 import com.tom.rv2ide.javac.services.compiler.ReusableBorrow;
 import com.tom.rv2ide.javac.services.partial.DiagnosticListenerImpl;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
@@ -121,6 +122,11 @@ public class CompileBatch implements AutoCloseable {
     config.setFiles(null);
   }
   private void processCompilationUnit(final CompilationUnitTree root) {
+    if (KotlinAbiStubJavaFileObject.URI_SCHEME.equals(root.getSourceFile().toUri().getScheme())) {
+      // The stub must be parsed/analyzed by javac, but has no real Java path and must not enter
+      // method-position or navigation indexes. KotlinDefinitionFallback remains the source mapper.
+      return;
+    }
     final String sourceUri = root.getSourceFile().toUri().normalize().toString();
     if (!processedSourceUris.add(sourceUri)) {
       if (IdeLogConfig.shouldLogDebug()) {
