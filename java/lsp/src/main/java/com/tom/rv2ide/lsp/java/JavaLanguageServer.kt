@@ -22,6 +22,9 @@ import com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentCloseEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentOpenEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentSelectedEvent
+import com.tom.rv2ide.eventbus.events.file.FileCreationEvent
+import com.tom.rv2ide.eventbus.events.file.FileDeletionEvent
+import com.tom.rv2ide.eventbus.events.file.FileRenameEvent
 import com.tom.rv2ide.javac.services.fs.CacheFSInfoSingleton
 import com.tom.rv2ide.javac.services.fs.CachingJarFileSystemProvider.clearCache
 import com.tom.rv2ide.javac.services.fs.CachingJarFileSystemProvider.clearCachesForPaths
@@ -354,23 +357,7 @@ class JavaLanguageServer : ILanguageServer {
   @Suppress("unused")
   fun onContentChange(event: DocumentChangeEvent) {
     if (DocumentUtils.isKotlinFile(event.changedFile)) {
-      val workspace = getInstance().getWorkspace()
-      val module = workspace?.findModuleForFile(event.changedFile, true)
-      KotlinJvmTypeIndex.invalidate(module)
-      cachedCompletion = CachedCompletion.EMPTY
-
-      // Full Java diagnostics may include Kotlin-as-Java ABI stubs. Their source comes from the
-      // active Kotlin document, so retaining the old javac task would keep stale ABI declarations.
-      // Do not route this through partial reparse: it is intentionally not diagnostics-grade.
-      if (module != null && JavaPreferences.isJavaKotlinRecognitionEnabled) {
-        JavaCompilerProvider.getInstance().destroy(module)
-        val currentJavaFile = selectedFile
-        if (currentJavaFile != null && DocumentUtils.isJavaFile(currentJavaFile)
-            && module.isFromThisModule(currentJavaFile)) {
-          lastJavaChangeDelta = 0
-          startOrRestartAnalyzeTimer(forceRestart = false)
-        }
-      }
+      invalidateKotlinAbi(event.changedFile, clearFileManagers = false)
       return
     }
     if (!DocumentUtils.isJavaFile(event.changedFile)) {
@@ -435,6 +422,55 @@ class JavaLanguageServer : ILanguageServer {
     }
     log.info("Re-analyzing selected file after lazy module activation: module={} file={}", event.module.path, fileToAnalyze)
     analyzeSelected()
+  }
+
+  @Subscribe(threadMode = ThreadMode.ASYNC)
+  @Suppress("unused")
+  fun onKotlinFileCreated(event: FileCreationEvent) {
+    if (DocumentUtils.isKotlinFile(event.file.toPath())) {
+      invalidateKotlinAbi(event.file.toPath(), clearFileManagers = false)
+    }
+  }
+
+  @Subscribe(threadMode = ThreadMode.ASYNC)
+  @Suppress("unused")
+  fun onKotlinFileDeleted(event: FileDeletionEvent) {
+    if (event.file.extension == "kt" || event.file.extension == "kts") {
+      invalidateKotlinAbi(event.file.toPath(), clearFileManagers = false)
+    }
+  }
+
+  @Subscribe(threadMode = ThreadMode.ASYNC)
+  @Suppress("unused")
+  fun onKotlinFileRenamed(event: FileRenameEvent) {
+    if (event.file.extension == "kt" || event.file.extension == "kts"
+        || DocumentUtils.isKotlinFile(event.newFile.toPath())) {
+      invalidateKotlinAbi(event.file.toPath(), clearFileManagers = false)
+      invalidateKotlinAbi(event.newFile.toPath(), clearFileManagers = false)
+    }
+  }
+
+  private fun invalidateKotlinAbi(kotlinFile: Path, clearFileManagers: Boolean) {
+    if (!JavaPreferences.isJavaKotlinRecognitionEnabled) {
+      return
+    }
+    val workspace = getInstance().getWorkspace()
+    val module = workspace?.findModuleForFile(kotlinFile.toFile(), false)
+        ?: workspace?.findModuleForFile(kotlinFile.toFile(), true)
+        ?: return
+    KotlinJvmTypeIndex.invalidate(module)
+    KotlinClassOutputProvider.clearCache()
+    cachedCompletion = CachedCompletion.EMPTY
+    if (clearFileManagers) {
+      SourceFileManager.clearCache()
+    }
+    JavaCompilerProvider.getInstance().destroy(module)
+    val currentJavaFile = selectedFile
+    if (currentJavaFile != null && DocumentUtils.isJavaFile(currentJavaFile)
+        && module.isFromThisModule(currentJavaFile)) {
+      lastJavaChangeDelta = 0
+      startOrRestartAnalyzeTimer(forceRestart = true)
+    }
   }
 
   @Subscribe(threadMode = ThreadMode.ASYNC)
