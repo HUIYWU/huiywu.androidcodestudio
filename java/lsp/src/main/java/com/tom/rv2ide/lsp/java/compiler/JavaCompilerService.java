@@ -206,7 +206,7 @@ public class JavaCompilerService implements CompilerProvider {
     all.addAll(bootClasspathClasses);
     if (module != null && JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()) {
       all.addAll(KotlinJvmTypeIndex.publicTopLevelTypes(module));
-      all.addAll(KotlinClassOutputProvider.publicTopLevelTypes(module));
+      all.addAll(KotlinClassOutputProvider.publicDependencyTopLevelTypes(module));
     }
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(

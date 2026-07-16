@@ -68,7 +68,7 @@ public final class KotlinSourceStubProvider {
     }
 
     final Set<String> sourceTypes = KotlinJvmTypeIndex.publicTopLevelTypes(module);
-    final Set<String> classOutputTypes = KotlinClassOutputProvider.publicTopLevelTypes(module);
+    final Set<String> classOutputTypes = KotlinClassOutputProvider.publicDependencyTopLevelTypes(module);
     addOnDemandTypes(sourceTypes, starImports, referencedNames, imports);
     addOnDemandTypes(sourceTypes, sourcePackages, referencedNames, imports);
     final List<JavaFileObject> stubs = new ArrayList<>();

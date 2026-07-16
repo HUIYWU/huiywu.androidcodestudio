@@ -4,14 +4,17 @@
 <p><br>
 
 <p align="left">
-<!-- Latest release -->
-<img src="https://img.shields.io/github/v/release/HUIYWU/huiywu.androidcodestudio?include_prereleases&amp;label=latest%20release" alt="Latest release">
-<!-- License -->
-<img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License"></p>
-
+  <!-- Latest release -->
+  <img src="https://img.shields.io/github/v/release/HUIYWU/huiywu.androidcodestudio?include_prereleases&amp;label=latest%20release" alt="Latest release">
+</p>
 
 <p align="left">
-    <a href="https://docs.androidide.com/">
+  <!-- License -->
+  <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License">
+</p>
+
+<p align="left">
+  <a href="https://docs.androidide.com/">
     <img src="https://img.shields.io/badge/Docs-Explore-blue?style=for-the-badge&logo=read-the-docs" alt="Explore the docs">
   </a>
 </p>

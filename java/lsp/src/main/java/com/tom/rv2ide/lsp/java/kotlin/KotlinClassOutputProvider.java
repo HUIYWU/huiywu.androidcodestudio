@@ -44,11 +44,32 @@ public final class KotlinClassOutputProvider {
    * Gradle/Kotlin compilation.
    */
   public static Set<File> findCompileOutputs(ModuleProject module) {
+    final Set<File> outputs = new LinkedHashSet<>(findModuleCompileOutputs(module));
+    outputs.addAll(findDependencyCompileOutputs(module));
+    return outputs;
+  }
+
+  /** Returns materialized Kotlin outputs belonging to {@code module} itself. */
+  public static Set<File> findModuleCompileOutputs(ModuleProject module) {
+    final Set<File> outputs = new LinkedHashSet<>();
+    if (module != null) {
+      addModuleOutputs(module, outputs);
+    }
+    return outputs;
+  }
+
+  /**
+   * Returns materialized Kotlin outputs of compile dependencies, excluding {@code module} itself.
+   *
+   * <p>The current module's Kotlin source is represented by in-memory ABI stubs so unsaved edits,
+   * additions and deletions take precedence over stale build output. Dependencies do not have that
+   * live source view in the current Java compiler and therefore remain classpath-backed.
+   */
+  public static Set<File> findDependencyCompileOutputs(ModuleProject module) {
     final Set<File> outputs = new LinkedHashSet<>();
     if (module == null) {
       return outputs;
     }
-    addModuleOutputs(module, outputs);
     for (ModuleProject dependency : module.getCompileModuleProjects()) {
       addModuleOutputs(dependency, outputs);
     }
@@ -64,6 +85,15 @@ public final class KotlinClassOutputProvider {
   public static Set<String> publicTopLevelTypes(ModuleProject module) {
     final Set<String> types = new LinkedHashSet<>();
     for (File output : findCompileOutputs(module)) {
+      types.addAll(typesInDirectory(output));
+    }
+    return types;
+  }
+
+  /** Lists top-level types from dependency Kotlin output only; see {@link #findDependencyCompileOutputs}. */
+  public static Set<String> publicDependencyTopLevelTypes(ModuleProject module) {
+    final Set<String> types = new LinkedHashSet<>();
+    for (File output : findDependencyCompileOutputs(module)) {
       types.addAll(typesInDirectory(output));
     }
     return types;

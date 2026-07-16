@@ -381,6 +381,13 @@ class JavaLanguageServer : ILanguageServer {
   @Suppress("unused")
   fun onFileSelected(event: DocumentSelectedEvent) {
     selectedFile = event.selectedFile
+    // Kotlin source changes can occur while its editor is selected. Once the user returns to an
+    // open Java file, force a full diagnostics pass so stale Kotlin ABI/classpath state is never
+    // retained merely because no Java document change was made.
+    if (DocumentUtils.isJavaFile(event.selectedFile)) {
+      lastJavaChangeDelta = 0
+      startOrRestartAnalyzeTimer(forceRestart = true)
+    }
   }
   @Subscribe(threadMode = ThreadMode.ASYNC)
   @Suppress("unused")
@@ -457,17 +464,23 @@ class JavaLanguageServer : ILanguageServer {
     val workspace = getInstance().getWorkspace()
     val module = workspace?.findModuleForFile(kotlinFile.toFile(), false)
         ?: workspace?.findModuleForFile(kotlinFile.toFile(), true)
-        ?: return
-    KotlinJvmTypeIndex.invalidate(module)
+    if (module != null) {
+      KotlinJvmTypeIndex.invalidate(module)
+      JavaCompilerProvider.getInstance().destroy(module)
+    } else {
+      // A deletion is commonly delivered after its file can no longer be resolved to a module.
+      // Prefer a conservative global reset over retaining an ABI stub for a deleted Kotlin type.
+      KotlinJvmTypeIndex.clear()
+      JavaCompilerProvider.getInstance().destroy()
+    }
     KotlinClassOutputProvider.clearCache()
     cachedCompletion = CachedCompletion.EMPTY
     if (clearFileManagers) {
       SourceFileManager.clearCache()
     }
-    JavaCompilerProvider.getInstance().destroy(module)
     val currentJavaFile = selectedFile
     if (currentJavaFile != null && DocumentUtils.isJavaFile(currentJavaFile)
-        && module.isFromThisModule(currentJavaFile)) {
+        && (module == null || module.isFromThisModule(currentJavaFile))) {
       lastJavaChangeDelta = 0
       startOrRestartAnalyzeTimer(forceRestart = true)
     }

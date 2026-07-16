@@ -113,7 +113,11 @@ public class SourceFileManager extends ForwardingJavaFileManager<JavacFileManage
 
     final Set<File> classpaths = new java.util.LinkedHashSet<>(module.getCompileClasspaths());
     if (JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()) {
-      classpaths.addAll(KotlinClassOutputProvider.findCompileOutputs(module));
+      // Current-module Kotlin source is supplied by in-memory ABI stubs so editor changes win over
+      // stale build output. Remove it even if tooling already put it in compileClasspaths, then add
+      // only dependency-module Kotlin output to javac's CLASS_PATH.
+      classpaths.removeAll(KotlinClassOutputProvider.findModuleCompileOutputs(module));
+      classpaths.addAll(KotlinClassOutputProvider.findDependencyCompileOutputs(module));
     }
     return classpaths;
   }
