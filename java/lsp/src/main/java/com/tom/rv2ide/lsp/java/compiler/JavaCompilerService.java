@@ -26,6 +26,7 @@ import com.tom.rv2ide.javac.services.compiler.ReusableCompiler;
 import com.tom.rv2ide.javac.services.partial.CompilationInfo;
 import com.tom.rv2ide.javac.services.partial.PartialReparser;
 import com.tom.rv2ide.javac.services.partial.PartialReparserImpl;
+import com.tom.rv2ide.lsp.java.kotlin.KotlinClassOutputProvider;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
 import com.tom.rv2ide.lsp.java.models.PartialReparseRequest;
@@ -204,6 +205,7 @@ public class JavaCompilerService implements CompilerProvider {
     all.addAll(bootClasspathClasses);
     if (module != null && JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()) {
       all.addAll(KotlinJvmTypeIndex.publicTopLevelTypes(module));
+      all.addAll(KotlinClassOutputProvider.publicTopLevelTypes(module));
     }
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(

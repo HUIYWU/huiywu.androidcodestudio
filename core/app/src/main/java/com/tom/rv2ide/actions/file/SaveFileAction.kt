@@ -23,7 +23,6 @@ import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.EditorRelatedAction
 import com.tom.rv2ide.activities.editor.BaseEditorActivity
 import com.tom.rv2ide.models.SaveResult
-import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.flashSuccess
@@ -89,10 +88,8 @@ class SaveFileAction(context: Context, override val order: Int) : EditorRelatedA
       context.flashSuccess(R.string.all_saved)
 
       val saveResult = result.result
-      if (saveResult.xmlSaved) {
-        ProjectManagerImpl.getInstance().generateSources()
-      }
-
+      // DocumentSaveEvent refreshes the resource table for each saved XML file's owning module.
+      // Do not run a workspace-wide Gradle source warm-up for ordinary editor saves.
       if (saveResult.gradleSaved) {
         context.editorViewModel.isSyncNeeded = true
       }

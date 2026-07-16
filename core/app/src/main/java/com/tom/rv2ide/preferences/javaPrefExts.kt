@@ -21,6 +21,7 @@ import androidx.preference.Preference
 import com.tom.rv2ide.R
 import com.tom.rv2ide.lsp.java.JavaCompilerProvider
 import com.tom.rv2ide.lsp.java.compiler.SourceFileManager
+import com.tom.rv2ide.lsp.java.kotlin.KotlinClassOutputProvider
 import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex
 import com.tom.rv2ide.preferences.internal.JavaPreferences
 import com.tom.rv2ide.resources.R.drawable
@@ -88,6 +89,7 @@ private class JavaKotlinRecognitionEnabled(
     JavaCompilerProvider.getInstance().destroy()
     SourceFileManager.clearCache()
     KotlinJvmTypeIndex.clear()
+    KotlinClassOutputProvider.clearCache()
     return true
   }
 }
