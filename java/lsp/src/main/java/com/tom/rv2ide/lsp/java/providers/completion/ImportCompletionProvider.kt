@@ -136,9 +136,10 @@ class ImportCompletionProvider(
     }
 
     if (pkgName.isEmpty() || pkgName.isBlank()) {
-      // User is typing first segment of package name
-      // Javac APIs will not work here
+      // User is typing first segment of package name. ClassTrie covers Java/jar entries, while
+      // Kotlin compiler output directories need the unified top-level type fallback as well.
       tryCompleteImport(pkgName, incomplete, list, names, module)
+      addIndexedImportCandidates(pkgName, incomplete, names, list)
       return CompletionResult(list)
     }
 
@@ -170,6 +171,11 @@ class ImportCompletionProvider(
       }
     }
 
+    // Kotlin compiler outputs are directory-form CLASS_PATH entries. javac can resolve them, but
+    // the module ClassTrie is populated by the jar-only classpath reader, so Kotlin packages are
+    // absent from the trie traversal above. Complete their path segments from the unified top-level
+    // type view and retain `names` deduplication with the normal Java/package candidates.
+    addIndexedImportCandidates(pkgName, incomplete, names, list)
     return CompletionResult(list)
   }
 
@@ -394,6 +400,42 @@ class ImportCompletionProvider(
           throw RequireMemberCompletionException()
         }
         addDirectChildNodes(node, incomplete, list, names, packageOnly)
+      }
+    }
+  }
+
+  private fun addIndexedImportCandidates(
+      pkgName: String,
+      incomplete: String,
+      names: MutableSet<String>,
+      list: MutableList<CompletionItem>,
+  ) {
+    val packagePrefix = if (pkgName.isEmpty()) "" else "$pkgName."
+    for (className in compiler.publicTopLevelTypes()) {
+      if (!className.startsWith(packagePrefix)) {
+        continue
+      }
+      val suffix = className.removePrefix(packagePrefix)
+      if (suffix.isEmpty()) {
+        continue
+      }
+      val segment = suffix.substringBefore('.')
+      if (names.contains(segment)) {
+        continue
+      }
+      val match = if (incomplete.isEmpty()) CASE_SENSITIVE_EQUAL else matchLevel(segment, incomplete)
+      if (match == NO_MATCH) {
+        continue
+      }
+
+      if (suffix.contains('.')) {
+        list.add(packageItem(segment, match))
+      } else {
+        list.add(classItem(className, match))
+      }
+      names.add(segment)
+      if (list.size > MAX_COMPLETION_ITEMS) {
+        return
       }
     }
   }
