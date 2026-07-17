@@ -47,9 +47,9 @@ import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.withStopWatch
 import com.tom.rv2ide.utils.GradleFileParser
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
-import kotlin.io.path.pathString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -74,6 +74,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
 
   private var _workspace: WorkspaceImpl? = null
   private var _projectDir: File? = null
+  private val modulesGeneratingSources = ConcurrentHashMap.newKeySet<String>()
 
   var projectInitialized: Boolean = false
   var cachedInitResult: InitializeResult? = null
@@ -248,6 +249,47 @@ val mainArtifact = variant.mainArtifact
     }
   }
 
+  private fun generateSourcesForModule(
+      module: AndroidModule,
+      builder: BuildService? = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE),
+  ) {
+    if (builder == null || !builder.isToolingServerStarted() || builder.isBuildInProgress) {
+      return
+    }
+    if (!modulesGeneratingSources.add(module.path)) {
+      log.debug("Source generation is already running for module '{}'", module.path)
+      return
+    }
+
+    val variant = module.getSelectedVariant()
+    val artifact = variant?.mainArtifact
+    val tasks =
+        listOf(artifact?.resGenTaskName, artifact?.sourceGenTaskName)
+            .mapNotNull { taskName ->
+              taskName
+                  ?.takeIf(String::isNotBlank)
+                  ?.let { name -> module.tasks.firstOrNull { it.name == name }?.path }
+            }
+            .distinct()
+
+    if (tasks.isEmpty()) {
+      modulesGeneratingSources.remove(module.path)
+      log.debug("No exact source generation tasks found for module '{}'", module.path)
+      return
+    }
+
+    log.info("Generating Android sources for changed module '{}': {}", module.path, tasks)
+    builder.executeTasks(*tasks.toTypedArray()).whenComplete { result, error ->
+      modulesGeneratingSources.remove(module.path)
+      if (result == null || !result.isSuccessful || error != null) {
+        log.warn("Source generation failed for module '{}': {}", module.path, error ?: result)
+      } else {
+        module.updateResourceTable()
+        log.info("Android source generation completed for changed module '{}'", module.path)
+      }
+    }
+  }
+
   @JvmOverloads
   fun generateSourcesBlocking(
       builder: BuildService? = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE),
@@ -352,13 +394,19 @@ val mainArtifact = variant.mainArtifact
         return@apply
       }
 
+      val sourceProvider = module.mainSourceSet?.sourceProvider
       val isResource =
-          module.mainSourceSet?.sourceProvider?.resDirectories?.any {
-            this.pathString.contains(it.path)
+          sourceProvider?.resDirectories?.any { resourceDir ->
+            this.normalize().startsWith(resourceDir.toPath().normalize())
+          } ?: false
+      val isManifest =
+          sourceProvider?.manifestFile?.let { manifest ->
+            manifest.exists() && this.normalize() == manifest.toPath().normalize()
           } ?: false
 
-      if (isResource) {
+      if (isResource || isManifest) {
         module.updateResourceTable()
+        generateSourcesForModule(module)
       }
     }
   }

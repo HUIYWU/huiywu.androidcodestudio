@@ -149,7 +149,11 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static void appendCompanionMembers(StringBuilder out, String body) {
-    final Matcher companion = Pattern.compile("(?s)companion\\s+object(?:\\s+[A-Za-z_][\\w]*)?\\s*\\{").matcher(body);
+    // Anchor the declaration at the beginning of a source line so examples such as
+    // `// companion object {` do not shadow the real companion declared later in the class.
+    final Matcher companion =
+        Pattern.compile("(?m)^\\s*companion\\s+object(?:\\s+[A-Za-z_][\\w]*)?\\s*\\{")
+            .matcher(body);
     if (!companion.find()) {
       return;
     }
