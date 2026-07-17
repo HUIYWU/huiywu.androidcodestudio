@@ -30,7 +30,22 @@ internal class XmlResourceResolver {
 
   fun resolve(reference: XmlResourceReference): Resolution {
     val tables = tablesFor(reference.packageName) ?: return Resolution.Unavailable
-    return if (tables.any { it.contains(reference) }) Resolution.Resolved else Resolution.NotFound
+    if (tables.any { it.contains(reference) }) {
+      return Resolution.Resolved
+    }
+    // Unqualified @id references can be declared by @+id in another layout that is included into
+    // the current hierarchy. Resource snapshots are not yet guaranteed to contain every generated
+    // ID, so absence from the current snapshot is not sufficient evidence that such an ID is
+    // missing. Keep explicit packages (including android) strict.
+    return resolutionForMissingReference(reference)
+  }
+
+  internal fun resolutionForMissingReference(reference: XmlResourceReference): Resolution {
+    return if (reference.type == AaptResourceType.ID && reference.packageName == null) {
+      Resolution.Unavailable
+    } else {
+      Resolution.NotFound
+    }
   }
 
   private fun tablesFor(packageName: String?): Set<IResourceTable>? {

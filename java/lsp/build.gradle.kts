@@ -15,8 +15,9 @@
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-
 import com.tom.rv2ide.build.config.BuildConfig
+import org.gradle.api.tasks.testing.Test
+
 
 plugins {
   id("com.android.library")
@@ -31,6 +32,19 @@ android {
     getByName("androidTest") {
       assets.srcDirs(rootProject.file("utilities/framework-stubs/libs"))
     }
+  }
+}
+
+tasks.withType<Test>().configureEach {
+  val hostNativeLibraryDir =
+      rootProject.layout.buildDirectory.dir("host").get().asFile.absoluteFile
+  systemProperty("java.library.path", hostNativeLibraryDir.absolutePath)
+  doFirst {
+    logger.lifecycle(
+        "[java:lsp] Host native library directory (java.library.path): {} (exists={})",
+        hostNativeLibraryDir,
+        hostNativeLibraryDir.isDirectory,
+    )
   }
 }
 

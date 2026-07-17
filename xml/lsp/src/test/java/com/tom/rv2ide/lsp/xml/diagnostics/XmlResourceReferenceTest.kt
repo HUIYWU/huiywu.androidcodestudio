@@ -55,6 +55,19 @@ class XmlResourceReferenceTest : TestCase() {
     assertThat(XmlResourceReference.parse("@id/title")!!.type).isEqualTo(ID)
   }
 
+  fun testTreatsOnlyUnqualifiedMissingIdsAsUnavailable() {
+    val resolver = XmlResourceResolver()
+
+    assertThat(resolver.resolutionForMissingReference(XmlResourceReference.parse("@id/editor_toolbar")!!))
+        .isEqualTo(XmlResourceResolver.Resolution.Unavailable)
+    assertThat(resolver.resolutionForMissingReference(XmlResourceReference.parse("@android:id/content")!!))
+        .isEqualTo(XmlResourceResolver.Resolution.NotFound)
+    assertThat(resolver.resolutionForMissingReference(XmlResourceReference.parse("@other.package:id/content")!!))
+        .isEqualTo(XmlResourceResolver.Resolution.NotFound)
+    assertThat(resolver.resolutionForMissingReference(XmlResourceReference.parse("@string/title")!!))
+        .isEqualTo(XmlResourceResolver.Resolution.NotFound)
+  }
+
   fun testRecognizesSpecialValuesWithoutParsingThemAsResources() {
     assertThat(XmlResourceReference.isSpecialValue("@")).isTrue()
     assertThat(XmlResourceReference.isSpecialValue("@null")).isTrue()

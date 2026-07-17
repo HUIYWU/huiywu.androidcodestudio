@@ -11,7 +11,7 @@ class TSCompletionContextClassifierTest {
     val code = "class A { void test() { // hello\n int value = 1; } }"
     val cursor = code.indexOf("hello").toLong()
 
-    val context = TSCompletionContextClassifier.classify(Paths.get("/tmp/A.java"), code, cursor)
+    val context = classify(code, cursor)
 
     assertEquals(TSCompletionContext.COMMENT_OR_STRING, context)
   }
@@ -21,7 +21,7 @@ class TSCompletionContextClassifierTest {
     val code = "class A { void test() { String s = \"abc\"; } }"
     val cursor = code.indexOf("abc").toLong()
 
-    val context = TSCompletionContextClassifier.classify(Paths.get("/tmp/A.java"), code, cursor)
+    val context = classify(code, cursor)
 
     assertEquals(TSCompletionContext.COMMENT_OR_STRING, context)
   }
@@ -31,7 +31,7 @@ class TSCompletionContextClassifierTest {
     val code = "import java.util.List; class A {}"
     val cursor = code.indexOf("List").toLong()
 
-    val context = TSCompletionContextClassifier.classify(Paths.get("/tmp/A.java"), code, cursor)
+    val context = classify(code, cursor)
 
     assertEquals(TSCompletionContext.IMPORT_DECLARATION, context)
   }
@@ -41,7 +41,7 @@ class TSCompletionContextClassifierTest {
     val code = "package com.example; class A {}"
     val cursor = code.indexOf("example").toLong()
 
-    val context = TSCompletionContextClassifier.classify(Paths.get("/tmp/A.java"), code, cursor)
+    val context = classify(code, cursor)
 
     assertEquals(TSCompletionContext.PACKAGE_DECLARATION, context)
   }
@@ -51,7 +51,7 @@ class TSCompletionContextClassifierTest {
     val code = "class A { void test() { System.out.println(); } }"
     val cursor = code.indexOf("out").toLong()
 
-    val context = TSCompletionContextClassifier.classify(Paths.get("/tmp/A.java"), code, cursor)
+    val context = classify(code, cursor)
 
     assertEquals(TSCompletionContext.MEMBER_ACCESS, context)
   }
@@ -61,7 +61,7 @@ class TSCompletionContextClassifierTest {
     val code = "class A { void test() { call(value); } void call(int value) {} }"
     val cursor = code.indexOf("value").toLong()
 
-    val context = TSCompletionContextClassifier.classify(Paths.get("/tmp/A.java"), code, cursor)
+    val context = classify(code, cursor)
 
     assertEquals(TSCompletionContext.METHOD_CALL_ARGUMENTS, context)
   }
@@ -71,7 +71,7 @@ class TSCompletionContextClassifierTest {
     val code = "class A { void test() { int value = 1; } }"
     val cursor = code.indexOf("value").toLong()
 
-    val context = TSCompletionContextClassifier.classify(Paths.get("/tmp/A.java"), code, cursor)
+    val context = classify(code, cursor)
 
     assertEquals(TSCompletionContext.METHOD_BODY, context)
   }
@@ -81,8 +81,17 @@ class TSCompletionContextClassifierTest {
     val code = "class A { void test( { }"
     val cursor = code.indexOf("{").toLong()
 
-    val context = TSCompletionContextClassifier.classify(Paths.get("/tmp/A.java"), code, cursor)
+    val context = classify(code, cursor)
 
     assertEquals(TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR, context)
+  }
+
+  private fun classify(code: String, cursor: Long): TSCompletionContext {
+    val offset = cursor.toInt()
+    val line = code.substring(0, offset).count { it == '\n' }
+    val lastLineBreak = code.lastIndexOf('\n', offset - 1)
+    val column = offset - lastLineBreak - 1
+    return TSCompletionContextClassifier.classify(
+        Paths.get("/tmp/A.java"), code, cursor, line, column)
   }
 }

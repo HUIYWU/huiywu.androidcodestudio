@@ -504,9 +504,13 @@ public class JavaCompilerService implements CompilerProvider {
       LOG.debug("Trying to reparse method: {}", methodTree.getName());
     }
 
+    // The cached task may contain a multi-source working set. Use the compilation unit that owns
+    // the method path instead of assuming that the primary source is the first root.
     final CompilationInfo info =
         new CompilationInfo(
-            cachedCompile.task, cachedCompile.diagnosticListener, cachedCompile.roots.get(0));
+            cachedCompile.task,
+            cachedCompile.diagnosticListener,
+            currentMethod.second.getCompilationUnit());
     watch.setLastLap(System.currentTimeMillis());
     final SourcePositions sourcePositions = Trees.instance(cachedCompile.task).getSourcePositions();
     final int start = (int) sourcePositions.getStartPosition(info.cu, methodTree.getBody());

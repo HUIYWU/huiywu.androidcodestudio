@@ -67,11 +67,7 @@ import openjdk.source.util.DocTrees;
 import openjdk.source.util.SourcePositions;
 import openjdk.source.util.TreePath;
 import openjdk.source.util.Trees;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 public class SignatureProvider extends CancelableServiceProvider {
-
-  private static final Logger LOG = LoggerFactory.getLogger(SignatureProvider.class);
 
   public static final SignatureHelp NOT_SUPPORTED =
       new SignatureHelp(Collections.emptyList(), -1, -1);
@@ -110,137 +106,51 @@ public class SignatureProvider extends CancelableServiceProvider {
       final CompilationRequest request =
           new CompilationRequest(
               Collections.singletonList(source), partialRequest, !requiresKotlinAbi);
-      LOG.warn(
-          "SIGNATURE TRACE request file={} line={} column={} cursorIndex={} contentLength={} allowPartialReparse={} context={}",
-          file,
-          l,
-          c,
-          cursorIndex,
-          content.length(),
-          !requiresKotlinAbi,
-          cursorContext(content, cursorIndex));
       synchronizedTask = compiler.compile(request);
     } else {
-      LOG.warn(
-          "SIGNATURE TRACE request file={} line={} column={} cursorIndex={} content=null compileByPath=true",
-          file,
-          l,
-          c,
-          cursorIndex);
       synchronizedTask = compiler.compile(file);
     }
     abortIfCancelled();
-    try {
-      return synchronizedTask.get(
-          task -> {
-            final CompilationUnitTree root = task.root(file);
-            LOG.warn(
-                "SIGNATURE TRACE task file={} taskHash={} rootPresent={}",
-                file,
-                System.identityHashCode(task),
-                root != null);
-            if (root == null) {
-              return NOT_SUPPORTED;
-            }
-            final long cursor = root.getLineMap().getPosition(line, column);
-            LOG.warn(
-                "SIGNATURE TRACE position file={} requestedLine={} requestedColumn={} mappedCursor={}",
-                file,
-                line,
-                column,
-                cursor);
-            final TreePath path = new FindInvocationAt(task.task, this).scan(root, cursor);
-            LOG.warn(
-                "SIGNATURE TRACE invocation file={} pathPresent={} leafKind={} leafType={}",
-                file,
-                path != null,
-                path == null ? null : path.getLeaf().getKind(),
-                path == null ? null : path.getLeaf().getClass().getName());
-            if (path == null) {
-              return NOT_SUPPORTED;
-            }
-            if (path.getLeaf() instanceof MethodInvocationTree) {
-              MethodInvocationTree invoke = (MethodInvocationTree) path.getLeaf();
-              List<ExecutableElement> overloads = methodOverloads(task, root, invoke);
-              LOG.warn(
-                  "SIGNATURE TRACE method select={} arguments={} overloads={}",
-                  invoke.getMethodSelect(),
-                  invoke.getArguments().size(),
-                  overloads.size());
-              List<SignatureInformation> signatures = new ArrayList<>();
-              for (ExecutableElement method : overloads) {
-                SignatureInformation info = info(method);
-                addSourceInfo(task, method, info);
-                addFancyLabel(info);
-                signatures.add(info);
-              }
-              int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
-              int activeParameter =
-                  activeParameter(path.getCompilationUnit(), task, invoke.getArguments(), cursor);
-              LOG.warn(
-                  "SIGNATURE TRACE result kind=method signatures={} activeSignature={} activeParameter={}",
-                  signatures.size(),
-                  activeSignature,
-                  activeParameter);
-              return new SignatureHelp(signatures, activeSignature, activeParameter);
-            }
-            if (path.getLeaf() instanceof NewClassTree) {
-              NewClassTree invoke = (NewClassTree) path.getLeaf();
-              List<ExecutableElement> overloads = constructorOverloads(task, root, invoke);
-              LOG.warn(
-                  "SIGNATURE TRACE constructor identifier={} arguments={} overloads={}",
-                  invoke.getIdentifier(),
-                  invoke.getArguments().size(),
-                  overloads.size());
-              List<SignatureInformation> signatures = new ArrayList<>();
-              for (ExecutableElement method : overloads) {
-                SignatureInformation info = info(method);
-                addSourceInfo(task, method, info);
-                addFancyLabel(info);
-                signatures.add(info);
-              }
-              int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
-              int activeParameter =
-                  activeParameter(path.getCompilationUnit(), task, invoke.getArguments(), cursor);
-              LOG.warn(
-                  "SIGNATURE TRACE result kind=constructor signatures={} activeSignature={} activeParameter={}",
-                  signatures.size(),
-                  activeSignature,
-                  activeParameter);
-              return new SignatureHelp(signatures, activeSignature, activeParameter);
-            }
+    return synchronizedTask.get(
+        task -> {
+          final CompilationUnitTree root = task.root(file);
+          final long cursor = root.getLineMap().getPosition(line, column);
+          final TreePath path = new FindInvocationAt(task.task, this).scan(root, cursor);
+          if (path == null) {
             return NOT_SUPPORTED;
-          });
-    } catch (Throwable error) {
-      final Throwable cause = error.getCause();
-      LOG.warn(
-          "SIGNATURE TRACE failed file={} line={} column={} cursorIndex={} errorType={} errorMessage={} causeType={} causeMessage={}",
-          file,
-          l,
-          c,
-          cursorIndex,
-          error.getClass().getName(),
-          error.getMessage(),
-          cause == null ? null : cause.getClass().getName(),
-          cause == null ? null : cause.getMessage());
-      if (error instanceof RuntimeException) {
-        throw (RuntimeException) error;
-      }
-      if (error instanceof Error) {
-        throw (Error) error;
-      }
-      throw new RuntimeException(error);
-    }
-  }
-
-  private static String cursorContext(String content, long cursorIndex) {
-    if (content == null || content.isEmpty()) {
-      return "";
-    }
-    final int cursor = (int) Math.max(0, Math.min(content.length(), cursorIndex));
-    final int start = Math.max(0, cursor - 80);
-    final int end = Math.min(content.length(), cursor + 20);
-    return content.substring(start, end).replace('\n', ' ').replace('\r', ' ');
+          }
+          if (path.getLeaf() instanceof MethodInvocationTree) {
+            MethodInvocationTree invoke = (MethodInvocationTree) path.getLeaf();
+            List<ExecutableElement> overloads = methodOverloads(task, root, invoke);
+            List<SignatureInformation> signatures = new ArrayList<>();
+            for (ExecutableElement method : overloads) {
+              SignatureInformation info = info(method);
+              addSourceInfo(task, method, info);
+              addFancyLabel(info);
+              signatures.add(info);
+            }
+            int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
+            int activeParameter =
+                activeParameter(path.getCompilationUnit(), task, invoke.getArguments(), cursor);
+            return new SignatureHelp(signatures, activeSignature, activeParameter);
+          }
+          if (path.getLeaf() instanceof NewClassTree) {
+            NewClassTree invoke = (NewClassTree) path.getLeaf();
+            List<ExecutableElement> overloads = constructorOverloads(task, root, invoke);
+            List<SignatureInformation> signatures = new ArrayList<>();
+            for (ExecutableElement method : overloads) {
+              SignatureInformation info = info(method);
+              addSourceInfo(task, method, info);
+              addFancyLabel(info);
+              signatures.add(info);
+            }
+            int activeSignature = activeSignature(task, path, invoke.getArguments(), overloads);
+            int activeParameter =
+                activeParameter(path.getCompilationUnit(), task, invoke.getArguments(), cursor);
+            return new SignatureHelp(signatures, activeSignature, activeParameter);
+          }
+          return NOT_SUPPORTED;
+        });
   }
 
   private List<ExecutableElement> methodOverloads(

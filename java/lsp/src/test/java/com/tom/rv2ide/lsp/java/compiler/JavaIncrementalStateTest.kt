@@ -73,7 +73,7 @@ class JavaIncrementalStateTest {
   }
 
   @Test
-  fun resetAfterFullRecompile_resetsOnlyAccumulatedDelta() {
+  fun resetAfterFullRecompile_clearsAllIncrementalState() {
     val state = JavaIncrementalState()
     val range = Range(Position(2, 0, 10), Position(2, 1, 11))
 
@@ -81,8 +81,9 @@ class JavaIncrementalStateTest {
     state.resetAfterFullRecompile()
 
     assertEquals(0, state.changeDelta)
-    assertSame(range, state.latestChangeRange)
-    assertEquals(Position(2, 1, 11), state.newCursorPosition)
+    assertNull(state.latestChangeRange)
+    assertEquals(Position.NONE, state.newCursorPosition)
+    assertTrue(state.isChangeValidForReparse)
   }
 
   @Test

@@ -22,7 +22,6 @@ import com.android.aapt.Resources.Attribute.FormatFlags.COLOR
 import com.android.aapt.Resources.Attribute.FormatFlags.DIMENSION
 import com.android.aapt.Resources.Attribute.FormatFlags.ENUM
 import com.android.aapt.Resources.Attribute.FormatFlags.FLAGS
-import com.android.aapt.Resources.Attribute.FormatFlags.REFERENCE
 import com.android.aapt.Resources.Attribute.FormatFlags.STRING
 import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.ID
@@ -124,7 +123,6 @@ internal class XmlDiagnosticsService {
           checkLayoutTag(node, collector)
           checkLayoutAttributes(node, collector)
           checkLayoutAttributeValues(node, collector)
-          checkLayoutReferenceCompatibility(node, collector)
         }
         if (isManifestFile) {
           checkManifestParent(node, collector)
@@ -546,55 +544,10 @@ internal class XmlDiagnosticsService {
       }
     }
   }
+  // Resource references are intentionally not rejected from AttributeResource.typeMask alone.
+  // Android's format metadata describes accepted inline value formats and does not imply that a
+  // resource reference is forbidden (for example android:text="@string/title" is valid).
 
-  /**
-   * Rejects only complete resource references supplied to attributes whose platform format does not
-   * include REFERENCE. More specific resource-type compatibility (for example color vs layout)
-   * cannot be inferred safely from AttributeResource.typeMask alone.
-   */
-  private fun checkLayoutReferenceCompatibility(element: DOMElement, collector: XmlDiagnosticCollector) {
-    if (!element.isClosed) {
-      return
-    }
-    val tagName = element.tagName ?: return
-    val widgetTable = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return
-    if (StyleableResolver.widgetFor(tagName, widgetTable) == null) {
-      return
-    }
-    val attrs =
-        Lookup.getDefault()
-            .lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES)
-            ?.findPackage(ResourceTableRegistry.PCK_ANDROID)
-            ?.findGroup(ATTR)
-            ?: return
-    element.attributeNodes.orEmpty().forEach { attribute ->
-      val name = attribute.name ?: return@forEach
-      if (!name.startsWith(ANDROID_ATTRIBUTE_PREFIX)) {
-        return@forEach
-      }
-      val reference = XmlResourceReference.parse(attribute.value ?: return@forEach) ?: return@forEach
-      // Theme attributes have separate resolution semantics; AXML005 only checks @type/name values.
-      if (reference.isThemeAttribute) {
-        return@forEach
-      }
-      // A missing reference already has the more precise AXML003 diagnostic.
-      if (resourceResolver.resolve(reference) != XmlResourceResolver.Resolution.Resolved) {
-        return@forEach
-      }
-      val attr =
-          attrs.findEntry(name.removePrefix(ANDROID_ATTRIBUTE_PREFIX))
-              ?.findValue(ConfigDescription())
-              ?.value as? AttributeResource
-              ?: return@forEach
-      if (!attr.hasAnyType(REFERENCE)) {
-        collector.errorValue(
-            code = CODE_INCOMPATIBLE_REFERENCE,
-            message = "'${reference.text}' is not allowed because '$name' does not accept resource references",
-            attribute = attribute,
-        )
-      }
-    }
-  }
 
   private fun validateLiteralAttributeValue(attr: AttributeResource, value: String): String? {
     if (attr.hasAnyType(STRING, COLOR, DIMENSION)) {
@@ -862,7 +815,6 @@ internal class XmlDiagnosticsService {
     const val CODE_UNKNOWN_LAYOUT_TAG = "AXML001"
     const val CODE_UNKNOWN_LAYOUT_ATTRIBUTE = "AXML002"
     const val CODE_INVALID_ATTRIBUTE_VALUE = "AXML004"
-    const val CODE_INCOMPATIBLE_REFERENCE = "AXML005"
     const val CODE_VALUES_ROOT = "VALUES001"
     const val CODE_VALUES_MISSING_NAME = "VALUES002"
     const val CODE_VALUES_INVALID_NAME = "VALUES003"
