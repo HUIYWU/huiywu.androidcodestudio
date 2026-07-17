@@ -36,14 +36,13 @@ import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.util.setupLookupForCompletion
+import com.tom.rv2ide.lsp.xml.resolver.StyleableResolver
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity.ERROR
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity.WARNING
 import com.tom.rv2ide.models.Position
 import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.FileManager
-import com.tom.rv2ide.xml.res.IResourceGroup
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
-import com.tom.rv2ide.xml.widgets.Widget
 import com.tom.rv2ide.xml.widgets.WidgetTable
 import java.nio.file.Path
 import org.eclipse.lemminx.dom.DOMAttr
@@ -463,14 +462,20 @@ internal class XmlDiagnosticsService {
     }
     val tagName = element.tagName ?: return
     val widgetTable = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return
-    val widget = widgetFor(tagName, widgetTable) ?: return
+    val widget = StyleableResolver.widgetFor(tagName, widgetTable) ?: return
     val frameworkTable =
         Lookup.getDefault().lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES) ?: return
     val androidPackage = frameworkTable.findPackage(ResourceTableRegistry.PCK_ANDROID) ?: return
     val styleables = androidPackage.findGroup(STYLEABLE) ?: return
     val dependencyParentLayoutAttributes = dependencyParentLayoutAttributes(element)
     val allowedAttributes =
-        styleablesFor(widget, element, widgetTable, styleables)
+        StyleableResolver.forWidget(
+                styleables,
+                widgetTable,
+                widget,
+                element,
+                includeViewGroupOwnAttributes = true,
+            )
             .flatMapTo(mutableSetOf()) { styleable -> styleable.entries.mapNotNull { it.name.entry } }
             .apply { addAll(dependencyParentLayoutAttributes) }
     if (allowedAttributes.isEmpty()) {
@@ -514,7 +519,7 @@ internal class XmlDiagnosticsService {
     }
     val tagName = element.tagName ?: return
     val widgetTable = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return
-    if (widgetFor(tagName, widgetTable) == null) {
+    if (StyleableResolver.widgetFor(tagName, widgetTable) == null) {
       return
     }
     val frameworkTable =
@@ -553,7 +558,7 @@ internal class XmlDiagnosticsService {
     }
     val tagName = element.tagName ?: return
     val widgetTable = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return
-    if (widgetFor(tagName, widgetTable) == null) {
+    if (StyleableResolver.widgetFor(tagName, widgetTable) == null) {
       return
     }
     val attrs =
@@ -619,10 +624,8 @@ internal class XmlDiagnosticsService {
   private fun AttributeResource.hasAnyType(vararg types: FormatFlags): Boolean {
     return types.any { typeMask and it.number != 0 }
   }
+  // Widget and styleable traversal is shared with completion through StyleableResolver.
 
-  private fun widgetFor(tagName: String, widgetTable: WidgetTable): Widget? {
-    return if (tagName.contains('.')) widgetTable.getWidget(tagName) else widgetTable.findWidgetWithSimpleName(tagName)
-  }
 
   private fun hasNonFrameworkParent(element: DOMElement): Boolean {
     val parentTag = (element.parentNode as? DOMElement)?.tagName ?: return false
@@ -641,71 +644,13 @@ internal class XmlDiagnosticsService {
     if (!parentTag.contains('.') || parentTag.startsWith(ANDROID_VIEW_PACKAGE_PREFIX)) {
       return emptySet()
     }
-    val styleableName = "${parentTag.substringAfterLast('.')}$LAYOUT_SUFFIX"
+    val styleableName = "${StyleableResolver.simpleName(parentTag)}${StyleableResolver.LAYOUT_SUFFIX}"
     val lookup = Lookup.getDefault()
     val tables =
         (lookup.lookup(ResourceTableRegistry.COMPLETION_MODULE_RES).orEmpty() +
                 lookup.lookup(ResourceTableRegistry.COMPLETION_DEP_RES).orEmpty())
             .toSet()
-    return tables
-        .flatMap { table -> table.packages }
-        .mapNotNull { resourcePackage ->
-          resourcePackage.findGroup(STYLEABLE)?.findEntry(styleableName)
-              ?.findValue(ConfigDescription())?.value as? Styleable
-        }
-        .flatMapTo(mutableSetOf()) { styleable -> styleable.entries.mapNotNull { it.name.entry } }
-  }
-
-  private fun styleablesFor(
-      widget: Widget,
-      node: DOMElement,
-      widgetTable: WidgetTable,
-      styleables: IResourceGroup,
-      includeLayoutParams: Boolean = true,
-      suffix: String = "",
-  ): Set<Styleable> {
-    val result = mutableSetOf<Styleable>()
-    addStyleable(styleables, widget.simpleName, suffix, result)
-    widget.superclasses.forEach { superclass ->
-      if (superclass == VIEW_GROUP_CLASS) {
-        // FrameLayout, LinearLayout, etc. inherit ViewGroup's own attributes such as
-        // clipChildren and clipToPadding, in addition to the base margin LayoutParams.
-        addStyleable(styleables, VIEW_GROUP, suffix, result)
-        addStyleable(styleables, VIEW_GROUP, MARGIN_LAYOUT_SUFFIX, result)
-      }
-      widgetTable.getWidget(superclass)?.also { addStyleable(styleables, it.simpleName, suffix, result) }
-    }
-
-    if (includeLayoutParams) {
-      val parent = node.parentNode as? DOMElement
-      if (parent != null) {
-        widgetFor(parent.tagName ?: "", widgetTable)?.let {
-          result.addAll(styleablesFor(it, parent, widgetTable, styleables, false, LAYOUT_SUFFIX))
-        } ?: run {
-          addStyleable(styleables, VIEW_GROUP, LAYOUT_SUFFIX, result)
-          addStyleable(styleables, VIEW_GROUP, MARGIN_LAYOUT_SUFFIX, result)
-          addStyleable(styleables, parent.tagName ?: "", LAYOUT_SUFFIX, result)
-        }
-      } else {
-        // A layout root has DOMDocument as its parent. It still legitimately uses the base
-        // ViewGroup LayoutParams attributes, such as android:layout_width and layout_height.
-        addStyleable(styleables, VIEW_GROUP, LAYOUT_SUFFIX, result)
-        addStyleable(styleables, VIEW_GROUP, MARGIN_LAYOUT_SUFFIX, result)
-      }
-    }
-    return result
-  }
-
-  private fun addStyleable(
-      styleables: IResourceGroup,
-      widgetName: String,
-      suffix: String,
-      result: MutableSet<Styleable>,
-  ) {
-    val value = styleables.findEntry("$widgetName$suffix")?.findValue(ConfigDescription())?.value
-    if (value is Styleable) {
-      result.add(value)
-    }
+    return StyleableResolver.attributesForStyleable(tables, styleableName)
   }
 
   private fun checkLayoutTag(element: DOMElement, collector: XmlDiagnosticCollector) {
@@ -929,10 +874,6 @@ internal class XmlDiagnosticsService {
     const val ANDROID_ATTRIBUTE_PREFIX = "android:"
     const val LAYOUT_ATTRIBUTE_PREFIX = "layout_"
     const val ANDROID_VIEW_PACKAGE_PREFIX = "android."
-    const val VIEW_GROUP_CLASS = "android.view.ViewGroup"
-    const val VIEW_GROUP = "ViewGroup"
-    const val LAYOUT_SUFFIX = "_Layout"
-    const val MARGIN_LAYOUT_SUFFIX = "_MarginLayout"
     const val VALUES_DIRECTORY = "values"
     const val VALUES_ROOT_TAG = "resources"
     const val RESOURCE_NAME_ATTRIBUTE = "name"

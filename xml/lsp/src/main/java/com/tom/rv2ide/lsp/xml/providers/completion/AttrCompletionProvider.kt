@@ -18,7 +18,6 @@
 package com.tom.rv2ide.lsp.xml.providers.completion
 
 import com.android.aaptcompiler.AaptResourceType.STYLEABLE
-import com.android.aaptcompiler.ConfigDescription
 import com.android.aaptcompiler.ResourcePathData
 import com.android.aaptcompiler.Styleable
 import com.tom.rv2ide.lookup.Lookup
@@ -27,6 +26,7 @@ import com.tom.rv2ide.lsp.models.CompletionItem
 import com.tom.rv2ide.lsp.models.CompletionParams
 import com.tom.rv2ide.lsp.models.CompletionResult
 import com.tom.rv2ide.lsp.models.MatchLevel.NO_MATCH
+import com.tom.rv2ide.lsp.xml.resolver.StyleableResolver
 import com.tom.rv2ide.lsp.xml.utils.XmlUtils.NodeType
 import com.tom.rv2ide.lsp.xml.utils.XmlUtils.NodeType.ATTRIBUTE
 import com.tom.rv2ide.xml.res.IResourceGroup
@@ -181,12 +181,7 @@ open class AttrCompletionProvider(provider: ICompletionProvider) :
     val widgets = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return emptySet()
 
     // Find the widget
-    val widget =
-        if (nodeName.contains(".")) {
-          widgets.getWidget(nodeName)
-        } else {
-          widgets.findWidgetWithSimpleName(nodeName)
-        }
+    val widget = StyleableResolver.widgetFor(nodeName, widgets)
 
     if (widget != null) {
       // This is a widget from the Android SDK
@@ -209,50 +204,20 @@ open class AttrCompletionProvider(provider: ICompletionProvider) :
       addFromParent: Boolean = false,
       suffix: String = "",
   ): Set<Styleable> {
-    val result = mutableSetOf<Styleable>()
-
-    // Styles must be defined by the View class' simple name
-    var name = node.nodeName
-    if (name.contains('.')) {
-      name = name.substringAfterLast('.')
-    }
-
-    // Common attributes for all views
-    addWidgetStyleable(styleables = styleables, widget = "View", result = result)
-
-    // Find the declared styleable
-    val entry = findStyleableEntry(styleables, "$name$suffix")
-    if (entry != null) {
-      result.add(entry)
-    }
-
-    // If the layout params from the parent must be added, check for parent and then add them
-    // Layout param attributes must be added only from the direct parent
-    if (addFromParent) {
-      node.parentNode?.also { result.addAll(findLayoutParams(styleables, node.parentNode)) }
-    }
-
-    return result
+    return StyleableResolver.forName(
+        styleables,
+        node,
+        includeView = true,
+        includeParentLayoutParams = addFromParent,
+        suffix = suffix,
+    )
   }
 
   protected open fun findLayoutParams(
       styleables: IResourceGroup,
       parentNode: DOMNode,
   ): Set<Styleable> {
-    val result = mutableSetOf<Styleable>()
-
-    // Add layout params common for all view groups and the ones supporting child margins
-    addWidgetStyleable(styleables, "ViewGroup", result, suffix = "_Layout")
-    addWidgetStyleable(styleables, "ViewGroup", result, suffix = "_MarginLayout")
-
-    var name = parentNode.nodeName
-    if (name.contains('.')) {
-      name = name.substringAfterLast('.')
-    }
-
-    addWidgetStyleable(styleables, name, result, "_Layout")
-
-    return result
+    return StyleableResolver.layoutParamsFor(styleables, parentNode)
   }
 
   protected open fun findStyleablesForWidget(
@@ -263,41 +228,16 @@ open class AttrCompletionProvider(provider: ICompletionProvider) :
       adddFromParent: Boolean = true,
       suffix: String = "",
   ): Set<Styleable> {
-    val result = mutableSetOf<Styleable>()
-
-    // Find the <declare-styleable> for the widget in the resource group
-    addWidgetStyleable(styleables, widget, result, suffix = suffix)
-
-    // Find styleables for all the superclasses
-    addSuperclassStyleables(styleables, widgets, widget, result, suffix = suffix)
-
-    // Add attributes provided by the layout params
-    if (adddFromParent && node.parentNode != null) {
-      val parentName = node.parentNode.nodeName
-      val parentWidget =
-          if (parentName.contains(".")) {
-            widgets.getWidget(parentName)
-          } else {
-            widgets.findWidgetWithSimpleName(parentName)
-          }
-
-      if (parentWidget != null) {
-        result.addAll(
-            findStyleablesForWidget(
-                styleables,
-                widgets,
-                parentWidget,
-                node.parentNode,
-                false,
-                "_Layout",
-            )
-        )
-      } else {
-        result.addAll(findLayoutParams(styleables, node.parentNode))
-      }
-    }
-
-    return result
+    return StyleableResolver.forWidget(
+        styleables,
+        widgets,
+        widget,
+        node,
+        includeParentLayoutParams = adddFromParent,
+        suffix = suffix,
+        includeViewGroupOwnAttributes = false,
+        includeRootLayoutParams = true,
+    )
   }
 
   protected open fun addWidgetStyleable(
@@ -340,11 +280,10 @@ open class AttrCompletionProvider(provider: ICompletionProvider) :
   }
 
   protected open fun findStyleableEntry(styleables: IResourceGroup, name: String): Styleable? {
-    val value = styleables.findEntry(name)?.findValue(ConfigDescription())?.value
-    if (value !is Styleable) {
-      log.warn("Cannot find styleable for {}", name)
-      return null
+    return StyleableResolver.findEntry(styleables, name).also { value ->
+      if (value == null) {
+        log.warn("Cannot find styleable for {}", name)
+      }
     }
-    return value
   }
 }
