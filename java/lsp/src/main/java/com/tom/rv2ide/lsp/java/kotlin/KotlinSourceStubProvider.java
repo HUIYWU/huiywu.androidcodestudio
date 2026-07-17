@@ -168,6 +168,14 @@ public final class KotlinSourceStubProvider {
 
   private static String generateStub(String qualifiedName, Path kotlinFile) {
     final String source = FileManager.INSTANCE.getDocumentContents(kotlinFile).toString();
+    LOG.warn(
+        "Kotlin ABI TRACE generatorInput type={} kotlinFile={} length={} containsCompanion={} containsJvmStatic={} source=<<<{}>>>",
+        qualifiedName,
+        kotlinFile,
+        source.length(),
+        source.contains("companion object"),
+        source.contains("JvmStatic"),
+        source);
     return KotlinJvmAbiStubGenerator.generate(
         qualifiedName, kotlinFile.getFileName().toString(), source);
   }
