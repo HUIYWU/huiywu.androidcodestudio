@@ -546,7 +546,7 @@ constructor(
   }
 
   /** Dispatches the [DocumentSaveEvent] for this editor. */
-  open fun dispatchDocumentSaveEvent() {
+  open fun dispatchDocumentSaveEvent(buildWillFollow: Boolean = false) {
     markUnmodified()
     if (isReleased) {
       return
@@ -554,7 +554,7 @@ constructor(
     if (file == null) {
       return
     }
-    eventDispatcher.dispatch(DocumentSaveEvent(file!!.toPath()))
+    eventDispatcher.dispatch(DocumentSaveEvent(file!!.toPath(), buildWillFollow))
   }
 
   /**

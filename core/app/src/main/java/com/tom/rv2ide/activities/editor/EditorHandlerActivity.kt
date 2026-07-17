@@ -484,11 +484,14 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     return result.gradleSaved
   }
 
-  override suspend fun saveAllResult(progressConsumer: ((Int, Int) -> Unit)?): SaveResult {
+  override suspend fun saveAllResult(
+      progressConsumer: ((Int, Int) -> Unit)?,
+      buildWillFollow: Boolean,
+  ): SaveResult {
     return performFileSave {
       val result = SaveResult()
       for (i in 0 until editorViewModel.getOpenedFileCount()) {
-        saveResultInternal(i, result)
+        saveResultInternal(i, result, buildWillFollow)
         progressConsumer?.invoke(i + 1, editorViewModel.getOpenedFileCount())
       }
 
@@ -500,7 +503,11 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     performFileSave { saveResultInternal(index, result) }
   }
 
-  private suspend fun saveResultInternal(index: Int, result: SaveResult): Boolean {
+  private suspend fun saveResultInternal(
+      index: Int,
+      result: SaveResult,
+      buildWillFollow: Boolean = false,
+  ): Boolean {
     if (index < 0 || index >= editorViewModel.getOpenedFileCount()) {
       return false
     }
@@ -512,7 +519,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
       // Must be called before frag.save()
       // Otherwise, it'll always return false
       val modified = frag.isModified
-      if (!frag.save()) {
+      if (!frag.save(buildWillFollow)) {
         return false
       }
 

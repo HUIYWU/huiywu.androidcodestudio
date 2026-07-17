@@ -115,6 +115,44 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsNullablePrimitivesCollectionsAndArrays() {
+    val source =
+        """
+        package sample
+
+        class TypeSamples(
+          val nullableCount: Int?,
+          val names: List<String>,
+          val lookup: Map<String, Int>,
+          val numbers: IntArray,
+          val labels: Array<String>
+        ) {
+          fun transform(values: MutableList<Long?>): Set<Int> = emptySet()
+          fun wildcard(values: List<*>): Collection<out Int> = emptyList()
+          fun unknown(callback: (String) -> Int): Any = callback
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generate("sample.TypeSamples", "TypeSamples.kt", source)
+
+    assertNotNull(stub)
+    assertContains(
+        stub!!,
+        "public TypeSamples(Integer nullableCount, java.util.List<String> names, " +
+            "java.util.Map<String, Integer> lookup, int[] numbers, String[] labels)")
+    assertContains(stub, "public Integer getNullableCount()")
+    assertContains(stub, "public java.util.List<String> getNames()")
+    assertContains(stub, "public java.util.Map<String, Integer> getLookup()")
+    assertContains(stub, "public int[] getNumbers()")
+    assertContains(stub, "public String[] getLabels()")
+    assertContains(stub, "public java.util.Set<Integer> transform(java.util.List<Long> values)")
+    assertContains(
+        stub,
+        "public java.util.Collection<? extends Integer> wildcard(java.util.List<?> values)")
+    assertContains(stub, "public Object unknown(Object callback)")
+  }
+
+  @Test
   fun generate_excludesPrivateAndMismatchedDeclarations() {
     val privateType =
         """

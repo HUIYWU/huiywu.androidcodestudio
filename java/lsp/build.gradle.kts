@@ -37,15 +37,8 @@ android {
 
 tasks.withType<Test>().configureEach {
   val hostNativeLibraryDir =
-      rootProject.layout.buildDirectory.dir("host").get().asFile.absoluteFile
+      rootProject.file("/data/data/com.tom.rv2ide/files/home/usr/jvm-test-lib").absoluteFile
   systemProperty("java.library.path", hostNativeLibraryDir.absolutePath)
-  doFirst {
-    logger.lifecycle(
-        "[java:lsp] Host native library directory (java.library.path): {} (exists={})",
-        hostNativeLibraryDir,
-        hostNativeLibraryDir.isDirectory,
-    )
-  }
 }
 
 kapt {

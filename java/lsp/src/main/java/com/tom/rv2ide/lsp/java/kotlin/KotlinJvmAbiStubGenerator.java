@@ -705,23 +705,173 @@ private static final Pattern PROPERTY_PATTERN =
     if (kotlinType == null || kotlinType.trim().isEmpty()) {
       return "Object";
     }
-    String type = kotlinType.trim().replace("?", "");
-    final int equals = type.indexOf('=');
-    if (equals >= 0) {
-      type = type.substring(0, equals).trim();
+    String type = stripDefaultValue(kotlinType.trim());
+    final boolean nullable = type.endsWith("?");
+    if (nullable) {
+      type = type.substring(0, type.length() - 1).trim();
     }
-    if (type.startsWith("String")) return "String";
-    if (type.startsWith("Int")) return "int";
-    if (type.startsWith("Long")) return "long";
-    if (type.startsWith("Double")) return "double";
-    if (type.startsWith("Float")) return "float";
-    if (type.startsWith("Boolean")) return "boolean";
-    if (type.startsWith("Char")) return "char";
-    if (type.startsWith("Byte")) return "byte";
-    if (type.startsWith("Short")) return "short";
-    if (type.startsWith("Unit")) return "void";
-    if (type.startsWith("Any") || type.startsWith("Nothing")) return "Object";
-    return "Object";
+
+    final String primitive = javaPrimitiveType(type);
+    if (primitive != null) {
+      return nullable ? boxedType(primitive) : primitive;
+    }
+    if ("String".equals(type) || "kotlin.String".equals(type)) return "String";
+    if ("Unit".equals(type) || "kotlin.Unit".equals(type)) return nullable ? "Object" : "void";
+    if ("Any".equals(type) || "kotlin.Any".equals(type)
+        || "Nothing".equals(type) || "kotlin.Nothing".equals(type)) {
+      return "Object";
+    }
+
+    final String primitiveArray = javaPrimitiveArrayType(type);
+    if (primitiveArray != null) {
+      return primitiveArray;
+    }
+
+    final TypeApplication application = parseTypeApplication(type);
+    if (application == null) {
+      return "Object";
+    }
+    final String rawJavaType = javaCollectionType(application.rawType);
+    if ("Array".equals(application.rawType) || "kotlin.Array".equals(application.rawType)) {
+      return application.arguments.size() == 1
+          ? javaReferenceArrayType(application.arguments.get(0))
+          : "Object[]";
+    }
+    if (rawJavaType == null) {
+      return "Object";
+    }
+    final List<String> arguments = new ArrayList<>();
+    for (String argument : application.arguments) {
+      arguments.add(javaTypeArgument(argument));
+    }
+    return arguments.isEmpty()
+        ? rawJavaType
+        : rawJavaType + "<" + String.join(", ", arguments) + ">";
+  }
+
+  private static String stripDefaultValue(String type) {
+    int nesting = 0;
+    for (int index = 0; index < type.length(); index++) {
+      final char current = type.charAt(index);
+      if (current == '<' || current == '(' || current == '[') {
+        nesting++;
+      } else if (current == '>' || current == ')' || current == ']') {
+        nesting = Math.max(0, nesting - 1);
+      } else if (current == '=' && nesting == 0) {
+        return type.substring(0, index).trim();
+      }
+    }
+    return type;
+  }
+
+  private static String javaPrimitiveType(String type) {
+    switch (type) {
+      case "Int": case "kotlin.Int": return "int";
+      case "Long": case "kotlin.Long": return "long";
+      case "Double": case "kotlin.Double": return "double";
+      case "Float": case "kotlin.Float": return "float";
+      case "Boolean": case "kotlin.Boolean": return "boolean";
+      case "Char": case "kotlin.Char": return "char";
+      case "Byte": case "kotlin.Byte": return "byte";
+      case "Short": case "kotlin.Short": return "short";
+      default: return null;
+    }
+  }
+
+  private static String boxedType(String primitive) {
+    switch (primitive) {
+      case "int": return "Integer";
+      case "long": return "Long";
+      case "double": return "Double";
+      case "float": return "Float";
+      case "boolean": return "Boolean";
+      case "char": return "Character";
+      case "byte": return "Byte";
+      case "short": return "Short";
+      default: return "Object";
+    }
+  }
+
+  private static String javaPrimitiveArrayType(String type) {
+    switch (type) {
+      case "IntArray": case "kotlin.IntArray": return "int[]";
+      case "LongArray": case "kotlin.LongArray": return "long[]";
+      case "DoubleArray": case "kotlin.DoubleArray": return "double[]";
+      case "FloatArray": case "kotlin.FloatArray": return "float[]";
+      case "BooleanArray": case "kotlin.BooleanArray": return "boolean[]";
+      case "CharArray": case "kotlin.CharArray": return "char[]";
+      case "ByteArray": case "kotlin.ByteArray": return "byte[]";
+      case "ShortArray": case "kotlin.ShortArray": return "short[]";
+      default: return null;
+    }
+  }
+
+  private static String javaCollectionType(String type) {
+    switch (type) {
+      case "List": case "MutableList": case "kotlin.collections.List":
+      case "kotlin.collections.MutableList": return "java.util.List";
+      case "Set": case "MutableSet": case "kotlin.collections.Set":
+      case "kotlin.collections.MutableSet": return "java.util.Set";
+      case "Map": case "MutableMap": case "kotlin.collections.Map":
+      case "kotlin.collections.MutableMap": return "java.util.Map";
+      case "Collection": case "MutableCollection": case "kotlin.collections.Collection":
+      case "kotlin.collections.MutableCollection": return "java.util.Collection";
+      case "Iterable": case "kotlin.collections.Iterable": return "java.lang.Iterable";
+      default: return null;
+    }
+  }
+
+  private static String javaTypeArgument(String kotlinArgument) {
+    String argument = kotlinArgument.trim();
+    if ("*".equals(argument)) return "?";
+    if (argument.startsWith("out ")) {
+      return "? extends " + boxedTypeArgument(javaType(argument.substring(4)));
+    }
+    if (argument.startsWith("in ")) {
+      return "? super " + boxedTypeArgument(javaType(argument.substring(3)));
+    }
+    return boxedTypeArgument(javaType(argument));
+  }
+
+  private static String boxedTypeArgument(String javaType) {
+    switch (javaType) {
+      case "int":
+      case "long":
+      case "double":
+      case "float":
+      case "boolean":
+      case "char":
+      case "byte":
+      case "short":
+        return boxedType(javaType);
+      default:
+        return javaType;
+    }
+  }
+
+  private static String javaReferenceArrayType(String kotlinElementType) {
+    final String elementType = boxedTypeArgument(javaType(kotlinElementType));
+    return "void".equals(elementType) || elementType.contains("?") ? "Object[]" : elementType + "[]";
+  }
+
+  private static TypeApplication parseTypeApplication(String type) {
+    final int open = type.indexOf('<');
+    if (open < 1 || !type.endsWith(">")) {
+      return null;
+    }
+    final String rawType = type.substring(0, open).trim();
+    final String argumentText = type.substring(open + 1, type.length() - 1);
+    return new TypeApplication(rawType, splitParameters(argumentText));
+  }
+
+  private static final class TypeApplication {
+    final String rawType;
+    final List<String> arguments;
+
+    TypeApplication(String rawType, List<String> arguments) {
+      this.rawType = rawType;
+      this.arguments = arguments;
+    }
   }
 
   private static String methodBody(String kotlinType) {

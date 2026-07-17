@@ -406,7 +406,14 @@ val mainArtifact = variant.mainArtifact
 
       if (isResource || isManifest) {
         module.updateResourceTable()
-        generateSourcesForModule(module)
+        if (!event.buildWillFollow) {
+          generateSourcesForModule(module)
+        } else {
+          log.debug(
+              "Skipping standalone source generation for '{}' because a full build will follow",
+              module.path,
+          )
+        }
       }
     }
   }

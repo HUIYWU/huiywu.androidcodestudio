@@ -44,13 +44,14 @@ object TSCompletionContextClassifier {
           }
           throw err
         }
-        // Intentionally use point-based lookup here instead of byte-range lookup.
-        // The underlying binding parses Java source as UTF-16 and we observed that
-        // byte/index conversion on the completion hot path was more fragile than
-        // directly using the editor-provided line/column position.
-        val point = TSPoint.create(line, column)
+        // TSParser converts Java strings to UTF-16LE. Tree-sitter point columns are byte offsets,
+        // while editor columns are UTF-16 code-unit offsets, so each column occupies two bytes.
+        // Use a non-empty range to make token lookup deterministic at boundaries.
+        val byteColumn = column * 2
+        val startPoint = TSPoint.create(line, byteColumn)
+        val endPoint = TSPoint.create(line, byteColumn + 2)
         val node = try {
-          root.getNamedDescendantForPointRange(point, point)
+          root.getNamedDescendantForPointRange(startPoint, endPoint)
         } catch (err: Throwable) {
           if (IdeLogConfig.shouldLogInfo()) {
             log.info(
@@ -67,7 +68,7 @@ object TSCompletionContextClassifier {
           throw err
         }
 
-        if (node == null || node.isNull()) {
+        if (node == null || !node.canAccess()) {
           return TSCompletionContext.UNKNOWN
         }
 

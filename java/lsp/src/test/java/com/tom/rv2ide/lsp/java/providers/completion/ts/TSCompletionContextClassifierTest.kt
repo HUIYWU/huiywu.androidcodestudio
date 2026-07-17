@@ -1,10 +1,15 @@
 package com.tom.rv2ide.lsp.java.providers.completion.ts
 
+import com.tom.rv2ide.treesitter.TreeSitter
 import java.nio.file.Paths
 import org.junit.Assert.assertEquals
 import org.junit.Test
-
 class TSCompletionContextClassifierTest {
+
+  companion object {
+    @Volatile private var treeSitterLoaded = false
+  }
+
 
   @Test
   fun classifiesCommentContext() {
@@ -79,7 +84,7 @@ class TSCompletionContextClassifierTest {
   @Test
   fun classifiesBrokenSyntaxNearCursor() {
     val code = "class A { void test( { }"
-    val cursor = code.indexOf("{").toLong()
+    val cursor = code.lastIndexOf("{").toLong()
 
     val context = classify(code, cursor)
 
@@ -91,7 +96,20 @@ class TSCompletionContextClassifierTest {
     val line = code.substring(0, offset).count { it == '\n' }
     val lastLineBreak = code.lastIndexOf('\n', offset - 1)
     val column = offset - lastLineBreak - 1
+    ensureTreeSitterLoaded()
     return TSCompletionContextClassifier.classify(
         Paths.get("/tmp/A.java"), code, cursor, line, column)
   }
+
+  private fun ensureTreeSitterLoaded() {
+    if (!treeSitterLoaded) {
+      synchronized(TSCompletionContextClassifierTest::class.java) {
+        if (!treeSitterLoaded) {
+          TreeSitter.loadLibrary()
+          treeSitterLoaded = true
+        }
+      }
+    }
+  }
+
 }

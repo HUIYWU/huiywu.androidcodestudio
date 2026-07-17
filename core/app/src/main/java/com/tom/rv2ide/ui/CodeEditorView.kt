@@ -288,7 +288,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
    *   `false`, it means that there was an error saving the file or the content of the file was not
    *   modified and hence the save operation was skipped.
    */
-  suspend fun save(): Boolean {
+  suspend fun save(buildWillFollow: Boolean = false): Boolean {
     val file = this.file ?: return false
 
     if (!isModified && file.exists()) {
@@ -316,7 +316,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     }
 
     markUnmodified()
-    notifySaved()
+    notifySaved(buildWillFollow)
 
     return true
   }
@@ -657,8 +657,8 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     }
   }
 
-  private fun notifySaved() {
-    binding.editor.dispatchDocumentSaveEvent()
+  private fun notifySaved(buildWillFollow: Boolean) {
+    binding.editor.dispatchDocumentSaveEvent(buildWillFollow)
   }
 
   override fun onAttachedToWindow() {

@@ -92,8 +92,17 @@ data class DocumentChangeEvent(
     }
 }
 
-/** Dispatched when the given document is saved to disk. */
-data class DocumentSaveEvent(var savedFile: Path) : DocumentEvent(savedFile)
+/**
+ * Dispatched when the given document is saved to disk.
+ *
+ * When [buildWillFollow] is true, a full Gradle build has already been scheduled by the initiating
+ * action. Resource listeners should refresh in-memory state but must not enqueue a separate resource
+ * generation build for this save.
+ */
+data class DocumentSaveEvent(
+    var savedFile: Path,
+    val buildWillFollow: Boolean = false,
+) : DocumentEvent(savedFile)
 
 /** Dispatched when the given opened document is selected and it is visible to the user. */
 data class DocumentSelectedEvent(var selectedFile: Path) : DocumentEvent(selectedFile)

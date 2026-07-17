@@ -80,9 +80,12 @@ interface IEditorHandler {
    * @param progressConsumer A function which consumes the progress of the save operation. The first
    *   parameter of the function is the current save progress (saved file count) and the second
    *   parameter is the total file count.
+   * @param buildWillFollow Whether the initiating action will immediately run a full Gradle build.
+   *   Resource-save listeners use this to avoid enqueueing a redundant generation build.
    */
   suspend fun saveAllResult(
-      progressConsumer: ((progress: Int, total: Int) -> Unit)? = null
+      progressConsumer: ((progress: Int, total: Int) -> Unit)? = null,
+      buildWillFollow: Boolean = false,
   ): SaveResult
 
   suspend fun saveResult(index: Int, result: SaveResult)

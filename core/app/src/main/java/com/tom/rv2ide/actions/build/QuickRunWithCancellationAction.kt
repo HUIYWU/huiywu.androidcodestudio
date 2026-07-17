@@ -172,7 +172,7 @@ class QuickRunWithCancellationAction(context: Context, override val order: Int) 
 
     actionScope
         .launch(Dispatchers.Default) {
-          activity.saveAllResult()
+          activity.saveAllResult(buildWillFollow = true)
 
           val result = withContext(Dispatchers.IO) { buildService.executeTasks(taskName).get() }
 
