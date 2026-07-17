@@ -433,14 +433,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortCompletionIfCancelled();
 
     final boolean requiresKotlinAbi = JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled();
-    LOG.warn(
-        "Kotlin ABI TRACE completionCompile file={} cursor={} partialRequestPresent={} allowPartialReparse={} requiresKotlinAbi={} compilerModule={}",
-        file,
-        cursor,
-        partialRequest != null,
-        !requiresKotlinAbi,
-        requiresKotlinAbi,
-        compiler.getModule() == null ? null : compiler.getModule().getPath());
     // Kotlin source ABI stubs must be part of the same javac task that performs member completion.
     // Partial reparse intentionally excludes synthetic sources, so recognition-enabled completion
     // uses the normal full-compile path.

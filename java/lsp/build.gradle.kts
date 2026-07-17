@@ -54,6 +54,7 @@ dependencies {
 
   implementation(libs.androidide.ts)
   implementation(libs.androidide.ts.java)
+  implementation(libs.androidide.ts.kotlin)
   implementation(libs.androidx.annotation)
   implementation(libs.androidx.appcompat)
   implementation(libs.common.editor)

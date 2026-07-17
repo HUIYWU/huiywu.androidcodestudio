@@ -25,10 +25,10 @@ import java.util.regex.Pattern;
  * Conservative source-level Kotlin-to-Java ABI projection used while compiler-provided Kotlin JVM
  * symbols are unavailable.
  *
- * <p>This is deliberately not a Kotlin parser. It supports common declarations and emits only
- * members whose JVM form is unambiguous enough for Java diagnostics. Unsupported signatures are
- * represented with {@link Object}; that preserves Java attribution without claiming false Kotlin
- * semantic precision.
+ * <p>Tree-sitter supplies declaration and body boundaries while JVM projection remains deliberately
+ * conservative. Only common declarations whose JVM form is sufficiently unambiguous are emitted;
+ * unsupported signatures use {@link Object} to preserve Java attribution without claiming false
+ * Kotlin semantic precision.
  */
 final class KotlinJvmAbiStubGenerator {
 
@@ -85,10 +85,18 @@ private static final Pattern PROPERTY_PATTERN =
       return null;
     }
 
+    final KotlinJvmSyntaxParser.TypeSyntax syntax =
+        KotlinJvmSyntaxParser.findTopLevelType(source, simpleName);
+    if (syntax != null) {
+      return syntax.privateType ? null : generateType(packageName, simpleName, syntax);
+    }
+
+    // Retain the previous scanner as a compatibility fallback when the native grammar is
+    // unavailable or an incomplete edit produces no usable top-level declaration.
     final Matcher typeMatcher = TYPE_PATTERN.matcher(source);
     while (typeMatcher.find()) {
       if (simpleName.equals(typeMatcher.group(3)) && !isPrivate(typeMatcher.group(1))) {
-        return generateType(packageName, simpleName, typeMatcher, source);
+        return generateTypeFallback(packageName, simpleName, typeMatcher, source);
       }
     }
     return isFacadeName(simpleName, kotlinFileName, source)
@@ -97,6 +105,37 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static String generateType(
+      String packageName, String simpleName, KotlinJvmSyntaxParser.TypeSyntax syntax) {
+    final boolean isObject = syntax.objectType();
+    final boolean isInterface = syntax.interfaceType;
+    final StringBuilder out = header(packageName);
+    if (syntax.enumType) {
+      out.append("public enum ").append(simpleName).append(" { ; }\n");
+      return out.toString();
+    }
+    if (syntax.annotationType) {
+      out.append("public @interface ").append(simpleName).append(" {}\n");
+      return out.toString();
+    }
+    out.append("public ").append(isInterface ? "interface " : "class ")
+        .append(simpleName).append(" {\n");
+    if (isObject) {
+      out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
+    } else if (!isInterface) {
+      final String constructorParameters = constructorParameters(syntax.constructorText);
+      out.append("  public ").append(simpleName).append(parameterList(constructorParameters))
+          .append(" {}\n");
+      appendConstructorProperties(out, constructorParameters);
+    }
+    appendMembers(out, syntax.body, isInterface, false);
+    if (syntax.companionBody != null) {
+      appendCompanionBody(out, syntax.companionBody);
+    }
+    out.append("}\n");
+    return out.toString();
+  }
+
+  private static String generateTypeFallback(
       String packageName, String simpleName, Matcher declaration, String source) {
     final String keyword = declaration.group(2);
     final boolean isObject = "object".equals(keyword);
@@ -163,6 +202,10 @@ private static final Pattern PROPERTY_PATTERN =
       return;
     }
     final String companionBody = body.substring(bodyStart + 1, bodyEnd);
+    appendCompanionBody(out, companionBody);
+  }
+
+  private static void appendCompanionBody(StringBuilder out, String companionBody) {
     // Kotlin exposes the companion itself as Foo.Companion. Keep that normal JVM surface in
     // addition to the direct host-class methods created only for @JvmStatic declarations.
     out.append("  public static final class Companion {\n");
@@ -365,6 +408,15 @@ private static final Pattern PROPERTY_PATTERN =
         depth = 0;
       }
     }
+  }
+
+  private static String constructorParameters(String constructorText) {
+    if (constructorText == null) {
+      return null;
+    }
+    final int start = constructorText.indexOf('(');
+    final int end = constructorText.lastIndexOf(')');
+    return start >= 0 && end >= start ? constructorText.substring(start, end + 1) : null;
   }
 
   private static String parameterList(String kotlinParameters) {
