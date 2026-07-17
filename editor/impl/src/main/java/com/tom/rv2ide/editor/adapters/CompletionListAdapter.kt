@@ -173,8 +173,14 @@ class CompletionListAdapter : EditorCompletionAdapter() {
             else -> return@executeAsync null
           }
 
+      // Project and synthetic ABI symbols are not part of the Android SDK API database.
+      // Missing metadata is expected and should simply hide the API-level annotation.
+      if (info == null) {
+        return@executeAsync null
+      }
+
       val sb = StringBuilder()
-      if (info!!.since > 1) {
+      if (info.since > 1) {
         sb.append(textView.context.getString(msg_api_info_since, info.since))
         sb.append("\n")
       }

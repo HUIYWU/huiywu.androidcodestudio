@@ -1,0 +1,10 @@
+<resources>
+  <item name="complete">
+    @string/missing
+  </item>
+  <item name="mixed">Prefix @string/missing</item>
+  <item name="special">@null</item>
+  <item name="binding">@{viewModel.title}</item>
+  <!-- @string/comment_missing -->
+  <item name="cdata"><![CDATA[@string/cdata_missing]]></item>
+</resources>

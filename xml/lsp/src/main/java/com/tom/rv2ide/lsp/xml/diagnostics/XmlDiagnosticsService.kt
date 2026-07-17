@@ -50,6 +50,7 @@ import org.eclipse.lemminx.dom.DOMAttr
 import org.eclipse.lemminx.dom.DOMElement
 import org.eclipse.lemminx.dom.DOMNode
 import org.eclipse.lemminx.dom.DOMParser
+import org.eclipse.lemminx.dom.DOMText
 import org.eclipse.lemminx.uriresolver.URIResolverExtensionManager
 import org.slf4j.LoggerFactory
 
@@ -132,6 +133,8 @@ internal class XmlDiagnosticsService {
           checkManifestComponentName(node, collector)
         }
       }
+    } else if (node is DOMText && node.isText) {
+      checkTextResourceReference(node, collector, declaredIds)
     }
 
     node.children.forEach { child ->
@@ -721,6 +724,53 @@ internal class XmlDiagnosticsService {
     }
   }
 
+  private fun checkTextResourceReference(
+      textNode: DOMText,
+      collector: XmlDiagnosticCollector,
+      declaredIds: Set<String>,
+  ) {
+    val candidate = textResourceReferenceCandidate(textNode) ?: return
+    val reference = candidate.reference
+    if (reference.packageName == null && !reference.isThemeAttribute &&
+        reference.type == ID && reference.entry in declaredIds) {
+      return
+    }
+    if (resourceResolver.resolve(reference) != XmlResourceResolver.Resolution.NotFound) {
+      return
+    }
+
+    collector.errorRange(
+        code = CODE_UNRESOLVED_RESOURCE,
+        message = "Cannot resolve resource reference '${reference.text}'",
+        start = candidate.start,
+        end = candidate.end,
+    )
+  }
+
+  internal fun textResourceReferenceCandidate(textNode: DOMText): TextResourceReferenceCandidate? {
+    // CDATA extends DOMText, so retain the exact TEXT_NODE check to avoid interpreting CDATA as
+    // Android resource syntax. Comments and processing instructions are different node types too.
+    if (!textNode.isText) {
+      return null
+    }
+    val rawText = textNode.data
+    val value = rawText.trim()
+    if (value.isEmpty() || value.startsWith("@{") || value.startsWith("@={") ||
+        XmlResourceReference.isSpecialValue(value)) {
+      return null
+    }
+    val reference = XmlResourceReference.parse(value) ?: return null
+    val leadingWhitespace = rawText.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)
+    val start = textNode.startContent + leadingWhitespace
+    return TextResourceReferenceCandidate(reference, start, start + value.length)
+  }
+
+  internal data class TextResourceReferenceCandidate(
+      val reference: XmlResourceReference,
+      val start: Int,
+      val end: Int,
+  )
+
   private fun checkResourceReferences(
       element: DOMElement,
       collector: XmlDiagnosticCollector,
@@ -728,7 +778,8 @@ internal class XmlDiagnosticsService {
   ) {
     element.attributeNodes.orEmpty().forEach { attribute ->
       val value = attribute.value ?: return@forEach
-      if (value.startsWith("@{") || value.startsWith("@={")) {
+      if (value.startsWith("@{") || value.startsWith("@={") ||
+          XmlResourceReference.isSpecialValue(value)) {
         return@forEach
       }
 

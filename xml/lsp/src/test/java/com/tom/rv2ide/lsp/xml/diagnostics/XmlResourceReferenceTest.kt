@@ -55,7 +55,13 @@ class XmlResourceReferenceTest : TestCase() {
     assertThat(XmlResourceReference.parse("@id/title")!!.type).isEqualTo(ID)
   }
 
-  fun testRejectsSpecialAndDataBindingValues() {
+  fun testRecognizesSpecialValuesWithoutParsingThemAsResources() {
+    assertThat(XmlResourceReference.isSpecialValue("@")).isTrue()
+    assertThat(XmlResourceReference.isSpecialValue("@null")).isTrue()
+    assertThat(XmlResourceReference.isSpecialValue("@empty")).isTrue()
+    assertThat(XmlResourceReference.isSpecialValue("@string/title")).isFalse()
+
+    assertThat(XmlResourceReference.parse("@")).isNull()
     assertThat(XmlResourceReference.parse("@null")).isNull()
     assertThat(XmlResourceReference.parse("@empty")).isNull()
     assertThat(XmlResourceReference.parse("@{viewModel.title}")).isNull()

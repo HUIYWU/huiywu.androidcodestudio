@@ -437,7 +437,12 @@ class KotlinWorkspaceSetup(
                   // on fwcd maintaining its own index.
                   add(
                       "indexing",
-                      JsonObject().apply { addProperty("enabled", true) },
+                      JsonObject().apply {
+                        addProperty("enabled", true)
+                        // Empty by default. Compiler/Dokka plugin projects may explicitly include
+                        // a safety-filtered package tree without changing the compiler classpath.
+                        add("includePackages", JsonArray())
+                      },
                   )
                   add("acs", acsMetadata)
                 },

@@ -34,6 +34,7 @@ import com.tom.rv2ide.lsp.models.ParameterInformation;
 import com.tom.rv2ide.lsp.models.SignatureHelp;
 import com.tom.rv2ide.lsp.models.SignatureHelpParams;
 import com.tom.rv2ide.lsp.models.SignatureInformation;
+import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.progress.ICancelChecker;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -105,8 +106,11 @@ public class SignatureProvider extends CancelableServiceProvider {
       final var source = new SourceFileObject(file, content, Instant.now());
       final PartialReparseRequest partialRequest =
           cursorIndex >= 0 ? new PartialReparseRequest(cursorIndex, content) : null;
+      final boolean requiresKotlinAbi =
+          JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled();
       final CompilationRequest request =
-          new CompilationRequest(Collections.singletonList(source), partialRequest, true);
+          new CompilationRequest(
+              Collections.singletonList(source), partialRequest, !requiresKotlinAbi);
       synchronizedTask = compiler.compile(request);
     } else {
       synchronizedTask = compiler.compile(file);

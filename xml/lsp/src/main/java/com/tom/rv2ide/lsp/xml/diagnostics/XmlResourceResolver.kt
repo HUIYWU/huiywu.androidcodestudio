@@ -79,8 +79,8 @@ internal class XmlResourceResolver {
 /**
  * A complete Android resource reference such as `@string/title`, or a theme attribute reference
  * such as `?attr/colorPrimary`. The caller may additionally recognize local creating ID references
- * (`@+id/...`). Special values (`@null`, `@empty`) intentionally remain unsupported and are ignored
- * by the lightweight checker.
+ * (`@+id/...`). Android special values are identified explicitly by [isSpecialValue] and are not
+ * resolved against resource tables.
  */
 internal data class XmlResourceReference(
     val text: String,
@@ -92,8 +92,14 @@ internal data class XmlResourceReference(
   companion object {
     private val expression =
         Regex("^([@?])(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_]*)$")
+    private val specialValues = setOf("@", "@null", "@empty")
+
+    fun isSpecialValue(value: String): Boolean = value in specialValues
 
     fun parse(value: String): XmlResourceReference? {
+      if (isSpecialValue(value)) {
+        return null
+      }
       val match = expression.matchEntire(value) ?: return null
       val marker = match.groupValues[1]
       val typeName = match.groupValues[3]
