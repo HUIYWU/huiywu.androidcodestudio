@@ -122,14 +122,14 @@ private static final Pattern PROPERTY_PATTERN =
     if (isObject) {
       out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
     } else if (!isInterface) {
-      final String constructorParameters = constructorParameters(syntax.constructorText);
-      out.append("  public ").append(simpleName).append(parameterList(constructorParameters))
+      out.append("  public ").append(simpleName)
+          .append(javaConstructorParameterList(syntax.constructorParameters))
           .append(" {}\n");
-      appendConstructorProperties(out, constructorParameters);
+      appendSyntaxConstructorProperties(out, syntax.constructorParameters);
     }
-    appendMembers(out, syntax.body, isInterface, false);
+    appendSyntaxMembers(out, syntax.members, isInterface, false);
     if (syntax.companionBody != null) {
-      appendCompanionBody(out, syntax.companionBody);
+      appendCompanionSyntax(out, syntax.companionMembers);
     }
     out.append("}\n");
     return out.toString();
@@ -182,7 +182,13 @@ private static final Pattern PROPERTY_PATTERN =
     final StringBuilder out = header(packageName);
     out.append("public final class ").append(simpleName).append(" {\n");
     out.append("  private ").append(simpleName).append("() {}\n");
-    appendMembers(out, source, false, true);
+    final List<KotlinJvmSyntaxParser.MemberSyntax> members =
+        KotlinJvmSyntaxParser.findTopLevelMembers(source);
+    if (members != null) {
+      appendSyntaxMembers(out, members, false, true);
+    } else {
+      appendMembers(out, source, false, true);
+    }
     out.append("}\n");
     return out.toString();
   }
@@ -228,6 +234,140 @@ private static final Pattern PROPERTY_PATTERN =
       }
     }
     appendJvmFields(out, companionBody);
+  }
+
+  private static void appendSyntaxMembers(
+      StringBuilder out,
+      List<KotlinJvmSyntaxParser.MemberSyntax> members,
+      boolean interfaceType,
+      boolean topLevel) {
+    for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
+      if (member.privateMember || member.declarationText.isEmpty()) {
+        continue;
+      }
+      if (member.function()) {
+        appendSyntaxFunction(out, member, interfaceType, topLevel);
+        if (member.jvmOverloads) {
+          appendSyntaxFunctionOverloads(out, member, interfaceType, topLevel);
+        }
+      } else {
+        appendSyntaxProperty(out, member, interfaceType, topLevel);
+      }
+    }
+  }
+
+  private static void appendCompanionSyntax(
+      StringBuilder out, List<KotlinJvmSyntaxParser.MemberSyntax> members) {
+    out.append("  public static final class Companion {\n");
+    appendSyntaxMembers(out, members, false, false);
+    out.append("  }\n");
+    out.append("  public static final Companion Companion = null;\n");
+    for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
+      if (member.privateMember || member.declarationText.isEmpty()) {
+        continue;
+      }
+      if (member.function() && member.jvmStatic) {
+        appendSyntaxFunction(out, member, false, true);
+        if (member.jvmOverloads) {
+          appendSyntaxFunctionOverloads(out, member, false, true);
+        }
+      } else if (!member.function()) {
+        if (member.jvmField) {
+          appendSyntaxField(out, member);
+        } else if (member.jvmStatic) {
+          appendSyntaxProperty(out, member, false, true);
+        }
+      }
+    }
+  }
+
+  private static void appendSyntaxFunction(
+      StringBuilder out,
+      KotlinJvmSyntaxParser.MemberSyntax function,
+      boolean interfaceType,
+      boolean topLevel) {
+    if (function.name == null || function.name.isEmpty()) {
+      return;
+    }
+    out.append("  public ");
+    if (topLevel) {
+      out.append("static ");
+    }
+    final List<String> parameters = new ArrayList<>();
+    if (function.receiverType != null) {
+      parameters.add(javaType(function.receiverType) + " receiver");
+    }
+    for (int index = 0; index < function.parameterList.size(); index++) {
+      final KotlinJvmSyntaxParser.ParameterSyntax parameter = function.parameterList.get(index);
+      parameters.add(javaType(parameter.type) + " " + safeName(parameter.name, index));
+    }
+    out.append(javaType(function.declaredType)).append(' ').append(function.name)
+        .append('(').append(String.join(", ", parameters)).append(')')
+        .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
+  }
+
+  private static void appendSyntaxFunctionOverloads(
+      StringBuilder out,
+      KotlinJvmSyntaxParser.MemberSyntax function,
+      boolean interfaceType,
+      boolean topLevel) {
+    if (function.name == null || function.receiverType != null) {
+      return;
+    }
+    final List<KotlinJvmSyntaxParser.ParameterSyntax> parameters = function.parameterList;
+    int firstOmittable = parameters.size();
+    for (int index = parameters.size() - 1;
+        index >= 0 && parameters.get(index).defaultValue; index--) {
+      firstOmittable = index;
+    }
+    if (firstOmittable == parameters.size()) {
+      return;
+    }
+    for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
+      out.append("  public ");
+      if (topLevel) {
+        out.append("static ");
+      }
+      out.append(javaType(function.declaredType)).append(' ').append(function.name)
+          .append(javaSyntaxParameterList(parameters.subList(0, count)))
+          .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
+    }
+  }
+
+  private static void appendSyntaxProperty(
+      StringBuilder out,
+      KotlinJvmSyntaxParser.MemberSyntax property,
+      boolean interfaceType,
+      boolean topLevel) {
+    if (property.name == null || property.receiverType != null) {
+      return;
+    }
+    final String type = javaType(property.declaredType);
+    final String accessor = Character.toUpperCase(property.name.charAt(0)) + property.name.substring(1);
+    out.append("  public ");
+    if (topLevel) {
+      out.append("static ");
+    }
+    out.append(type).append(" get").append(accessor).append("()")
+        .append(interfaceType && !topLevel
+            ? ";\n"
+            : " { return " + defaultValue(property.declaredType) + "; }\n");
+    if (property.mutableProperty) {
+      out.append("  public ");
+      if (topLevel) {
+        out.append("static ");
+      }
+      out.append("void set").append(accessor).append('(').append(type).append(" value)")
+          .append(interfaceType && !topLevel ? ";\n" : " {}\n");
+    }
+  }
+
+  private static void appendSyntaxField(
+      StringBuilder out, KotlinJvmSyntaxParser.MemberSyntax property) {
+    if (property.name != null && property.receiverType == null) {
+      out.append("  public static ").append(javaType(property.declaredType)).append(' ')
+          .append(property.name).append(";\n");
+    }
   }
 
   private static void appendExtensionFunction(
@@ -303,6 +443,29 @@ private static final Pattern PROPERTY_PATTERN =
         .append(property.group(3)).append(";\n");
   }
 
+  private static void appendProperty(
+      StringBuilder out, Matcher property, boolean interfaceType, boolean topLevel) {
+    final String type = javaType(property.group(4));
+    final String name = property.group(3);
+    final String accessor = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+    out.append("  public ");
+    if (topLevel) {
+      out.append("static ");
+    }
+    out.append(type).append(" get").append(accessor).append("()")
+        .append(interfaceType && !topLevel
+            ? ";\n"
+            : " { return " + defaultValue(property.group(4)) + "; }\n");
+    if ("var".equals(property.group(2))) {
+      out.append("  public ");
+      if (topLevel) {
+        out.append("static ");
+      }
+      out.append("void set").append(accessor).append('(').append(type).append(" value)")
+          .append(interfaceType && !topLevel ? ";\n" : " {}\n");
+    }
+  }
+
   private static void appendStaticProperty(StringBuilder out, Matcher property) {
     final String type = javaType(property.group(4));
     final String name = property.group(3);
@@ -312,6 +475,37 @@ private static final Pattern PROPERTY_PATTERN =
     if ("var".equals(property.group(2))) {
       out.append("  public static void set").append(accessor).append('(').append(type)
           .append(" value) {}\n");
+    }
+  }
+
+  private static String javaConstructorParameterList(
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters) {
+    final List<String> parameters = new ArrayList<>();
+    for (int index = 0; index < kotlinParameters.size(); index++) {
+      final KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter = kotlinParameters.get(index);
+      parameters.add(javaType(parameter.type) + " " + safeName(parameter.name, index));
+    }
+    return "(" + String.join(", ", parameters) + ")";
+  }
+
+  private static void appendSyntaxConstructorProperties(
+      StringBuilder out,
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters) {
+    for (int index = 0; index < kotlinParameters.size(); index++) {
+      final KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter = kotlinParameters.get(index);
+      if (!parameter.property || parameter.name == null || parameter.name.isEmpty()) {
+        continue;
+      }
+      final String name = safeName(parameter.name, index);
+      final String kotlinType = parameter.type;
+      final String type = javaType(kotlinType);
+      final String accessor = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+      out.append("  public ").append(type).append(" get").append(accessor)
+          .append("() { return ").append(defaultValue(kotlinType)).append("; }\n");
+      if (parameter.mutableProperty) {
+        out.append("  public void set").append(accessor).append('(').append(type)
+            .append(" value) {}\n");
+      }
     }
   }
 
@@ -425,6 +619,16 @@ private static final Pattern PROPERTY_PATTERN =
     }
     return javaParameterList(
         splitParameters(kotlinParameters.substring(1, kotlinParameters.length() - 1)));
+  }
+
+  private static String javaSyntaxParameterList(
+      List<KotlinJvmSyntaxParser.ParameterSyntax> kotlinParameters) {
+    final List<String> parameters = new ArrayList<>();
+    for (int index = 0; index < kotlinParameters.size(); index++) {
+      final KotlinJvmSyntaxParser.ParameterSyntax parameter = kotlinParameters.get(index);
+      parameters.add(javaType(parameter.type) + " " + safeName(parameter.name, index));
+    }
+    return "(" + String.join(", ", parameters) + ")";
   }
 
   private static String javaParameterList(List<String> kotlinParameters) {

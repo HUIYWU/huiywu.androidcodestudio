@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -140,24 +141,22 @@ public final class KotlinJvmTypeIndex {
 
     final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
     final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
-    final String[] lines = source.split("\\R");
-    int braceDepth = 0;
-    boolean hasTopLevelMember = false;
+    final List<KotlinJvmSyntaxParser.TopLevelTypeSyntax> syntaxTypes =
+        KotlinJvmSyntaxParser.findTopLevelTypes(source);
+    final List<KotlinJvmSyntaxParser.MemberSyntax> syntaxMembers =
+        KotlinJvmSyntaxParser.findTopLevelMembers(source);
+    final boolean hasTopLevelMember;
 
-    for (String line : lines) {
-      if (braceDepth == 0) {
-        final Matcher typeMatcher = TYPE_PATTERN.matcher(line);
-        if (typeMatcher.find() && !containsPrivateModifier(typeMatcher.group(1))) {
-          result.add(qualifiedName(packageName, typeMatcher.group(2)));
-        }
-        if (TOP_LEVEL_MEMBER_PATTERN.matcher(line).find() && !line.matches("^\\s*private\\s+.*")) {
-          hasTopLevelMember = true;
+    if (syntaxTypes != null && syntaxMembers != null) {
+      for (KotlinJvmSyntaxParser.TopLevelTypeSyntax type : syntaxTypes) {
+        if (!type.privateType && type.name != null && !type.name.isEmpty()) {
+          result.add(qualifiedName(packageName, type.name));
         }
       }
-      braceDepth += braceDelta(line);
-      if (braceDepth < 0) {
-        braceDepth = 0;
-      }
+      hasTopLevelMember = hasPublicTopLevelMember(syntaxMembers);
+    } else {
+      // Retain the previous scanner only for devices where the native grammar is unavailable.
+      hasTopLevelMember = indexFileFallback(source, packageName, result);
     }
 
     if (hasTopLevelMember) {
@@ -173,29 +172,28 @@ public final class KotlinJvmTypeIndex {
     final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
     final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
     final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
-    final String[] lines = source.split("\\R", -1);
-    int braceDepth = 0;
-    int offset = 0;
-    boolean hasTopLevelMember = false;
-    for (String line : lines) {
-      if (braceDepth == 0) {
-        final Matcher typeMatcher = TYPE_PATTERN.matcher(line);
-        if (typeMatcher.find() && !containsPrivateModifier(typeMatcher.group(1))) {
-          final String name = typeMatcher.group(2);
-          if (qualifiedName.equals(qualifiedName(packageName, name))) {
-            return new KotlinTypeDeclaration(path, offset + typeMatcher.start(2), name.length());
-          }
-        }
-        if (TOP_LEVEL_MEMBER_PATTERN.matcher(line).find() && !line.matches("^\\s*private\\s+.*")) {
-          hasTopLevelMember = true;
+    final List<KotlinJvmSyntaxParser.TopLevelTypeSyntax> syntaxTypes =
+        KotlinJvmSyntaxParser.findTopLevelTypes(source);
+    final List<KotlinJvmSyntaxParser.MemberSyntax> syntaxMembers =
+        KotlinJvmSyntaxParser.findTopLevelMembers(source);
+    final boolean hasTopLevelMember;
+
+    if (syntaxTypes != null && syntaxMembers != null) {
+      for (KotlinJvmSyntaxParser.TopLevelTypeSyntax type : syntaxTypes) {
+        if (!type.privateType && qualifiedName.equals(qualifiedName(packageName, type.name))) {
+          return new KotlinTypeDeclaration(path, type.nameOffset, type.nameLength);
         }
       }
-      braceDepth += braceDelta(line);
-      if (braceDepth < 0) {
-        braceDepth = 0;
+      hasTopLevelMember = hasPublicTopLevelMember(syntaxMembers);
+    } else {
+      final KotlinTypeDeclaration fallback = findTypeDeclarationFallback(
+          path, source, packageName, qualifiedName);
+      if (fallback != null) {
+        return fallback;
       }
-      offset += line.length() + 1;
+      hasTopLevelMember = hasPublicTopLevelMemberFallback(source);
     }
+
     if (!hasTopLevelMember) {
       return null;
     }
@@ -220,6 +218,71 @@ public final class KotlinJvmTypeIndex {
       this.offset = offset;
       this.length = length;
     }
+  }
+
+  private static boolean hasPublicTopLevelMember(
+      List<KotlinJvmSyntaxParser.MemberSyntax> members) {
+    for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
+      if (!member.privateMember) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean indexFileFallback(
+      String source, String packageName, Set<String> result) {
+    final String[] lines = source.split("\\R");
+    int braceDepth = 0;
+    boolean hasTopLevelMember = false;
+    for (String line : lines) {
+      if (braceDepth == 0) {
+        final Matcher typeMatcher = TYPE_PATTERN.matcher(line);
+        if (typeMatcher.find() && !containsPrivateModifier(typeMatcher.group(1))) {
+          result.add(qualifiedName(packageName, typeMatcher.group(2)));
+        }
+        if (TOP_LEVEL_MEMBER_PATTERN.matcher(line).find() && !line.matches("^\\s*private\\s+.*")) {
+          hasTopLevelMember = true;
+        }
+      }
+      braceDepth = Math.max(0, braceDepth + braceDelta(line));
+    }
+    return hasTopLevelMember;
+  }
+
+  private static KotlinTypeDeclaration findTypeDeclarationFallback(
+      Path path, String source, String packageName, String qualifiedName) {
+    final String[] lines = source.split("\\R", -1);
+    int braceDepth = 0;
+    int offset = 0;
+    for (String line : lines) {
+      if (braceDepth == 0) {
+        final Matcher typeMatcher = TYPE_PATTERN.matcher(line);
+        if (typeMatcher.find() && !containsPrivateModifier(typeMatcher.group(1))) {
+          final String name = typeMatcher.group(2);
+          if (qualifiedName.equals(qualifiedName(packageName, name))) {
+            return new KotlinTypeDeclaration(path, offset + typeMatcher.start(2), name.length());
+          }
+        }
+      }
+      braceDepth = Math.max(0, braceDepth + braceDelta(line));
+      offset += line.length() + 1;
+    }
+    return null;
+  }
+
+  private static boolean hasPublicTopLevelMemberFallback(String source) {
+    final String[] lines = source.split("\\R");
+    int braceDepth = 0;
+    for (String line : lines) {
+      if (braceDepth == 0
+          && TOP_LEVEL_MEMBER_PATTERN.matcher(line).find()
+          && !line.matches("^\\s*private\\s+.*")) {
+        return true;
+      }
+      braceDepth = Math.max(0, braceDepth + braceDelta(line));
+    }
+    return false;
   }
 
   private static boolean containsPrivateModifier(String modifiers) {
