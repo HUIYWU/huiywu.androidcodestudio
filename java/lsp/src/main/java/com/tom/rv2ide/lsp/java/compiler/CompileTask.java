@@ -57,13 +57,6 @@ public class CompileTask implements AutoCloseable {
     this.ownsCompileBatch = ownsCompileBatch;
   }
 
-  public CompilationUnitTree root() {
-    if (roots.size() != 1) {
-      throw new RuntimeException("No compilation units found. Roots: " + roots.size());
-    }
-    return roots.get(0);
-  }
-
   public CompilationUnitTree root(Path file) {
     for (CompilationUnitTree root : roots) {
       if (root.getSourceFile().toUri().equals(file.toUri())) {

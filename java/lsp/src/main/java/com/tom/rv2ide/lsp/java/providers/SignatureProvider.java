@@ -161,7 +161,7 @@ public class SignatureProvider extends CancelableServiceProvider {
             }
             if (path.getLeaf() instanceof MethodInvocationTree) {
               MethodInvocationTree invoke = (MethodInvocationTree) path.getLeaf();
-              List<ExecutableElement> overloads = methodOverloads(task, invoke);
+              List<ExecutableElement> overloads = methodOverloads(task, root, invoke);
               LOG.warn(
                   "SIGNATURE TRACE method select={} arguments={} overloads={}",
                   invoke.getMethodSelect(),
@@ -186,7 +186,7 @@ public class SignatureProvider extends CancelableServiceProvider {
             }
             if (path.getLeaf() instanceof NewClassTree) {
               NewClassTree invoke = (NewClassTree) path.getLeaf();
-              List<ExecutableElement> overloads = constructorOverloads(task, invoke);
+              List<ExecutableElement> overloads = constructorOverloads(task, root, invoke);
               LOG.warn(
                   "SIGNATURE TRACE constructor identifier={} arguments={} overloads={}",
                   invoke.getIdentifier(),
@@ -244,24 +244,29 @@ public class SignatureProvider extends CancelableServiceProvider {
   }
 
   private List<ExecutableElement> methodOverloads(
-      CompileTask task, @NonNull MethodInvocationTree method) {
+      CompileTask task,
+      @NonNull CompilationUnitTree root,
+      @NonNull MethodInvocationTree method) {
     abortIfCancelled();
     if (method.getMethodSelect() instanceof IdentifierTree) {
       IdentifierTree id = (IdentifierTree) method.getMethodSelect();
-      return scopeOverloads(task, id);
+      return scopeOverloads(task, root, id);
     }
     if (method.getMethodSelect() instanceof MemberSelectTree) {
       MemberSelectTree select = (MemberSelectTree) method.getMethodSelect();
-      return memberOverloads(task, select);
+      return memberOverloads(task, root, select);
     }
     throw new RuntimeException(method.getMethodSelect().toString());
   }
 
   @NonNull
-  private List<ExecutableElement> scopeOverloads(@NonNull CompileTask task, IdentifierTree method) {
+  private List<ExecutableElement> scopeOverloads(
+      @NonNull CompileTask task,
+      @NonNull CompilationUnitTree root,
+      @NonNull IdentifierTree method) {
     abortIfCancelled();
     Trees trees = Trees.instance(task.task);
-    TreePath path = trees.getPath(task.root(), method);
+    TreePath path = trees.getPath(root, method);
     Scope scope = trees.getScope(path);
     List<ExecutableElement> list = new ArrayList<>();
     Predicate<CharSequence> filter = name -> method.getName().contentEquals(name);
@@ -276,10 +281,12 @@ public class SignatureProvider extends CancelableServiceProvider {
 
   @NonNull
   private List<ExecutableElement> memberOverloads(
-      @NonNull CompileTask task, @NonNull MemberSelectTree method) {
+      @NonNull CompileTask task,
+      @NonNull CompilationUnitTree root,
+      @NonNull MemberSelectTree method) {
     abortIfCancelled();
     Trees trees = Trees.instance(task.task);
-    TreePath path = trees.getPath(task.root(), method.getExpression());
+    TreePath path = trees.getPath(root, method.getExpression());
     boolean isStatic = trees.getElement(path) instanceof TypeElement;
     Scope scope = trees.getScope(path);
     TypeElement type = typeElement(trees.getTypeMirror(path));
@@ -322,10 +329,12 @@ public class SignatureProvider extends CancelableServiceProvider {
 
   @NonNull
   private List<ExecutableElement> constructorOverloads(
-      @NonNull CompileTask task, @NonNull NewClassTree method) {
+      @NonNull CompileTask task,
+      @NonNull CompilationUnitTree root,
+      @NonNull NewClassTree method) {
     abortIfCancelled();
     Trees trees = Trees.instance(task.task);
-    TreePath path = trees.getPath(task.root(), method.getIdentifier());
+    TreePath path = trees.getPath(root, method.getIdentifier());
     Scope scope = trees.getScope(path);
     TypeElement type = (TypeElement) trees.getElement(path);
     List<ExecutableElement> list = new ArrayList<>();
