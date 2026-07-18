@@ -135,7 +135,6 @@ final class KotlinJvmSyntaxParser {
               declarationText,
               body,
               members,
-              constructorText,
               constructorParameters,
               companionBody,
               companionMembers,
@@ -458,7 +457,7 @@ final class KotlinJvmSyntaxParser {
       if (recovered != null) {
         return recovered;
       }
-      if (containsDescendant(child, "class_parameter")) {
+      if (firstDescendant(child, "class_parameter") != null) {
         return child;
       }
     }
@@ -476,10 +475,6 @@ final class KotlinJvmSyntaxParser {
       }
     }
     return null;
-  }
-
-  private static boolean containsDescendant(TSNode node, String type) {
-    return firstDescendant(node, type) != null;
   }
 
   private static void collectDescendants(TSNode node, String type, List<TSNode> result) {
@@ -562,7 +557,6 @@ final class KotlinJvmSyntaxParser {
     final String declarationText;
     final String body;
     final List<MemberSyntax> members;
-    final String constructorText;
     final List<ConstructorParameterSyntax> constructorParameters;
     final String companionBody;
     final List<MemberSyntax> companionMembers;
@@ -576,7 +570,6 @@ final class KotlinJvmSyntaxParser {
         String declarationText,
         String body,
         List<MemberSyntax> members,
-        String constructorText,
         List<ConstructorParameterSyntax> constructorParameters,
         String companionBody,
         List<MemberSyntax> companionMembers,
@@ -588,7 +581,6 @@ final class KotlinJvmSyntaxParser {
       this.declarationText = declarationText;
       this.body = body;
       this.members = members;
-      this.constructorText = constructorText;
       this.constructorParameters = constructorParameters;
       this.companionBody = companionBody;
       this.companionMembers = companionMembers;

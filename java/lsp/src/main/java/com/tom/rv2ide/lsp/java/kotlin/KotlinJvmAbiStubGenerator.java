@@ -17,7 +17,10 @@
 package com.tom.rv2ide.lsp.java.kotlin;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,11 +39,18 @@ final class KotlinJvmAbiStubGenerator {
       Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_][\\w]*(?:\\.[A-Za-z_][\\w]*)*)");
   private static final Pattern FILE_JVM_NAME_PATTERN =
       Pattern.compile("(?m)^\\s*@file:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)");
+  private static final Pattern KOTLIN_IMPORT_PATTERN =
+      Pattern.compile(
+          "(?m)^\\s*import\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)(\\.\\*)?"
+              + "(?:\\s+as\\s+([A-Za-z_$][\\w$]*))?\\s*$");
+  private static final Pattern JAVA_TYPE_NAME_PATTERN =
+      Pattern.compile("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*");
+  private static final ThreadLocal<TypeResolutionContext> TYPE_CONTEXT = new ThreadLocal<>();
   private static final Pattern TYPE_PATTERN =
       Pattern.compile(
           "(?m)^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|value)\\s+)*)"
               + "((?:enum\\s+class)|annotation\\s+class|class|interface|object)"
-              + "\\s+([A-Za-z_][\\w]*)(?:\\s*<[^>{}()]*>)?\\s*(\\([^\\n{]*\\))?");
+              + "\\s+([A-Za-z_][\\w]*)(?:\\s*<[^>{}()]*>)?");
   private static final Pattern FUNCTION_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|abstract|final|override|suspend|"
@@ -76,6 +86,11 @@ private static final Pattern PROPERTY_PATTERN =
   private KotlinJvmAbiStubGenerator() {}
 
   static String generate(String qualifiedName, String kotlinFileName, String source) {
+    return generate(qualifiedName, kotlinFileName, source, java.util.Collections.emptySet());
+  }
+
+  static String generate(
+      String qualifiedName, String kotlinFileName, String source, Set<String> knownTypes) {
     final int separator = qualifiedName.lastIndexOf('.');
     final String packageName = separator < 0 ? "" : qualifiedName.substring(0, separator);
     final String simpleName = separator < 0 ? qualifiedName : qualifiedName.substring(separator + 1);
@@ -85,23 +100,33 @@ private static final Pattern PROPERTY_PATTERN =
       return null;
     }
 
-    final KotlinJvmSyntaxParser.TypeSyntax syntax =
-        KotlinJvmSyntaxParser.findTopLevelType(source, simpleName);
-    if (syntax != null) {
-      return syntax.privateType ? null : generateType(packageName, simpleName, syntax);
-    }
+    final TypeResolutionContext previous = TYPE_CONTEXT.get();
+    TYPE_CONTEXT.set(TypeResolutionContext.create(sourcePackage, source, knownTypes));
+    try {
+      final KotlinJvmSyntaxParser.TypeSyntax syntax =
+          KotlinJvmSyntaxParser.findTopLevelType(source, simpleName);
+      if (syntax != null) {
+        return syntax.privateType ? null : generateType(packageName, simpleName, syntax);
+      }
 
-    // Retain the previous scanner as a compatibility fallback when the native grammar is
-    // unavailable or an incomplete edit produces no usable top-level declaration.
-    final Matcher typeMatcher = TYPE_PATTERN.matcher(source);
-    while (typeMatcher.find()) {
-      if (simpleName.equals(typeMatcher.group(3)) && !isPrivate(typeMatcher.group(1))) {
-        return generateTypeFallback(packageName, simpleName, typeMatcher, source);
+      // Retain the previous scanner as a compatibility fallback when the native grammar is
+      // unavailable or an incomplete edit produces no usable top-level declaration.
+      final Matcher typeMatcher = TYPE_PATTERN.matcher(source);
+      while (typeMatcher.find()) {
+        if (simpleName.equals(typeMatcher.group(3)) && !isPrivate(typeMatcher.group(1))) {
+          return generateTypeFallback(packageName, simpleName, typeMatcher, source);
+        }
+      }
+      return isFacadeName(simpleName, kotlinFileName, source)
+          ? generateFacade(packageName, simpleName, source)
+          : null;
+    } finally {
+      if (previous == null) {
+        TYPE_CONTEXT.remove();
+      } else {
+        TYPE_CONTEXT.set(previous);
       }
     }
-    return isFacadeName(simpleName, kotlinFileName, source)
-        ? generateFacade(packageName, simpleName, source)
-        : null;
   }
 
   private static String generateType(
@@ -158,14 +183,23 @@ private static final Pattern PROPERTY_PATTERN =
       out.append("class ");
     }
     out.append(simpleName).append(" {\n");
+    final String constructor =
+        isObject || isInterface ? null : primaryConstructorText(source, declaration.end(3));
     if (isObject) {
       out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
     } else if (!isInterface) {
-      out.append("  public ").append(simpleName).append(parameterList(declaration.group(4))).append(" {}\n");
-      appendConstructorProperties(out, declaration.group(4));
+      out.append("  public ").append(simpleName).append(parameterList(constructor)).append(" {}\n");
+      appendConstructorProperties(out, constructor);
     }
 
-    final int bodyStart = source.indexOf('{', declaration.end());
+    int bodySearchStart = declaration.end();
+    if (constructor != null) {
+      final int constructorStart = source.indexOf(constructor, declaration.end(3));
+      if (constructorStart >= 0) {
+        bodySearchStart = constructorStart + constructor.length();
+      }
+    }
+    final int bodyStart = source.indexOf('{', bodySearchStart);
     if (bodyStart >= 0) {
       final int bodyEnd = matchingBrace(source, bodyStart);
       if (bodyEnd > bodyStart) {
@@ -513,7 +547,8 @@ private static final Pattern PROPERTY_PATTERN =
     if (kotlinParameters == null || kotlinParameters.length() < 2) {
       return;
     }
-    for (String raw : kotlinParameters.substring(1, kotlinParameters.length() - 1).split(",")) {
+    for (String raw :
+        splitParameters(kotlinParameters.substring(1, kotlinParameters.length() - 1))) {
       final String part = raw.trim();
       if (!part.startsWith("val ") && !part.startsWith("var ")) {
         continue;
@@ -604,13 +639,49 @@ private static final Pattern PROPERTY_PATTERN =
     }
   }
 
-  private static String constructorParameters(String constructorText) {
-    if (constructorText == null) {
-      return null;
+  private static String primaryConstructorText(String source, int classNameEnd) {
+    int angleDepth = 0;
+    for (int index = classNameEnd; index < source.length(); index++) {
+      final char current = source.charAt(index);
+      if (current == '<') {
+        angleDepth++;
+      } else if (current == '>') {
+        angleDepth = Math.max(0, angleDepth - 1);
+      } else if (angleDepth == 0 && (current == ':' || current == '{')) {
+        return null;
+      } else if (angleDepth == 0 && current == '(') {
+        final int end = matchingDelimiter(source, index, '(', ')');
+        return end < 0 ? null : source.substring(index, end + 1);
+      }
     }
-    final int start = constructorText.indexOf('(');
-    final int end = constructorText.lastIndexOf(')');
-    return start >= 0 && end >= start ? constructorText.substring(start, end + 1) : null;
+    return null;
+  }
+
+  private static int matchingDelimiter(String text, int open, char opening, char closing) {
+    int depth = 0;
+    boolean quoted = false;
+    boolean escaped = false;
+    for (int index = open; index < text.length(); index++) {
+      final char current = text.charAt(index);
+      if (quoted) {
+        if (current == '"' && !escaped) {
+          quoted = false;
+        }
+        escaped = current == '\\' && !escaped;
+        if (current != '\\') {
+          escaped = false;
+        }
+        continue;
+      }
+      if (current == '"') {
+        quoted = true;
+      } else if (current == opening) {
+        depth++;
+      } else if (current == closing && --depth == 0) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   private static String parameterList(String kotlinParameters) {
@@ -729,7 +800,7 @@ private static final Pattern PROPERTY_PATTERN =
 
     final TypeApplication application = parseTypeApplication(type);
     if (application == null) {
-      return "Object";
+      return javaUserType(type);
     }
     final String rawJavaType = javaCollectionType(application.rawType);
     if ("Array".equals(application.rawType) || "kotlin.Array".equals(application.rawType)) {
@@ -737,7 +808,9 @@ private static final Pattern PROPERTY_PATTERN =
           ? javaReferenceArrayType(application.arguments.get(0))
           : "Object[]";
     }
-    if (rawJavaType == null) {
+    final String resolvedRawType =
+        rawJavaType == null ? javaUserType(application.rawType) : rawJavaType;
+    if ("Object".equals(resolvedRawType)) {
       return "Object";
     }
     final List<String> arguments = new ArrayList<>();
@@ -745,8 +818,8 @@ private static final Pattern PROPERTY_PATTERN =
       arguments.add(javaTypeArgument(argument));
     }
     return arguments.isEmpty()
-        ? rawJavaType
-        : rawJavaType + "<" + String.join(", ", arguments) + ">";
+        ? resolvedRawType
+        : resolvedRawType + "<" + String.join(", ", arguments) + ">";
   }
 
   private static String stripDefaultValue(String type) {
@@ -806,6 +879,27 @@ private static final Pattern PROPERTY_PATTERN =
     }
   }
 
+  private static String javaUserType(String type) {
+    if (!JAVA_TYPE_NAME_PATTERN.matcher(type).matches()) {
+      return "Object";
+    }
+    final TypeResolutionContext context = TYPE_CONTEXT.get();
+    if (context == null) {
+      return "Object";
+    }
+    final String imported = context.imports.get(type);
+    if (imported != null) {
+      return imported;
+    }
+    if (type.indexOf('.') >= 0) {
+      return type;
+    }
+    if (context.declaredTypes.containsKey(type) || context.knownSimpleTypes.containsKey(type)) {
+      return type;
+    }
+    return "Object";
+  }
+
   private static String javaCollectionType(String type) {
     switch (type) {
       case "List": case "MutableList": case "kotlin.collections.List":
@@ -862,6 +956,63 @@ private static final Pattern PROPERTY_PATTERN =
     final String rawType = type.substring(0, open).trim();
     final String argumentText = type.substring(open + 1, type.length() - 1);
     return new TypeApplication(rawType, splitParameters(argumentText));
+  }
+
+  private static final class TypeResolutionContext {
+    final Map<String, String> imports;
+    final Map<String, String> declaredTypes;
+    final Map<String, String> knownSimpleTypes;
+
+    private TypeResolutionContext(
+        Map<String, String> imports,
+        Map<String, String> declaredTypes,
+        Map<String, String> knownSimpleTypes) {
+      this.imports = imports;
+      this.declaredTypes = declaredTypes;
+      this.knownSimpleTypes = knownSimpleTypes;
+    }
+
+    static TypeResolutionContext create(
+        String packageName, String source, Set<String> knownTypes) {
+      final Map<String, String> imports = new LinkedHashMap<>();
+      final Matcher importMatcher = KOTLIN_IMPORT_PATTERN.matcher(source);
+      while (importMatcher.find()) {
+        final String qualifiedName = importMatcher.group(1);
+        if (importMatcher.group(2) != null) {
+          continue;
+        }
+        final int separator = qualifiedName.lastIndexOf('.');
+        final String importedName = importMatcher.group(3) != null
+            ? importMatcher.group(3)
+            : separator < 0 ? qualifiedName : qualifiedName.substring(separator + 1);
+        imports.put(importedName, qualifiedName);
+      }
+
+      final Map<String, String> declaredTypes = new LinkedHashMap<>();
+      final List<KotlinJvmSyntaxParser.TopLevelTypeSyntax> syntaxTypes =
+          KotlinJvmSyntaxParser.findTopLevelTypes(source);
+      if (syntaxTypes != null) {
+        for (KotlinJvmSyntaxParser.TopLevelTypeSyntax type : syntaxTypes) {
+          if (!type.privateType && type.name != null) {
+            declaredTypes.put(type.name, packageName.isEmpty()
+                ? type.name : packageName + "." + type.name);
+          }
+        }
+      }
+      final Map<String, String> knownSimpleTypes = new LinkedHashMap<>();
+      if (knownTypes != null) {
+        for (String qualifiedType : knownTypes) {
+          final int separator = qualifiedType.lastIndexOf('.');
+          final String typePackage = separator < 0 ? "" : qualifiedType.substring(0, separator);
+          final String simpleName =
+              separator < 0 ? qualifiedType : qualifiedType.substring(separator + 1);
+          if (packageName.equals(typePackage)) {
+            knownSimpleTypes.put(simpleName, qualifiedType);
+          }
+        }
+      }
+      return new TypeResolutionContext(imports, declaredTypes, knownSimpleTypes);
+    }
   }
 
   private static final class TypeApplication {

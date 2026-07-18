@@ -25,21 +25,14 @@ import com.android.aapt.Resources.Attribute.FormatFlags.FLAGS
 import com.android.aapt.Resources.Attribute.FormatFlags.STRING
 import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.ID
-import com.android.aaptcompiler.AaptResourceType.LAYOUT
 import com.android.aaptcompiler.AaptResourceType.STYLEABLE
 import com.android.aaptcompiler.AttributeResource
 import com.android.aaptcompiler.ConfigDescription
 import com.android.aaptcompiler.Styleable
-import com.android.aaptcompiler.extractPathData
 import com.tom.rv2ide.lookup.Lookup
-import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.util.setupLookupForCompletion
 import com.tom.rv2ide.lsp.xml.resolver.StyleableResolver
-import com.tom.rv2ide.lsp.models.DiagnosticSeverity.ERROR
-import com.tom.rv2ide.lsp.models.DiagnosticSeverity.WARNING
-import com.tom.rv2ide.models.Position
-import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import com.tom.rv2ide.xml.widgets.WidgetTable
@@ -86,31 +79,23 @@ internal class XmlDiagnosticsService {
               log.warn("Unable to parse XML file for diagnostics: {}", file, error)
               return DiagnosticResult(file, emptyList(), CHANNEL)
             }
-    val pathData = runCatching { extractPathData(file.toFile()) }.getOrNull()
-    val isLayoutFile = pathData?.type == LAYOUT
-    val isValuesFile = pathData?.resourceDirectory == VALUES_DIRECTORY
-    val isManifestFile = pathData?.file?.name == ANDROID_MANIFEST_FILE_NAME
-    val collector = XmlDiagnosticCollector(text)
-    // Resource tables may lag behind an unsaved edit. Preserve local @+id declarations from this
-    // document so later @id references do not become false AXML003 errors before a resource refresh.
-    val declaredIds = collectLocalIdDeclarations(document)
-    if (isValuesFile) {
-      checkValuesDocument(document.documentElement, collector)
+    val context = XmlDiagnosticContext.create(file, text, document)
+    val collector = XmlDiagnosticCollector(context.text)
+    if (context.isValuesFile) {
+      checkValuesDocument(context.document.documentElement, collector)
     }
-    if (isManifestFile) {
-      checkManifestDocument(document.documentElement, collector)
+    if (context.isManifestFile) {
+      checkManifestDocument(context.document.documentElement, collector)
     }
-    visit(document, collector, isLayoutFile, isManifestFile, declaredIds)
+    visit(context.document, collector, context)
 
-    return DiagnosticResult(file, collector.build(), CHANNEL)
+    return DiagnosticResult(context.file, collector.build(), CHANNEL)
   }
 
   private fun visit(
       node: DOMNode,
       collector: XmlDiagnosticCollector,
-      isLayoutFile: Boolean,
-      isManifestFile: Boolean,
-      declaredIds: Set<String>,
+      context: XmlDiagnosticContext,
   ) {
     if (node is DOMElement) {
       val hasSyntaxRecovery = checkSyntaxRecovery(node, collector)
@@ -118,52 +103,30 @@ internal class XmlDiagnosticsService {
         checkDuplicateAttributes(node, collector)
         checkUndeclaredAttributePrefixes(node, collector)
         checkAndroidNamespace(node, collector)
-        checkResourceReferences(node, collector, declaredIds)
-        if (isLayoutFile) {
+        checkResourceReferences(node, collector, context.declaredIds)
+        if (context.isLayoutFile) {
           checkLayoutTag(node, collector)
           checkLayoutAttributes(node, collector)
           checkLayoutAttributeValues(node, collector)
         }
-        if (isManifestFile) {
+        if (context.isManifestFile) {
           checkManifestParent(node, collector)
           checkManifestAttributes(node, collector)
           checkManifestComponentName(node, collector)
         }
       }
     } else if (node is DOMText && node.isText) {
-      checkTextResourceReference(node, collector, declaredIds)
+      checkTextResourceReference(node, collector, context.declaredIds)
     }
 
     node.children.forEach { child ->
-      visit(child, collector, isLayoutFile, isManifestFile, declaredIds)
+      visit(child, collector, context)
     }
   }
 
-  /** Collects unqualified IDs created in this document before resource tables are refreshed. */
-  internal fun collectLocalIdDeclarations(document: DOMNode): Set<String> {
-    val declaredIds = mutableSetOf<String>()
-
-    fun collect(node: DOMNode) {
-      if (node is DOMElement) {
-        node.attributeNodes.orEmpty().forEach { attribute ->
-          val value = attribute.value ?: return@forEach
-          if (!value.startsWith("@+")) {
-            return@forEach
-          }
-          // Reinterpret the creating form @+id/name as a regular @id/name reference
-          // solely to reuse the complete-reference parser for its type/package validation.
-          val reference = XmlResourceReference.parse("@${value.removePrefix("@+")}") ?: return@forEach
-          if (reference.packageName == null && !reference.isThemeAttribute && reference.type == ID) {
-            declaredIds.add(reference.entry)
-          }
-        }
-      }
-      node.children.forEach(::collect)
-    }
-
-    collect(document)
-    return declaredIds
-  }
+  /** Compatibility entry point retained for focused local-ID tests. */
+  internal fun collectLocalIdDeclarations(document: DOMNode): Set<String> =
+      com.tom.rv2ide.lsp.xml.diagnostics.collectLocalIdDeclarations(document)
 
   /**
    * Reports only recovery states explicitly represented by LemMinX's tolerant DOM. This is not a
@@ -715,98 +678,11 @@ internal class XmlDiagnosticsService {
     return name == XMLNS_ATTRIBUTE || name.startsWith(XMLNS_PREFIX)
   }
 
-  private class XmlDiagnosticCollector(private val text: String) {
-    private val diagnostics = mutableListOf<DiagnosticItem>()
-    private val keys = HashSet<String>()
-
-    fun error(code: String, message: String, attribute: DOMAttr) {
-      add(code, message, ERROR, attribute)
-    }
-
-    fun warning(code: String, message: String, attribute: DOMAttr) {
-      add(code, message, WARNING, attribute)
-    }
-
-    fun errorTag(code: String, message: String, element: DOMElement) {
-      val tagName = element.tagName ?: return
-      val start = (element.start + 1).coerceIn(0, text.length)
-      val end = (start + tagName.length).coerceIn(start, text.length)
-      add(code, message, ERROR, start, end)
-    }
-
-    fun errorRange(code: String, message: String, start: Int, end: Int) {
-      val safeStart = start.coerceIn(0, text.length)
-      val safeEnd = end.coerceIn(safeStart, text.length)
-      add(code, message, ERROR, safeStart, safeEnd)
-    }
-
-    fun errorValue(code: String, message: String, attribute: DOMAttr) {
-      val valueRange = attribute.nodeAttrValue ?: return
-      var start = valueRange.start.coerceIn(0, text.length)
-      var end = valueRange.end.coerceIn(start, text.length)
-      if (end - start >= 2 && text[start] in QUOTES && text[end - 1] == text[start]) {
-        start++
-        end--
-      }
-      add(code, message, ERROR, start, end)
-    }
-
-    private fun add(
-        code: String,
-        message: String,
-        severity: com.tom.rv2ide.lsp.models.DiagnosticSeverity,
-        attribute: DOMAttr,
-    ) {
-      val nameRange = attribute.nodeAttrName ?: return
-      val start = nameRange.start.coerceIn(0, text.length)
-      val end = nameRange.end.coerceIn(start, text.length)
-      add(code, message, severity, start, end)
-    }
-
-    private fun add(
-        code: String,
-        message: String,
-        severity: com.tom.rv2ide.lsp.models.DiagnosticSeverity,
-        start: Int,
-        end: Int,
-    ) {
-      val key = "$code:$start:$end"
-      if (key in keys || diagnostics.size >= MAX_DIAGNOSTICS_PER_FILE) {
-        return
-      }
-      keys.add(key)
-
-      diagnostics +=
-          DiagnosticItem(
-              message = message,
-              code = code,
-              range = Range(offsetToPosition(start), offsetToPosition(end)),
-              source = SOURCE,
-              severity = severity,
-          )
-    }
-
-    fun build(): List<DiagnosticItem> = diagnostics.sortedWith(DiagnosticItem.START_COMPARATOR)
-
-    private fun offsetToPosition(offset: Int): Position {
-      var line = 0
-      var lineStart = 0
-      for (index in 0 until offset) {
-        if (text[index] == '\n') {
-          line++
-          lineStart = index + 1
-        }
-      }
-      return Position(line, offset - lineStart)
-    }
-  }
-
   companion object {
     private val log = LoggerFactory.getLogger(XmlDiagnosticsService::class.java)
 
     const val CHANNEL = "xml-lsp"
     const val SOURCE = "xml-lsp"
-    private const val MAX_DIAGNOSTICS_PER_FILE = 100
     const val CODE_XML_SYNTAX = "XML001"
     const val CODE_DUPLICATE_ATTRIBUTE = "XML002"
     const val CODE_UNDECLARED_NAMESPACE = "XML003"
@@ -826,10 +702,8 @@ internal class XmlDiagnosticsService {
     const val ANDROID_ATTRIBUTE_PREFIX = "android:"
     const val LAYOUT_ATTRIBUTE_PREFIX = "layout_"
     const val ANDROID_VIEW_PACKAGE_PREFIX = "android."
-    const val VALUES_DIRECTORY = "values"
     const val VALUES_ROOT_TAG = "resources"
     const val RESOURCE_NAME_ATTRIBUTE = "name"
-    const val ANDROID_MANIFEST_FILE_NAME = "AndroidManifest.xml"
     const val MANIFEST_STYLEABLE_PREFIX = "AndroidManifest"
     const val MANIFEST_ROOT_TAG = "manifest"
     const val ANDROID_NAME_ATTRIBUTE = "android:name"
@@ -864,7 +738,6 @@ internal class XmlDiagnosticsService {
             "macro",
         )
     val LAYOUT_SPECIAL_TAGS = setOf("include", "merge", "view", "fragment", "tag", "layout")
-    const val QUOTES = "\"'"
     const val XMLNS_ATTRIBUTE = "xmlns"
     const val XMLNS_PREFIX = "xmlns:"
     const val ANDROID_NAMESPACE_DECLARATION = "xmlns:android"

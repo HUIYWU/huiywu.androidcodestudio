@@ -71,9 +71,14 @@ public final class KotlinSourceStubProvider {
     addOnDemandTypes(sourceTypes, starImports, referencedNames, imports);
     addOnDemandTypes(sourceTypes, sourcePackages, referencedNames, imports);
     final List<JavaFileObject> stubs = new ArrayList<>();
-    for (String imported : imports) {
+    final List<String> pending = new ArrayList<>(imports);
+    final Set<String> generated = new LinkedHashSet<>();
+    for (int index = 0; index < pending.size(); index++) {
+      final String imported = pending.get(index);
       // A real Kotlin class output has precedence. Do not create a duplicate javac type.
-      if (!sourceTypes.contains(imported) || classOutputTypes.contains(imported)) {
+      if (!generated.add(imported)
+          || !sourceTypes.contains(imported)
+          || classOutputTypes.contains(imported)) {
         continue;
       }
       final KotlinJvmTypeIndex.KotlinTypeDeclaration declaration =
@@ -81,9 +86,10 @@ public final class KotlinSourceStubProvider {
       if (declaration == null) {
         continue;
       }
-      final String stub = generateStub(imported, declaration.file);
+      final String stub = generateStub(imported, declaration.file, sourceTypes);
       if (stub != null) {
         stubs.add(new KotlinAbiStubJavaFileObject(imported, stub, module.getSourceIndexVersion()));
+        addReferencedKotlinTypes(imported, stub, sourceTypes, generated, pending);
       }
     }
     return stubs;
@@ -138,9 +144,36 @@ public final class KotlinSourceStubProvider {
     }
   }
 
-  private static String generateStub(String qualifiedName, Path kotlinFile) {
+  private static void addReferencedKotlinTypes(
+      String ownerType,
+      String stub,
+      Set<String> sourceTypes,
+      Set<String> generated,
+      List<String> pending) {
+    final int separator = ownerType.lastIndexOf('.');
+    final String ownerPackage = separator < 0 ? "" : ownerType.substring(0, separator);
+    final Set<String> referencedNames = new LinkedHashSet<>();
+    collectReferencedNames(stub, referencedNames);
+    for (String candidate : sourceTypes) {
+      if (generated.contains(candidate)) {
+        continue;
+      }
+      final int candidateSeparator = candidate.lastIndexOf('.');
+      final String candidatePackage =
+          candidateSeparator < 0 ? "" : candidate.substring(0, candidateSeparator);
+      final String candidateName =
+          candidateSeparator < 0 ? candidate : candidate.substring(candidateSeparator + 1);
+      if ((ownerPackage.equals(candidatePackage) && referencedNames.contains(candidateName))
+          || stub.contains(candidate)) {
+        pending.add(candidate);
+      }
+    }
+  }
+
+  private static String generateStub(
+      String qualifiedName, Path kotlinFile, Set<String> knownTypes) {
     final String source = FileManager.INSTANCE.getDocumentContents(kotlinFile).toString();
     return KotlinJvmAbiStubGenerator.generate(
-        qualifiedName, kotlinFile.getFileName().toString(), source);
+        qualifiedName, kotlinFile.getFileName().toString(), source, knownTypes);
   }
 }

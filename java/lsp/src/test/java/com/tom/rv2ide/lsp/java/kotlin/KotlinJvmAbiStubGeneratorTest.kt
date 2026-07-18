@@ -109,7 +109,7 @@ class KotlinJvmAbiStubGeneratorTest {
     assertNotNull(classStub)
     assertContains(classStub!!, "public static final class Companion")
     assertContains(classStub, "public static final Companion Companion")
-    assertContains(classStub, "public static Object create(String name)")
+    assertContains(classStub, "public static Config create(String name)")
     assertContains(classStub, "public static int VERSION;")
     assertContains(classStub, "public String ordinary()")
   }
@@ -150,6 +150,56 @@ class KotlinJvmAbiStubGeneratorTest {
         stub,
         "public java.util.Collection<? extends Integer> wildcard(java.util.List<?> values)")
     assertContains(stub, "public Object unknown(Object callback)")
+  }
+
+  @Test
+  fun generate_preservesResolvableUserDeclaredTypes() {
+    val source =
+        """
+        package sample
+
+        import android.content.Context
+        import java.time.Instant as TimePoint
+
+        class Profile(val id: String)
+
+        class Repository(val context: Context) {
+          fun load(profile: Profile): Profile = profile
+          fun history(): List<Profile> = emptyList()
+          fun timestamp(): TimePoint? = null
+          fun qualified(): java.util.Locale? = null
+          fun callback(): (Profile) -> Profile = { it }
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generate("sample.Repository", "Repository.kt", source)
+
+    assertNotNull(stub)
+    assertContains(stub!!, "public Repository(android.content.Context context)")
+    assertContains(stub, "public Profile load(Profile profile)")
+    assertContains(stub, "public java.util.List<Profile> history()")
+    assertContains(stub, "public java.time.Instant timestamp()")
+    assertContains(stub, "public java.util.Locale qualified()")
+    assertContains(stub, "public Object callback()")
+  }
+
+  @Test
+  fun generate_preservesKnownSamePackageTypeFromAnotherFile() {
+    val source =
+        """
+        package sample
+
+        class Repository {
+          fun load(): Profile = error("not built")
+        }
+        """.trimIndent()
+
+    val stub =
+        KotlinJvmAbiStubGenerator.generate(
+            "sample.Repository", "Repository.kt", source, setOf("sample.Repository", "sample.Profile"))
+
+    assertNotNull(stub)
+    assertContains(stub!!, "public Profile load()")
   }
 
   @Test
