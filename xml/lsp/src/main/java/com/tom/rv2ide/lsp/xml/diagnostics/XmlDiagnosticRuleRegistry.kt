@@ -17,6 +17,7 @@
 package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.CommonXmlElementDiagnosticRule
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.LayoutDiagnosticRule
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.ManifestDiagnosticRule
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.ValuesDocumentDiagnosticRule
 
@@ -32,5 +33,6 @@ internal object XmlDiagnosticRuleRegistry {
       listOf(
           CommonXmlElementDiagnosticRule,
           ManifestDiagnosticRule,
+          LayoutDiagnosticRule,
       )
 }

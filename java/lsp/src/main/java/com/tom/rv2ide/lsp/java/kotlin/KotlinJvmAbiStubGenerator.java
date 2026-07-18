@@ -151,9 +151,7 @@ private static final Pattern PROPERTY_PATTERN =
     if (isObject) {
       out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
     } else if (!isInterface) {
-      out.append("  public ").append(simpleName)
-          .append(javaConstructorParameterList(syntax.constructorParameters))
-          .append(" {}\n");
+      appendSyntaxConstructors(out, simpleName, syntax.constructorParameters);
       appendSyntaxConstructorProperties(out, syntax.constructorParameters);
     }
     appendSyntaxMembers(out, syntax.members, isInterface, false);
@@ -198,7 +196,7 @@ private static final Pattern PROPERTY_PATTERN =
     if (isObject) {
       out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
     } else if (!isInterface) {
-      out.append("  public ").append(simpleName).append(parameterList(constructor)).append(" {}\n");
+      appendFallbackConstructors(out, simpleName, constructor);
       appendConstructorProperties(out, constructor);
     }
 
@@ -555,6 +553,26 @@ private static final Pattern PROPERTY_PATTERN =
       out.append("  public static void set").append(accessor).append('(').append(type)
           .append(" value) {}\n");
     }
+  }
+
+  private static void appendSyntaxConstructors(
+      StringBuilder out,
+      String simpleName,
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters) {
+    if (!kotlinParameters.isEmpty()) {
+      out.append("  protected ").append(simpleName).append("() {}\n");
+    }
+    out.append("  public ").append(simpleName)
+        .append(javaConstructorParameterList(kotlinParameters)).append(" {}\n");
+  }
+
+  private static void appendFallbackConstructors(
+      StringBuilder out, String simpleName, String kotlinParameters) {
+    final String parameters = parameterList(kotlinParameters);
+    if (!"()".equals(parameters)) {
+      out.append("  protected ").append(simpleName).append("() {}\n");
+    }
+    out.append("  public ").append(simpleName).append(parameters).append(" {}\n");
   }
 
   private static String javaConstructorParameterList(

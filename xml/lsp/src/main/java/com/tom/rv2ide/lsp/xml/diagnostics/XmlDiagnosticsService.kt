@@ -16,27 +16,11 @@
  */
 package com.tom.rv2ide.lsp.xml.diagnostics
 
-import com.android.aapt.Resources.Attribute.FormatFlags
-import com.android.aapt.Resources.Attribute.FormatFlags.BOOLEAN
-import com.android.aapt.Resources.Attribute.FormatFlags.COLOR
-import com.android.aapt.Resources.Attribute.FormatFlags.DIMENSION
-import com.android.aapt.Resources.Attribute.FormatFlags.ENUM
-import com.android.aapt.Resources.Attribute.FormatFlags.FLAGS
-import com.android.aapt.Resources.Attribute.FormatFlags.STRING
-import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.ID
-import com.android.aaptcompiler.AaptResourceType.STYLEABLE
-import com.android.aaptcompiler.AttributeResource
-import com.android.aaptcompiler.ConfigDescription
-import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.util.setupLookupForCompletion
-import com.tom.rv2ide.lsp.xml.resolver.StyleableResolver
 import com.tom.rv2ide.projects.FileManager
-import com.tom.rv2ide.xml.resources.ResourceTableRegistry
-import com.tom.rv2ide.xml.widgets.WidgetTable
 import java.nio.file.Path
-import org.eclipse.lemminx.dom.DOMAttr
 import org.eclipse.lemminx.dom.DOMElement
 import org.eclipse.lemminx.dom.DOMNode
 import org.eclipse.lemminx.dom.DOMParser
@@ -102,11 +86,6 @@ internal class XmlDiagnosticsService {
       if (!hasSyntaxRecovery) {
         elementRules.forEach { rule -> rule.diagnose(node, context, collector) }
         checkResourceReferences(node, collector, context.declaredIds)
-        if (context.isLayoutFile) {
-          checkLayoutTag(node, collector)
-          checkLayoutAttributes(node, collector)
-          checkLayoutAttributeValues(node, collector)
-        }
       }
     } else if (node is DOMText && node.isText) {
       checkTextResourceReference(node, collector, context.declaredIds)
@@ -175,191 +154,6 @@ internal class XmlDiagnosticsService {
               (child.hasStartTag() &&
                   !child.isSelfClosed &&
                   (!child.isStartTagClosed || !child.isClosed)))
-    }
-  }
-
-  private fun checkLayoutAttributes(element: DOMElement, collector: XmlDiagnosticCollector) {
-    if (!element.isClosed) {
-      return
-    }
-    val tagName = element.tagName ?: return
-    val widgetTable = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return
-    val widget = StyleableResolver.widgetFor(tagName, widgetTable) ?: return
-    val frameworkTable =
-        Lookup.getDefault().lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES) ?: return
-    val androidPackage = frameworkTable.findPackage(ResourceTableRegistry.PCK_ANDROID) ?: return
-    val styleables = androidPackage.findGroup(STYLEABLE) ?: return
-    val frameworkAttributes = androidPackage.findGroup(ATTR) ?: return
-    val dependencyParentLayoutAttributes = dependencyParentLayoutAttributes(element)
-    val allowedAttributes =
-        StyleableResolver.forWidget(
-                styleables,
-                widgetTable,
-                widget,
-                element,
-                includeViewGroupOwnAttributes = true,
-            )
-            .flatMapTo(mutableSetOf()) { styleable -> styleable.entries.mapNotNull { it.name.entry } }
-            .apply { addAll(dependencyParentLayoutAttributes) }
-    if (allowedAttributes.isEmpty()) {
-      return
-    }
-
-    element.attributeNodes.orEmpty().forEach { attribute ->
-      val name = attribute.name ?: return@forEach
-      if (!name.startsWith(ANDROID_ATTRIBUTE_PREFIX)) {
-        return@forEach
-      }
-      val localName = name.removePrefix(ANDROID_ATTRIBUTE_PREFIX)
-      // LayoutParams are defined by the parent. For AndroidX/custom parents, only report an
-      // android:layout_* attribute when its `SimpleName_Layout` styleable was found in the
-      // module/dependency resource snapshots; otherwise the result remains unknown.
-      if (
-          localName.startsWith(LAYOUT_ATTRIBUTE_PREFIX) &&
-              hasNonFrameworkParent(element) &&
-              dependencyParentLayoutAttributes.isEmpty()
-      ) {
-        return@forEach
-      }
-      // A framework attribute can be accepted by AAPT even when it is absent from this widget's
-      // styleable (for example a no-op attribute, or LayoutParams metadata not represented by the
-      // current widget snapshot). Applicability belongs to Android Lint; AXML002 reports only names
-      // that are absent from both the resolved styleables and the platform ATTR table.
-      if (
-          isUnknownFrameworkAttribute(localName, allowedAttributes) {
-            frameworkAttributes.findEntry(it) != null
-          }
-      ) {
-        collector.error(
-            code = CODE_UNKNOWN_LAYOUT_ATTRIBUTE,
-            message = "Unknown attribute '$name' for $tagName",
-            attribute = attribute,
-        )
-      }
-    }
-  }
-
-  internal fun isUnknownFrameworkAttribute(
-      localName: String,
-      styleableAttributes: Set<String>,
-      existsInFramework: (String) -> Boolean,
-  ): Boolean {
-    return localName !in styleableAttributes && !existsInFramework(localName)
-  }
-
-  /**
-   * Validates only narrow, literal-only formats. References, expressions, and attributes accepting
-   * string/integer-like values are intentionally left to AAPT2, because they cannot be rejected
-   * reliably from the editor snapshot alone.
-   */
-  private fun checkLayoutAttributeValues(element: DOMElement, collector: XmlDiagnosticCollector) {
-    if (!element.isClosed) {
-      return
-    }
-    val tagName = element.tagName ?: return
-    val widgetTable = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return
-    if (StyleableResolver.widgetFor(tagName, widgetTable) == null) {
-      return
-    }
-    val frameworkTable =
-        Lookup.getDefault().lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES) ?: return
-    val attrs =
-        frameworkTable.findPackage(ResourceTableRegistry.PCK_ANDROID)?.findGroup(ATTR) ?: return
-
-    element.attributeNodes.orEmpty().forEach { attribute ->
-      val name = attribute.name ?: return@forEach
-      if (!name.startsWith(ANDROID_ATTRIBUTE_PREFIX)) {
-        return@forEach
-      }
-      val value = attribute.value ?: return@forEach
-      if (isDeferredAttributeValue(value)) {
-        return@forEach
-      }
-      val attr =
-          attrs.findEntry(name.removePrefix(ANDROID_ATTRIBUTE_PREFIX))
-              ?.findValue(ConfigDescription())
-              ?.value as? AttributeResource
-              ?: return@forEach
-      validateLiteralAttributeValue(attr, value)?.let { message ->
-        collector.errorValue(CODE_INVALID_ATTRIBUTE_VALUE, message, attribute)
-      }
-    }
-  }
-  // Resource references are intentionally not rejected from AttributeResource.typeMask alone.
-  // Android's format metadata describes accepted inline value formats and does not imply that a
-  // resource reference is forbidden (for example android:text="@string/title" is valid).
-
-
-  private fun validateLiteralAttributeValue(attr: AttributeResource, value: String): String? {
-    if (attr.hasAnyType(STRING, COLOR, DIMENSION)) {
-      return null
-    }
-
-    val symbols = attr.symbols.mapNotNull { it.symbol.name.entry }.toSet()
-    if (attr.typeMask == BOOLEAN.number && value != "true" && value != "false") {
-      return "Expected a boolean value ('true' or 'false')"
-    }
-    if (attr.typeMask == ENUM.number && value !in symbols) {
-      return "'$value' is not a valid value for this enum attribute"
-    }
-    if (attr.typeMask == FLAGS.number) {
-      val flags = value.split('|').map(String::trim)
-      if (flags.isEmpty() || flags.any { it.isEmpty() || it !in symbols }) {
-        return "'$value' contains an invalid flag value"
-      }
-    }
-    return null
-  }
-
-  private fun isDeferredAttributeValue(value: String): Boolean {
-    return value.startsWith("@") || value.startsWith("?") || value.startsWith("@{") || value.startsWith("@={")
-  }
-
-  private fun AttributeResource.hasAnyType(vararg types: FormatFlags): Boolean {
-    return types.any { typeMask and it.number != 0 }
-  }
-  // Widget and styleable traversal is shared with completion through StyleableResolver.
-
-
-  private fun hasNonFrameworkParent(element: DOMElement): Boolean {
-    val parentTag = (element.parentNode as? DOMElement)?.tagName ?: return false
-    // Framework class tags can be simple (FrameLayout) or fully qualified android.* names.
-    return parentTag.contains('.') && !parentTag.startsWith(ANDROID_VIEW_PACKAGE_PREFIX)
-  }
-
-  /**
-   * Resolves a non-framework parent's `SimpleName_Layout` styleable from source/dependency resource
-   * snapshots. Android libraries publish these through `<declare-styleable>` in their AAR res/values
-   * files (for example `CoordinatorLayout_Layout`). If the snapshot has no matching styleable, the
-   * caller keeps the existing low-false-positive fallback for `android:layout_*`.
-   */
-  private fun dependencyParentLayoutAttributes(element: DOMElement): Set<String> {
-    val parentTag = (element.parentNode as? DOMElement)?.tagName ?: return emptySet()
-    if (!parentTag.contains('.') || parentTag.startsWith(ANDROID_VIEW_PACKAGE_PREFIX)) {
-      return emptySet()
-    }
-    val styleableName = "${StyleableResolver.simpleName(parentTag)}${StyleableResolver.LAYOUT_SUFFIX}"
-    val lookup = Lookup.getDefault()
-    val tables =
-        (lookup.lookup(ResourceTableRegistry.COMPLETION_MODULE_RES).orEmpty() +
-                lookup.lookup(ResourceTableRegistry.COMPLETION_DEP_RES).orEmpty())
-            .toSet()
-    return StyleableResolver.attributesForStyleable(tables, styleableName)
-  }
-
-  private fun checkLayoutTag(element: DOMElement, collector: XmlDiagnosticCollector) {
-    val tagName = element.tagName ?: return
-    if (!element.isClosed || tagName in LAYOUT_SPECIAL_TAGS || tagName.contains('.') || tagName.contains(':')) {
-      return
-    }
-
-    val widgetTable = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return
-    if (widgetTable.findWidgetWithSimpleName(tagName) == null) {
-      collector.errorTag(
-          code = CODE_UNKNOWN_LAYOUT_TAG,
-          message = "Unknown layout tag '$tagName'",
-          element = element,
-      )
     }
   }
 
@@ -451,13 +245,6 @@ internal class XmlDiagnosticsService {
     const val SOURCE = "xml-lsp"
     const val CODE_XML_SYNTAX = "XML001"
     const val CODE_UNRESOLVED_RESOURCE = "AXML003"
-    const val CODE_UNKNOWN_LAYOUT_TAG = "AXML001"
-    const val CODE_UNKNOWN_LAYOUT_ATTRIBUTE = "AXML002"
-    const val CODE_INVALID_ATTRIBUTE_VALUE = "AXML004"
-    const val ANDROID_ATTRIBUTE_PREFIX = "android:"
-    const val LAYOUT_ATTRIBUTE_PREFIX = "layout_"
-    const val ANDROID_VIEW_PACKAGE_PREFIX = "android."
-    val LAYOUT_SPECIAL_TAGS = setOf("include", "merge", "view", "fragment", "tag", "layout")
     const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
     const val TOOLS_NAMESPACE_URI = "http://schemas.android.com/tools"
   }

@@ -234,12 +234,18 @@ class KotlinJvmAbiStubGeneratorTest {
 
         interface Named
         interface Tagged<T>
-        open class Base
+        open class Base(val label: String)
 
-        class User<T>(val id: T) : Base(), Named, Tagged<T>
+        class User<T>(val id: T) : Base("user"), Named, Tagged<T>
         interface Detailed : Named, Tagged<String>
         """.trimIndent()
 
+    val baseStub =
+        KotlinJvmAbiStubGenerator.generate(
+            "sample.Base",
+            "Models.kt",
+            source,
+            setOf("sample.Named", "sample.Tagged", "sample.Base", "sample.User", "sample.Detailed"))
     val userStub =
         KotlinJvmAbiStubGenerator.generate(
             "sample.User",
@@ -252,6 +258,10 @@ class KotlinJvmAbiStubGeneratorTest {
             "Models.kt",
             source,
             setOf("sample.Named", "sample.Tagged", "sample.Base", "sample.User", "sample.Detailed"))
+
+    assertNotNull(baseStub)
+    assertContains(baseStub!!, "protected Base()")
+    assertContains(baseStub, "public Base(String label)")
 
     assertNotNull(userStub)
     assertContains(

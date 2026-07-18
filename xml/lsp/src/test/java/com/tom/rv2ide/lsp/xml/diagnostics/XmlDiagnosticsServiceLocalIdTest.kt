@@ -17,6 +17,7 @@
 package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.google.common.truth.Truth.assertThat
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.LayoutDiagnosticRule
 import junit.framework.TestCase
 import org.eclipse.lemminx.dom.DOMParser
 import org.eclipse.lemminx.uriresolver.URIResolverExtensionManager
@@ -38,24 +39,23 @@ class XmlDiagnosticsServiceLocalIdTest : TestCase() {
   }
 
   fun testFrameworkAttributeFallbackOnlyRejectsUnknownNames() {
-    val service = XmlDiagnosticsService()
     val styleableAttributes = setOf("text", "layout_width")
     val frameworkAttributes = setOf("checked", "orientation", "layout_below", "layout_gravity")
 
     assertThat(
-            service.isUnknownFrameworkAttribute("text", styleableAttributes) {
+            LayoutDiagnosticRule.isUnknownFrameworkAttribute("text", styleableAttributes) {
               it in frameworkAttributes
             }
         )
         .isFalse()
     assertThat(
-            service.isUnknownFrameworkAttribute("checked", styleableAttributes) {
+            LayoutDiagnosticRule.isUnknownFrameworkAttribute("checked", styleableAttributes) {
               it in frameworkAttributes
             }
         )
         .isFalse()
     assertThat(
-            service.isUnknownFrameworkAttribute("not_a_real_android_attr", styleableAttributes) {
+            LayoutDiagnosticRule.isUnknownFrameworkAttribute("not_a_real_android_attr", styleableAttributes) {
               it in frameworkAttributes
             }
         )
