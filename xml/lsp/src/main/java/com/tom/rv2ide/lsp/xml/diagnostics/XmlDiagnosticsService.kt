@@ -81,11 +81,10 @@ internal class XmlDiagnosticsService {
             }
     val context = XmlDiagnosticContext.create(file, text, document)
     val collector = XmlDiagnosticCollector(context.text)
-    if (context.isValuesFile) {
-      checkValuesDocument(context.document.documentElement, collector)
-    }
-    if (context.isManifestFile) {
-      checkManifestDocument(context.document.documentElement, collector)
+    XmlDiagnosticRuleRegistry.documentRules.forEach { rule ->
+      if (rule.supports(context)) {
+        rule.diagnose(context, collector)
+      }
     }
     visit(context.document, collector, context)
 
@@ -182,20 +181,6 @@ internal class XmlDiagnosticsService {
               (child.hasStartTag() &&
                   !child.isSelfClosed &&
                   (!child.isStartTagClosed || !child.isClosed)))
-    }
-  }
-
-  private fun checkManifestDocument(root: DOMElement?, collector: XmlDiagnosticCollector) {
-    // LemMinX represents a valid self-closing <manifest/> with isSelfClosed, without necessarily
-    // setting isStartTagClosed. Treat both closed forms as valid, as the XML syntax rule does.
-    if (root == null || (!root.isStartTagClosed && !root.isSelfClosed) || root.tagName != MANIFEST_ROOT_TAG) {
-      root?.let {
-        collector.errorTag(
-            code = CODE_MANIFEST_ROOT,
-            message = "The root element of an Android manifest must be <$MANIFEST_ROOT_TAG>",
-            element = it,
-        )
-      }
     }
   }
 
@@ -305,77 +290,6 @@ internal class XmlDiagnosticsService {
           element = element,
       )
     }
-  }
-
-  private fun checkValuesDocument(root: DOMElement?, collector: XmlDiagnosticCollector) {
-    if (root == null || !root.isStartTagClosed || root.tagName != VALUES_ROOT_TAG) {
-      root?.let {
-        collector.errorTag(
-            code = CODE_VALUES_ROOT,
-            message = "The root element of a values resource file must be <$VALUES_ROOT_TAG>",
-            element = it,
-        )
-      }
-      return
-    }
-
-    val seen = HashSet<String>()
-    root.children.filterIsInstance<DOMElement>().forEach { element ->
-      if (!element.isStartTagClosed || element.tagName !in VALUES_NAMED_TAGS) {
-        return@forEach
-      }
-      val nameAttribute = element.getAttributeNode(RESOURCE_NAME_ATTRIBUTE)
-      val name = nameAttribute?.value
-      if (nameAttribute == null || name.isNullOrBlank()) {
-        collector.errorTag(
-            code = CODE_VALUES_MISSING_NAME,
-            message = "Resource <${element.tagName}> requires a '$RESOURCE_NAME_ATTRIBUTE' attribute",
-            element = element,
-        )
-        return@forEach
-      }
-      if (!isValidValuesResourceName(name)) {
-        collector.errorValue(
-            code = CODE_VALUES_INVALID_NAME,
-            message = "'$name' is not a valid Android resource name",
-            attribute = nameAttribute,
-        )
-        return@forEach
-      }
-      val key = "${element.tagName}:$name"
-      if (!seen.add(key)) {
-        collector.errorValue(
-            code = CODE_VALUES_DUPLICATE_NAME,
-            message = "Duplicate <${element.tagName}> resource name '$name' in this file",
-            attribute = nameAttribute,
-        )
-      }
-    }
-  }
-
-  /**
-   * Lightweight equivalent of AAPT's resource-entry-name check.
-   *
-   * The AAPT helper is not exposed through `xml:lsp`'s transitive API classpath, so this uses JDK
-   * Unicode identifier predicates and retains AAPT's extra `_`, `.` and `-` allowances.
-   */
-  private fun isValidValuesResourceName(name: String): Boolean {
-    if (name.isEmpty()) {
-      return false
-    }
-    val first = name.codePointAt(0)
-    if (!Character.isUnicodeIdentifierStart(first) && first != '_'.code) {
-      return false
-    }
-    var offset = Character.charCount(first)
-    while (offset < name.length) {
-      val codePoint = name.codePointAt(offset)
-      if (!Character.isUnicodeIdentifierPart(codePoint) && codePoint != '.'.code && codePoint != '-'.code) {
-        return false
-      }
-      offset += Character.charCount(codePoint)
-    }
-    return true
   }
 
   private fun checkDuplicateAttributes(element: DOMElement, collector: XmlDiagnosticCollector) {
@@ -691,19 +605,12 @@ internal class XmlDiagnosticsService {
     const val CODE_UNKNOWN_LAYOUT_TAG = "AXML001"
     const val CODE_UNKNOWN_LAYOUT_ATTRIBUTE = "AXML002"
     const val CODE_INVALID_ATTRIBUTE_VALUE = "AXML004"
-    const val CODE_VALUES_ROOT = "VALUES001"
-    const val CODE_VALUES_MISSING_NAME = "VALUES002"
-    const val CODE_VALUES_INVALID_NAME = "VALUES003"
-    const val CODE_VALUES_DUPLICATE_NAME = "VALUES004"
-    const val CODE_MANIFEST_ROOT = "MANIFEST001"
     const val CODE_MANIFEST_INVALID_PARENT = "MANIFEST002"
     const val CODE_MANIFEST_MISSING_COMPONENT_NAME = "MANIFEST003"
     const val CODE_MANIFEST_UNKNOWN_ATTRIBUTE = "MANIFEST004"
     const val ANDROID_ATTRIBUTE_PREFIX = "android:"
     const val LAYOUT_ATTRIBUTE_PREFIX = "layout_"
     const val ANDROID_VIEW_PACKAGE_PREFIX = "android."
-    const val VALUES_ROOT_TAG = "resources"
-    const val RESOURCE_NAME_ATTRIBUTE = "name"
     const val MANIFEST_STYLEABLE_PREFIX = "AndroidManifest"
     const val MANIFEST_ROOT_TAG = "manifest"
     const val ANDROID_NAME_ATTRIBUTE = "android:name"
@@ -715,28 +622,8 @@ internal class XmlDiagnosticsService {
     val MANIFEST_NAMED_COMPONENT_TAGS =
         MANIFEST_APPLICATION_COMPONENT_TAGS + "instrumentation"
     val MANIFEST_INTENT_FILTER_PARENTS =
-    setOf("activity", "activity-alias", "service", "receiver", "provider")
+        setOf("activity", "activity-alias", "service", "receiver", "provider")
     val MANIFEST_INTENT_FILTER_CHILD_TAGS = setOf("action", "category", "data")
-    val VALUES_NAMED_TAGS =
-        setOf(
-            "string",
-            "color",
-            "dimen",
-            "bool",
-            "integer",
-            "fraction",
-            "array",
-            "integer-array",
-            "string-array",
-            "plurals",
-            "style",
-            "attr",
-            "declare-styleable",
-            "drawable",
-            "font",
-            "id",
-            "macro",
-        )
     val LAYOUT_SPECIAL_TAGS = setOf("include", "merge", "view", "fragment", "tag", "layout")
     const val XMLNS_ATTRIBUTE = "xmlns"
     const val XMLNS_PREFIX = "xmlns:"

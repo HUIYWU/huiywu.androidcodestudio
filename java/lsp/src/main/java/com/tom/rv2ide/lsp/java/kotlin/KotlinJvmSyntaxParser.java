@@ -108,6 +108,8 @@ final class KotlinJvmSyntaxParser {
             continue;
           }
           final String declarationText = text(source, declaration);
+          final List<TypeParameterSyntax> typeParameters =
+              typeParameters(source, directChild(declaration, "type_parameters"));
           final TSNode bodyNode = directChild(declaration, "class_body", "enum_class_body");
           final String body = bodyNode == null ? "" : innerBody(text(source, bodyNode));
           final List<MemberSyntax> members = members(source, bodyNode);
@@ -135,6 +137,7 @@ final class KotlinJvmSyntaxParser {
               declarationText,
               body,
               members,
+              typeParameters,
               constructorParameters,
               companionBody,
               companionMembers,
@@ -188,6 +191,8 @@ final class KotlinJvmSyntaxParser {
       TSNode modifiers,
       String modifierText) {
     final TSNode name = directChild(declaration, "simple_identifier");
+    final List<TypeParameterSyntax> typeParameters =
+        typeParameters(source, directChild(declaration, "type_parameters"));
     final TSNode parameters = directChild(declaration, "function_value_parameters");
     final TSNode receiver = typeChildBefore(declaration, name);
     final TSNode returnType = typeChildAfter(declaration, parameters);
@@ -202,6 +207,7 @@ final class KotlinJvmSyntaxParser {
         name == null ? null : text(source, name),
         parameters == null ? "()" : text(source, parameters),
         parameterList,
+        typeParameters,
         receiver == null ? null : text(source, receiver),
         returnType == null ? null : text(source, returnType),
         false,
@@ -228,10 +234,31 @@ final class KotlinJvmSyntaxParser {
         name == null ? null : text(source, name),
         null,
         Collections.emptyList(),
+        Collections.emptyList(),
         receiver == null ? null : text(source, receiver),
         propertyType == null ? null : text(source, propertyType),
         hasDirectToken(declaration, "var"),
         hasDirectToken(declaration, "val"));
+  }
+
+  private static List<TypeParameterSyntax> typeParameters(String source, TSNode container) {
+    if (container == null) {
+      return Collections.emptyList();
+    }
+    final List<TypeParameterSyntax> result = new ArrayList<>();
+    for (int index = 0; index < container.getNamedChildCount(); index++) {
+      final TSNode parameter = container.getNamedChild(index);
+      if (!"type_parameter".equals(parameter.getType())) {
+        continue;
+      }
+      final TSNode name = directChild(parameter, "type_identifier");
+      final TSNode bound = typeChildAfter(parameter, name);
+      if (name != null) {
+        result.add(new TypeParameterSyntax(
+            text(source, name), bound == null ? null : text(source, bound)));
+      }
+    }
+    return Collections.unmodifiableList(result);
   }
 
   private static List<ConstructorParameterSyntax> constructorParameters(
@@ -557,6 +584,7 @@ final class KotlinJvmSyntaxParser {
     final String declarationText;
     final String body;
     final List<MemberSyntax> members;
+    final List<TypeParameterSyntax> typeParameters;
     final List<ConstructorParameterSyntax> constructorParameters;
     final String companionBody;
     final List<MemberSyntax> companionMembers;
@@ -570,6 +598,7 @@ final class KotlinJvmSyntaxParser {
         String declarationText,
         String body,
         List<MemberSyntax> members,
+        List<TypeParameterSyntax> typeParameters,
         List<ConstructorParameterSyntax> constructorParameters,
         String companionBody,
         List<MemberSyntax> companionMembers,
@@ -581,6 +610,7 @@ final class KotlinJvmSyntaxParser {
       this.declarationText = declarationText;
       this.body = body;
       this.members = members;
+      this.typeParameters = typeParameters;
       this.constructorParameters = constructorParameters;
       this.companionBody = companionBody;
       this.companionMembers = companionMembers;
@@ -605,6 +635,7 @@ final class KotlinJvmSyntaxParser {
     final String name;
     final String parameters;
     final List<ParameterSyntax> parameterList;
+    final List<TypeParameterSyntax> typeParameters;
     final String receiverType;
     final String declaredType;
     final boolean mutableProperty;
@@ -620,6 +651,7 @@ final class KotlinJvmSyntaxParser {
         String name,
         String parameters,
         List<ParameterSyntax> parameterList,
+        List<TypeParameterSyntax> typeParameters,
         String receiverType,
         String declaredType,
         boolean mutableProperty,
@@ -633,6 +665,7 @@ final class KotlinJvmSyntaxParser {
       this.name = name;
       this.parameters = parameters;
       this.parameterList = parameterList;
+      this.typeParameters = typeParameters;
       this.receiverType = receiverType;
       this.declaredType = declaredType;
       this.mutableProperty = mutableProperty;
@@ -641,6 +674,16 @@ final class KotlinJvmSyntaxParser {
 
     boolean function() {
       return "function_declaration".equals(kind);
+    }
+  }
+
+  static final class TypeParameterSyntax {
+    final String name;
+    final String upperBound;
+
+    TypeParameterSyntax(String name, String upperBound) {
+      this.name = name;
+      this.upperBound = upperBound;
     }
   }
 

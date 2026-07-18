@@ -203,6 +203,30 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsClassAndMethodTypeParameters() {
+    val source =
+        """
+        package sample
+
+        class Box<T : CharSequence>(val value: T) {
+          fun getOr(defaultValue: T): T = value
+          fun <R> map(value: R): List<R> = listOf(value)
+          fun <N : Number> number(value: N): N = value
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generate("sample.Box", "Box.kt", source)
+
+    assertNotNull(stub)
+    assertContains(stub!!, "public class Box<T extends CharSequence>")
+    assertContains(stub, "public Box(T value)")
+    assertContains(stub, "public T getValue()")
+    assertContains(stub, "public T getOr(T defaultValue)")
+    assertContains(stub, "public <R> java.util.List<R> map(R value)")
+    assertContains(stub, "public <N extends Number> N number(N value)")
+  }
+
+  @Test
   fun generate_excludesPrivateAndMismatchedDeclarations() {
     val privateType =
         """

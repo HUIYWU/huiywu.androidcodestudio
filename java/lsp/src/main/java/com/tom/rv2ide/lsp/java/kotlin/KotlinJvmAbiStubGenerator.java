@@ -18,6 +18,7 @@ package com.tom.rv2ide.lsp.java.kotlin;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -101,7 +102,8 @@ private static final Pattern PROPERTY_PATTERN =
     }
 
     final TypeResolutionContext previous = TYPE_CONTEXT.get();
-    TYPE_CONTEXT.set(TypeResolutionContext.create(sourcePackage, source, knownTypes));
+    TYPE_CONTEXT.set(
+        TypeResolutionContext.create(sourcePackage, simpleName, source, knownTypes));
     try {
       final KotlinJvmSyntaxParser.TypeSyntax syntax =
           KotlinJvmSyntaxParser.findTopLevelType(source, simpleName);
@@ -142,8 +144,9 @@ private static final Pattern PROPERTY_PATTERN =
       out.append("public @interface ").append(simpleName).append(" {}\n");
       return out.toString();
     }
+    registerTypeVariables(syntax.typeParameters);
     out.append("public ").append(isInterface ? "interface " : "class ")
-        .append(simpleName).append(" {\n");
+        .append(simpleName).append(javaTypeParameters(syntax.typeParameters).trim()).append(" {\n");
     if (isObject) {
       out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
     } else if (!isInterface) {
@@ -320,24 +323,31 @@ private static final Pattern PROPERTY_PATTERN =
       KotlinJvmSyntaxParser.MemberSyntax function,
       boolean interfaceType,
       boolean topLevel) {
-    if (function.name == null || function.name.isEmpty()) {
+    if (function.name == null || function.name.isEmpty()
+        || function.receiverType != null && !topLevel) {
       return;
     }
-    out.append("  public ");
-    if (topLevel) {
-      out.append("static ");
+    final Set<String> methodVariables = registerTypeVariables(function.typeParameters);
+    try {
+      out.append("  public ");
+      if (topLevel) {
+        out.append("static ");
+      }
+      out.append(javaTypeParameters(function.typeParameters));
+      final List<String> parameters = new ArrayList<>();
+      if (function.receiverType != null) {
+        parameters.add(javaType(function.receiverType) + " receiver");
+      }
+      for (int index = 0; index < function.parameterList.size(); index++) {
+        final KotlinJvmSyntaxParser.ParameterSyntax parameter = function.parameterList.get(index);
+        parameters.add(javaType(parameter.type) + " " + safeName(parameter.name, index));
+      }
+      out.append(javaType(function.declaredType)).append(' ').append(function.name)
+          .append('(').append(String.join(", ", parameters)).append(')')
+          .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
+    } finally {
+      unregisterTypeVariables(methodVariables);
     }
-    final List<String> parameters = new ArrayList<>();
-    if (function.receiverType != null) {
-      parameters.add(javaType(function.receiverType) + " receiver");
-    }
-    for (int index = 0; index < function.parameterList.size(); index++) {
-      final KotlinJvmSyntaxParser.ParameterSyntax parameter = function.parameterList.get(index);
-      parameters.add(javaType(parameter.type) + " " + safeName(parameter.name, index));
-    }
-    out.append(javaType(function.declaredType)).append(' ').append(function.name)
-        .append('(').append(String.join(", ", parameters)).append(')')
-        .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
   }
 
   private static void appendSyntaxFunctionOverloads(
@@ -357,14 +367,20 @@ private static final Pattern PROPERTY_PATTERN =
     if (firstOmittable == parameters.size()) {
       return;
     }
-    for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
-      out.append("  public ");
-      if (topLevel) {
-        out.append("static ");
+    final Set<String> methodVariables = registerTypeVariables(function.typeParameters);
+    try {
+      for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
+        out.append("  public ");
+        if (topLevel) {
+          out.append("static ");
+        }
+        out.append(javaTypeParameters(function.typeParameters))
+            .append(javaType(function.declaredType)).append(' ').append(function.name)
+            .append(javaSyntaxParameterList(parameters.subList(0, count)))
+            .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
       }
-      out.append(javaType(function.declaredType)).append(' ').append(function.name)
-          .append(javaSyntaxParameterList(parameters.subList(0, count)))
-          .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
+    } finally {
+      unregisterTypeVariables(methodVariables);
     }
   }
 
@@ -772,6 +788,45 @@ private static final Pattern PROPERTY_PATTERN =
     return false;
   }
 
+  private static Set<String> registerTypeVariables(
+      List<KotlinJvmSyntaxParser.TypeParameterSyntax> parameters) {
+    final Set<String> added = new LinkedHashSet<>();
+    final TypeResolutionContext context = TYPE_CONTEXT.get();
+    if (context == null || parameters == null) {
+      return added;
+    }
+    for (KotlinJvmSyntaxParser.TypeParameterSyntax parameter : parameters) {
+      if (parameter.name != null && context.typeVariables.add(parameter.name)) {
+        added.add(parameter.name);
+      }
+    }
+    return added;
+  }
+
+  private static void unregisterTypeVariables(Set<String> variables) {
+    final TypeResolutionContext context = TYPE_CONTEXT.get();
+    if (context != null) {
+      context.typeVariables.removeAll(variables);
+    }
+  }
+
+  private static String javaTypeParameters(
+      List<KotlinJvmSyntaxParser.TypeParameterSyntax> parameters) {
+    if (parameters == null || parameters.isEmpty()) {
+      return "";
+    }
+    final List<String> declarations = new ArrayList<>();
+    for (KotlinJvmSyntaxParser.TypeParameterSyntax parameter : parameters) {
+      if (parameter.name == null || !JAVA_TYPE_NAME_PATTERN.matcher(parameter.name).matches()) {
+        continue;
+      }
+      final String bound = javaType(parameter.upperBound);
+      declarations.add(parameter.name
+          + ("Object".equals(bound) || "void".equals(bound) ? "" : " extends " + bound));
+    }
+    return declarations.isEmpty() ? "" : "<" + String.join(", ", declarations) + "> ";
+  }
+
   private static String javaType(String kotlinType) {
     if (kotlinType == null || kotlinType.trim().isEmpty()) {
       return "Object";
@@ -787,6 +842,11 @@ private static final Pattern PROPERTY_PATTERN =
       return nullable ? boxedType(primitive) : primitive;
     }
     if ("String".equals(type) || "kotlin.String".equals(type)) return "String";
+    if ("CharSequence".equals(type) || "kotlin.CharSequence".equals(type)) {
+      return "CharSequence";
+    }
+    if ("Number".equals(type) || "kotlin.Number".equals(type)) return "Number";
+    if ("Throwable".equals(type) || "kotlin.Throwable".equals(type)) return "Throwable";
     if ("Unit".equals(type) || "kotlin.Unit".equals(type)) return nullable ? "Object" : "void";
     if ("Any".equals(type) || "kotlin.Any".equals(type)
         || "Nothing".equals(type) || "kotlin.Nothing".equals(type)) {
@@ -887,6 +947,9 @@ private static final Pattern PROPERTY_PATTERN =
     if (context == null) {
       return "Object";
     }
+    if (context.typeVariables.contains(type)) {
+      return type;
+    }
     final String imported = context.imports.get(type);
     if (imported != null) {
       return imported;
@@ -962,6 +1025,7 @@ private static final Pattern PROPERTY_PATTERN =
     final Map<String, String> imports;
     final Map<String, String> declaredTypes;
     final Map<String, String> knownSimpleTypes;
+    final Set<String> typeVariables = new LinkedHashSet<>();
 
     private TypeResolutionContext(
         Map<String, String> imports,
@@ -973,7 +1037,7 @@ private static final Pattern PROPERTY_PATTERN =
     }
 
     static TypeResolutionContext create(
-        String packageName, String source, Set<String> knownTypes) {
+        String packageName, String generatedSimpleName, String source, Set<String> knownTypes) {
       final Map<String, String> imports = new LinkedHashMap<>();
       final Matcher importMatcher = KOTLIN_IMPORT_PATTERN.matcher(source);
       while (importMatcher.find()) {
@@ -994,11 +1058,14 @@ private static final Pattern PROPERTY_PATTERN =
       if (syntaxTypes != null) {
         for (KotlinJvmSyntaxParser.TopLevelTypeSyntax type : syntaxTypes) {
           if (!type.privateType && type.name != null) {
-            declaredTypes.put(type.name, packageName.isEmpty()
-                ? type.name : packageName + "." + type.name);
+            declaredTypes.put(type.name, qualifiedName(packageName, type.name));
           }
         }
       }
+      collectTopLevelTypeNamesFallback(source, packageName, declaredTypes);
+      declaredTypes.put(
+          generatedSimpleName, qualifiedName(packageName, generatedSimpleName));
+
       final Map<String, String> knownSimpleTypes = new LinkedHashMap<>();
       if (knownTypes != null) {
         for (String qualifiedType : knownTypes) {
@@ -1053,6 +1120,25 @@ private static final Pattern PROPERTY_PATTERN =
     }
     final String fileBaseName = kotlinFileName.substring(0, kotlinFileName.length() - 3);
     return simpleName.equals(fileBaseName + "Kt");
+  }
+
+  private static void collectTopLevelTypeNamesFallback(
+      String source, String packageName, Map<String, String> result) {
+    int braceDepth = 0;
+    for (String line : source.split("\\R")) {
+      if (braceDepth == 0) {
+        final Matcher typeMatcher = TYPE_PATTERN.matcher(line);
+        if (typeMatcher.find() && !isPrivate(typeMatcher.group(1))) {
+          final String name = typeMatcher.group(3);
+          result.putIfAbsent(name, qualifiedName(packageName, name));
+        }
+      }
+      braceDepth = Math.max(0, braceDepth + braceDelta(line));
+    }
+  }
+
+  private static String qualifiedName(String packageName, String simpleName) {
+    return packageName.isEmpty() ? simpleName : packageName + "." + simpleName;
   }
 
   private static StringBuilder header(String packageName) {
