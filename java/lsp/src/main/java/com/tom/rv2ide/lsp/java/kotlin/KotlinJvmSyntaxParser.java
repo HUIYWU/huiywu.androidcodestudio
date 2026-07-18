@@ -110,6 +110,7 @@ final class KotlinJvmSyntaxParser {
           final String declarationText = text(source, declaration);
           final List<TypeParameterSyntax> typeParameters =
               typeParameters(source, directChild(declaration, "type_parameters"));
+          final List<SuperTypeSyntax> superTypes = superTypes(source, declaration);
           final TSNode bodyNode = directChild(declaration, "class_body", "enum_class_body");
           final String body = bodyNode == null ? "" : innerBody(text(source, bodyNode));
           final List<MemberSyntax> members = members(source, bodyNode);
@@ -138,6 +139,7 @@ final class KotlinJvmSyntaxParser {
               body,
               members,
               typeParameters,
+              superTypes,
               constructorParameters,
               companionBody,
               companionMembers,
@@ -239,6 +241,33 @@ final class KotlinJvmSyntaxParser {
         propertyType == null ? null : text(source, propertyType),
         hasDirectToken(declaration, "var"),
         hasDirectToken(declaration, "val"));
+  }
+
+  private static List<SuperTypeSyntax> superTypes(String source, TSNode declaration) {
+    final List<SuperTypeSyntax> result = new ArrayList<>();
+    for (int index = 0; index < declaration.getNamedChildCount(); index++) {
+      final TSNode child = declaration.getNamedChild(index);
+      if ("class_body".equals(child.getType()) || "enum_class_body".equals(child.getType())) {
+        break;
+      }
+      collectSuperTypes(source, child, result);
+    }
+    return Collections.unmodifiableList(result);
+  }
+
+  private static void collectSuperTypes(
+      String source, TSNode node, List<SuperTypeSyntax> result) {
+    if ("delegation_specifier".equals(node.getType())) {
+      final TSNode invocation = firstDescendant(node, "constructor_invocation");
+      final TSNode userType = firstDescendant(node, "user_type");
+      if (userType != null) {
+        result.add(new SuperTypeSyntax(text(source, userType), invocation != null));
+      }
+      return;
+    }
+    for (int index = 0; index < node.getNamedChildCount(); index++) {
+      collectSuperTypes(source, node.getNamedChild(index), result);
+    }
   }
 
   private static List<TypeParameterSyntax> typeParameters(String source, TSNode container) {
@@ -585,6 +614,7 @@ final class KotlinJvmSyntaxParser {
     final String body;
     final List<MemberSyntax> members;
     final List<TypeParameterSyntax> typeParameters;
+    final List<SuperTypeSyntax> superTypes;
     final List<ConstructorParameterSyntax> constructorParameters;
     final String companionBody;
     final List<MemberSyntax> companionMembers;
@@ -599,6 +629,7 @@ final class KotlinJvmSyntaxParser {
         String body,
         List<MemberSyntax> members,
         List<TypeParameterSyntax> typeParameters,
+        List<SuperTypeSyntax> superTypes,
         List<ConstructorParameterSyntax> constructorParameters,
         String companionBody,
         List<MemberSyntax> companionMembers,
@@ -611,6 +642,7 @@ final class KotlinJvmSyntaxParser {
       this.body = body;
       this.members = members;
       this.typeParameters = typeParameters;
+      this.superTypes = superTypes;
       this.constructorParameters = constructorParameters;
       this.companionBody = companionBody;
       this.companionMembers = companionMembers;
@@ -674,6 +706,16 @@ final class KotlinJvmSyntaxParser {
 
     boolean function() {
       return "function_declaration".equals(kind);
+    }
+  }
+
+  static final class SuperTypeSyntax {
+    final String type;
+    final boolean constructorInvocation;
+
+    SuperTypeSyntax(String type, boolean constructorInvocation) {
+      this.type = type;
+      this.constructorInvocation = constructorInvocation;
     }
   }
 

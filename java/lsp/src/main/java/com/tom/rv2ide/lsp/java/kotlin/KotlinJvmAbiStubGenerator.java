@@ -146,7 +146,8 @@ private static final Pattern PROPERTY_PATTERN =
     }
     registerTypeVariables(syntax.typeParameters);
     out.append("public ").append(isInterface ? "interface " : "class ")
-        .append(simpleName).append(javaTypeParameters(syntax.typeParameters).trim()).append(" {\n");
+        .append(simpleName).append(javaTypeParameters(syntax.typeParameters).trim())
+        .append(javaInheritanceClause(syntax.superTypes, isInterface)).append(" {\n");
     if (isObject) {
       out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
     } else if (!isInterface) {
@@ -179,13 +180,19 @@ private static final Pattern PROPERTY_PATTERN =
       out.append("public @interface ").append(simpleName).append(" {}\n");
       return out.toString();
     }
+    final List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters =
+        typeParametersFallback(source, declaration.end(3));
+    final List<KotlinJvmSyntaxParser.SuperTypeSyntax> superTypes =
+        superTypesFallback(source, declaration.end(3));
+    registerTypeVariables(typeParameters);
     out.append("public ");
     if (isInterface) {
       out.append("interface ");
     } else {
       out.append("class ");
     }
-    out.append(simpleName).append(" {\n");
+    out.append(simpleName).append(javaTypeParameters(typeParameters).trim())
+        .append(javaInheritanceClause(superTypes, isInterface)).append(" {\n");
     final String constructor =
         isObject || isInterface ? null : primaryConstructorText(source, declaration.end(3));
     if (isObject) {
@@ -438,18 +445,32 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static void appendFunction(
-      StringBuilder out, Matcher function, boolean interfaceType, boolean topLevel) {
-    out.append("  public ");
-    if (topLevel) {
-      out.append("static ");
+      StringBuilder out,
+      Matcher function,
+      boolean interfaceType,
+      boolean topLevel,
+      List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters) {
+    final Set<String> methodVariables = registerTypeVariables(typeParameters);
+    try {
+      out.append("  public ");
+      if (topLevel) {
+        out.append("static ");
+      }
+      out.append(javaTypeParameters(typeParameters))
+          .append(javaType(function.group(4))).append(' ').append(function.group(2))
+          .append(parameterList("(" + function.group(3) + ")"));
+      out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
+    } finally {
+      unregisterTypeVariables(methodVariables);
     }
-    out.append(javaType(function.group(4))).append(' ').append(function.group(2))
-        .append(parameterList("(" + function.group(3) + ")"));
-    out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
   }
 
   private static void appendFunctionOverloads(
-      StringBuilder out, Matcher function, boolean interfaceType, boolean topLevel) {
+      StringBuilder out,
+      Matcher function,
+      boolean interfaceType,
+      boolean topLevel,
+      List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters) {
     final List<String> parameters = splitParameters(function.group(3));
     int firstOmittable = parameters.size();
     for (int index = parameters.size() - 1;
@@ -462,14 +483,20 @@ private static final Pattern PROPERTY_PATTERN =
     if (firstOmittable == parameters.size()) {
       return;
     }
-    for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
-      out.append("  public ");
-      if (topLevel) {
-        out.append("static ");
+    final Set<String> methodVariables = registerTypeVariables(typeParameters);
+    try {
+      for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
+        out.append("  public ");
+        if (topLevel) {
+          out.append("static ");
+        }
+        out.append(javaTypeParameters(typeParameters))
+            .append(javaType(function.group(4))).append(' ').append(function.group(2))
+            .append(javaParameterList(parameters.subList(0, count)));
+        out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
       }
-      out.append(javaType(function.group(4))).append(' ').append(function.group(2))
-          .append(javaParameterList(parameters.subList(0, count)));
-      out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
+    } finally {
+      unregisterTypeVariables(methodVariables);
     }
   }
 
@@ -608,9 +635,12 @@ private static final Pattern PROPERTY_PATTERN =
         } else {
           final Matcher function = FUNCTION_PATTERN.matcher(declarationLine);
           if (function.matches() && !isPrivate(function.group(1))) {
-            appendFunction(out, function, interfaceType, topLevel);
+            final List<KotlinJvmSyntaxParser.TypeParameterSyntax> functionTypeParameters =
+                functionTypeParametersFallback(declarationLine);
+            appendFunction(out, function, interfaceType, topLevel, functionTypeParameters);
             if (jvmOverloads) {
-              appendFunctionOverloads(out, function, interfaceType, topLevel);
+              appendFunctionOverloads(
+                  out, function, interfaceType, topLevel, functionTypeParameters);
             }
             jvmOverloads = false;
             depth += braceDelta(line);
@@ -653,6 +683,156 @@ private static final Pattern PROPERTY_PATTERN =
         depth = 0;
       }
     }
+  }
+
+  private static List<KotlinJvmSyntaxParser.SuperTypeSyntax> superTypesFallback(
+      String source, int declarationNameEnd) {
+    int index = declarationNameEnd;
+    while (index < source.length() && Character.isWhitespace(source.charAt(index))) {
+      index++;
+    }
+    if (index < source.length() && source.charAt(index) == '<') {
+      final int end = matchingDelimiter(source, index, '<', '>');
+      if (end < 0) return java.util.Collections.emptyList();
+      index = end + 1;
+    }
+    while (index < source.length() && Character.isWhitespace(source.charAt(index))) {
+      index++;
+    }
+    if (index < source.length() && source.charAt(index) == '(') {
+      final int end = matchingDelimiter(source, index, '(', ')');
+      if (end < 0) return java.util.Collections.emptyList();
+      index = end + 1;
+    }
+    while (index < source.length() && Character.isWhitespace(source.charAt(index))) {
+      index++;
+    }
+    if (index >= source.length() || source.charAt(index) != ':') {
+      return java.util.Collections.emptyList();
+    }
+    final int bodyStart = topLevelCharacterIndex(source, index + 1, '{');
+    final int declarationEnd = inheritanceListEnd(source, index + 1);
+    final int end = bodyStart < 0
+        ? declarationEnd
+        : Math.min(bodyStart, declarationEnd);
+    final List<KotlinJvmSyntaxParser.SuperTypeSyntax> result = new ArrayList<>();
+    for (String rawEntry : splitParameters(source.substring(index + 1, end))) {
+      String entry = rawEntry.trim();
+      final int by = entry.indexOf(" by ");
+      if (by >= 0) {
+        entry = entry.substring(0, by).trim();
+      }
+      final int invocation = topLevelCharacterIndex(entry, 0, '(');
+      final boolean constructorInvocation = invocation > 0;
+      final String type = constructorInvocation ? entry.substring(0, invocation).trim() : entry;
+      if (!type.isEmpty() && type.indexOf("->") < 0) {
+        result.add(new KotlinJvmSyntaxParser.SuperTypeSyntax(type, constructorInvocation));
+      }
+    }
+    return result;
+  }
+
+  private static List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParametersFallback(
+      String source, int declarationNameEnd) {
+    for (int index = declarationNameEnd; index < source.length(); index++) {
+      final char current = source.charAt(index);
+      if (Character.isWhitespace(current)) {
+        continue;
+      }
+      if (current != '<') {
+        return java.util.Collections.emptyList();
+      }
+      final int end = matchingDelimiter(source, index, '<', '>');
+      return end < 0
+          ? java.util.Collections.emptyList()
+          : parseTypeParameters(source.substring(index + 1, end));
+    }
+    return java.util.Collections.emptyList();
+  }
+
+  private static List<KotlinJvmSyntaxParser.TypeParameterSyntax> functionTypeParametersFallback(
+      String declarationLine) {
+    final int fun = declarationLine.indexOf("fun");
+    if (fun < 0) {
+      return java.util.Collections.emptyList();
+    }
+    int index = fun + 3;
+    while (index < declarationLine.length()
+        && Character.isWhitespace(declarationLine.charAt(index))) {
+      index++;
+    }
+    if (index >= declarationLine.length() || declarationLine.charAt(index) != '<') {
+      return java.util.Collections.emptyList();
+    }
+    final int end = matchingDelimiter(declarationLine, index, '<', '>');
+    return end < 0
+        ? java.util.Collections.emptyList()
+        : parseTypeParameters(declarationLine.substring(index + 1, end));
+  }
+
+  private static List<KotlinJvmSyntaxParser.TypeParameterSyntax> parseTypeParameters(String text) {
+    final List<KotlinJvmSyntaxParser.TypeParameterSyntax> result = new ArrayList<>();
+    for (String rawParameter : splitParameters(text)) {
+      String parameter = rawParameter.trim()
+          .replaceFirst("^(?:(?:reified|in|out)\\s+)+", "");
+      final int colon = topLevelIndexOf(parameter, ':');
+      final String name = (colon < 0 ? parameter : parameter.substring(0, colon)).trim();
+      if (!name.matches("[A-Za-z_$][\\w$]*")) {
+        continue;
+      }
+      final String bound = colon < 0 ? null : parameter.substring(colon + 1).trim();
+      result.add(new KotlinJvmSyntaxParser.TypeParameterSyntax(
+          name, bound == null || bound.isEmpty() ? null : bound));
+    }
+    return result;
+  }
+
+  private static int inheritanceListEnd(String source, int start) {
+    int lineStart = start;
+    while (lineStart < source.length()) {
+      final int lineEnd = source.indexOf('\n', lineStart);
+      final int end = lineEnd < 0 ? source.length() : lineEnd;
+      final String line = source.substring(lineStart, end).trim();
+      if (!line.endsWith(",")) {
+        return end;
+      }
+      lineStart = end + 1;
+    }
+    return source.length();
+  }
+
+  private static int topLevelCharacterIndex(String text, int start, char target) {
+    int angleDepth = 0;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    for (int index = start; index < text.length(); index++) {
+      final char current = text.charAt(index);
+      if (current == target && angleDepth == 0 && parenDepth == 0 && bracketDepth == 0) {
+        return index;
+      }
+      if (current == '<') angleDepth++;
+      else if (current == '>') angleDepth = Math.max(0, angleDepth - 1);
+      else if (current == '(') parenDepth++;
+      else if (current == ')') parenDepth = Math.max(0, parenDepth - 1);
+      else if (current == '[') bracketDepth++;
+      else if (current == ']') bracketDepth = Math.max(0, bracketDepth - 1);
+    }
+    return -1;
+  }
+
+  private static int topLevelIndexOf(String text, char target) {
+    int nesting = 0;
+    for (int index = 0; index < text.length(); index++) {
+      final char current = text.charAt(index);
+      if (current == '<' || current == '(' || current == '[' || current == '{') {
+        nesting++;
+      } else if (current == '>' || current == ')' || current == ']' || current == '}') {
+        nesting = Math.max(0, nesting - 1);
+      } else if (current == target && nesting == 0) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   private static String primaryConstructorText(String source, int classNameEnd) {
@@ -786,6 +966,37 @@ private static final Pattern PROPERTY_PATTERN =
       }
     }
     return false;
+  }
+
+  private static String javaInheritanceClause(
+      List<KotlinJvmSyntaxParser.SuperTypeSyntax> superTypes, boolean interfaceType) {
+    if (superTypes == null || superTypes.isEmpty()) {
+      return "";
+    }
+    final List<String> interfaces = new ArrayList<>();
+    String superClass = null;
+    for (KotlinJvmSyntaxParser.SuperTypeSyntax superType : superTypes) {
+      final String mapped = javaType(superType.type);
+      if ("Object".equals(mapped) || "void".equals(mapped) || mapped.endsWith("[]")) {
+        continue;
+      }
+      if (!interfaceType && superType.constructorInvocation && superClass == null) {
+        superClass = mapped;
+      } else {
+        interfaces.add(mapped);
+      }
+    }
+    if (interfaceType) {
+      return interfaces.isEmpty() ? "" : " extends " + String.join(", ", interfaces);
+    }
+    final StringBuilder clause = new StringBuilder();
+    if (superClass != null) {
+      clause.append(" extends ").append(superClass);
+    }
+    if (!interfaces.isEmpty()) {
+      clause.append(" implements ").append(String.join(", ", interfaces));
+    }
+    return clause.toString();
   }
 
   private static Set<String> registerTypeVariables(

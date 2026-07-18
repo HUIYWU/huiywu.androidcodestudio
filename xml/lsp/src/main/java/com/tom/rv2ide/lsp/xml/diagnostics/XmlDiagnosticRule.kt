@@ -16,6 +16,8 @@
  */
 package com.tom.rv2ide.lsp.xml.diagnostics
 
+import org.eclipse.lemminx.dom.DOMElement
+
 /** A document-level diagnostic rule executed once per immutable diagnostic context. */
 internal interface XmlDiagnosticRule {
   val id: String
@@ -23,4 +25,17 @@ internal interface XmlDiagnosticRule {
   fun supports(context: XmlDiagnosticContext): Boolean
 
   fun diagnose(context: XmlDiagnosticContext, collector: XmlDiagnosticCollector)
+}
+
+/** An element-level rule invoked during the service's single DOM traversal. */
+internal interface XmlElementDiagnosticRule {
+  val id: String
+
+  fun supports(context: XmlDiagnosticContext): Boolean
+
+  fun diagnose(
+      element: DOMElement,
+      context: XmlDiagnosticContext,
+      collector: XmlDiagnosticCollector,
+  )
 }

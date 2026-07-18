@@ -28,7 +28,6 @@ import com.android.aaptcompiler.AaptResourceType.ID
 import com.android.aaptcompiler.AaptResourceType.STYLEABLE
 import com.android.aaptcompiler.AttributeResource
 import com.android.aaptcompiler.ConfigDescription
-import com.android.aaptcompiler.Styleable
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.util.setupLookupForCompletion
@@ -86,7 +85,8 @@ internal class XmlDiagnosticsService {
         rule.diagnose(context, collector)
       }
     }
-    visit(context.document, collector, context)
+    val elementRules = XmlDiagnosticRuleRegistry.elementRules.filter { it.supports(context) }
+    visit(context.document, collector, context, elementRules)
 
     return DiagnosticResult(context.file, collector.build(), CHANNEL)
   }
@@ -95,23 +95,17 @@ internal class XmlDiagnosticsService {
       node: DOMNode,
       collector: XmlDiagnosticCollector,
       context: XmlDiagnosticContext,
+      elementRules: List<XmlElementDiagnosticRule>,
   ) {
     if (node is DOMElement) {
       val hasSyntaxRecovery = checkSyntaxRecovery(node, collector)
       if (!hasSyntaxRecovery) {
-        checkDuplicateAttributes(node, collector)
-        checkUndeclaredAttributePrefixes(node, collector)
-        checkAndroidNamespace(node, collector)
+        elementRules.forEach { rule -> rule.diagnose(node, context, collector) }
         checkResourceReferences(node, collector, context.declaredIds)
         if (context.isLayoutFile) {
           checkLayoutTag(node, collector)
           checkLayoutAttributes(node, collector)
           checkLayoutAttributeValues(node, collector)
-        }
-        if (context.isManifestFile) {
-          checkManifestParent(node, collector)
-          checkManifestAttributes(node, collector)
-          checkManifestComponentName(node, collector)
         }
       }
     } else if (node is DOMText && node.isText) {
@@ -119,7 +113,7 @@ internal class XmlDiagnosticsService {
     }
 
     node.children.forEach { child ->
-      visit(child, collector, context)
+      visit(child, collector, context, elementRules)
     }
   }
 
@@ -181,153 +175,6 @@ internal class XmlDiagnosticsService {
               (child.hasStartTag() &&
                   !child.isSelfClosed &&
                   (!child.isStartTagClosed || !child.isClosed)))
-    }
-  }
-
-  /**
-   * Checks only parent relationships that Android's manifest schema defines unambiguously.
-   * Unknown/new tags are intentionally ignored: Manifest Merger and AAPT2 remain authoritative.
-   */
-  private fun checkManifestParent(element: DOMElement, collector: XmlDiagnosticCollector) {
-    if (!element.isStartTagClosed) {
-      return
-    }
-    val tagName = element.tagName ?: return
-    val parentName = (element.parentNode as? DOMElement)?.tagName ?: return
-    val expectedParent =
-        when {
-          tagName in MANIFEST_APPLICATION_COMPONENT_TAGS -> "<$MANIFEST_APPLICATION_TAG>"
-          tagName == MANIFEST_INTENT_FILTER_TAG ->
-              "<activity>, <activity-alias>, <service>, <receiver>, or <provider>"
-          tagName in MANIFEST_INTENT_FILTER_CHILD_TAGS -> "<$MANIFEST_INTENT_FILTER_TAG>"
-          tagName == MANIFEST_USES_LIBRARY_TAG -> "<$MANIFEST_APPLICATION_TAG>"
-          else -> return
-        }
-    val isValid =
-        when (tagName) {
-          in MANIFEST_APPLICATION_COMPONENT_TAGS, MANIFEST_USES_LIBRARY_TAG ->
-              parentName == MANIFEST_APPLICATION_TAG
-          MANIFEST_INTENT_FILTER_TAG -> parentName in MANIFEST_INTENT_FILTER_PARENTS
-          else -> parentName == MANIFEST_INTENT_FILTER_TAG
-        }
-    if (!isValid) {
-      collector.errorTag(
-          code = CODE_MANIFEST_INVALID_PARENT,
-          message = "Manifest <$tagName> must be a child of $expectedParent",
-          element = element,
-      )
-    }
-  }
-
-  /**
-   * Validates only android: attributes whose enclosing manifest tag has a platform styleable entry.
-   * If the table/tag is unavailable, no conclusion can be made and the rule deliberately skips it.
-   */
-  private fun checkManifestAttributes(element: DOMElement, collector: XmlDiagnosticCollector) {
-    if (!element.isStartTagClosed) {
-      return
-    }
-    val tagName = element.tagName ?: return
-    val styleables =
-        Lookup.getDefault()
-            .lookup(ResourceTableRegistry.COMPLETION_MANIFEST_ATTR_RES)
-            ?.findPackage(ResourceTableRegistry.PCK_ANDROID)
-            ?.findGroup(STYLEABLE)
-            ?: return
-    val styleable =
-        styleables
-            .findEntry(manifestStyleableEntryName(tagName))
-            ?.findValue(ConfigDescription())
-            ?.value as? Styleable
-            ?: return
-    val allowedAttributes = styleable.entries.mapNotNull { it.name.entry }.toSet()
-    if (allowedAttributes.isEmpty()) {
-      return
-    }
-    element.attributeNodes.orEmpty().forEach { attribute ->
-      val name = attribute.name ?: return@forEach
-      if (!name.startsWith(ANDROID_ATTRIBUTE_PREFIX)) {
-        return@forEach
-      }
-      val localName = name.removePrefix(ANDROID_ATTRIBUTE_PREFIX)
-      if (localName !in allowedAttributes) {
-        collector.error(
-            code = CODE_MANIFEST_UNKNOWN_ATTRIBUTE,
-            message = "Unknown attribute '$name' for manifest <$tagName>",
-            attribute = attribute,
-        )
-      }
-    }
-  }
-
-  private fun manifestStyleableEntryName(tagName: String): String {
-    if (tagName == MANIFEST_ROOT_TAG) {
-      return MANIFEST_STYLEABLE_PREFIX
-    }
-    return buildString(MANIFEST_STYLEABLE_PREFIX.length + tagName.length) {
-      append(MANIFEST_STYLEABLE_PREFIX)
-      var capitalizeNext = true
-      tagName.forEach { character ->
-        if (character == '-') {
-          capitalizeNext = true
-        } else {
-          append(if (capitalizeNext) character.uppercaseChar() else character)
-          capitalizeNext = false
-        }
-      }
-    }
-  }
-
-  private fun checkManifestComponentName(element: DOMElement, collector: XmlDiagnosticCollector) {
-    if (!element.isStartTagClosed || element.tagName !in MANIFEST_NAMED_COMPONENT_TAGS) {
-      return
-    }
-    val nameAttribute = element.getAttributeNode(ANDROID_NAME_ATTRIBUTE)
-    if (nameAttribute == null || nameAttribute.value.isNullOrBlank()) {
-      collector.errorTag(
-          code = CODE_MANIFEST_MISSING_COMPONENT_NAME,
-          message = "Manifest <${element.tagName}> requires an '$ANDROID_NAME_ATTRIBUTE' attribute",
-          element = element,
-      )
-    }
-  }
-
-  private fun checkDuplicateAttributes(element: DOMElement, collector: XmlDiagnosticCollector) {
-    val seen = HashSet<String>()
-    element.attributeNodes.orEmpty().forEach { attribute ->
-      val name = attribute.name ?: return@forEach
-      if (!seen.add(name)) {
-        collector.error(
-            code = CODE_DUPLICATE_ATTRIBUTE,
-            message = "Duplicate attribute '$name'",
-            attribute = attribute,
-        )
-      }
-    }
-  }
-
-  private fun checkUndeclaredAttributePrefixes(
-      element: DOMElement,
-      collector: XmlDiagnosticCollector,
-  ) {
-    element.attributeNodes.orEmpty().forEach { attribute ->
-      val name = attribute.name ?: return@forEach
-      if (isNamespaceDeclaration(name)) {
-        return@forEach
-      }
-      val separator = name.indexOf(':')
-      if (separator <= 0) {
-        return@forEach
-      }
-
-      val prefix = name.substring(0, separator)
-      if (element.getNamespaceURI(prefix) == null) {
-        collector.error(
-            code = CODE_UNDECLARED_NAMESPACE,
-            message = "Namespace prefix '$prefix' is not declared",
-            attribute = attribute,
-        )
-      }
     }
   }
 
@@ -573,61 +420,20 @@ internal class XmlDiagnosticsService {
     }
   }
 
-  private fun checkAndroidNamespace(element: DOMElement, collector: XmlDiagnosticCollector) {
-    element.attributeNodes.orEmpty().forEach { attribute ->
-      if (attribute.name != ANDROID_NAMESPACE_DECLARATION) {
-        return@forEach
-      }
-      if (attribute.value != ANDROID_NAMESPACE_URI) {
-        collector.warning(
-            code = CODE_INVALID_ANDROID_NAMESPACE,
-            message = "The android namespace must be '$ANDROID_NAMESPACE_URI'",
-            attribute = attribute,
-        )
-      }
-    }
-  }
-
-  private fun isNamespaceDeclaration(name: String): Boolean {
-    return name == XMLNS_ATTRIBUTE || name.startsWith(XMLNS_PREFIX)
-  }
-
   companion object {
     private val log = LoggerFactory.getLogger(XmlDiagnosticsService::class.java)
 
     const val CHANNEL = "xml-lsp"
     const val SOURCE = "xml-lsp"
     const val CODE_XML_SYNTAX = "XML001"
-    const val CODE_DUPLICATE_ATTRIBUTE = "XML002"
-    const val CODE_UNDECLARED_NAMESPACE = "XML003"
-    const val CODE_INVALID_ANDROID_NAMESPACE = "XML004"
     const val CODE_UNRESOLVED_RESOURCE = "AXML003"
     const val CODE_UNKNOWN_LAYOUT_TAG = "AXML001"
     const val CODE_UNKNOWN_LAYOUT_ATTRIBUTE = "AXML002"
     const val CODE_INVALID_ATTRIBUTE_VALUE = "AXML004"
-    const val CODE_MANIFEST_INVALID_PARENT = "MANIFEST002"
-    const val CODE_MANIFEST_MISSING_COMPONENT_NAME = "MANIFEST003"
-    const val CODE_MANIFEST_UNKNOWN_ATTRIBUTE = "MANIFEST004"
     const val ANDROID_ATTRIBUTE_PREFIX = "android:"
     const val LAYOUT_ATTRIBUTE_PREFIX = "layout_"
     const val ANDROID_VIEW_PACKAGE_PREFIX = "android."
-    const val MANIFEST_STYLEABLE_PREFIX = "AndroidManifest"
-    const val MANIFEST_ROOT_TAG = "manifest"
-    const val ANDROID_NAME_ATTRIBUTE = "android:name"
-    const val MANIFEST_APPLICATION_TAG = "application"
-    const val MANIFEST_INTENT_FILTER_TAG = "intent-filter"
-    const val MANIFEST_USES_LIBRARY_TAG = "uses-library"
-    val MANIFEST_APPLICATION_COMPONENT_TAGS =
-        setOf("activity", "activity-alias", "service", "receiver", "provider")
-    val MANIFEST_NAMED_COMPONENT_TAGS =
-        MANIFEST_APPLICATION_COMPONENT_TAGS + "instrumentation"
-    val MANIFEST_INTENT_FILTER_PARENTS =
-        setOf("activity", "activity-alias", "service", "receiver", "provider")
-    val MANIFEST_INTENT_FILTER_CHILD_TAGS = setOf("action", "category", "data")
     val LAYOUT_SPECIAL_TAGS = setOf("include", "merge", "view", "fragment", "tag", "layout")
-    const val XMLNS_ATTRIBUTE = "xmlns"
-    const val XMLNS_PREFIX = "xmlns:"
-    const val ANDROID_NAMESPACE_DECLARATION = "xmlns:android"
     const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
   }
 }

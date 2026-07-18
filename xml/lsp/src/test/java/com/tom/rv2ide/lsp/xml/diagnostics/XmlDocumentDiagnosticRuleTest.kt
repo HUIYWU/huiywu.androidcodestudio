@@ -17,7 +17,8 @@
 package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.google.common.truth.Truth.assertThat
-import com.tom.rv2ide.lsp.xml.diagnostics.rules.ManifestRootDiagnosticRule
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.CommonXmlElementDiagnosticRule
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.ManifestDiagnosticRule
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.ValuesDocumentDiagnosticRule
 import java.nio.file.Paths
 import junit.framework.TestCase
@@ -50,21 +51,37 @@ class XmlDocumentDiagnosticRuleTest : TestCase() {
   fun testManifestRootRuleAcceptsSelfClosingManifestAndRejectsOtherRoot() {
     val valid = context("project/src/main/AndroidManifest.xml", "<manifest />")
     val validCollector = XmlDiagnosticCollector(valid.text)
-    ManifestRootDiagnosticRule.diagnose(valid, validCollector)
+    ManifestDiagnosticRule.diagnose(valid, validCollector)
     assertThat(validCollector.build()).isEmpty()
 
     val invalid = context("project/src/main/AndroidManifest.xml", "<resources />")
     val invalidCollector = XmlDiagnosticCollector(invalid.text)
-    assertThat(ManifestRootDiagnosticRule.supports(invalid)).isTrue()
-    ManifestRootDiagnosticRule.diagnose(invalid, invalidCollector)
+    assertThat(ManifestDiagnosticRule.supports(invalid)).isTrue()
+    ManifestDiagnosticRule.diagnose(invalid, invalidCollector)
     assertThat(invalidCollector.build().map { it.code }).containsExactly("MANIFEST001")
+  }
+
+  fun testCommonElementRuleReportsDuplicatePrefixAndAndroidNamespaceProblems() {
+    val text =
+        """<View xmlns:android="wrong" custom:value="x" android:id="one" android:id="two" />"""
+    val context = context("project/src/main/res/layout/screen.xml", text)
+    val collector = XmlDiagnosticCollector(text)
+
+    CommonXmlElementDiagnosticRule.diagnose(
+        context.document.documentElement,
+        context,
+        collector,
+    )
+
+    assertThat(collector.build().map { it.code })
+        .containsExactly("XML004", "XML003", "XML002")
   }
 
   fun testRulesIgnoreUnsupportedDocumentKinds() {
     val layout = context("project/src/main/res/layout/screen.xml", "<View />")
 
     assertThat(ValuesDocumentDiagnosticRule.supports(layout)).isFalse()
-    assertThat(ManifestRootDiagnosticRule.supports(layout)).isFalse()
+    assertThat(ManifestDiagnosticRule.supports(layout)).isFalse()
   }
 
   private fun context(path: String, text: String): XmlDiagnosticContext {

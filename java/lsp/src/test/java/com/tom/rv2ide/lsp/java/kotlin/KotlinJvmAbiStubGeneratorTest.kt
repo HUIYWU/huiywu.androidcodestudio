@@ -227,6 +227,45 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsClassAndInterfaceInheritance() {
+    val source =
+        """
+        package sample
+
+        interface Named
+        interface Tagged<T>
+        open class Base
+
+        class User<T>(val id: T) : Base(), Named, Tagged<T>
+        interface Detailed : Named, Tagged<String>
+        """.trimIndent()
+
+    val userStub =
+        KotlinJvmAbiStubGenerator.generate(
+            "sample.User",
+            "Models.kt",
+            source,
+            setOf("sample.Named", "sample.Tagged", "sample.Base", "sample.User", "sample.Detailed"))
+    val interfaceStub =
+        KotlinJvmAbiStubGenerator.generate(
+            "sample.Detailed",
+            "Models.kt",
+            source,
+            setOf("sample.Named", "sample.Tagged", "sample.Base", "sample.User", "sample.Detailed"))
+
+    assertNotNull(userStub)
+    assertContains(
+        userStub!!,
+        "public class User<T> extends Base implements Named, Tagged<T>")
+    assertContains(userStub, "public User(T id)")
+
+    assertNotNull(interfaceStub)
+    assertContains(
+        interfaceStub!!,
+        "public interface Detailed extends Named, Tagged<String>")
+  }
+
+  @Test
   fun generate_excludesPrivateAndMismatchedDeclarations() {
     val privateType =
         """

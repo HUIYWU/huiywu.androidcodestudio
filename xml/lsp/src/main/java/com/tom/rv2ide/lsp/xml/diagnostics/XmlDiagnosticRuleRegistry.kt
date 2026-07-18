@@ -16,7 +16,8 @@
  */
 package com.tom.rv2ide.lsp.xml.diagnostics
 
-import com.tom.rv2ide.lsp.xml.diagnostics.rules.ManifestRootDiagnosticRule
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.CommonXmlElementDiagnosticRule
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.ManifestDiagnosticRule
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.ValuesDocumentDiagnosticRule
 
 /** Fixed rule registry; avoids runtime service discovery on the editor's real-time path. */
@@ -24,6 +25,12 @@ internal object XmlDiagnosticRuleRegistry {
   val documentRules: List<XmlDiagnosticRule> =
       listOf(
           ValuesDocumentDiagnosticRule,
-          ManifestRootDiagnosticRule,
+          ManifestDiagnosticRule,
+      )
+
+  val elementRules: List<XmlElementDiagnosticRule> =
+      listOf(
+          CommonXmlElementDiagnosticRule,
+          ManifestDiagnosticRule,
       )
 }
