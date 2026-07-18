@@ -111,10 +111,20 @@ final class KotlinJvmSyntaxParser {
           final TSNode bodyNode = directChild(declaration, "class_body", "enum_class_body");
           final String body = bodyNode == null ? "" : innerBody(text(source, bodyNode));
           final List<MemberSyntax> members = members(source, bodyNode);
-          final TSNode constructor = directChild(declaration, "primary_constructor");
-          final String constructorText = constructor == null ? null : text(source, constructor);
-          final List<ConstructorParameterSyntax> constructorParameters =
+          final TSNode constructor = constructorNode(declaration);
+          final String recoveredConstructorText =
+              constructorTextFallback(source, declaration, nameNode, bodyNode);
+          final String constructorText = constructor == null
+              ? recoveredConstructorText
+              : text(source, constructor);
+          final List<ConstructorParameterSyntax> parsedConstructorParameters =
               constructorParameters(source, constructor);
+          final String parameterFallbackText =
+              recoveredConstructorText == null ? constructorText : recoveredConstructorText;
+          final List<ConstructorParameterSyntax> constructorParameters =
+              parsedConstructorParameters.isEmpty() && parameterFallbackText != null
+                  ? constructorParametersFallback(parameterFallbackText)
+                  : parsedConstructorParameters;
           final TSNode companion = bodyNode == null ? null : directChild(bodyNode, "companion_object");
           final TSNode companionBodyNode = companion == null ? null : directChild(companion, "class_body");
           final String companionBody =
@@ -231,11 +241,9 @@ final class KotlinJvmSyntaxParser {
       return Collections.emptyList();
     }
     final List<ConstructorParameterSyntax> result = new ArrayList<>();
-    for (int index = 0; index < constructor.getNamedChildCount(); index++) {
-      final TSNode parameter = constructor.getNamedChild(index);
-      if (!"class_parameter".equals(parameter.getType())) {
-        continue;
-      }
+    final List<TSNode> parameters = new ArrayList<>();
+    collectDescendants(constructor, "class_parameter", parameters);
+    for (TSNode parameter : parameters) {
       final TSNode name = directChild(parameter, "simple_identifier");
       final TSNode type = firstTypeChild(parameter);
       result.add(new ConstructorParameterSyntax(
@@ -346,6 +354,142 @@ final class KotlinJvmSyntaxParser {
       }
     }
     return null;
+  }
+
+  private static String constructorTextFallback(
+      String source, TSNode declaration, TSNode name, TSNode body) {
+    final int searchStart = endIndex(source, name);
+    final int searchEnd = body == null
+        ? endIndex(source, declaration)
+        : startIndex(source, body);
+    final int open = source.indexOf('(', searchStart);
+    if (open < 0 || open >= searchEnd) {
+      return null;
+    }
+    int depth = 0;
+    for (int index = open; index < searchEnd; index++) {
+      final char current = source.charAt(index);
+      if (current == '(') {
+        depth++;
+      } else if (current == ')' && --depth == 0) {
+        return source.substring(open, index + 1);
+      }
+    }
+    return null;
+  }
+
+  private static List<ConstructorParameterSyntax> constructorParametersFallback(String constructorText) {
+    if (constructorText.length() < 2) {
+      return Collections.emptyList();
+    }
+    final List<ConstructorParameterSyntax> result = new ArrayList<>();
+    for (String rawParameter : splitTopLevel(constructorText.substring(1, constructorText.length() - 1))) {
+      String parameter = rawParameter.trim();
+      final int colon = topLevelIndexOf(parameter, ':');
+      if (colon < 1) {
+        continue;
+      }
+      String declaration = parameter.substring(0, colon).trim();
+      final boolean mutable = declaration.matches("(?s).*\\bvar\\s+[A-Za-z_$][\\w$]*$");
+      final boolean property = mutable
+          || declaration.matches("(?s).*\\bval\\s+[A-Za-z_$][\\w$]*$");
+      declaration = declaration.replaceFirst("(?s)^.*\\b(?:val|var)\\s+", "").trim();
+      final String[] nameParts = declaration.split("\\s+");
+      final String name = nameParts.length == 0 ? "arg" + result.size() : nameParts[nameParts.length - 1];
+      String type = parameter.substring(colon + 1).trim();
+      final int equals = topLevelIndexOf(type, '=');
+      if (equals >= 0) {
+        type = type.substring(0, equals).trim();
+      }
+      result.add(new ConstructorParameterSyntax(name, type, property, mutable));
+    }
+    return Collections.unmodifiableList(result);
+  }
+
+  private static List<String> splitTopLevel(String text) {
+    final List<String> result = new ArrayList<>();
+    int start = 0;
+    int nesting = 0;
+    for (int index = 0; index < text.length(); index++) {
+      final char current = text.charAt(index);
+      if (current == '<' || current == '(' || current == '[' || current == '{') {
+        nesting++;
+      } else if (current == '>' || current == ')' || current == ']' || current == '}') {
+        nesting = Math.max(0, nesting - 1);
+      } else if (current == ',' && nesting == 0) {
+        result.add(text.substring(start, index));
+        start = index + 1;
+      }
+    }
+    if (start < text.length()) {
+      result.add(text.substring(start));
+    }
+    return result;
+  }
+
+  private static int topLevelIndexOf(String text, char target) {
+    int nesting = 0;
+    for (int index = 0; index < text.length(); index++) {
+      final char current = text.charAt(index);
+      if (current == '<' || current == '(' || current == '[' || current == '{') {
+        nesting++;
+      } else if (current == '>' || current == ')' || current == ']' || current == '}') {
+        nesting = Math.max(0, nesting - 1);
+      } else if (current == target && nesting == 0) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  private static TSNode constructorNode(TSNode declaration) {
+    final TSNode direct = directChild(declaration, "primary_constructor");
+    if (direct != null) {
+      return direct;
+    }
+    final TSNode body = directChild(declaration, "class_body", "enum_class_body");
+    final int bodyStart = body == null ? Integer.MAX_VALUE : body.getStartByte();
+    for (int index = 0; index < declaration.getNamedChildCount(); index++) {
+      final TSNode child = declaration.getNamedChild(index);
+      if (child.getStartByte() >= bodyStart) {
+        break;
+      }
+      final TSNode recovered = firstDescendant(child, "primary_constructor");
+      if (recovered != null) {
+        return recovered;
+      }
+      if (containsDescendant(child, "class_parameter")) {
+        return child;
+      }
+    }
+    return null;
+  }
+
+  private static TSNode firstDescendant(TSNode node, String type) {
+    if (type.equals(node.getType())) {
+      return node;
+    }
+    for (int index = 0; index < node.getNamedChildCount(); index++) {
+      final TSNode found = firstDescendant(node.getNamedChild(index), type);
+      if (found != null) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  private static boolean containsDescendant(TSNode node, String type) {
+    return firstDescendant(node, type) != null;
+  }
+
+  private static void collectDescendants(TSNode node, String type, List<TSNode> result) {
+    if (type.equals(node.getType())) {
+      result.add(node);
+      return;
+    }
+    for (int index = 0; index < node.getNamedChildCount(); index++) {
+      collectDescendants(node.getNamedChild(index), type, result);
+    }
   }
 
   private static boolean hasDirectToken(TSNode parent, String token) {

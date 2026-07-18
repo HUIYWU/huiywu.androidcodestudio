@@ -34,6 +34,7 @@ import com.tom.rv2ide.managers.PreferenceManager
 import com.tom.rv2ide.models.ApkMetadata
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.projects.builder.BuildService
+import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult
 import com.tom.rv2ide.tooling.api.models.BasicAndroidVariantMetadata
@@ -172,18 +173,24 @@ class QuickRunWithCancellationAction(context: Context, override val order: Int) 
 
     actionScope
         .launch(Dispatchers.Default) {
-          activity.saveAllResult(buildWillFollow = true)
+          val projectManager = ProjectManagerImpl.getInstance()
+          projectManager.beginFullBuildIntent()
+          try {
+            activity.saveAllResult(buildWillFollow = true)
 
-          val result = withContext(Dispatchers.IO) { buildService.executeTasks(taskName).get() }
+            val result = withContext(Dispatchers.IO) { buildService.executeTasks(taskName).get() }
 
-          log.debug("Task execution result: {}", result)
+            log.debug("Task execution result: {}", result)
 
-          if (result?.isSuccessful != true) {
-            log.error("Tasks failed to execute: '{}'", taskName)
-            return@launch
+            if (result?.isSuccessful != true) {
+              log.error("Tasks failed to execute: '{}'", taskName)
+              return@launch
+            }
+
+            handleResult(data, result, module, variant)
+          } finally {
+            projectManager.endFullBuildIntent()
           }
-
-          handleResult(data, result, module, variant)
         }
         .invokeOnCompletion { error ->
           if (error != null) {

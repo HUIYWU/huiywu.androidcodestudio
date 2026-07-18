@@ -48,6 +48,7 @@ import com.tom.rv2ide.utils.withStopWatch
 import com.tom.rv2ide.utils.GradleFileParser
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
 import kotlinx.coroutines.CoroutineScope
@@ -75,6 +76,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
   private var _workspace: WorkspaceImpl? = null
   private var _projectDir: File? = null
   private val modulesGeneratingSources = ConcurrentHashMap.newKeySet<String>()
+  private val fullBuildIntents = AtomicInteger(0)
 
   var projectInitialized: Boolean = false
   var cachedInitResult: InitializeResult? = null
@@ -175,6 +177,8 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     this._projectDir = null
     this.cachedInitResult = null
     this.projectInitialized = false
+    this.modulesGeneratingSources.clear()
+    this.fullBuildIntents.set(0)
   }
   @JvmOverloads
   fun generateSources(
@@ -305,6 +309,18 @@ val mainArtifact = variant.mainArtifact
   }
 
 
+  /** Marks a caller-owned full Gradle build lifecycle that subsumes resource generation tasks. */
+  fun beginFullBuildIntent() {
+    fullBuildIntents.incrementAndGet()
+  }
+
+  /** Ends a lifecycle started by [beginFullBuildIntent]. */
+  fun endFullBuildIntent() {
+    fullBuildIntents.updateAndGet { count -> if (count > 0) count - 1 else 0 }
+  }
+
+  private fun hasFullBuildIntent(): Boolean = fullBuildIntents.get() > 0
+
   fun notifyProjectUpdate() {
 
     executeAsync {
@@ -406,7 +422,7 @@ val mainArtifact = variant.mainArtifact
 
       if (isResource || isManifest) {
         module.updateResourceTable()
-        if (!event.buildWillFollow) {
+        if (!event.buildWillFollow && !hasFullBuildIntent()) {
           generateSourcesForModule(module)
         } else {
           log.debug(
