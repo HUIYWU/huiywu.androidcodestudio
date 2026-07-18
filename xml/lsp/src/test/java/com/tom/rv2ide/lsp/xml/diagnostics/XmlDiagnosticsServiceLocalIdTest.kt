@@ -37,6 +37,40 @@ class XmlDiagnosticsServiceLocalIdTest : TestCase() {
     assertThat(declaredIds).containsExactly("title", "action")
   }
 
+  fun testFrameworkAttributeFallbackOnlyRejectsUnknownNames() {
+    val service = XmlDiagnosticsService()
+    val styleableAttributes = setOf("text", "layout_width")
+    val frameworkAttributes = setOf("checked", "orientation", "layout_below", "layout_gravity")
+
+    assertThat(
+            service.isUnknownFrameworkAttribute("text", styleableAttributes) {
+              it in frameworkAttributes
+            }
+        )
+        .isFalse()
+    assertThat(
+            service.isUnknownFrameworkAttribute("checked", styleableAttributes) {
+              it in frameworkAttributes
+            }
+        )
+        .isFalse()
+    assertThat(
+            service.isUnknownFrameworkAttribute("not_a_real_android_attr", styleableAttributes) {
+              it in frameworkAttributes
+            }
+        )
+        .isTrue()
+  }
+
+  fun testSkipsOnlyToolsNamespaceResourceAttributes() {
+    val service = XmlDiagnosticsService()
+
+    assertThat(service.shouldSkipResourceReferenceAttribute("http://schemas.android.com/tools"))
+        .isTrue()
+    assertThat(service.shouldSkipResourceReferenceAttribute(ANDROID_NAMESPACE_URI_FOR_TEST)).isFalse()
+    assertThat(service.shouldSkipResourceReferenceAttribute(null)).isFalse()
+  }
+
   fun testExcludesQualifiedCreatingIdsFromLocalDeclarations() {
     val document =
         DOMParser.getInstance()

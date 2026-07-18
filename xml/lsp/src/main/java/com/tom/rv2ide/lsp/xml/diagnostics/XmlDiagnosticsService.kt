@@ -189,6 +189,7 @@ internal class XmlDiagnosticsService {
         Lookup.getDefault().lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES) ?: return
     val androidPackage = frameworkTable.findPackage(ResourceTableRegistry.PCK_ANDROID) ?: return
     val styleables = androidPackage.findGroup(STYLEABLE) ?: return
+    val frameworkAttributes = androidPackage.findGroup(ATTR) ?: return
     val dependencyParentLayoutAttributes = dependencyParentLayoutAttributes(element)
     val allowedAttributes =
         StyleableResolver.forWidget(
@@ -220,7 +221,15 @@ internal class XmlDiagnosticsService {
       ) {
         return@forEach
       }
-      if (localName !in allowedAttributes) {
+      // A framework attribute can be accepted by AAPT even when it is absent from this widget's
+      // styleable (for example a no-op attribute, or LayoutParams metadata not represented by the
+      // current widget snapshot). Applicability belongs to Android Lint; AXML002 reports only names
+      // that are absent from both the resolved styleables and the platform ATTR table.
+      if (
+          isUnknownFrameworkAttribute(localName, allowedAttributes) {
+            frameworkAttributes.findEntry(it) != null
+          }
+      ) {
         collector.error(
             code = CODE_UNKNOWN_LAYOUT_ATTRIBUTE,
             message = "Unknown attribute '$name' for $tagName",
@@ -228,6 +237,14 @@ internal class XmlDiagnosticsService {
         )
       }
     }
+  }
+
+  internal fun isUnknownFrameworkAttribute(
+      localName: String,
+      styleableAttributes: Set<String>,
+      existsInFramework: (String) -> Boolean,
+  ): Boolean {
+    return localName !in styleableAttributes && !existsInFramework(localName)
   }
 
   /**
@@ -393,12 +410,19 @@ internal class XmlDiagnosticsService {
       val end: Int,
   )
 
+  internal fun shouldSkipResourceReferenceAttribute(namespaceUri: String?): Boolean {
+    return namespaceUri == TOOLS_NAMESPACE_URI
+  }
+
   private fun checkResourceReferences(
       element: DOMElement,
       collector: XmlDiagnosticCollector,
       declaredIds: Set<String>,
   ) {
     element.attributeNodes.orEmpty().forEach { attribute ->
+      if (shouldSkipResourceReferenceAttribute(attribute.namespaceURI)) {
+        return@forEach
+      }
       val value = attribute.value ?: return@forEach
       if (value.startsWith("@{") || value.startsWith("@={") ||
           XmlResourceReference.isSpecialValue(value)) {
@@ -435,5 +459,6 @@ internal class XmlDiagnosticsService {
     const val ANDROID_VIEW_PACKAGE_PREFIX = "android."
     val LAYOUT_SPECIAL_TAGS = setOf("include", "merge", "view", "fragment", "tag", "layout")
     const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
+    const val TOOLS_NAMESPACE_URI = "http://schemas.android.com/tools"
   }
 }

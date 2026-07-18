@@ -347,7 +347,8 @@ private static final Pattern PROPERTY_PATTERN =
       }
       for (int index = 0; index < function.parameterList.size(); index++) {
         final KotlinJvmSyntaxParser.ParameterSyntax parameter = function.parameterList.get(index);
-        parameters.add(javaType(parameter.type) + " " + safeName(parameter.name, index));
+        parameters.add(javaSyntaxParameter(
+            parameter, index, index == function.parameterList.size() - 1));
       }
       out.append(javaType(function.declaredType)).append(' ').append(function.name)
           .append('(').append(String.join(", ", parameters)).append(')')
@@ -383,7 +384,8 @@ private static final Pattern PROPERTY_PATTERN =
         }
         out.append(javaTypeParameters(function.typeParameters))
             .append(javaType(function.declaredType)).append(' ').append(function.name)
-            .append(javaSyntaxParameterList(parameters.subList(0, count)))
+            .append(javaSyntaxParameterList(
+                parameters.subList(0, count), count == parameters.size()))
             .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
       }
     } finally {
@@ -492,7 +494,7 @@ private static final Pattern PROPERTY_PATTERN =
         }
         out.append(javaTypeParameters(typeParameters))
             .append(javaType(function.group(4))).append(' ').append(function.group(2))
-            .append(javaParameterList(parameters.subList(0, count)));
+            .append(javaParameterList(parameters.subList(0, count), false));
         out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
       }
     } finally {
@@ -889,23 +891,53 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static String javaSyntaxParameterList(
-      List<KotlinJvmSyntaxParser.ParameterSyntax> kotlinParameters) {
+      List<KotlinJvmSyntaxParser.ParameterSyntax> kotlinParameters,
+      boolean allowTrailingVarargs) {
     final List<String> parameters = new ArrayList<>();
     for (int index = 0; index < kotlinParameters.size(); index++) {
-      final KotlinJvmSyntaxParser.ParameterSyntax parameter = kotlinParameters.get(index);
-      parameters.add(javaType(parameter.type) + " " + safeName(parameter.name, index));
+      parameters.add(javaSyntaxParameter(
+          kotlinParameters.get(index),
+          index,
+          allowTrailingVarargs && index == kotlinParameters.size() - 1));
     }
     return "(" + String.join(", ", parameters) + ")";
   }
 
+  private static String javaSyntaxParameter(
+      KotlinJvmSyntaxParser.ParameterSyntax parameter, int index, boolean lastParameter) {
+    final String elementType = javaType(parameter.type);
+    final String javaParameterType = parameter.vararg
+        ? varargJavaType(elementType, lastParameter)
+        : elementType;
+    return javaParameterType + " " + safeName(parameter.name, index);
+  }
+
+  private static String varargJavaType(String elementType, boolean lastParameter) {
+    if ("void".equals(elementType)) {
+      return "Object[]";
+    }
+    return elementType + (lastParameter ? "..." : "[]");
+  }
+
   private static String javaParameterList(List<String> kotlinParameters) {
+    return javaParameterList(kotlinParameters, true);
+  }
+
+  private static String javaParameterList(
+      List<String> kotlinParameters, boolean allowTrailingVarargs) {
     final List<String> parameters = new ArrayList<>();
     for (int index = 0; index < kotlinParameters.size(); index++) {
-      String part = kotlinParameters.get(index).trim()
-          .replaceAll("^(?:val|var|crossinline|noinline)\\s+", "");
+      final String rawPart = kotlinParameters.get(index).trim();
+      final boolean vararg = rawPart.matches("(?s)^(?:(?:val|var|crossinline|noinline)\\s+)*vararg\\b.*");
+      String part = rawPart.replaceAll(
+          "^(?:(?:val|var|crossinline|noinline|vararg)\\s+)+", "");
       final int colon = part.indexOf(':');
       final String name = colon < 0 ? "arg" + index : part.substring(0, colon).trim();
-      final String type = colon < 0 ? "Object" : javaType(part.substring(colon + 1));
+      final String elementType = colon < 0 ? "Object" : javaType(part.substring(colon + 1));
+      final String type = vararg
+          ? varargJavaType(
+              elementType, allowTrailingVarargs && index == kotlinParameters.size() - 1)
+          : elementType;
       parameters.add(type + " " + safeName(name, index));
     }
     return "(" + String.join(", ", parameters) + ")";

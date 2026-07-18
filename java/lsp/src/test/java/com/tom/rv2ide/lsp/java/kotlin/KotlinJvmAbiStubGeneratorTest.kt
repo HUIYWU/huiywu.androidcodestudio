@@ -266,6 +266,47 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsVarargParameters() {
+    val classSource =
+        """
+        package sample
+
+        class Varargs {
+          fun names(vararg values: String): String = values.joinToString()
+          fun ints(prefix: String, vararg values: Int): Int = values.size
+          fun <T> collect(vararg values: T): List<T> = values.toList()
+          fun middle(vararg values: String, suffix: String): String = suffix
+          fun marker(first: String = "vararg", second: String): String = second
+          @JvmOverloads
+          fun overloaded(vararg values: String, suffix: String = ""): String = suffix
+        }
+        """.trimIndent()
+    val facadeSource =
+        """
+        package sample
+
+        fun join(vararg values: String): String = values.joinToString()
+        """.trimIndent()
+
+    val classStub =
+        KotlinJvmAbiStubGenerator.generate("sample.Varargs", "Varargs.kt", classSource)
+    val facadeStub =
+        KotlinJvmAbiStubGenerator.generate("sample.FunctionsKt", "Functions.kt", facadeSource)
+
+    assertNotNull(classStub)
+    assertContains(classStub!!, "public String names(String... values)")
+    assertContains(classStub, "public int ints(String prefix, int... values)")
+    assertContains(classStub, "public <T> java.util.List<T> collect(T... values)")
+    assertContains(classStub, "public String middle(String[] values, String suffix)")
+    assertContains(classStub, "public String marker(String first, String second)")
+    assertContains(classStub, "public String overloaded(String[] values, String suffix)")
+    assertContains(classStub, "public String overloaded(String[] values)")
+
+    assertNotNull(facadeStub)
+    assertContains(facadeStub!!, "public static String join(String... values)")
+  }
+
+  @Test
   fun generate_excludesPrivateAndMismatchedDeclarations() {
     val privateType =
         """

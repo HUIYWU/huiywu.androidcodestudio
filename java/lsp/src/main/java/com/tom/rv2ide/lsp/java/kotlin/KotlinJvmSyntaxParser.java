@@ -315,10 +315,18 @@ final class KotlinJvmSyntaxParser {
       return Collections.emptyList();
     }
     final List<TSNode> nodes = new ArrayList<>();
+    final List<Boolean> varargs = new ArrayList<>();
+    TSNode parameterModifiers = null;
     for (int index = 0; index < container.getNamedChildCount(); index++) {
       final TSNode child = container.getNamedChild(index);
-      if ("parameter".equals(child.getType())) {
+      if ("parameter_modifiers".equals(child.getType())) {
+        parameterModifiers = child;
+      } else if ("parameter".equals(child.getType())) {
         nodes.add(child);
+        varargs.add(containsToken(parameterModifiers, "vararg"));
+        parameterModifiers = null;
+      } else {
+        parameterModifiers = null;
       }
     }
     final List<ParameterSyntax> result = new ArrayList<>();
@@ -335,7 +343,8 @@ final class KotlinJvmSyntaxParser {
       result.add(new ParameterSyntax(
           name == null ? "arg" + index : text(source, name),
           type == null ? null : text(source, type),
-          defaultValue));
+          defaultValue,
+          varargs.get(index)));
     }
     return Collections.unmodifiableList(result);
   }
@@ -748,11 +757,13 @@ final class KotlinJvmSyntaxParser {
     final String name;
     final String type;
     final boolean defaultValue;
+    final boolean vararg;
 
-    ParameterSyntax(String name, String type, boolean defaultValue) {
+    ParameterSyntax(String name, String type, boolean defaultValue, boolean vararg) {
       this.name = name;
       this.type = type;
       this.defaultValue = defaultValue;
+      this.vararg = vararg;
     }
   }
 }
