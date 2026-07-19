@@ -128,6 +128,10 @@ final class KotlinJvmSyntaxParser {
               parsedConstructorParameters.isEmpty() && parameterFallbackText != null
                   ? constructorParametersFallback(parameterFallbackText)
                   : parsedConstructorParameters;
+          final boolean primaryConstructorPresent = constructor != null || recoveredConstructorText != null;
+          final String constructorVisibility = constructorVisibility(source, constructor);
+          final List<ConstructorSyntax> secondaryConstructors =
+              secondaryConstructors(source, bodyNode);
           final TSNode companion = bodyNode == null ? null : directChild(bodyNode, "companion_object");
           final TSNode companionBodyNode = companion == null ? null : directChild(companion, "class_body");
           final String companionBody =
@@ -141,6 +145,9 @@ final class KotlinJvmSyntaxParser {
               typeParameters,
               superTypes,
               constructorParameters,
+              primaryConstructorPresent,
+              constructorVisibility,
+              secondaryConstructors,
               companionBody,
               companionMembers,
               hasDirectToken(declaration, "interface"),
@@ -286,6 +293,37 @@ final class KotlinJvmSyntaxParser {
         result.add(new TypeParameterSyntax(
             text(source, name), bound == null ? null : text(source, bound)));
       }
+    }
+    return Collections.unmodifiableList(result);
+  }
+
+  private static String constructorVisibility(String source, TSNode constructor) {
+    if (constructor == null) {
+      return "public";
+    }
+    final TSNode modifiers = directChild(constructor, "modifiers");
+    if (containsToken(modifiers, "private")) return "private";
+    if (containsToken(modifiers, "protected")) return "protected";
+    // Kotlin internal constructors are public in JVM bytecode. Keep that callable ABI surface.
+    return "public";
+  }
+
+  private static List<ConstructorSyntax> secondaryConstructors(String source, TSNode body) {
+    if (body == null) {
+      return Collections.emptyList();
+    }
+    final List<ConstructorSyntax> result = new ArrayList<>();
+    for (int index = 0; index < body.getNamedChildCount(); index++) {
+      final TSNode declaration = body.getNamedChild(index);
+      if (!"secondary_constructor".equals(declaration.getType())) {
+        continue;
+      }
+      final TSNode modifiers = directChild(declaration, "modifiers");
+      final TSNode parameterList = directChild(declaration, "function_value_parameters");
+      final String visibility = containsToken(modifiers, "private")
+          ? "private"
+          : containsToken(modifiers, "protected") ? "protected" : "public";
+      result.add(new ConstructorSyntax(parameters(source, parameterList), visibility));
     }
     return Collections.unmodifiableList(result);
   }
@@ -625,6 +663,9 @@ final class KotlinJvmSyntaxParser {
     final List<TypeParameterSyntax> typeParameters;
     final List<SuperTypeSyntax> superTypes;
     final List<ConstructorParameterSyntax> constructorParameters;
+    final boolean primaryConstructorPresent;
+    final String constructorVisibility;
+    final List<ConstructorSyntax> secondaryConstructors;
     final String companionBody;
     final List<MemberSyntax> companionMembers;
     final boolean interfaceType;
@@ -640,6 +681,9 @@ final class KotlinJvmSyntaxParser {
         List<TypeParameterSyntax> typeParameters,
         List<SuperTypeSyntax> superTypes,
         List<ConstructorParameterSyntax> constructorParameters,
+        boolean primaryConstructorPresent,
+        String constructorVisibility,
+        List<ConstructorSyntax> secondaryConstructors,
         String companionBody,
         List<MemberSyntax> companionMembers,
         boolean interfaceType,
@@ -653,6 +697,9 @@ final class KotlinJvmSyntaxParser {
       this.typeParameters = typeParameters;
       this.superTypes = superTypes;
       this.constructorParameters = constructorParameters;
+      this.primaryConstructorPresent = primaryConstructorPresent;
+      this.constructorVisibility = constructorVisibility;
+      this.secondaryConstructors = secondaryConstructors;
       this.companionBody = companionBody;
       this.companionMembers = companionMembers;
       this.interfaceType = interfaceType;
@@ -735,6 +782,16 @@ final class KotlinJvmSyntaxParser {
     TypeParameterSyntax(String name, String upperBound) {
       this.name = name;
       this.upperBound = upperBound;
+    }
+  }
+
+  static final class ConstructorSyntax {
+    final List<ParameterSyntax> parameters;
+    final String visibility;
+
+    ConstructorSyntax(List<ParameterSyntax> parameters, String visibility) {
+      this.parameters = parameters;
+      this.visibility = visibility;
     }
   }
 

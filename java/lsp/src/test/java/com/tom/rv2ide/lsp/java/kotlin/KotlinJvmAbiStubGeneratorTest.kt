@@ -276,6 +276,41 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsSecondaryConstructorsAndVisibility() {
+    val source =
+        """
+        package sample
+
+        class Token private constructor(val raw: String) {
+          constructor(code: Int) : this(code.toString())
+          protected constructor(flag: Boolean) : this(flag.toString())
+          private constructor(value: Long) : this(value.toString())
+          constructor(vararg parts: String) : this(parts.joinToString())
+        }
+
+        class Legacy {
+          constructor(value: String)
+        }
+        """.trimIndent()
+
+    val tokenStub = KotlinJvmAbiStubGenerator.generate("sample.Token", "Tokens.kt", source)
+    val legacyStub = KotlinJvmAbiStubGenerator.generate("sample.Legacy", "Tokens.kt", source)
+
+    assertNotNull(tokenStub)
+    assertContains(tokenStub!!, "protected Token()")
+    assertContains(tokenStub, "private Token(String raw)")
+    assertContains(tokenStub, "public Token(int code)")
+    assertContains(tokenStub, "protected Token(boolean flag)")
+    assertContains(tokenStub, "private Token(long value)")
+    assertContains(tokenStub, "public Token(String... parts)")
+
+    assertNotNull(legacyStub)
+    assertContains(legacyStub!!, "protected Legacy()")
+    assertContains(legacyStub, "public Legacy(String value)")
+    assertFalse(legacyStub.contains("public Legacy()"))
+  }
+
+  @Test
   fun generate_projectsVarargParameters() {
     val classSource =
         """

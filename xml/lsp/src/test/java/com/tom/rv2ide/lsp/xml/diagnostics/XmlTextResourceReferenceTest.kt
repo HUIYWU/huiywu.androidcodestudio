@@ -17,6 +17,7 @@
 package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.google.common.truth.Truth.assertThat
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.ResourceReferenceDiagnosticRule
 import junit.framework.TestCase
 import org.eclipse.lemminx.dom.DOMParser
 import org.eclipse.lemminx.dom.DOMText
@@ -40,7 +41,7 @@ class XmlTextResourceReferenceTest : TestCase() {
     collect(document)
 
     val candidates =
-        textNodes.mapNotNull(XmlDiagnosticsService()::textResourceReferenceCandidate)
+        textNodes.mapNotNull(ResourceReferenceDiagnosticRule::textResourceReferenceCandidate)
 
     assertThat(candidates).hasSize(1)
     val candidate = candidates.single()

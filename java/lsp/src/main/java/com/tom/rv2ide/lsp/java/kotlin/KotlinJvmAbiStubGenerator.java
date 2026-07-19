@@ -52,6 +52,9 @@ final class KotlinJvmAbiStubGenerator {
           "(?m)^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|value)\\s+)*)"
               + "((?:enum\\s+class)|annotation\\s+class|class|interface|object)"
               + "\\s+([A-Za-z_][\\w]*)(?:\\s*<[^>{}()]*>)?");
+  private static final Pattern SECONDARY_CONSTRUCTOR_PATTERN =
+      Pattern.compile(
+          "^\\s*((?:(?:public|protected|internal|private)\\s+)*)constructor\\s*\\((.*?)\\)\\s*(?::.*)?$");
   private static final Pattern FUNCTION_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|abstract|final|override|suspend|"
@@ -151,7 +154,13 @@ private static final Pattern PROPERTY_PATTERN =
     if (isObject) {
       out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
     } else if (!isInterface) {
-      appendSyntaxConstructors(out, simpleName, syntax.constructorParameters);
+      appendSyntaxConstructors(
+          out,
+          simpleName,
+          syntax.constructorParameters,
+          syntax.primaryConstructorPresent,
+          syntax.constructorVisibility,
+          syntax.secondaryConstructors);
       appendSyntaxConstructorProperties(out, syntax.constructorParameters);
     }
     appendSyntaxMembers(out, syntax.members, isInterface, false);
@@ -193,13 +202,6 @@ private static final Pattern PROPERTY_PATTERN =
         .append(javaInheritanceClause(superTypes, isInterface)).append(" {\n");
     final String constructor =
         isObject || isInterface ? null : primaryConstructorText(source, declaration.end(3));
-    if (isObject) {
-      out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
-    } else if (!isInterface) {
-      appendFallbackConstructors(out, simpleName, constructor);
-      appendConstructorProperties(out, constructor);
-    }
-
     int bodySearchStart = declaration.end();
     if (constructor != null) {
       final int constructorStart = source.indexOf(constructor, declaration.end(3));
@@ -208,13 +210,30 @@ private static final Pattern PROPERTY_PATTERN =
       }
     }
     final int bodyStart = source.indexOf('{', bodySearchStart);
-    if (bodyStart >= 0) {
-      final int bodyEnd = matchingBrace(source, bodyStart);
-      if (bodyEnd > bodyStart) {
-        final String body = source.substring(bodyStart + 1, bodyEnd);
-        appendMembers(out, body, isInterface, false);
-        appendCompanionMembers(out, body);
+    final int bodyEnd = bodyStart < 0 ? -1 : matchingBrace(source, bodyStart);
+    final String body = bodyEnd > bodyStart ? source.substring(bodyStart + 1, bodyEnd) : "";
+    final boolean hasSecondaryConstructors = hasSecondaryConstructorsFallback(body);
+    final boolean hasNoArgSecondaryConstructor = hasNoArgSecondaryConstructorFallback(body);
+
+    if (isObject) {
+      out.append("  public static final ").append(simpleName).append(" INSTANCE = null;\n");
+    } else if (!isInterface) {
+      appendFallbackConstructors(
+          out,
+          simpleName,
+          constructor,
+          primaryConstructorVisibilityFallback(source, declaration.end(3), constructor),
+          hasSecondaryConstructors,
+          hasNoArgSecondaryConstructor);
+      appendConstructorProperties(out, constructor);
+    }
+
+    if (!body.isEmpty()) {
+      appendMembers(out, body, isInterface, false);
+      if (!isInterface && !isObject) {
+        appendSecondaryConstructorsFallback(out, simpleName, body, constructor);
       }
+      appendCompanionMembers(out, body);
     }
     out.append("}\n");
     return out.toString();
@@ -558,21 +577,142 @@ private static final Pattern PROPERTY_PATTERN =
   private static void appendSyntaxConstructors(
       StringBuilder out,
       String simpleName,
-      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters) {
-    if (!kotlinParameters.isEmpty()) {
-      out.append("  protected ").append(simpleName).append("() {}\n");
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters,
+      boolean primaryConstructorPresent,
+      String primaryVisibility,
+      List<KotlinJvmSyntaxParser.ConstructorSyntax> secondaryConstructors) {
+    final Set<String> emittedParameters = new LinkedHashSet<>();
+    boolean hasRealNoArgConstructor = primaryConstructorPresent && kotlinParameters.isEmpty();
+    for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : secondaryConstructors) {
+      hasRealNoArgConstructor |= constructor.parameters.isEmpty();
     }
-    out.append("  public ").append(simpleName)
-        .append(javaConstructorParameterList(kotlinParameters)).append(" {}\n");
+    if (!hasRealNoArgConstructor
+        && (!kotlinParameters.isEmpty()
+            || (!primaryConstructorPresent && !secondaryConstructors.isEmpty()))) {
+      out.append("  protected ").append(simpleName).append("() {}\n");
+      emittedParameters.add("()");
+    }
+    if (primaryConstructorPresent || secondaryConstructors.isEmpty()) {
+      final String primaryParameters = javaConstructorParameterList(kotlinParameters);
+      out.append("  ").append(javaConstructorVisibility(primaryVisibility)).append(' ')
+          .append(simpleName).append(primaryParameters).append(" {}\n");
+      emittedParameters.add(primaryConstructorSignature(kotlinParameters));
+    }
+    for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : secondaryConstructors) {
+      final String parameters = javaSyntaxParameterList(constructor.parameters, true);
+      if (!emittedParameters.add(secondaryConstructorSignature(constructor.parameters))) {
+        continue;
+      }
+      out.append("  ").append(javaConstructorVisibility(constructor.visibility)).append(' ')
+          .append(simpleName).append(parameters).append(" {}\n");
+    }
+  }
+
+  private static String primaryConstructorSignature(
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> parameters) {
+    final List<String> types = new ArrayList<>();
+    for (KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter : parameters) {
+      types.add(javaType(parameter.type));
+    }
+    return "(" + String.join(",", types) + ")";
+  }
+
+  private static String secondaryConstructorSignature(
+      List<KotlinJvmSyntaxParser.ParameterSyntax> parameters) {
+    final List<String> types = new ArrayList<>();
+    for (int index = 0; index < parameters.size(); index++) {
+      final KotlinJvmSyntaxParser.ParameterSyntax parameter = parameters.get(index);
+      final String type = javaType(parameter.type);
+      types.add(parameter.vararg && index == parameters.size() - 1 ? type + "[]" : type);
+    }
+    return "(" + String.join(",", types) + ")";
+  }
+
+  private static String javaConstructorVisibility(String visibility) {
+    return "private".equals(visibility) || "protected".equals(visibility)
+        ? visibility
+        : "public";
   }
 
   private static void appendFallbackConstructors(
-      StringBuilder out, String simpleName, String kotlinParameters) {
+      StringBuilder out,
+      String simpleName,
+      String kotlinParameters,
+      String primaryVisibility,
+      boolean hasSecondaryConstructors,
+      boolean hasNoArgSecondaryConstructor) {
     final String parameters = parameterList(kotlinParameters);
-    if (!"()".equals(parameters)) {
+    if (!hasNoArgSecondaryConstructor
+        && (!"()".equals(parameters) || (kotlinParameters == null && hasSecondaryConstructors))) {
       out.append("  protected ").append(simpleName).append("() {}\n");
     }
-    out.append("  public ").append(simpleName).append(parameters).append(" {}\n");
+    if (kotlinParameters != null || !hasSecondaryConstructors) {
+      out.append("  ").append(javaConstructorVisibility(primaryVisibility)).append(' ')
+          .append(simpleName).append(parameters).append(" {}\n");
+    }
+  }
+
+  private static boolean hasSecondaryConstructorsFallback(String body) {
+    int depth = 0;
+    for (String line : body.split("\\R")) {
+      if (depth == 0 && SECONDARY_CONSTRUCTOR_PATTERN.matcher(line.trim()).matches()) {
+        return true;
+      }
+      depth = Math.max(0, depth + braceDelta(line));
+    }
+    return false;
+  }
+
+  private static boolean hasNoArgSecondaryConstructorFallback(String body) {
+    int depth = 0;
+    for (String line : body.split("\\R")) {
+      if (depth == 0) {
+        final Matcher constructor = SECONDARY_CONSTRUCTOR_PATTERN.matcher(line.trim());
+        if (constructor.matches() && constructor.group(2).trim().isEmpty()) {
+          return true;
+        }
+      }
+      depth = Math.max(0, depth + braceDelta(line));
+    }
+    return false;
+  }
+
+  private static void appendSecondaryConstructorsFallback(
+      StringBuilder out, String simpleName, String body, String primaryConstructor) {
+    final Set<String> emittedParameters = new LinkedHashSet<>();
+    emittedParameters.add(parameterList(primaryConstructor));
+    if (primaryConstructor != null && !"()".equals(parameterList(primaryConstructor))) {
+      emittedParameters.add("()");
+    }
+    int depth = 0;
+    for (String line : body.split("\\R")) {
+      if (depth == 0) {
+        final Matcher constructor = SECONDARY_CONSTRUCTOR_PATTERN.matcher(line.trim());
+        if (constructor.matches()) {
+          final String parameters = parameterList("(" + constructor.group(2) + ")");
+          if (emittedParameters.add(parameters)) {
+            out.append("  ").append(javaConstructorVisibility(constructor.group(1).trim()))
+                .append(' ').append(simpleName).append(parameters).append(" {}\n");
+          }
+        }
+      }
+      depth = Math.max(0, depth + braceDelta(line));
+    }
+  }
+
+  private static String primaryConstructorVisibilityFallback(
+      String source, int classNameEnd, String constructor) {
+    if (constructor == null) {
+      return "public";
+    }
+    final int constructorStart = source.indexOf(constructor, classNameEnd);
+    if (constructorStart < classNameEnd) {
+      return "public";
+    }
+    final String prefix = source.substring(classNameEnd, constructorStart);
+    if (prefix.matches("(?s).*\\bprivate\\s+(?:constructor\\s*)?$")) return "private";
+    if (prefix.matches("(?s).*\\bprotected\\s+(?:constructor\\s*)?$")) return "protected";
+    return "public";
   }
 
   private static String javaConstructorParameterList(

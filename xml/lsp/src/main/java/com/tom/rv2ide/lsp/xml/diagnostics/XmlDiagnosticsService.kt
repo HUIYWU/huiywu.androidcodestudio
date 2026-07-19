@@ -16,7 +16,6 @@
  */
 package com.tom.rv2ide.lsp.xml.diagnostics
 
-import com.android.aaptcompiler.AaptResourceType.ID
 import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.util.setupLookupForCompletion
 import com.tom.rv2ide.projects.FileManager
@@ -36,8 +35,8 @@ import org.slf4j.LoggerFactory
  * Gradle project has been initialized.
  */
 internal class XmlDiagnosticsService {
+  // Rule-specific state is owned by registered diagnostic rules.
 
-  private val resourceResolver = XmlResourceResolver()
 
   fun analyze(file: Path): DiagnosticResult {
     // Diagnostics use the same resource and widget snapshots as completion. Without this setup,
@@ -70,7 +69,8 @@ internal class XmlDiagnosticsService {
       }
     }
     val elementRules = XmlDiagnosticRuleRegistry.elementRules.filter { it.supports(context) }
-    visit(context.document, collector, context, elementRules)
+    val textRules = XmlDiagnosticRuleRegistry.textRules.filter { it.supports(context) }
+    visit(context.document, collector, context, elementRules, textRules)
 
     return DiagnosticResult(context.file, collector.build(), CHANNEL)
   }
@@ -80,19 +80,19 @@ internal class XmlDiagnosticsService {
       collector: XmlDiagnosticCollector,
       context: XmlDiagnosticContext,
       elementRules: List<XmlElementDiagnosticRule>,
+      textRules: List<XmlTextDiagnosticRule>,
   ) {
     if (node is DOMElement) {
       val hasSyntaxRecovery = checkSyntaxRecovery(node, collector)
       if (!hasSyntaxRecovery) {
         elementRules.forEach { rule -> rule.diagnose(node, context, collector) }
-        checkResourceReferences(node, collector, context.declaredIds)
       }
     } else if (node is DOMText && node.isText) {
-      checkTextResourceReference(node, collector, context.declaredIds)
+      textRules.forEach { rule -> rule.diagnose(node, context, collector) }
     }
 
     node.children.forEach { child ->
-      visit(child, collector, context, elementRules)
+      visit(child, collector, context, elementRules, textRules)
     }
   }
 
@@ -157,95 +157,12 @@ internal class XmlDiagnosticsService {
     }
   }
 
-  private fun checkTextResourceReference(
-      textNode: DOMText,
-      collector: XmlDiagnosticCollector,
-      declaredIds: Set<String>,
-  ) {
-    val candidate = textResourceReferenceCandidate(textNode) ?: return
-    val reference = candidate.reference
-    if (reference.packageName == null && !reference.isThemeAttribute &&
-        reference.type == ID && reference.entry in declaredIds) {
-      return
-    }
-    if (resourceResolver.resolve(reference) != XmlResourceResolver.Resolution.NotFound) {
-      return
-    }
-
-    collector.errorRange(
-        code = CODE_UNRESOLVED_RESOURCE,
-        message = "Cannot resolve resource reference '${reference.text}'",
-        start = candidate.start,
-        end = candidate.end,
-    )
-  }
-
-  internal fun textResourceReferenceCandidate(textNode: DOMText): TextResourceReferenceCandidate? {
-    // CDATA extends DOMText, so retain the exact TEXT_NODE check to avoid interpreting CDATA as
-    // Android resource syntax. Comments and processing instructions are different node types too.
-    if (!textNode.isText) {
-      return null
-    }
-    val rawText = textNode.data
-    val value = rawText.trim()
-    if (value.isEmpty() || value.startsWith("@{") || value.startsWith("@={") ||
-        XmlResourceReference.isSpecialValue(value)) {
-      return null
-    }
-    val reference = XmlResourceReference.parse(value) ?: return null
-    val leadingWhitespace = rawText.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)
-    val start = textNode.startContent + leadingWhitespace
-    return TextResourceReferenceCandidate(reference, start, start + value.length)
-  }
-
-  internal data class TextResourceReferenceCandidate(
-      val reference: XmlResourceReference,
-      val start: Int,
-      val end: Int,
-  )
-
-  internal fun shouldSkipResourceReferenceAttribute(namespaceUri: String?): Boolean {
-    return namespaceUri == TOOLS_NAMESPACE_URI
-  }
-
-  private fun checkResourceReferences(
-      element: DOMElement,
-      collector: XmlDiagnosticCollector,
-      declaredIds: Set<String>,
-  ) {
-    element.attributeNodes.orEmpty().forEach { attribute ->
-      if (shouldSkipResourceReferenceAttribute(attribute.namespaceURI)) {
-        return@forEach
-      }
-      val value = attribute.value ?: return@forEach
-      if (value.startsWith("@{") || value.startsWith("@={") ||
-          XmlResourceReference.isSpecialValue(value)) {
-        return@forEach
-      }
-
-      val reference = XmlResourceReference.parse(value) ?: return@forEach
-      if (reference.packageName == null && !reference.isThemeAttribute &&
-          reference.type == ID && reference.entry in declaredIds) {
-        return@forEach
-      }
-      if (resourceResolver.resolve(reference) == XmlResourceResolver.Resolution.NotFound) {
-        collector.errorValue(
-            code = CODE_UNRESOLVED_RESOURCE,
-            message = "Cannot resolve resource reference '${reference.text}'",
-            attribute = attribute,
-        )
-      }
-    }
-  }
-
   companion object {
     private val log = LoggerFactory.getLogger(XmlDiagnosticsService::class.java)
 
     const val CHANNEL = "xml-lsp"
     const val SOURCE = "xml-lsp"
     const val CODE_XML_SYNTAX = "XML001"
-    const val CODE_UNRESOLVED_RESOURCE = "AXML003"
     const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
-    const val TOOLS_NAMESPACE_URI = "http://schemas.android.com/tools"
   }
 }

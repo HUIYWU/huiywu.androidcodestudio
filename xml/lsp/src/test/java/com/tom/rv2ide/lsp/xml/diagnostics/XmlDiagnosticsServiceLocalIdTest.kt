@@ -18,6 +18,7 @@ package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.google.common.truth.Truth.assertThat
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.LayoutDiagnosticRule
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.ResourceReferenceDiagnosticRule
 import junit.framework.TestCase
 import org.eclipse.lemminx.dom.DOMParser
 import org.eclipse.lemminx.uriresolver.URIResolverExtensionManager
@@ -63,12 +64,11 @@ class XmlDiagnosticsServiceLocalIdTest : TestCase() {
   }
 
   fun testSkipsOnlyToolsNamespaceResourceAttributes() {
-    val service = XmlDiagnosticsService()
-
-    assertThat(service.shouldSkipResourceReferenceAttribute("http://schemas.android.com/tools"))
+    assertThat(ResourceReferenceDiagnosticRule.shouldSkipAttribute("http://schemas.android.com/tools"))
         .isTrue()
-    assertThat(service.shouldSkipResourceReferenceAttribute(ANDROID_NAMESPACE_URI_FOR_TEST)).isFalse()
-    assertThat(service.shouldSkipResourceReferenceAttribute(null)).isFalse()
+    assertThat(ResourceReferenceDiagnosticRule.shouldSkipAttribute(ANDROID_NAMESPACE_URI_FOR_TEST))
+        .isFalse()
+    assertThat(ResourceReferenceDiagnosticRule.shouldSkipAttribute(null)).isFalse()
   }
 
   fun testExcludesQualifiedCreatingIdsFromLocalDeclarations() {
