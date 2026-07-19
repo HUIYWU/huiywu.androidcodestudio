@@ -89,7 +89,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   override fun forPackage(name: String, vararg resDirs: File): ResourceTable? {
 
     if (name == PCK_ANDROID) {
-      return platformResourceTable(resDirs.iterator().next())
+      return resDirs.firstOrNull()?.let(::platformResourceTable)
     }
 
     tables[name]?.let { return it }
@@ -97,11 +97,33 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     val lock = tableLocks.computeIfAbsent(name) { Any() }
     synchronized(lock) {
       tables[name]?.let { return it }
-      val table = createTable(*resDirs) ?: return null
-      table.packages.firstOrNull()?.name = name
-      resDirs.forEach { resDir -> addFileReferences(table, name, resDir) }
+      val table = buildPackageTable(name, *resDirs) ?: return null
       tables[name] = table
       return table
+    }
+  }
+
+  override fun refreshPackage(name: String, vararg resDirs: File): ResourceTable? {
+    if (name == PCK_ANDROID) {
+      return resDirs.firstOrNull()?.let(::platformResourceTable)
+    }
+
+    val lock = tableLocks.computeIfAbsent(name) { Any() }
+    synchronized(lock) {
+      val previous = tables[name]
+      val replacement =
+          try {
+            buildPackageTable(name, *resDirs)
+          } catch (error: Exception) {
+            log.warn("Failed to refresh resource table for package '{}'", name, error)
+            null
+          }
+      if (replacement == null) {
+        return previous
+      }
+
+      tables[name] = replacement
+      return replacement
     }
   }
 
@@ -151,7 +173,10 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   }
 
   override fun removeTable(packageName: String) {
-    tables.remove(packageName)
+    val lock = tableLocks.computeIfAbsent(packageName) { Any() }
+    synchronized(lock) {
+      tables.remove(packageName)
+    }
   }
 
   override fun clear() {
@@ -247,6 +272,18 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       platformTables[key] = table
       return table
     }
+  }
+
+  private fun buildPackageTable(name: String, vararg resDirs: File): ResourceTable? {
+    val validResDirs = resDirs.filter { it.exists() && it.isDirectory }
+    if (validResDirs.isEmpty()) {
+      return null
+    }
+
+    val table = createTable(*validResDirs.toTypedArray()) ?: return null
+    table.packages.firstOrNull()?.name = name
+    validResDirs.forEach { resDir -> addFileReferences(table, name, resDir) }
+    return table
   }
 
   private fun createTable(vararg resDirs: File): ResourceTable? {

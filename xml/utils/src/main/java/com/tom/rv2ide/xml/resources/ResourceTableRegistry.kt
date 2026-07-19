@@ -65,6 +65,20 @@ interface ResourceTableRegistry : XmlRegistry<IResourceTable> {
   fun forPackage(name: String, vararg resDirs: File): IResourceTable?
 
   /**
+   * Rebuild and atomically replace the resource table for the given package.
+   *
+   * The previously published table remains available while the replacement is built. If the
+   * replacement cannot be built, the previous table is retained and returned.
+   *
+   * This method should not be used for platform resource tables.
+   *
+   * @param name The package name for the resource table.
+   * @param resDirs The resource directories used to build the replacement table.
+   * @return The replacement table, or the previously cached table if rebuilding failed.
+   */
+  fun refreshPackage(name: String, vararg resDirs: File): IResourceTable?
+
+  /**
    * Remove the resource table entry for the given package name.
    *
    * @param packageName The package name to remove the resource table entry for.

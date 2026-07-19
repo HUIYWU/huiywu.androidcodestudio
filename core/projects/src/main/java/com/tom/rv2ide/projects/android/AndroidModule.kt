@@ -384,15 +384,12 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
 
   /** Updates the resource table for this module. */
   fun updateResourceTable() {
-    if (this.namespace == null) {
-      return
-    }
+    val namespace = this.namespace ?: return
 
     CompletableFuture.runAsync {
       val tableRegistry = ResourceTableRegistry.getInstance()
       val resDirs = mainSourceSet?.sourceProvider?.resDirectories ?: return@runAsync
-      tableRegistry.removeTable(this.namespace)
-      tableRegistry.forPackage(this.namespace, *resDirs.toTypedArray())
+      tableRegistry.refreshPackage(namespace, *resDirs.toTypedArray())
     }
   }
 

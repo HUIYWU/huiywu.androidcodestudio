@@ -42,5 +42,7 @@ dependencies {
     implementation(projects.core.common)
     implementation(projects.logging.logger)
     implementation(projects.xml.aaptcompiler)
-    
+
+    testImplementation(libs.tests.junit)
+    testImplementation(libs.tests.google.truth)
 }

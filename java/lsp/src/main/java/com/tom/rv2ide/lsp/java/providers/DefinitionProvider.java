@@ -22,6 +22,7 @@ import androidx.annotation.NonNull;
 import com.tom.rv2ide.lsp.api.IServerSettings;
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
+import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmSourceNavigator;
 import com.tom.rv2ide.lsp.java.providers.definition.ErroneousDefinitionProvider;
 import com.tom.rv2ide.lsp.java.providers.definition.IJavaDefinitionProvider;
 import com.tom.rv2ide.lsp.java.providers.definition.KotlinDefinitionFallback;
@@ -87,6 +88,11 @@ public class DefinitionProvider extends CancelableServiceProvider {
     if (element == null) {
       LOG.debug("Cannot find javac element at line: {} and column: {}; trying Kotlin fallback", line, column);
       return KotlinDefinitionFallback.find(compiler, file, line - 1, column - 1);
+    }
+
+    final Location kotlinLocation = KotlinJvmSourceNavigator.find(compiler.getModule(), element);
+    if (kotlinLocation != null) {
+      return Collections.singletonList(kotlinLocation);
     }
 
     IJavaDefinitionProvider provider = null;

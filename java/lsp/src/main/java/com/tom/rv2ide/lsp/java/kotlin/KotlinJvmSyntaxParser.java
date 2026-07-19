@@ -216,6 +216,8 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
         name == null ? null : text(source, name),
+        name == null ? -1 : startIndex(source, name),
+        name == null ? 0 : endIndex(source, name) - startIndex(source, name),
         parameters == null ? "()" : text(source, parameters),
         parameterList,
         typeParameters,
@@ -243,6 +245,8 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
         name == null ? null : text(source, name),
+        name == null ? -1 : startIndex(source, name),
+        name == null ? 0 : endIndex(source, name) - startIndex(source, name),
         null,
         Collections.emptyList(),
         Collections.emptyList(),
@@ -330,10 +334,16 @@ final class KotlinJvmSyntaxParser {
       final String visibility = containsToken(modifiers, "private")
           ? "private"
           : containsToken(modifiers, "protected") ? "protected" : "public";
+      final String constructorText = text(source, declaration);
+      final int constructorRelativeOffset = constructorText.indexOf("constructor");
       result.add(new ConstructorSyntax(
           parameters(source, parameterList),
           visibility,
-          hasJvmOverloads(source, declaration)));
+          hasJvmOverloads(source, declaration),
+          constructorRelativeOffset < 0
+              ? startIndex(source, declaration)
+              : startIndex(source, declaration) + constructorRelativeOffset,
+          "constructor".length()));
     }
     return Collections.unmodifiableList(result);
   }
@@ -356,6 +366,8 @@ final class KotlinJvmSyntaxParser {
       result.add(new ConstructorParameterSyntax(
           name == null ? "arg" + result.size() : text(source, name),
           type == null ? null : text(source, type),
+          name == null ? -1 : startIndex(source, name),
+          name == null ? 0 : endIndex(source, name) - startIndex(source, name),
           hasDirectToken(parameter, "val"),
           hasDirectToken(parameter, "var"),
           hasDefaultValue(source, parameter)));
@@ -519,7 +531,7 @@ final class KotlinJvmSyntaxParser {
         type = type.substring(0, equals).trim();
       }
       result.add(new ConstructorParameterSyntax(
-          name, type, property, mutable, equals >= 0));
+          name, type, -1, 0, property, mutable, equals >= 0));
     }
     return Collections.unmodifiableList(result);
   }
@@ -740,6 +752,8 @@ final class KotlinJvmSyntaxParser {
     final boolean jvmField;
     final boolean jvmOverloads;
     final String name;
+    final int nameOffset;
+    final int nameLength;
     final String parameters;
     final List<ParameterSyntax> parameterList;
     final List<TypeParameterSyntax> typeParameters;
@@ -756,6 +770,8 @@ final class KotlinJvmSyntaxParser {
         boolean jvmField,
         boolean jvmOverloads,
         String name,
+        int nameOffset,
+        int nameLength,
         String parameters,
         List<ParameterSyntax> parameterList,
         List<TypeParameterSyntax> typeParameters,
@@ -770,6 +786,8 @@ final class KotlinJvmSyntaxParser {
       this.jvmField = jvmField;
       this.jvmOverloads = jvmOverloads;
       this.name = name;
+      this.nameOffset = nameOffset;
+      this.nameLength = nameLength;
       this.parameters = parameters;
       this.parameterList = parameterList;
       this.typeParameters = typeParameters;
@@ -808,18 +826,28 @@ final class KotlinJvmSyntaxParser {
     final List<ParameterSyntax> parameters;
     final String visibility;
     final boolean jvmOverloads;
+    final int nameOffset;
+    final int nameLength;
 
     ConstructorSyntax(
-        List<ParameterSyntax> parameters, String visibility, boolean jvmOverloads) {
+        List<ParameterSyntax> parameters,
+        String visibility,
+        boolean jvmOverloads,
+        int nameOffset,
+        int nameLength) {
       this.parameters = parameters;
       this.visibility = visibility;
       this.jvmOverloads = jvmOverloads;
+      this.nameOffset = nameOffset;
+      this.nameLength = nameLength;
     }
   }
 
   static final class ConstructorParameterSyntax {
     final String name;
     final String type;
+    final int nameOffset;
+    final int nameLength;
     final boolean property;
     final boolean mutableProperty;
     final boolean defaultValue;
@@ -827,11 +855,15 @@ final class KotlinJvmSyntaxParser {
     ConstructorParameterSyntax(
         String name,
         String type,
+        int nameOffset,
+        int nameLength,
         boolean readOnlyProperty,
         boolean mutableProperty,
         boolean defaultValue) {
       this.name = name;
       this.type = type;
+      this.nameOffset = nameOffset;
+      this.nameLength = nameLength;
       this.property = readOnlyProperty || mutableProperty;
       this.mutableProperty = mutableProperty;
       this.defaultValue = defaultValue;
