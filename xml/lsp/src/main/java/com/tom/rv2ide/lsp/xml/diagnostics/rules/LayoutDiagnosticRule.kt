@@ -36,7 +36,7 @@ import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import com.tom.rv2ide.xml.widgets.WidgetTable
 import org.eclipse.lemminx.dom.DOMElement
 
-/** AXML001, AXML002 and AXML004: conservative framework Layout diagnostics. */
+/** AXML001, AXML002, AXML004 and AXML006: conservative Layout diagnostics. */
 internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
   override val id: String = "layout"
 
@@ -49,6 +49,7 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
   ) {
     checkTag(element, collector)
     checkAttributes(element, collector)
+    checkCustomAttributes(element, context, collector)
     checkAttributeValues(element, collector)
   }
 
@@ -135,6 +136,135 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
       existsInFramework: (String) -> Boolean,
   ): Boolean {
     return localName !in styleableAttributes && !existsInFramework(localName)
+  }
+
+  private fun checkCustomAttributes(
+      element: DOMElement,
+      context: XmlDiagnosticContext,
+      collector: XmlDiagnosticCollector,
+  ) {
+    if (!element.isClosed || context.document.documentElement?.tagName == DATA_BINDING_ROOT_TAG) {
+      return
+    }
+
+    val styleableNames = applicableCustomStyleableNames(element)
+    if (styleableNames.isEmpty()) {
+      return
+    }
+
+    val lookup = Lookup.getDefault()
+    val tables =
+        (lookup.lookup(ResourceTableRegistry.COMPLETION_MODULE_RES).orEmpty() +
+                lookup.lookup(ResourceTableRegistry.COMPLETION_DEP_RES).orEmpty())
+            .toSet()
+    if (tables.isEmpty()) {
+      return
+    }
+
+    element.attributeNodes.orEmpty().forEach { attribute ->
+      val name = attribute.name ?: return@forEach
+      val namespace = attribute.namespaceURI ?: return@forEach
+      if (!name.contains(':') ||
+          namespace == ANDROID_NAMESPACE_URI ||
+          namespace == TOOLS_NAMESPACE_URI ||
+          namespace == XMLNS_NAMESPACE_URI) {
+        return@forEach
+      }
+
+      val packageName = packageForCustomNamespace(namespace) ?: return@forEach
+      val packageFilter = packageName.takeUnless { it == AUTO_PACKAGE }
+      val snapshot =
+          StyleableResolver.attributeSnapshotForStyleables(
+              tables,
+              styleableNames,
+              packageFilter,
+          )
+      if (!snapshot.hasStyleableMetadata) {
+        return@forEach
+      }
+
+      val localName = name.substringAfter(':')
+      if (isUnknownCustomAttribute(localName, snapshot.names) { attrName ->
+        tables
+            .asSequence()
+            .flatMap { it.packages.asSequence() }
+            .filter { packageFilter == null || it.name == packageFilter }
+            .any { it.findGroup(ATTR)?.findEntry(attrName) != null }
+      }) {
+        collector.error(
+            code = CODE_UNKNOWN_CUSTOM_ATTRIBUTE,
+            message = "Unknown custom attribute '$name' for ${element.tagName}",
+            attribute = attribute,
+        )
+      }
+    }
+  }
+
+  internal fun isUnknownCustomAttribute(
+      localName: String,
+      styleableAttributes: Set<String>,
+      existsGlobally: (String) -> Boolean,
+  ): Boolean {
+    if (localName in styleableAttributes || existsGlobally(localName)) {
+      return false
+    }
+    return styleableAttributes.any { knownName -> isSingleEditAway(localName, knownName) }
+  }
+
+  private fun isSingleEditAway(candidate: String, knownName: String): Boolean {
+    if (candidate == knownName || kotlin.math.abs(candidate.length - knownName.length) > 1) {
+      return false
+    }
+    if (candidate.length == knownName.length) {
+      val differences = candidate.indices.filter { candidate[it] != knownName[it] }
+      return differences.size == 1 ||
+          (differences.size == 2 &&
+              differences[1] == differences[0] + 1 &&
+              candidate[differences[0]] == knownName[differences[1]] &&
+              candidate[differences[1]] == knownName[differences[0]])
+    }
+
+    val longer = if (candidate.length > knownName.length) candidate else knownName
+    val shorter = if (candidate.length > knownName.length) knownName else candidate
+    var longIndex = 0
+    var shortIndex = 0
+    var skipped = false
+    while (longIndex < longer.length && shortIndex < shorter.length) {
+      if (longer[longIndex] == shorter[shortIndex]) {
+        longIndex++
+        shortIndex++
+      } else if (!skipped) {
+        skipped = true
+        longIndex++
+      } else {
+        return false
+      }
+    }
+    return true
+  }
+
+  private fun applicableCustomStyleableNames(element: DOMElement): Set<String> {
+    val names = mutableSetOf<String>()
+    val tagName = element.tagName.orEmpty()
+    if (tagName.contains('.') && !tagName.startsWith(ANDROID_VIEW_PACKAGE_PREFIX)) {
+      names.add(StyleableResolver.simpleName(tagName))
+    }
+
+    val parentTag = (element.parentNode as? DOMElement)?.tagName.orEmpty()
+    if (parentTag.contains('.') && !parentTag.startsWith(ANDROID_VIEW_PACKAGE_PREFIX)) {
+      names.add("${StyleableResolver.simpleName(parentTag)}${StyleableResolver.LAYOUT_SUFFIX}")
+    }
+    return names
+  }
+
+  private fun packageForCustomNamespace(namespace: String): String? {
+    if (namespace == AUTO_NAMESPACE_URI) {
+      return AUTO_PACKAGE
+    }
+    if (!namespace.startsWith(RESOURCE_NAMESPACE_PREFIX)) {
+      return null
+    }
+    return namespace.removePrefix(RESOURCE_NAMESPACE_PREFIX).takeIf { it.isNotBlank() }
   }
 
   /** Checks only narrow literal boolean, enum and flag formats. */
@@ -230,9 +360,18 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
   private const val CODE_UNKNOWN_LAYOUT_TAG = "AXML001"
   private const val CODE_UNKNOWN_LAYOUT_ATTRIBUTE = "AXML002"
   private const val CODE_INVALID_ATTRIBUTE_VALUE = "AXML004"
+  private const val CODE_UNKNOWN_CUSTOM_ATTRIBUTE = "AXML006"
   private const val ANDROID_ATTRIBUTE_PREFIX = "android:"
   private const val LAYOUT_ATTRIBUTE_PREFIX = "layout_"
   private const val ANDROID_VIEW_PACKAGE_PREFIX = "android."
+  private const val DATA_BINDING_ROOT_TAG = "layout"
+  private const val AUTO_NAMESPACE_URI = "http://schemas.android.com/apk/res-auto"
+  private const val RESOURCE_NAMESPACE_PREFIX = "http://schemas.android.com/apk/res/"
+  private const val ANDROID_NAMESPACE_URI =
+      "http://schemas.android.com/apk/res/android"
+  private const val TOOLS_NAMESPACE_URI = "http://schemas.android.com/tools"
+  private const val XMLNS_NAMESPACE_URI = "http://www.w3.org/2000/xmlns/"
+  private const val AUTO_PACKAGE = "<auto>"
   private val LAYOUT_SPECIAL_TAGS =
       setOf("include", "merge", "view", "fragment", "tag", "layout")
 }

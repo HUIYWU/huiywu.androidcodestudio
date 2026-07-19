@@ -63,18 +63,18 @@ public final class KotlinJvmSourceNavigator {
       if (KotlinAbiSyntheticMembers.isSyntheticConstructor(element)) {
         return null;
       }
-      final int parameterCount = ((ExecutableElement) element).getParameters().size();
+      final ExecutableElement executable = (ExecutableElement) element;
       SourceRange match = null;
       int matches = 0;
       for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : type.secondaryConstructors) {
-        if (constructorArityMatches(
-            constructor.parameters, constructor.jvmOverloads, parameterCount)) {
+        if (constructorMatches(
+            constructor.parameters, constructor.jvmOverloads, executable)) {
           match = new SourceRange(constructor.nameOffset, constructor.nameLength);
           matches++;
         }
       }
       if (type.primaryConstructorPresent
-          && primaryConstructorArityMatches(type, parameterCount)) {
+          && primaryConstructorMatches(type, executable)) {
         match = new SourceRange(typeDeclaration.offset, typeDeclaration.length);
         matches++;
       }
@@ -174,39 +174,108 @@ public final class KotlinJvmSourceNavigator {
         || (member.mutableProperty && javaName.equals("set" + accessor));
   }
 
-  private static boolean primaryConstructorArityMatches(
-      KotlinJvmSyntaxParser.TypeSyntax type, int parameterCount) {
+  private static boolean primaryConstructorMatches(
+      KotlinJvmSyntaxParser.TypeSyntax type, ExecutableElement executable) {
+    final int parameterCount = executable.getParameters().size();
     final int fullCount = type.constructorParameters.size();
-    if (parameterCount == fullCount) {
-      return true;
-    }
-    if (!type.constructorJvmOverloads || parameterCount < 0 || parameterCount >= fullCount) {
+    if (parameterCount != fullCount
+        && (!type.constructorJvmOverloads
+            || parameterCount < trailingDefaultStart(type.constructorParameters)
+            || parameterCount >= fullCount)) {
       return false;
     }
-    int firstOmittable = fullCount;
-    for (int index = fullCount - 1;
-        index >= 0 && type.constructorParameters.get(index).defaultValue; index--) {
-      firstOmittable = index;
+    for (int index = 0; index < parameterCount; index++) {
+      if (!parameterTypeMatches(
+          type.constructorParameters.get(index).type,
+          false,
+          executable.getParameters().get(index).asType().toString())) {
+        return false;
+      }
     }
-    return parameterCount >= firstOmittable;
+    return true;
   }
 
-  private static boolean constructorArityMatches(
+  private static boolean constructorMatches(
       List<KotlinJvmSyntaxParser.ParameterSyntax> parameters,
       boolean jvmOverloads,
-      int parameterCount) {
-    if (parameterCount == parameters.size()) {
-      return true;
-    }
-    if (!jvmOverloads || parameterCount < 0 || parameterCount >= parameters.size()) {
+      ExecutableElement executable) {
+    final int parameterCount = executable.getParameters().size();
+    if (parameterCount != parameters.size()
+        && (!jvmOverloads
+            || parameterCount < trailingDefaultStart(parameters)
+            || parameterCount >= parameters.size())) {
       return false;
     }
-    int firstOmittable = parameters.size();
-    for (int index = parameters.size() - 1;
-        index >= 0 && parameters.get(index).defaultValue; index--) {
-      firstOmittable = index;
+    for (int index = 0; index < parameterCount; index++) {
+      if (!parameterTypeMatches(
+          parameters.get(index).type,
+          parameters.get(index).vararg && index == parameters.size() - 1,
+          executable.getParameters().get(index).asType().toString())) {
+        return false;
+      }
     }
-    return parameterCount >= firstOmittable;
+    return true;
+  }
+
+  private static int trailingDefaultStart(
+      List<? extends Object> parameters) {
+    int index = parameters.size();
+    while (index > 0) {
+      final Object parameter = parameters.get(index - 1);
+      final boolean defaultValue = parameter instanceof KotlinJvmSyntaxParser.ParameterSyntax
+          ? ((KotlinJvmSyntaxParser.ParameterSyntax) parameter).defaultValue
+          : ((KotlinJvmSyntaxParser.ConstructorParameterSyntax) parameter).defaultValue;
+      if (!defaultValue) break;
+      index--;
+    }
+    return index;
+  }
+
+  private static boolean parameterTypeMatches(
+      String kotlinType, boolean vararg, String javaType) {
+    final String normalized = navigationJavaType(kotlinType);
+    if (normalized == null) {
+      return false;
+    }
+    final String expected = vararg ? normalized + "[]" : normalized;
+    return expected.equals(javaType)
+        || (expected.indexOf('.') < 0 && javaType.endsWith("." + expected));
+  }
+
+  private static String navigationJavaType(String kotlinType) {
+    if (kotlinType == null) return null;
+    String type = kotlinType.trim();
+    final boolean nullable = type.endsWith("?");
+    if (nullable) type = type.substring(0, type.length() - 1).trim();
+    switch (type) {
+      case "Byte": case "kotlin.Byte": return nullable ? "java.lang.Byte" : "byte";
+      case "Short": case "kotlin.Short": return nullable ? "java.lang.Short" : "short";
+      case "Int": case "kotlin.Int": return nullable ? "java.lang.Integer" : "int";
+      case "Long": case "kotlin.Long": return nullable ? "java.lang.Long" : "long";
+      case "Float": case "kotlin.Float": return nullable ? "java.lang.Float" : "float";
+      case "Double": case "kotlin.Double": return nullable ? "java.lang.Double" : "double";
+      case "Boolean": case "kotlin.Boolean": return nullable ? "java.lang.Boolean" : "boolean";
+      case "Char": case "kotlin.Char": return nullable ? "java.lang.Character" : "char";
+      case "String": case "kotlin.String": return "java.lang.String";
+      case "IntArray": case "kotlin.IntArray": return "int[]";
+      case "LongArray": case "kotlin.LongArray": return "long[]";
+      case "BooleanArray": case "kotlin.BooleanArray": return "boolean[]";
+      case "CharArray": case "kotlin.CharArray": return "char[]";
+      case "ByteArray": case "kotlin.ByteArray": return "byte[]";
+      case "ShortArray": case "kotlin.ShortArray": return "short[]";
+      case "FloatArray": case "kotlin.FloatArray": return "float[]";
+      case "DoubleArray": case "kotlin.DoubleArray": return "double[]";
+      default:
+        if (type.startsWith("Array<") && type.endsWith(">")) {
+          final String element = navigationJavaType(
+              type.substring("Array<".length(), type.length() - 1).trim());
+          return element == null ? null : element + "[]";
+        }
+        if (type.matches("[A-Z][A-Za-z0-9_$]*")) {
+          return type;
+        }
+        return null;
+    }
   }
 
   private static TypeElement ownerType(Element element) {

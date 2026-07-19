@@ -29,6 +29,11 @@ import org.eclipse.lemminx.dom.DOMNode
 /** Shared, side-effect-free styleable lookup used by XML completion and diagnostics. */
 internal object StyleableResolver {
 
+  data class AttributeSnapshot(
+      val names: Set<String>,
+      val hasStyleableMetadata: Boolean,
+  )
+
   const val LAYOUT_SUFFIX = "_Layout"
   const val MARGIN_LAYOUT_SUFFIX = "_MarginLayout"
   const val VIEW_GROUP = "ViewGroup"
@@ -130,15 +135,28 @@ internal object StyleableResolver {
   fun attributesForStyleable(
       tables: Collection<IResourceTable>,
       styleableName: String,
-  ): Set<String> {
-    return tables
+  ): Set<String> = attributeSnapshotForStyleables(tables, setOf(styleableName)).names
+
+  fun attributeSnapshotForStyleables(
+      tables: Collection<IResourceTable>,
+      styleableNames: Set<String>,
+      packageName: String? = null,
+  ): AttributeSnapshot {
+    val names = mutableSetOf<String>()
+    var hasStyleableMetadata = false
+    tables
         .asSequence()
         .flatMap { it.packages.asSequence() }
-        .mapNotNull { resourcePackage ->
-          resourcePackage.findGroup(STYLEABLE)?.let { findEntry(it, styleableName) }
+        .filter { packageName == null || it.name == packageName }
+        .forEach packageLoop@ { resourcePackage ->
+          val styleables = resourcePackage.findGroup(STYLEABLE) ?: return@packageLoop
+          styleableNames.forEach styleableLoop@ { styleableName ->
+            val styleable = findEntry(styleables, styleableName) ?: return@styleableLoop
+            hasStyleableMetadata = true
+            styleable.entries.mapNotNullTo(names) { it.name.entry }
+          }
         }
-        .flatMap { it.entries.asSequence() }
-        .mapNotNullTo(mutableSetOf()) { it.name.entry }
+    return AttributeSnapshot(names, hasStyleableMetadata)
   }
 
   fun simpleName(name: String): String = name.substringAfterLast('.')

@@ -17,6 +17,7 @@
 package com.tom.rv2ide.lsp.xml.resolver
 
 import com.google.common.truth.Truth.assertThat
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.LayoutDiagnosticRule
 import com.tom.rv2ide.xml.widgets.Widget
 import com.tom.rv2ide.xml.widgets.WidgetTable
 import com.tom.rv2ide.xml.widgets.WidgetType
@@ -36,11 +37,41 @@ class StyleableResolverTest : TestCase() {
     assertThat(StyleableResolver.widgetFor("example.CustomView", table)).isSameInstanceAs(customView)
     assertThat(table.qualifiedLookups).containsExactly("example.CustomView")
   }
-
   fun testNormalizesQualifiedStyleableClassNames() {
     assertThat(StyleableResolver.simpleName("androidx.coordinatorlayout.widget.CoordinatorLayout"))
         .isEqualTo("CoordinatorLayout")
     assertThat(StyleableResolver.simpleName("FrameLayout")).isEqualTo("FrameLayout")
+  }
+
+  fun testCustomAttributeRequiresAbsenceFromStyleableAndGlobalAttrs() {
+    assertThat(
+            LayoutDiagnosticRule.isUnknownCustomAttribute(
+                "knownInStyleable",
+                setOf("knownInStyleable"),
+            ) { false }
+        )
+        .isFalse()
+    assertThat(
+            LayoutDiagnosticRule.isUnknownCustomAttribute(
+                "knownGlobally",
+                emptySet(),
+            ) { it == "knownGlobally" }
+        )
+        .isFalse()
+    assertThat(
+            LayoutDiagnosticRule.isUnknownCustomAttribute(
+                "knownInStyleabl",
+                setOf("knownInStyleable"),
+            ) { false }
+        )
+        .isTrue()
+    assertThat(
+            LayoutDiagnosticRule.isUnknownCustomAttribute(
+                "bindingAdapterAttribute",
+                setOf("knownInStyleable"),
+            ) { false }
+        )
+        .isFalse()
   }
 
   private fun testWidget(qualifiedName: String): Widget {
