@@ -28,23 +28,32 @@ import com.tom.rv2ide.xml.resources.ResourceTableRegistry
  */
 internal class XmlResourceResolver {
 
-  fun resolve(reference: XmlResourceReference): Resolution {
-    val tables = tablesFor(reference.packageName) ?: return Resolution.Unavailable
-    if (tables.any { it.contains(reference) }) {
+  fun resolve(
+      reference: XmlResourceReference,
+      moduleIds: ModuleResourceIdIndex.Snapshot = ModuleResourceIdIndex.Snapshot.Unavailable,
+  ): Resolution {
+    val tables = tablesFor(reference.packageName)
+    if (tables?.any { it.contains(reference) } == true) {
       return Resolution.Resolved
     }
-    // Unqualified @id references can be declared by @+id in another layout that is included into
-    // the current hierarchy. Resource snapshots are not yet guaranteed to contain every generated
-    // ID, so absence from the current snapshot is not sufficient evidence that such an ID is
-    // missing. Keep explicit packages (including android) strict.
-    return resolutionForMissingReference(reference)
+    if (tables == null &&
+        (reference.type != AaptResourceType.ID || reference.packageName != null)) {
+      return Resolution.Unavailable
+    }
+    return resolutionForMissingReference(reference, moduleIds)
   }
 
-  internal fun resolutionForMissingReference(reference: XmlResourceReference): Resolution {
-    return if (reference.type == AaptResourceType.ID && reference.packageName == null) {
-      Resolution.Unavailable
-    } else {
-      Resolution.NotFound
+  internal fun resolutionForMissingReference(
+      reference: XmlResourceReference,
+      moduleIds: ModuleResourceIdIndex.Snapshot = ModuleResourceIdIndex.Snapshot.Unavailable,
+  ): Resolution {
+    if (reference.type != AaptResourceType.ID || reference.packageName != null) {
+      return Resolution.NotFound
+    }
+    return when (moduleIds) {
+      is ModuleResourceIdIndex.Snapshot.Available ->
+          if (reference.entry in moduleIds.ids) Resolution.Resolved else Resolution.NotFound
+      ModuleResourceIdIndex.Snapshot.Unavailable -> Resolution.Unavailable
     }
   }
 

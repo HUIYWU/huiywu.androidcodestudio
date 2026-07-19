@@ -55,7 +55,8 @@ internal object ResourceReferenceDiagnosticRule :
       if (isDeclaredLocally(reference, context.declaredIds)) {
         return@forEach
       }
-      if (resourceResolver.resolve(reference) == XmlResourceResolver.Resolution.NotFound) {
+      if (resourceResolver.resolve(reference, context.moduleResourceIds) ==
+          XmlResourceResolver.Resolution.NotFound) {
         collector.errorValue(
             code = CODE_UNRESOLVED_RESOURCE,
             message = "Cannot resolve resource reference '${reference.text}'",
@@ -75,7 +76,8 @@ internal object ResourceReferenceDiagnosticRule :
     if (isDeclaredLocally(reference, context.declaredIds)) {
       return
     }
-    if (resourceResolver.resolve(reference) != XmlResourceResolver.Resolution.NotFound) {
+    if (resourceResolver.resolve(reference, context.moduleResourceIds) !=
+        XmlResourceResolver.Resolution.NotFound) {
       return
     }
 

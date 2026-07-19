@@ -595,7 +595,7 @@ private static final Pattern PROPERTY_PATTERN =
     if (!hasRealNoArgConstructor
         && (!kotlinParameters.isEmpty()
             || (!primaryConstructorPresent && !secondaryConstructors.isEmpty()))) {
-      out.append("  protected ").append(simpleName).append("() {}\n");
+      appendSyntheticNoArgConstructor(out, simpleName);
       emittedParameters.add("()");
     }
     if (primaryConstructorPresent || secondaryConstructors.isEmpty()) {
@@ -695,6 +695,12 @@ private static final Pattern PROPERTY_PATTERN =
     return "(" + String.join(",", types) + ")";
   }
 
+  private static void appendSyntheticNoArgConstructor(StringBuilder out, String simpleName) {
+    out.append("  @SuppressWarnings(\"")
+        .append(KotlinAbiSyntheticMembers.SYNTHETIC_CONSTRUCTOR_WARNING)
+        .append("\")\n  protected ").append(simpleName).append("() {}\n");
+  }
+
   private static String javaConstructorVisibility(String visibility) {
     return "private".equals(visibility) || "protected".equals(visibility)
         ? visibility
@@ -717,7 +723,7 @@ private static final Pattern PROPERTY_PATTERN =
     if (!hasNoArgSecondaryConstructor
         && !overloadCreatesNoArg
         && (!"()".equals(parameters) || (kotlinParameters == null && hasSecondaryConstructors))) {
-      out.append("  protected ").append(simpleName).append("() {}\n");
+      appendSyntheticNoArgConstructor(out, simpleName);
     }
     if (kotlinParameters != null || !hasSecondaryConstructors) {
       out.append("  ").append(javaConstructorVisibility(primaryVisibility)).append(' ')

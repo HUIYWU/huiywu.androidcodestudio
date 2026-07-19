@@ -439,9 +439,13 @@ class KotlinWorkspaceSetup(
                       "indexing",
                       JsonObject().apply {
                         addProperty("enabled", true)
-                        // Empty by default. Compiler/Dokka plugin projects may explicitly include
-                        // a safety-filtered package tree without changing the compiler classpath.
-                        add("includePackages", JsonArray())
+                        // Scope-only probe: this nonexistent package changes the dependency-index
+                        // fingerprint without widening any compiler/tooling safety namespace.
+                        // Restore this array to empty after package-cache hit verification.
+                        add(
+                          "includePackages",
+                          JsonArray().apply { add("com.example.__acs_scope_probe__") },
+                        )
                       },
                   )
                   add("acs", acsMetadata)

@@ -261,6 +261,7 @@ class KotlinJvmAbiStubGeneratorTest {
 
     assertNotNull(baseStub)
     assertContains(baseStub!!, "protected Base()")
+    assertContains(baseStub, "__kotlin_abi_synthetic_constructor__")
     assertContains(baseStub, "public Base(String label)")
 
     assertNotNull(userStub)
@@ -351,6 +352,7 @@ class KotlinJvmAbiStubGeneratorTest {
     assertContains(defaultsStub, "public Defaults(String name)")
     assertContains(defaultsStub, "public Defaults()")
     assertFalse(defaultsStub.contains("protected Defaults()"))
+    assertFalse(defaultsStub.contains("__kotlin_abi_synthetic_constructor__"))
 
     assertNotNull(alternateStub)
     assertContains(alternateStub!!, "private Alternate(String value)")

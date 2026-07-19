@@ -63,6 +63,11 @@ object FileManager {
     return this.activeDocuments.size
   }
 
+  /** Returns a stable snapshot of active paths without exposing mutable document state. */
+  fun getActiveDocumentFiles(): Set<Path> {
+    return this.activeDocuments.keys.toSet()
+  }
+
   fun getDocumentContents(file: Path): String {
     val document = getActiveDocument(file)
     if (document != null) {

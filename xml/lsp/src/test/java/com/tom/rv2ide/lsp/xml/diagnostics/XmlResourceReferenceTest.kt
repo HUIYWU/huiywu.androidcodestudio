@@ -68,6 +68,41 @@ class XmlResourceReferenceTest : TestCase() {
         .isEqualTo(XmlResourceResolver.Resolution.NotFound)
   }
 
+  fun testUsesCompleteModuleIdSnapshotForUnqualifiedIds() {
+    val resolver = XmlResourceResolver()
+    val available = ModuleResourceIdIndex.Snapshot.Available(setOf("editor_toolbar"))
+
+    assertThat(
+            resolver.resolutionForMissingReference(
+                XmlResourceReference.parse("@id/editor_toolbar")!!,
+                available,
+            )
+        )
+        .isEqualTo(XmlResourceResolver.Resolution.Resolved)
+    assertThat(
+            resolver.resolutionForMissingReference(
+                XmlResourceReference.parse("@id/misspelled_toolbar")!!,
+                available,
+            )
+        )
+        .isEqualTo(XmlResourceResolver.Resolution.NotFound)
+  }
+
+  fun testCollectsCreatingAndValuesItemIds() {
+    val ids =
+        ModuleResourceIdIndex.collectIds(
+            """
+            <resources xmlns:android="http://schemas.android.com/apk/res/android">
+              <item type="id" name="declared_item" />
+              <View android:id="@+id/created_id" />
+            </resources>
+            """.trimIndent()
+        )
+
+    assertThat(ids).containsExactly("declared_item", "created_id")
+    assertThat(ModuleResourceIdIndex.collectIds("<View")).isNull()
+  }
+
   fun testRecognizesSpecialValuesWithoutParsingThemAsResources() {
     assertThat(XmlResourceReference.isSpecialValue("@")).isTrue()
     assertThat(XmlResourceReference.isSpecialValue("@null")).isTrue()

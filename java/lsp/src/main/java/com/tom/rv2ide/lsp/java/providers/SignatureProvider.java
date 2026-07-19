@@ -19,6 +19,7 @@ package com.tom.rv2ide.lsp.java.providers;
 
 import androidx.annotation.NonNull;
 import com.tom.rv2ide.lsp.java.compiler.CompileTask;
+import com.tom.rv2ide.lsp.java.kotlin.KotlinAbiSyntheticMembers;
 import com.tom.rv2ide.lsp.java.compiler.CompilerProvider;
 import com.tom.rv2ide.lsp.java.compiler.SourceFileObject;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
@@ -249,7 +250,8 @@ public class SignatureProvider extends CancelableServiceProvider {
     TypeElement type = (TypeElement) trees.getElement(path);
     List<ExecutableElement> list = new ArrayList<>();
     for (Element member : task.task.getElements().getAllMembers(type)) {
-      if (member.getKind() != ElementKind.CONSTRUCTOR) {
+      if (member.getKind() != ElementKind.CONSTRUCTOR
+          || KotlinAbiSyntheticMembers.isSyntheticConstructor(member)) {
         continue;
       }
       if (!trees.isAccessible(scope, member, (DeclaredType) type.asType())) {

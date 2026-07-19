@@ -33,6 +33,7 @@ internal data class XmlDiagnosticContext(
     val isValuesFile: Boolean,
     val isManifestFile: Boolean,
     val declaredIds: Set<String>,
+    val moduleResourceIds: ModuleResourceIdIndex.Snapshot,
 ) {
   companion object {
     fun create(file: Path, text: String, document: DOMDocument): XmlDiagnosticContext {
@@ -45,6 +46,7 @@ internal data class XmlDiagnosticContext(
           isValuesFile = pathData?.resourceDirectory == VALUES_DIRECTORY,
           isManifestFile = pathData?.file?.name == ANDROID_MANIFEST_FILE_NAME,
           declaredIds = collectLocalIdDeclarations(document),
+          moduleResourceIds = ModuleResourceIdIndex.snapshot(file, text),
       )
     }
   }
