@@ -28,6 +28,22 @@ internal interface XmlDiagnosticRule {
   fun diagnose(context: XmlDiagnosticContext, collector: XmlDiagnosticCollector)
 }
 
+/**
+ * An element recovery rule invoked before semantic element rules. Returning true suppresses later
+ * semantic diagnostics for that element while traversal still continues into its children.
+ */
+internal interface XmlElementRecoveryDiagnosticRule {
+  val id: String
+
+  fun supports(context: XmlDiagnosticContext): Boolean
+
+  fun diagnoseAndShouldSuppress(
+      element: DOMElement,
+      context: XmlDiagnosticContext,
+      collector: XmlDiagnosticCollector,
+  ): Boolean
+}
+
 /** An element-level rule invoked during the service's single DOM traversal. */
 internal interface XmlElementDiagnosticRule {
   val id: String

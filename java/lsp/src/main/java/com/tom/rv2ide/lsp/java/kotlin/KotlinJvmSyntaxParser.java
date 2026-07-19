@@ -130,6 +130,7 @@ final class KotlinJvmSyntaxParser {
                   : parsedConstructorParameters;
           final boolean primaryConstructorPresent = constructor != null || recoveredConstructorText != null;
           final String constructorVisibility = constructorVisibility(source, constructor);
+          final boolean constructorJvmOverloads = hasJvmOverloads(source, constructor);
           final List<ConstructorSyntax> secondaryConstructors =
               secondaryConstructors(source, bodyNode);
           final TSNode companion = bodyNode == null ? null : directChild(bodyNode, "companion_object");
@@ -147,6 +148,7 @@ final class KotlinJvmSyntaxParser {
               constructorParameters,
               primaryConstructorPresent,
               constructorVisibility,
+              constructorJvmOverloads,
               secondaryConstructors,
               companionBody,
               companionMembers,
@@ -297,6 +299,11 @@ final class KotlinJvmSyntaxParser {
     return Collections.unmodifiableList(result);
   }
 
+  private static boolean hasJvmOverloads(String source, TSNode constructor) {
+    final TSNode modifiers = constructor == null ? null : directChild(constructor, "modifiers");
+    return modifiers != null && text(source, modifiers).contains("JvmOverloads");
+  }
+
   private static String constructorVisibility(String source, TSNode constructor) {
     if (constructor == null) {
       return "public";
@@ -323,9 +330,16 @@ final class KotlinJvmSyntaxParser {
       final String visibility = containsToken(modifiers, "private")
           ? "private"
           : containsToken(modifiers, "protected") ? "protected" : "public";
-      result.add(new ConstructorSyntax(parameters(source, parameterList), visibility));
+      result.add(new ConstructorSyntax(
+          parameters(source, parameterList),
+          visibility,
+          hasJvmOverloads(source, declaration)));
     }
     return Collections.unmodifiableList(result);
+  }
+
+  private static boolean hasDefaultValue(String source, TSNode parameter) {
+    return topLevelIndexOf(text(source, parameter), '=') >= 0;
   }
 
   private static List<ConstructorParameterSyntax> constructorParameters(
@@ -343,7 +357,8 @@ final class KotlinJvmSyntaxParser {
           name == null ? "arg" + result.size() : text(source, name),
           type == null ? null : text(source, type),
           hasDirectToken(parameter, "val"),
-          hasDirectToken(parameter, "var")));
+          hasDirectToken(parameter, "var"),
+          hasDefaultValue(source, parameter)));
     }
     return Collections.unmodifiableList(result);
   }
@@ -503,7 +518,8 @@ final class KotlinJvmSyntaxParser {
       if (equals >= 0) {
         type = type.substring(0, equals).trim();
       }
-      result.add(new ConstructorParameterSyntax(name, type, property, mutable));
+      result.add(new ConstructorParameterSyntax(
+          name, type, property, mutable, equals >= 0));
     }
     return Collections.unmodifiableList(result);
   }
@@ -665,6 +681,7 @@ final class KotlinJvmSyntaxParser {
     final List<ConstructorParameterSyntax> constructorParameters;
     final boolean primaryConstructorPresent;
     final String constructorVisibility;
+    final boolean constructorJvmOverloads;
     final List<ConstructorSyntax> secondaryConstructors;
     final String companionBody;
     final List<MemberSyntax> companionMembers;
@@ -683,6 +700,7 @@ final class KotlinJvmSyntaxParser {
         List<ConstructorParameterSyntax> constructorParameters,
         boolean primaryConstructorPresent,
         String constructorVisibility,
+        boolean constructorJvmOverloads,
         List<ConstructorSyntax> secondaryConstructors,
         String companionBody,
         List<MemberSyntax> companionMembers,
@@ -699,6 +717,7 @@ final class KotlinJvmSyntaxParser {
       this.constructorParameters = constructorParameters;
       this.primaryConstructorPresent = primaryConstructorPresent;
       this.constructorVisibility = constructorVisibility;
+      this.constructorJvmOverloads = constructorJvmOverloads;
       this.secondaryConstructors = secondaryConstructors;
       this.companionBody = companionBody;
       this.companionMembers = companionMembers;
@@ -788,10 +807,13 @@ final class KotlinJvmSyntaxParser {
   static final class ConstructorSyntax {
     final List<ParameterSyntax> parameters;
     final String visibility;
+    final boolean jvmOverloads;
 
-    ConstructorSyntax(List<ParameterSyntax> parameters, String visibility) {
+    ConstructorSyntax(
+        List<ParameterSyntax> parameters, String visibility, boolean jvmOverloads) {
       this.parameters = parameters;
       this.visibility = visibility;
+      this.jvmOverloads = jvmOverloads;
     }
   }
 
@@ -800,13 +822,19 @@ final class KotlinJvmSyntaxParser {
     final String type;
     final boolean property;
     final boolean mutableProperty;
+    final boolean defaultValue;
 
     ConstructorParameterSyntax(
-        String name, String type, boolean readOnlyProperty, boolean mutableProperty) {
+        String name,
+        String type,
+        boolean readOnlyProperty,
+        boolean mutableProperty,
+        boolean defaultValue) {
       this.name = name;
       this.type = type;
       this.property = readOnlyProperty || mutableProperty;
       this.mutableProperty = mutableProperty;
+      this.defaultValue = defaultValue;
     }
   }
 

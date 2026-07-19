@@ -160,6 +160,7 @@ private static final Pattern PROPERTY_PATTERN =
           syntax.constructorParameters,
           syntax.primaryConstructorPresent,
           syntax.constructorVisibility,
+          syntax.constructorJvmOverloads,
           syntax.secondaryConstructors);
       appendSyntaxConstructorProperties(out, syntax.constructorParameters);
     }
@@ -223,6 +224,7 @@ private static final Pattern PROPERTY_PATTERN =
           simpleName,
           constructor,
           primaryConstructorVisibilityFallback(source, declaration.end(3), constructor),
+          primaryConstructorJvmOverloadsFallback(source, declaration.end(3), constructor),
           hasSecondaryConstructors,
           hasNoArgSecondaryConstructor);
       appendConstructorProperties(out, constructor);
@@ -580,11 +582,15 @@ private static final Pattern PROPERTY_PATTERN =
       List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters,
       boolean primaryConstructorPresent,
       String primaryVisibility,
+      boolean primaryJvmOverloads,
       List<KotlinJvmSyntaxParser.ConstructorSyntax> secondaryConstructors) {
     final Set<String> emittedParameters = new LinkedHashSet<>();
     boolean hasRealNoArgConstructor = primaryConstructorPresent && kotlinParameters.isEmpty();
+    hasRealNoArgConstructor |= primaryJvmOverloads && allConstructorParametersDefault(kotlinParameters);
     for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : secondaryConstructors) {
       hasRealNoArgConstructor |= constructor.parameters.isEmpty();
+      hasRealNoArgConstructor |=
+          constructor.jvmOverloads && allParametersDefault(constructor.parameters);
     }
     if (!hasRealNoArgConstructor
         && (!kotlinParameters.isEmpty()
@@ -597,6 +603,10 @@ private static final Pattern PROPERTY_PATTERN =
       out.append("  ").append(javaConstructorVisibility(primaryVisibility)).append(' ')
           .append(simpleName).append(primaryParameters).append(" {}\n");
       emittedParameters.add(primaryConstructorSignature(kotlinParameters));
+      if (primaryJvmOverloads) {
+        appendPrimaryConstructorOverloads(
+            out, simpleName, kotlinParameters, primaryVisibility, emittedParameters);
+      }
     }
     for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : secondaryConstructors) {
       final String parameters = javaSyntaxParameterList(constructor.parameters, true);
@@ -605,7 +615,64 @@ private static final Pattern PROPERTY_PATTERN =
       }
       out.append("  ").append(javaConstructorVisibility(constructor.visibility)).append(' ')
           .append(simpleName).append(parameters).append(" {}\n");
+      if (constructor.jvmOverloads) {
+        appendSecondaryConstructorOverloads(
+            out, simpleName, constructor, emittedParameters);
+      }
     }
+  }
+
+  private static void appendPrimaryConstructorOverloads(
+      StringBuilder out,
+      String simpleName,
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> parameters,
+      String visibility,
+      Set<String> emittedParameters) {
+    int firstOmittable = parameters.size();
+    for (int index = parameters.size() - 1;
+        index >= 0 && parameters.get(index).defaultValue; index--) {
+      firstOmittable = index;
+    }
+    for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
+      final List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> overload =
+          parameters.subList(0, count);
+      if (!emittedParameters.add(primaryConstructorSignature(overload))) {
+        continue;
+      }
+      out.append("  ").append(javaConstructorVisibility(visibility)).append(' ')
+          .append(simpleName).append(javaConstructorParameterList(overload)).append(" {}\n");
+    }
+  }
+
+  private static void appendSecondaryConstructorOverloads(
+      StringBuilder out,
+      String simpleName,
+      KotlinJvmSyntaxParser.ConstructorSyntax constructor,
+      Set<String> emittedParameters) {
+    final List<KotlinJvmSyntaxParser.ParameterSyntax> parameters = constructor.parameters;
+    int firstOmittable = parameters.size();
+    for (int index = parameters.size() - 1;
+        index >= 0 && parameters.get(index).defaultValue; index--) {
+      firstOmittable = index;
+    }
+    for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
+      final List<KotlinJvmSyntaxParser.ParameterSyntax> overload = parameters.subList(0, count);
+      if (!emittedParameters.add(secondaryConstructorSignature(overload))) {
+        continue;
+      }
+      out.append("  ").append(javaConstructorVisibility(constructor.visibility)).append(' ')
+          .append(simpleName).append(javaSyntaxParameterList(overload, false)).append(" {}\n");
+    }
+  }
+
+  private static boolean allConstructorParametersDefault(
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> parameters) {
+    return !parameters.isEmpty() && parameters.stream().allMatch(parameter -> parameter.defaultValue);
+  }
+
+  private static boolean allParametersDefault(
+      List<KotlinJvmSyntaxParser.ParameterSyntax> parameters) {
+    return !parameters.isEmpty() && parameters.stream().allMatch(parameter -> parameter.defaultValue);
   }
 
   private static String primaryConstructorSignature(
@@ -639,23 +706,39 @@ private static final Pattern PROPERTY_PATTERN =
       String simpleName,
       String kotlinParameters,
       String primaryVisibility,
+      boolean primaryJvmOverloads,
       boolean hasSecondaryConstructors,
       boolean hasNoArgSecondaryConstructor) {
     final String parameters = parameterList(kotlinParameters);
+    final boolean overloadCreatesNoArg = primaryJvmOverloads
+        && kotlinParameters != null
+        && allParametersDefaultFallback(
+            splitParameters(kotlinParameters.substring(1, kotlinParameters.length() - 1)));
     if (!hasNoArgSecondaryConstructor
+        && !overloadCreatesNoArg
         && (!"()".equals(parameters) || (kotlinParameters == null && hasSecondaryConstructors))) {
       out.append("  protected ").append(simpleName).append("() {}\n");
     }
     if (kotlinParameters != null || !hasSecondaryConstructors) {
       out.append("  ").append(javaConstructorVisibility(primaryVisibility)).append(' ')
           .append(simpleName).append(parameters).append(" {}\n");
+      if (primaryJvmOverloads && kotlinParameters != null) {
+        appendConstructorOverloadsFallback(
+            out,
+            simpleName,
+            splitParameters(kotlinParameters.substring(1, kotlinParameters.length() - 1)),
+            primaryVisibility,
+            new LinkedHashSet<>(java.util.Collections.singleton(parameters)));
+      }
     }
   }
 
   private static boolean hasSecondaryConstructorsFallback(String body) {
     int depth = 0;
     for (String line : body.split("\\R")) {
-      if (depth == 0 && SECONDARY_CONSTRUCTOR_PATTERN.matcher(line.trim()).matches()) {
+      if (depth == 0
+          && SECONDARY_CONSTRUCTOR_PATTERN.matcher(
+              line.replace("@JvmOverloads", "").trim()).matches()) {
         return true;
       }
       depth = Math.max(0, depth + braceDelta(line));
@@ -667,8 +750,13 @@ private static final Pattern PROPERTY_PATTERN =
     int depth = 0;
     for (String line : body.split("\\R")) {
       if (depth == 0) {
-        final Matcher constructor = SECONDARY_CONSTRUCTOR_PATTERN.matcher(line.trim());
-        if (constructor.matches() && constructor.group(2).trim().isEmpty()) {
+        final boolean jvmOverloads = line.contains("@JvmOverloads");
+        final Matcher constructor = SECONDARY_CONSTRUCTOR_PATTERN.matcher(
+            line.replace("@JvmOverloads", "").trim());
+        if (constructor.matches()
+            && (constructor.group(2).trim().isEmpty()
+                || (jvmOverloads
+                    && allParametersDefaultFallback(splitParameters(constructor.group(2)))))) {
           return true;
         }
       }
@@ -685,19 +773,71 @@ private static final Pattern PROPERTY_PATTERN =
       emittedParameters.add("()");
     }
     int depth = 0;
+    boolean jvmOverloads = false;
     for (String line : body.split("\\R")) {
       if (depth == 0) {
-        final Matcher constructor = SECONDARY_CONSTRUCTOR_PATTERN.matcher(line.trim());
+        final boolean lineJvmOverloads = line.contains("@JvmOverloads");
+        final String declarationLine = line.replace("@JvmOverloads", "").trim();
+        jvmOverloads |= lineJvmOverloads;
+        final Matcher constructor = SECONDARY_CONSTRUCTOR_PATTERN.matcher(declarationLine);
         if (constructor.matches()) {
-          final String parameters = parameterList("(" + constructor.group(2) + ")");
+          final List<String> kotlinParameters = splitParameters(constructor.group(2));
+          final String parameters = javaParameterList(kotlinParameters);
           if (emittedParameters.add(parameters)) {
             out.append("  ").append(javaConstructorVisibility(constructor.group(1).trim()))
                 .append(' ').append(simpleName).append(parameters).append(" {}\n");
           }
+          if (jvmOverloads) {
+            appendConstructorOverloadsFallback(
+                out,
+                simpleName,
+                kotlinParameters,
+                constructor.group(1).trim(),
+                emittedParameters);
+          }
+          jvmOverloads = false;
+        } else if (!declarationLine.isEmpty() && !declarationLine.startsWith("@")) {
+          jvmOverloads = false;
         }
       }
       depth = Math.max(0, depth + braceDelta(line));
     }
+  }
+
+  private static void appendConstructorOverloadsFallback(
+      StringBuilder out,
+      String simpleName,
+      List<String> parameters,
+      String visibility,
+      Set<String> emittedParameters) {
+    int firstOmittable = parameters.size();
+    for (int index = parameters.size() - 1;
+        index >= 0 && hasDefaultValue(parameters.get(index)); index--) {
+      firstOmittable = index;
+    }
+    for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
+      final String overload = javaParameterList(parameters.subList(0, count), false);
+      if (!emittedParameters.add(overload)) {
+        continue;
+      }
+      out.append("  ").append(javaConstructorVisibility(visibility)).append(' ')
+          .append(simpleName).append(overload).append(" {}\n");
+    }
+  }
+
+  private static boolean allParametersDefaultFallback(List<String> parameters) {
+    return !parameters.isEmpty() && parameters.stream().allMatch(
+        KotlinJvmAbiStubGenerator::hasDefaultValue);
+  }
+
+  private static boolean primaryConstructorJvmOverloadsFallback(
+      String source, int classNameEnd, String constructor) {
+    if (constructor == null) {
+      return false;
+    }
+    final int constructorStart = source.indexOf(constructor, classNameEnd);
+    return constructorStart >= classNameEnd
+        && source.substring(classNameEnd, constructorStart).contains("JvmOverloads");
   }
 
   private static String primaryConstructorVisibilityFallback(

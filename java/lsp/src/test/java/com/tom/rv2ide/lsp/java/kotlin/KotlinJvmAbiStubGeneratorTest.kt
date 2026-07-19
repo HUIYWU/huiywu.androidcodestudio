@@ -311,6 +311,59 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsJvmOverloadsConstructors() {
+    val source =
+        """
+        package sample
+
+        class Request @JvmOverloads constructor(
+          val path: String,
+          val retries: Int = 3,
+          val secure: Boolean = true
+        )
+
+        class Defaults @JvmOverloads constructor(
+          val name: String = "default",
+          val count: Int = 1
+        )
+
+        class Alternate private constructor(val value: String) {
+          @JvmOverloads
+          protected constructor(code: Int, enabled: Boolean = true, label: String = "") :
+              this(code.toString())
+        }
+
+        class Plain(val name: String = "plain")
+        """.trimIndent()
+
+    val requestStub = KotlinJvmAbiStubGenerator.generate("sample.Request", "Requests.kt", source)
+    val defaultsStub = KotlinJvmAbiStubGenerator.generate("sample.Defaults", "Requests.kt", source)
+    val alternateStub = KotlinJvmAbiStubGenerator.generate("sample.Alternate", "Requests.kt", source)
+    val plainStub = KotlinJvmAbiStubGenerator.generate("sample.Plain", "Requests.kt", source)
+
+    assertNotNull(requestStub)
+    assertContains(requestStub!!, "public Request(String path, int retries, boolean secure)")
+    assertContains(requestStub, "public Request(String path, int retries)")
+    assertContains(requestStub, "public Request(String path)")
+
+    assertNotNull(defaultsStub)
+    assertContains(defaultsStub!!, "public Defaults(String name, int count)")
+    assertContains(defaultsStub, "public Defaults(String name)")
+    assertContains(defaultsStub, "public Defaults()")
+    assertFalse(defaultsStub.contains("protected Defaults()"))
+
+    assertNotNull(alternateStub)
+    assertContains(alternateStub!!, "private Alternate(String value)")
+    assertContains(alternateStub, "protected Alternate(int code, boolean enabled, String label)")
+    assertContains(alternateStub, "protected Alternate(int code, boolean enabled)")
+    assertContains(alternateStub, "protected Alternate(int code)")
+
+    assertNotNull(plainStub)
+    assertContains(plainStub!!, "public Plain(String name)")
+    assertFalse(plainStub.contains("public Plain()"))
+  }
+
+  @Test
   fun generate_projectsVarargParameters() {
     val classSource =
         """

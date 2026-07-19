@@ -30,6 +30,9 @@ internal object XmlDiagnosticRuleRegistry {
           ManifestDiagnosticRule,
       )
 
+  val elementRecoveryRules: List<XmlElementRecoveryDiagnosticRule> =
+      listOf(CommonXmlElementDiagnosticRule)
+
   val elementRules: List<XmlElementDiagnosticRule> =
       listOf(
           CommonXmlElementDiagnosticRule,

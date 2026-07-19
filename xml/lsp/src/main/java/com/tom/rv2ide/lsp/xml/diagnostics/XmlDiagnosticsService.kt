@@ -68,9 +68,11 @@ internal class XmlDiagnosticsService {
         rule.diagnose(context, collector)
       }
     }
+    val elementRecoveryRules =
+        XmlDiagnosticRuleRegistry.elementRecoveryRules.filter { it.supports(context) }
     val elementRules = XmlDiagnosticRuleRegistry.elementRules.filter { it.supports(context) }
     val textRules = XmlDiagnosticRuleRegistry.textRules.filter { it.supports(context) }
-    visit(context.document, collector, context, elementRules, textRules)
+    visit(context.document, collector, context, elementRecoveryRules, elementRules, textRules)
 
     return DiagnosticResult(context.file, collector.build(), CHANNEL)
   }
@@ -79,12 +81,16 @@ internal class XmlDiagnosticsService {
       node: DOMNode,
       collector: XmlDiagnosticCollector,
       context: XmlDiagnosticContext,
+      elementRecoveryRules: List<XmlElementRecoveryDiagnosticRule>,
       elementRules: List<XmlElementDiagnosticRule>,
       textRules: List<XmlTextDiagnosticRule>,
   ) {
     if (node is DOMElement) {
-      val hasSyntaxRecovery = checkSyntaxRecovery(node, collector)
-      if (!hasSyntaxRecovery) {
+      val shouldSuppress =
+          elementRecoveryRules.any { rule ->
+            rule.diagnoseAndShouldSuppress(node, context, collector)
+          }
+      if (!shouldSuppress) {
         elementRules.forEach { rule -> rule.diagnose(node, context, collector) }
       }
     } else if (node is DOMText && node.isText) {
@@ -92,7 +98,7 @@ internal class XmlDiagnosticsService {
     }
 
     node.children.forEach { child ->
-      visit(child, collector, context, elementRules, textRules)
+      visit(child, collector, context, elementRecoveryRules, elementRules, textRules)
     }
   }
 
@@ -100,69 +106,11 @@ internal class XmlDiagnosticsService {
   internal fun collectLocalIdDeclarations(document: DOMNode): Set<String> =
       com.tom.rv2ide.lsp.xml.diagnostics.collectLocalIdDeclarations(document)
 
-  /**
-   * Reports only recovery states explicitly represented by LemMinX's tolerant DOM. This is not a
-   * substitute for a full parser-error stream, but it gives stable ranges for common structural
-   * failures without attempting to re-parse XML using regular expressions.
-   */
-  private fun checkSyntaxRecovery(element: DOMElement, collector: XmlDiagnosticCollector): Boolean {
-    val tagName = element.tagName
-    if (element.isOrphanEndTag) {
-      collector.errorRange(
-          code = CODE_XML_SYNTAX,
-          message = if (tagName == null) "Unexpected closing tag" else "Unexpected closing tag '</$tagName>'",
-          start = element.start,
-          end = element.end,
-      )
-      return true
-    }
-    if (!element.hasStartTag() || tagName == null) {
-      return false
-    }
-    // LemMinX records a `/>` token as self-closed but may leave startTagCloseOffset unset.
-    // A self-closed element is nevertheless syntactically complete and must not be diagnosed as
-    // an unclosed start tag.
-    if (element.isSelfClosed) {
-      return false
-    }
-    if (!element.isStartTagClosed) {
-      collector.errorRange(
-          code = CODE_XML_SYNTAX,
-          message = "Start tag '<$tagName>' is not closed",
-          start = element.start,
-          end = element.unclosedStartTagCloseOffset,
-      )
-      return true
-    }
-    if (!element.isSelfClosed && !element.isClosed && !hasDirectSyntaxRecoveryChild(element)) {
-      val nameStart = element.start + 1
-      collector.errorRange(
-          code = CODE_XML_SYNTAX,
-          message = "Element '<$tagName>' is missing an end tag",
-          start = nameStart,
-          end = nameStart + tagName.length,
-      )
-      return true
-    }
-    return false
-  }
-
-  private fun hasDirectSyntaxRecoveryChild(element: DOMElement): Boolean {
-    return element.children.any { child ->
-      child is DOMElement &&
-          (child.isOrphanEndTag ||
-              (child.hasStartTag() &&
-                  !child.isSelfClosed &&
-                  (!child.isStartTagClosed || !child.isClosed)))
-    }
-  }
-
   companion object {
     private val log = LoggerFactory.getLogger(XmlDiagnosticsService::class.java)
 
     const val CHANNEL = "xml-lsp"
     const val SOURCE = "xml-lsp"
-    const val CODE_XML_SYNTAX = "XML001"
     const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
   }
 }

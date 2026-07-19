@@ -61,6 +61,36 @@ class XmlDocumentDiagnosticRuleTest : TestCase() {
     assertThat(invalidCollector.build().map { it.code }).containsExactly("MANIFEST001")
   }
 
+  fun testCommonRecoveryRuleAcceptsSelfClosingElement() {
+    val context = context("project/src/main/res/layout/screen.xml", "<View />")
+    val collector = XmlDiagnosticCollector(context.text)
+
+    val shouldSuppress =
+        CommonXmlElementDiagnosticRule.diagnoseAndShouldSuppress(
+            context.document.documentElement,
+            context,
+            collector,
+        )
+
+    assertThat(shouldSuppress).isFalse()
+    assertThat(collector.build()).isEmpty()
+  }
+
+  fun testCommonRecoveryRuleReportsUnclosedStartTagAndSuppressesSemantics() {
+    val context = context("project/src/main/res/layout/screen.xml", "<View")
+    val collector = XmlDiagnosticCollector(context.text)
+
+    val shouldSuppress =
+        CommonXmlElementDiagnosticRule.diagnoseAndShouldSuppress(
+            context.document.documentElement,
+            context,
+            collector,
+        )
+
+    assertThat(shouldSuppress).isTrue()
+    assertThat(collector.build().map { it.code }).containsExactly("XML001")
+  }
+
   fun testCommonElementRuleReportsDuplicatePrefixAndAndroidNamespaceProblems() {
     val text =
         """<View xmlns:android="wrong" custom:value="x" android:id="one" android:id="two" />"""
