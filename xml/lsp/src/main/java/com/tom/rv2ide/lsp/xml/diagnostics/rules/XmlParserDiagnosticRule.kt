@@ -20,7 +20,15 @@ import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticCollector
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticRule
 import java.io.StringReader
+import java.util.Locale
+import java.util.MissingResourceException
+import jaxp.sun.org.apache.xerces.internal.impl.XMLErrorReporter
+import jaxp.sun.org.apache.xerces.internal.impl.msg.XMLMessageFormatter
+import jaxp.sun.org.apache.xerces.internal.impl.xs.opti.DefaultXMLDocumentHandler
 import jaxp.sun.org.apache.xerces.internal.parsers.XIncludeAwareParserConfiguration
+import jaxp.sun.org.apache.xerces.internal.util.MessageFormatter
+import jaxp.sun.org.apache.xerces.internal.utils.XMLSecurityManager
+import jaxp.sun.org.apache.xerces.internal.utils.XMLSecurityPropertyManager
 import jaxp.sun.org.apache.xerces.internal.xni.XNIException
 import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLEntityResolver
 import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLErrorHandler
@@ -37,6 +45,22 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     // Composite Xerces is an optional syntax enhancement. Any configuration/runtime incompatibility
     // must degrade to the existing tolerant DOM diagnostics instead of aborting the document pass.
     val errors = runCatching { parse(context) }.getOrElse { return }
+    collect(errors, context, collector)
+  }
+
+  /** Strict test entry point: exposes parser/configuration failures instead of silently degrading. */
+  internal fun diagnoseStrictForTest(
+      context: XmlDiagnosticContext,
+      collector: XmlDiagnosticCollector,
+  ) {
+    collect(parse(context), context, collector)
+  }
+
+  private fun collect(
+      errors: List<ParserError>,
+      context: XmlDiagnosticContext,
+      collector: XmlDiagnosticCollector,
+  ) {
     errors.forEach { error ->
       if (error.key in ERRORS_COVERED_BY_TOLERANT_DOM) {
         return@forEach
@@ -55,6 +79,12 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   private fun parse(context: XmlDiagnosticContext): List<ParserError> {
     val errors = mutableListOf<ParserError>()
     val configuration = XIncludeAwareParserConfiguration()
+    val noOpHandler = DefaultXMLDocumentHandler()
+    configuration.documentHandler = noOpHandler
+    configuration.dtdHandler = noOpHandler
+    configuration.dtdContentModelHandler = noOpHandler
+    installSecurityManagers(configuration)
+    installI18nFormatterWithKeyFallback(configuration)
     configureSafely(configuration, FEATURE_VALIDATION, false)
     configureSafely(configuration, FEATURE_SCHEMA_VALIDATION, false)
     configureSafely(configuration, FEATURE_LOAD_EXTERNAL_DTD, false)
@@ -62,7 +92,9 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     configureSafely(configuration, FEATURE_EXTERNAL_PARAMETER_ENTITIES, false)
     configureSafely(configuration, FEATURE_XINCLUDE, false)
     configureSafely(configuration, FEATURE_DISALLOW_DOCTYPE, true)
-    configureSafely(configuration, FEATURE_CONTINUE_AFTER_FATAL_ERROR, true)
+    // Composite Xerces is based on an older parser branch. Stop after a fatal error instead of
+    // continuing through a corrupted scanner state and potentially discarding the captured error.
+    configureSafely(configuration, FEATURE_CONTINUE_AFTER_FATAL_ERROR, false)
     configuration.entityResolver = XMLEntityResolver { identifier ->
       XMLInputSource(
           identifier.publicId,
@@ -95,8 +127,18 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
         )
     try {
       configuration.parse(input)
-    } catch (_: XNIException) {
-      // Fatal well-formedness errors are delivered to the XNI error handler before parsing stops.
+    } catch (error: Exception) {
+      // Fatal syntax errors are delivered before parsing stops. Preserve those captured errors even
+      // if the old relocated parser subsequently wraps the stop condition in another exception.
+      if (errors.isEmpty()) {
+        throw error
+      }
+    } catch (error: LinkageError) {
+      // Preserve already delivered diagnostics, but let the caller safely degrade when initialization
+      // or class linking failed before the XNI handler received anything.
+      if (errors.isEmpty()) {
+        throw error
+      }
     }
     return errors
   }
@@ -172,6 +214,53 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
         character == '.'
   }
 
+  private fun installSecurityManagers(configuration: XIncludeAwareParserConfiguration) {
+    configuration.setProperty(PROPERTY_SECURITY_MANAGER, XMLSecurityManager(true))
+    val propertyManager = XMLSecurityPropertyManager()
+    propertyManager.setValue(
+        XMLSecurityPropertyManager.Property.ACCESS_EXTERNAL_DTD,
+        XMLSecurityPropertyManager.State.APIPROPERTY,
+        "",
+    )
+    propertyManager.setValue(
+        XMLSecurityPropertyManager.Property.ACCESS_EXTERNAL_SCHEMA,
+        XMLSecurityPropertyManager.State.APIPROPERTY,
+        "",
+    )
+    configuration.setProperty(PROPERTY_XML_SECURITY_PROPERTY_MANAGER, propertyManager)
+  }
+
+  private fun installI18nFormatterWithKeyFallback(
+      configuration: XIncludeAwareParserConfiguration,
+  ) {
+    val reporter =
+        configuration.getProperty(PROPERTY_ERROR_REPORTER) as? XMLErrorReporter ?: return
+    val delegate = XMLMessageFormatter()
+    val formatter =
+        object : MessageFormatter {
+          override fun formatMessage(
+              locale: Locale?,
+              key: String,
+              arguments: Array<out Any?>?,
+          ): String {
+            return try {
+              delegate.formatMessage(locale, key, arguments)
+            } catch (_: MissingResourceException) {
+              fallbackMessage(key, arguments)
+            }
+          }
+        }
+    reporter.putMessageFormatter(XMLMessageFormatter.XML_DOMAIN, formatter)
+    reporter.putMessageFormatter(XMLMessageFormatter.XMLNS_DOMAIN, formatter)
+  }
+
+  private fun fallbackMessage(key: String, arguments: Array<out Any?>?): String {
+    if (arguments.isNullOrEmpty()) {
+      return key
+    }
+    return "$key: ${arguments.joinToString()}"
+  }
+
   private fun configureSafely(
       configuration: XIncludeAwareParserConfiguration,
       feature: String,
@@ -194,6 +283,12 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
 
   private const val CODE_XML_PARSER_SYNTAX = "XML005"
   private const val MAX_PARSER_ERRORS = 20
+  private const val PROPERTY_ERROR_REPORTER =
+      "http://apache.org/xml/properties/internal/error-reporter"
+  private const val PROPERTY_SECURITY_MANAGER =
+      "http://apache.org/xml/properties/security-manager"
+  private const val PROPERTY_XML_SECURITY_PROPERTY_MANAGER =
+      "http://www.oracle.com/xml/jaxp/properties/xmlSecurityPropertyManager"
   private const val FEATURE_VALIDATION = "http://xml.org/sax/features/validation"
   private const val FEATURE_SCHEMA_VALIDATION =
       "http://apache.org/xml/features/validation/schema"

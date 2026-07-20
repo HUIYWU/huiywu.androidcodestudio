@@ -62,7 +62,7 @@ class XmlParserDiagnosticRuleTest : TestCase() {
 
   private fun diagnose(text: String) =
       XmlDiagnosticCollector(text).let { collector ->
-        XmlParserDiagnosticRule.diagnose(context(text), collector)
+        XmlParserDiagnosticRule.diagnoseStrictForTest(context(text), collector)
         collector.build()
       }
 
