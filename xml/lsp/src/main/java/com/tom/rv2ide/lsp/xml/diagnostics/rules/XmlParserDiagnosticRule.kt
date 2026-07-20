@@ -20,22 +20,22 @@ import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticCollector
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticRule
 import java.io.StringReader
-import org.apache.xerces.parsers.XIncludeAwareParserConfiguration
-import org.apache.xerces.xni.XNIException
-import org.apache.xerces.xni.parser.XMLEntityResolver
-import org.apache.xerces.xni.parser.XMLErrorHandler
-import org.apache.xerces.xni.parser.XMLInputSource
-import org.apache.xerces.xni.parser.XMLParseException
+import jaxp.sun.org.apache.xerces.internal.parsers.XIncludeAwareParserConfiguration
+import jaxp.sun.org.apache.xerces.internal.xni.XNIException
+import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLEntityResolver
+import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLErrorHandler
+import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLInputSource
+import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLParseException
 
-/** XML005: Xerces well-formedness errors not already covered by XML001-XML003. */
+/** XML005: relocated composite Xerces errors not already covered by XML001-XML003. */
 internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   override val id: String = "xml-parser"
 
   override fun supports(context: XmlDiagnosticContext): Boolean = true
 
   override fun diagnose(context: XmlDiagnosticContext, collector: XmlDiagnosticCollector) {
-    // Xerces is an optional syntax enhancement. Any parser/configuration incompatibility must
-    // degrade to the existing tolerant DOM diagnostics instead of aborting the document pass.
+    // Composite Xerces is an optional syntax enhancement. Any configuration/runtime incompatibility
+    // must degrade to the existing tolerant DOM diagnostics instead of aborting the document pass.
     val errors = runCatching { parse(context) }.getOrElse { return }
     errors.forEach { error ->
       if (error.key in ERRORS_COVERED_BY_TOLERANT_DOM) {
@@ -85,12 +85,18 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
           }
         }
 
-    val input = XMLInputSource(null, context.file.toUri().toString(), null)
-    input.characterStream = StringReader(context.text)
+    val input =
+        XMLInputSource(
+            null,
+            context.file.toUri().toString(),
+            null,
+            StringReader(context.text),
+            null,
+        )
     try {
       configuration.parse(input)
     } catch (_: XNIException) {
-      // Fatal well-formedness errors are already delivered to the error handler.
+      // Fatal well-formedness errors are delivered to the XNI error handler before parsing stops.
     }
     return errors
   }
@@ -106,6 +112,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     errors +=
         ParserError(
             key = key.orEmpty(),
+            // Composite Xerces formats this message with Locale.getDefault() and its i18n bundles.
             message = exception.message ?: "Invalid XML syntax",
             characterOffset = exception.characterOffset,
             line = exception.lineNumber,
@@ -158,7 +165,11 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   }
 
   private fun isXmlNameCharacter(character: Char): Boolean {
-    return character.isLetterOrDigit() || character == '_' || character == '-' || character == ':' || character == '.'
+    return character.isLetterOrDigit() ||
+        character == '_' ||
+        character == '-' ||
+        character == ':' ||
+        character == '.'
   }
 
   private fun configureSafely(
@@ -169,7 +180,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     try {
       configuration.setFeature(feature, enabled)
     } catch (_: XNIException) {
-      // Xerces variants may not expose every optional feature. Core parsing remains available.
+      // The relocated JAXP branch may not expose every optional feature on every configuration.
     }
   }
 

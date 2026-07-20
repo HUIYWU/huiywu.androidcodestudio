@@ -36,7 +36,7 @@ class XmlParserDiagnosticRuleTest : TestCase() {
   }
 
   fun testReportsSyntaxErrorNotCoveredByTolerantDom() {
-    val diagnostics = diagnose("<View android:id\"@+id/example\" />")
+    val diagnostics = diagnose("<View><!-- invalid -- comment --></View>")
 
     assertThat(diagnostics.map { it.code }).containsExactly("XML005")
     assertThat(diagnostics.single().message).isNotEmpty()
