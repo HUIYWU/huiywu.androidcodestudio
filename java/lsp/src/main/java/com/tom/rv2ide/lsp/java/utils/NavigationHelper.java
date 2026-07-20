@@ -42,6 +42,8 @@ import java.nio.file.Path;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.Modifier;
 import openjdk.source.tree.CompilationUnitTree;
+import openjdk.source.tree.NewClassTree;
+import openjdk.source.util.SourcePositions;
 import openjdk.source.util.TreePath;
 import openjdk.source.util.Trees;
 
@@ -64,10 +66,30 @@ public class NavigationHelper {
         if (path == null) {
           return null;
         }
+        path = constructorInvocationPath(trees, root, path, cursor);
         return trees.getElement(path);
       }
     }
     throw new RuntimeException("file not found");
+  }
+
+  private static TreePath constructorInvocationPath(
+      Trees trees, CompilationUnitTree root, TreePath path, long cursor) {
+    TreePath current = path;
+    while (current != null) {
+      if (current.getLeaf() instanceof NewClassTree) {
+        final NewClassTree invocation = (NewClassTree) current.getLeaf();
+        final SourcePositions positions = trees.getSourcePositions();
+        final long start = positions.getStartPosition(root, invocation.getIdentifier());
+        final long end = positions.getEndPosition(root, invocation.getIdentifier());
+        if (start >= 0 && end >= start && start <= cursor && cursor < end) {
+          return current;
+        }
+        break;
+      }
+      current = current.getParentPath();
+    }
+    return path;
   }
 
   public static boolean isLocal(Element element) {

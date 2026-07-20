@@ -78,6 +78,9 @@ interface ResourceTableRegistry : XmlRegistry<IResourceTable> {
    */
   fun refreshPackage(name: String, vararg resDirs: File): IResourceTable?
 
+  /** Returns the generation of the cached package table, or 0 when it is unavailable. */
+  fun getGeneration(packageName: String): Long
+
   /**
    * Remove the resource table entry for the given package name.
    *

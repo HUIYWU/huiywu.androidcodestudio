@@ -42,15 +42,29 @@ class DefaultResourceTableRegistryTest {
   }
 
   @Test
+  fun refreshPackageWithUnchangedResourcesReusesTableAndGeneration() {
+    val resDir = File(root, "res").apply { mkdirs() }
+    val first = registry.forPackage(PACKAGE_NAME, resDir)
+    val firstGeneration = registry.getGeneration(PACKAGE_NAME)
+
+    val result = registry.refreshPackage(PACKAGE_NAME, resDir)
+
+    assertThat(result).isSameInstanceAs(first)
+    assertThat(registry.getGeneration(PACKAGE_NAME)).isEqualTo(firstGeneration)
+  }
+
+  @Test
   fun refreshPackageReplacesPublishedTableOnlyAfterSuccessfulBuild() {
     val resDir = File(root, "res").apply { mkdirs() }
     val first = registry.forPackage(PACKAGE_NAME, resDir)
+    File(resDir, "values.xml").writeText("<resources />")
 
     val replacement = registry.refreshPackage(PACKAGE_NAME, resDir)
 
     assertThat(first).isNotNull()
     assertThat(replacement).isNotNull()
     assertThat(replacement).isNotSameInstanceAs(first)
+    assertThat(registry.getGeneration(PACKAGE_NAME)).isEqualTo(2L)
     assertThat(registry.forPackage(PACKAGE_NAME, resDir)).isSameInstanceAs(replacement)
   }
 
@@ -58,12 +72,14 @@ class DefaultResourceTableRegistryTest {
   fun refreshPackageRetainsPublishedTableWhenReplacementCannotBeBuilt() {
     val resDir = File(root, "res").apply { mkdirs() }
     val first = registry.forPackage(PACKAGE_NAME, resDir)
+    val firstGeneration = registry.getGeneration(PACKAGE_NAME)
     val missingResDir = File(root, "missing-res")
 
     val result = registry.refreshPackage(PACKAGE_NAME, missingResDir)
 
     assertThat(first).isNotNull()
     assertThat(result).isSameInstanceAs(first)
+    assertThat(registry.getGeneration(PACKAGE_NAME)).isEqualTo(firstGeneration)
     assertThat(registry.forPackage(PACKAGE_NAME, resDir)).isSameInstanceAs(first)
   }
 
@@ -73,6 +89,7 @@ class DefaultResourceTableRegistryTest {
     val first = registry.forPackage(PACKAGE_NAME, resDir)
 
     registry.removeTable(PACKAGE_NAME)
+    assertThat(registry.getGeneration(PACKAGE_NAME)).isEqualTo(0L)
     val replacement = registry.forPackage(PACKAGE_NAME, resDir)
 
     assertThat(first).isNotNull()

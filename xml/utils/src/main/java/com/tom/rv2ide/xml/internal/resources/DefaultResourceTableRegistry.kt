@@ -71,6 +71,8 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   }
 
   private val tables = ConcurrentHashMap<String, ResourceTable>()
+  private val tableFingerprints = ConcurrentHashMap<String, ResourceFingerprint>()
+  private val tableGenerations = ConcurrentHashMap<String, Long>()
   private val tableLocks = ConcurrentHashMap<String, Any>()
   private val platformTables = ConcurrentHashMap<String, ResourceTable>()
   private val platformTableLocks = ConcurrentHashMap<String, Any>()
@@ -97,8 +99,11 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     val lock = tableLocks.computeIfAbsent(name) { Any() }
     synchronized(lock) {
       tables[name]?.let { return it }
+      val fingerprint = resourceFingerprint(*resDirs) ?: return null
       val table = buildPackageTable(name, *resDirs) ?: return null
       tables[name] = table
+      tableFingerprints[name] = fingerprint
+      tableGenerations[name] = 1L
       return table
     }
   }
@@ -111,9 +116,19 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     val lock = tableLocks.computeIfAbsent(name) { Any() }
     synchronized(lock) {
       val previous = tables[name]
+      val fingerprint =
+          try {
+            resourceFingerprint(*resDirs)
+          } catch (error: Exception) {
+            log.warn("Failed to fingerprint resources for package '{}'", name, error)
+            null
+          }
+      if (previous != null && fingerprint != null && tableFingerprints[name] == fingerprint) {
+        return previous
+      }
       val replacement =
           try {
-            buildPackageTable(name, *resDirs)
+            if (fingerprint == null) null else buildPackageTable(name, *resDirs)
           } catch (error: Exception) {
             log.warn("Failed to refresh resource table for package '{}'", name, error)
             null
@@ -123,6 +138,8 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       }
 
       tables[name] = replacement
+      tableFingerprints[name] = fingerprint!!
+      tableGenerations.compute(name) { _, generation -> (generation ?: 0L) + 1L }
       return replacement
     }
   }
@@ -172,15 +189,23 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     return getSingleLineEntry(platform, FEATURES)
   }
 
+  override fun getGeneration(packageName: String): Long {
+    return tableGenerations[packageName] ?: 0L
+  }
+
   override fun removeTable(packageName: String) {
     val lock = tableLocks.computeIfAbsent(packageName) { Any() }
     synchronized(lock) {
       tables.remove(packageName)
+      tableFingerprints.remove(packageName)
+      tableGenerations.remove(packageName)
     }
   }
 
   override fun clear() {
     tables.clear()
+    tableFingerprints.clear()
+    tableGenerations.clear()
     tableLocks.clear()
     platformTables.clear()
     platformTableLocks.clear()
@@ -272,6 +297,37 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       platformTables[key] = table
       return table
     }
+  }
+
+  private data class ResourceFingerprint(
+      val directories: List<String>,
+      val entries: List<FileFingerprint>,
+  )
+
+  private data class FileFingerprint(
+      val path: String,
+      val modifiedMillis: Long,
+      val size: Long,
+  )
+
+  private fun resourceFingerprint(vararg resDirs: File): ResourceFingerprint? {
+    val validResDirs = resDirs.filter { it.exists() && it.isDirectory }
+    if (validResDirs.isEmpty()) {
+      return null
+    }
+
+    val entries =
+        validResDirs
+            .flatMap { directory ->
+              directory.walkTopDown().filter { it.isFile }.map { file ->
+                FileFingerprint(file.path, file.lastModified(), file.length())
+              }.toList()
+            }
+            .sortedBy { it.path }
+    return ResourceFingerprint(
+        directories = validResDirs.map { it.canonicalPath }.sorted(),
+        entries = entries,
+    )
   }
 
   private fun buildPackageTable(name: String, vararg resDirs: File): ResourceTable? {
