@@ -101,10 +101,10 @@ public final class KotlinJvmSourceNavigator {
       if (!parameter.property || parameter.nameOffset < 0 || parameter.name.isEmpty()) {
         continue;
       }
-      final String accessor =
-          Character.toUpperCase(parameter.name.charAt(0)) + parameter.name.substring(1);
-      if (javaName.equals("get" + accessor)
-          || (parameter.mutableProperty && javaName.equals("set" + accessor))) {
+      final String getter = propertyGetterName(parameter.name, parameter.type);
+      final String setter = propertySetterName(parameter.name, parameter.type);
+      if (javaName.equals(getter)
+          || (parameter.mutableProperty && javaName.equals(setter))) {
         return new SourceRange(parameter.nameOffset, parameter.nameLength);
       }
     }
@@ -168,10 +168,35 @@ public final class KotlinJvmSourceNavigator {
     if (kind != ElementKind.METHOD || member.name.isEmpty()) {
       return false;
     }
-    final String accessor =
-        Character.toUpperCase(member.name.charAt(0)) + member.name.substring(1);
-    return javaName.equals("get" + accessor)
-        || (member.mutableProperty && javaName.equals("set" + accessor));
+    final String getter = propertyGetterName(member.name, member.declaredType);
+    final String setter = propertySetterName(member.name, member.declaredType);
+    return javaName.equals(getter)
+        || (member.mutableProperty && javaName.equals(setter));
+  }
+
+  private static String propertyGetterName(String name, String kotlinType) {
+    return isBooleanIsProperty(name, kotlinType)
+        ? name
+        : "get" + propertyAccessorSuffix(name);
+  }
+
+  private static String propertySetterName(String name, String kotlinType) {
+    return isBooleanIsProperty(name, kotlinType)
+        ? "set" + name.substring(2)
+        : "set" + propertyAccessorSuffix(name);
+  }
+
+  private static boolean isBooleanIsProperty(String name, String kotlinType) {
+    if (name == null || name.length() < 3 || name.charAt(0) != 'i' || name.charAt(1) != 's'
+        || !Character.isUpperCase(name.charAt(2)) || kotlinType == null) {
+      return false;
+    }
+    final String type = kotlinType.trim();
+    return "Boolean".equals(type) || "kotlin.Boolean".equals(type);
+  }
+
+  private static String propertyAccessorSuffix(String name) {
+    return Character.toUpperCase(name.charAt(0)) + name.substring(1);
   }
 
   private static boolean primaryConstructorMatches(

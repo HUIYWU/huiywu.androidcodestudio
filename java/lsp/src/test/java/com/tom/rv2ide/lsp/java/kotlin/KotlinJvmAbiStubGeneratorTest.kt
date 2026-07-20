@@ -37,6 +37,53 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsBooleanIsPropertiesWithJvmAccessorNames() {
+    val classSource =
+        """
+        package sample
+
+        class Status(var isReady: Boolean, val isOptional: Boolean?) {
+          var isActive: Boolean = true
+          val issue: Boolean = false
+          var isLabel: String = "label"
+
+          companion object {
+            @JvmStatic var isOnline: Boolean = true
+          }
+        }
+        """.trimIndent()
+    val facadeSource =
+        """
+        package sample
+
+        var isFeatureEnabled: Boolean = true
+        """.trimIndent()
+
+    val classStub = KotlinJvmAbiStubGenerator.generate("sample.Status", "Status.kt", classSource)
+    val facadeStub =
+        KotlinJvmAbiStubGenerator.generate("sample.FeaturesKt", "Features.kt", facadeSource)
+
+    assertNotNull(classStub)
+    assertContains(classStub!!, "public boolean isReady()")
+    assertContains(classStub, "public void setReady(boolean value)")
+    assertContains(classStub, "public boolean isActive()")
+    assertContains(classStub, "public void setActive(boolean value)")
+    assertContains(classStub, "public Boolean getIsOptional()")
+    assertContains(classStub, "public boolean getIssue()")
+    assertContains(classStub, "public String getIsLabel()")
+    assertContains(classStub, "public void setIsLabel(String value)")
+    assertContains(classStub, "public static boolean isOnline()")
+    assertContains(classStub, "public static void setOnline(boolean value)")
+    assertFalse(classStub.contains("getIsActive()"))
+    assertFalse(classStub.contains("setIsActive(boolean value)"))
+
+    assertNotNull(facadeStub)
+    assertContains(facadeStub!!, "public static boolean isFeatureEnabled()")
+    assertContains(facadeStub, "public static void setFeatureEnabled(boolean value)")
+    assertFalse(facadeStub.contains("getIsFeatureEnabled()"))
+  }
+
+  @Test
   fun generate_projectsTopLevelMembersIntoDefaultFileFacade() {
     val source =
         """

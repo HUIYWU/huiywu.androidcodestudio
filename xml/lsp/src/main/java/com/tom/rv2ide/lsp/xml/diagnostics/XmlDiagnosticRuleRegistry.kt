@@ -21,11 +21,13 @@ import com.tom.rv2ide.lsp.xml.diagnostics.rules.LayoutDiagnosticRule
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.ManifestDiagnosticRule
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.ResourceReferenceDiagnosticRule
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.ValuesDocumentDiagnosticRule
+import com.tom.rv2ide.lsp.xml.diagnostics.rules.XmlParserDiagnosticRule
 
 /** Fixed rule registry; avoids runtime service discovery on the editor's real-time path. */
 internal object XmlDiagnosticRuleRegistry {
   val documentRules: List<XmlDiagnosticRule> =
       listOf(
+          XmlParserDiagnosticRule,
           ValuesDocumentDiagnosticRule,
           ManifestDiagnosticRule,
       )

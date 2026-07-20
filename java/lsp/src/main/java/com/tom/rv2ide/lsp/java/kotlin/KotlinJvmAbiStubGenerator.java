@@ -421,12 +421,13 @@ private static final Pattern PROPERTY_PATTERN =
       return;
     }
     final String type = javaType(property.declaredType);
-    final String accessor = Character.toUpperCase(property.name.charAt(0)) + property.name.substring(1);
+    final String getter = propertyGetterName(property.name, property.declaredType);
+    final String setter = propertySetterName(property.name, property.declaredType);
     out.append("  public ");
     if (topLevel) {
       out.append("static ");
     }
-    out.append(type).append(" get").append(accessor).append("()")
+    out.append(type).append(' ').append(getter).append("()")
         .append(interfaceType && !topLevel
             ? ";\n"
             : " { return " + defaultValue(property.declaredType) + "; }\n");
@@ -435,7 +436,7 @@ private static final Pattern PROPERTY_PATTERN =
       if (topLevel) {
         out.append("static ");
       }
-      out.append("void set").append(accessor).append('(').append(type).append(" value)")
+      out.append("void ").append(setter).append('(').append(type).append(" value)")
           .append(interfaceType && !topLevel ? ";\n" : " {}\n");
     }
   }
@@ -545,12 +546,13 @@ private static final Pattern PROPERTY_PATTERN =
       StringBuilder out, Matcher property, boolean interfaceType, boolean topLevel) {
     final String type = javaType(property.group(4));
     final String name = property.group(3);
-    final String accessor = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+    final String getter = propertyGetterName(name, property.group(4));
+    final String setter = propertySetterName(name, property.group(4));
     out.append("  public ");
     if (topLevel) {
       out.append("static ");
     }
-    out.append(type).append(" get").append(accessor).append("()")
+    out.append(type).append(' ').append(getter).append("()")
         .append(interfaceType && !topLevel
             ? ";\n"
             : " { return " + defaultValue(property.group(4)) + "; }\n");
@@ -559,7 +561,7 @@ private static final Pattern PROPERTY_PATTERN =
       if (topLevel) {
         out.append("static ");
       }
-      out.append("void set").append(accessor).append('(').append(type).append(" value)")
+      out.append("void ").append(setter).append('(').append(type).append(" value)")
           .append(interfaceType && !topLevel ? ";\n" : " {}\n");
     }
   }
@@ -567,16 +569,44 @@ private static final Pattern PROPERTY_PATTERN =
   private static void appendStaticProperty(StringBuilder out, Matcher property) {
     final String type = javaType(property.group(4));
     final String name = property.group(3);
-    final String accessor = Character.toUpperCase(name.charAt(0)) + name.substring(1);
-    out.append("  public static ").append(type).append(" get").append(accessor).append("()")
+    final String getter = propertyGetterName(name, property.group(4));
+    final String setter = propertySetterName(name, property.group(4));
+    out.append("  public static ").append(type).append(' ').append(getter).append("()")
         .append(" { return ").append(defaultValue(property.group(4))).append("; }\n");
     if ("var".equals(property.group(2))) {
-      out.append("  public static void set").append(accessor).append('(').append(type)
+      out.append("  public static void ").append(setter).append('(').append(type)
           .append(" value) {}\n");
     }
   }
+  private static String propertyGetterName(String name, String kotlinType) {
+    if (isBooleanIsProperty(name, kotlinType)) {
+      return name;
+    }
+    return "get" + propertyAccessorSuffix(name);
+  }
+
+  private static String propertySetterName(String name, String kotlinType) {
+    if (isBooleanIsProperty(name, kotlinType)) {
+      return "set" + name.substring(2);
+    }
+    return "set" + propertyAccessorSuffix(name);
+  }
+
+  private static boolean isBooleanIsProperty(String name, String kotlinType) {
+    if (name == null || name.length() < 3 || name.charAt(0) != 'i' || name.charAt(1) != 's'
+        || !Character.isUpperCase(name.charAt(2)) || kotlinType == null) {
+      return false;
+    }
+    final String type = stripDefaultValue(kotlinType.trim());
+    return "Boolean".equals(type) || "kotlin.Boolean".equals(type);
+  }
+
+  private static String propertyAccessorSuffix(String name) {
+    return Character.toUpperCase(name.charAt(0)) + name.substring(1);
+  }
 
   private static void appendSyntaxConstructors(
+
       StringBuilder out,
       String simpleName,
       List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters,
@@ -882,11 +912,12 @@ private static final Pattern PROPERTY_PATTERN =
       final String name = safeName(parameter.name, index);
       final String kotlinType = parameter.type;
       final String type = javaType(kotlinType);
-      final String accessor = Character.toUpperCase(name.charAt(0)) + name.substring(1);
-      out.append("  public ").append(type).append(" get").append(accessor)
+      final String getter = propertyGetterName(name, kotlinType);
+      final String setter = propertySetterName(name, kotlinType);
+      out.append("  public ").append(type).append(' ').append(getter)
           .append("() { return ").append(defaultValue(kotlinType)).append("; }\n");
       if (parameter.mutableProperty) {
-        out.append("  public void set").append(accessor).append('(').append(type)
+        out.append("  public void ").append(setter).append('(').append(type)
             .append(" value) {}\n");
       }
     }
@@ -913,11 +944,12 @@ private static final Pattern PROPERTY_PATTERN =
       }
       final String kotlinType = declaration.substring(colon + 1);
       final String type = javaType(kotlinType);
-      final String accessor = Character.toUpperCase(name.charAt(0)) + name.substring(1);
-      out.append("  public ").append(type).append(" get").append(accessor).append("() { return ")
+      final String getter = propertyGetterName(name, kotlinType);
+      final String setter = propertySetterName(name, kotlinType);
+      out.append("  public ").append(type).append(' ').append(getter).append("() { return ")
           .append(defaultValue(kotlinType)).append("; }\n");
       if (part.startsWith("var ")) {
-        out.append("  public void set").append(accessor).append('(').append(type)
+        out.append("  public void ").append(setter).append('(').append(type)
             .append(" value) {}\n");
       }
     }
@@ -964,23 +996,7 @@ private static final Pattern PROPERTY_PATTERN =
           final Matcher property = PROPERTY_PATTERN.matcher(declarationLine);
           if (property.matches() && !isPrivate(property.group(1))) {
             jvmOverloads = false;
-            final String type = javaType(property.group(4));
-            final String name = property.group(3);
-            final String accessor = Character.toUpperCase(name.charAt(0)) + name.substring(1);
-            out.append("  public ");
-            if (topLevel) {
-              out.append("static ");
-            }
-            out.append(type).append(" get").append(accessor).append("()")
-                .append(interfaceType && !topLevel ? ";\n" : " { return " + defaultValue(property.group(4)) + "; }\n");
-            if ("var".equals(property.group(2))) {
-              out.append("  public ");
-              if (topLevel) {
-                out.append("static ");
-              }
-              out.append("void set").append(accessor).append('(').append(type).append(" value)")
-                  .append(interfaceType && !topLevel ? ";\n" : " {}\n");
-            }
+            appendProperty(out, property, interfaceType, topLevel);
           }
         }
       }

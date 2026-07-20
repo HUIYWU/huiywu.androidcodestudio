@@ -50,7 +50,8 @@ dependencies {
     implementation(projects.editor.lexers)
     implementation(projects.xml.dom)
     implementation(projects.xml.utils)
-    
+    implementation(libs.xml.xercesImpl)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.common.kotlin)
     implementation(libs.google.material)
