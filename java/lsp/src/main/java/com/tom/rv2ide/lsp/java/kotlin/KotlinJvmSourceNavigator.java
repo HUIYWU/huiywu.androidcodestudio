@@ -132,8 +132,9 @@ public final class KotlinJvmSourceNavigator {
       if (requireJvmStatic && !member.jvmStatic && !member.jvmField) {
         continue;
       }
+      final String jvmMemberName = member.jvmName == null ? member.name : member.jvmName;
       final boolean matchesElement = member.function()
-          ? javaName.equals(member.name) && functionArityMatches(member, parameterCount)
+          ? javaName.equals(jvmMemberName) && functionArityMatches(member, parameterCount)
           : propertyJavaNameMatches(member, javaName, element.getKind());
       if (matchesElement) {
         match = new SourceRange(member.nameOffset, member.nameLength);
@@ -168,8 +169,12 @@ public final class KotlinJvmSourceNavigator {
     if (kind != ElementKind.METHOD || member.name.isEmpty()) {
       return false;
     }
-    final String getter = propertyGetterName(member.name, member.declaredType);
-    final String setter = propertySetterName(member.name, member.declaredType);
+    final String getter = member.getterJvmName == null
+        ? propertyGetterName(member.name, member.declaredType)
+        : member.getterJvmName;
+    final String setter = member.setterJvmName == null
+        ? propertySetterName(member.name, member.declaredType)
+        : member.setterJvmName;
     return javaName.equals(getter)
         || (member.mutableProperty && javaName.equals(setter));
   }

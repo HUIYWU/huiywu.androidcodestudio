@@ -23,6 +23,7 @@ import com.tom.rv2ide.editor.ui.clearDiagnostics
 import com.tom.rv2ide.editor.ui.initCompletionTooltips
 import com.tom.rv2ide.editor.ui.initDiagnosticHandling
 import com.tom.rv2ide.editor.ui.initHoverTooltips
+import com.tom.rv2ide.editor.ui.setHoverTooltipsVisible
 import com.tom.rv2ide.editor.ui.updateEditorDiagnostics
 import com.tom.rv2ide.editor.utils.ContentReadWrite.readContent
 import com.tom.rv2ide.editor.utils.ContentReadWrite.writeTo
@@ -262,8 +263,14 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   /** Called when the editor has been selected and is visible to the user. */
   fun onEditorSelected() {
-    _binding?.editor?.onEditorSelected()
-        ?: run { log.warn("onEditorSelected() called but no editor instance is available") }
+    _binding?.editor?.apply {
+      setHoverTooltipsVisible(true)
+      onEditorSelected()
+    } ?: run { log.warn("onEditorSelected() called but no editor instance is available") }
+  }
+
+  fun onEditorUnselected() {
+    _binding?.editor?.setHoverTooltipsVisible(false)
   }
 
   /** Begins search mode and shows the [search layout][EditorSearchLayout]. */

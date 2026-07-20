@@ -42,6 +42,41 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnostics.single().message).isNotEmpty()
   }
 
+  fun testMissingEqualsRangeStaysOnMalformedAttributeInMultilineTag() {
+    val text =
+        """
+        <TextView
+          xmlns:android="http://schemas.android.com/apk/res/android"
+          android:layout_height"40dp"
+          android:layout_width="26dp" />
+        """.trimIndent()
+
+    val diagnostic = diagnose(text).single { it.code == "XML005" }
+
+    assertThat(diagnostic.range.start.line).isEqualTo(2)
+    assertThat(diagnostic.range.end.line).isEqualTo(2)
+    assertThat(diagnostic.range.start.column).isEqualTo(2)
+    assertThat(diagnostic.range.end.column).isEqualTo(23)
+  }
+
+  fun testMissingEqualsRangeStaysOnLaterAttributeInMultilineTag() {
+    val text =
+        """
+        <TextView
+          xmlns:android="http://schemas.android.com/apk/res/android"
+          android:layout_height="40dp"
+          android:layout_width"26dp"
+          android:id="@+id/symbol" />
+        """.trimIndent()
+
+    val diagnostic = diagnose(text).single { it.code == "XML005" }
+
+    assertThat(diagnostic.range.start.line).isEqualTo(3)
+    assertThat(diagnostic.range.end.line).isEqualTo(3)
+    assertThat(diagnostic.range.start.column).isEqualTo(2)
+    assertThat(diagnostic.range.end.column).isEqualTo(22)
+  }
+
   fun testDoesNotDuplicateExistingAttributeDiagnostics() {
     assertThat(diagnose("<View id=\"first\" id=\"second\" />")).isEmpty()
     assertThat(diagnose("<View custom:value=\"example\" />")).isEmpty()

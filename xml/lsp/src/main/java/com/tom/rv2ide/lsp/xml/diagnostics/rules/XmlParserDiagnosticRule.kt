@@ -185,13 +185,87 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     }
     val safeOffset = offset.coerceIn(0, text.lastIndex)
     return when (key) {
-      "EqRequiredInAttribute", "OpenQuoteExpected", "AttributeNotUnique" ->
-          selectNameAround(safeOffset, text)
+      "EqRequiredInAttribute" ->
+          findMalformedAttributeName(text, safeOffset, requireMissingEquals = true)
+              ?: selectNameAround(safeOffset, text)
+      "OpenQuoteExpected" ->
+          findMalformedAttributeName(text, safeOffset, requireMissingEquals = false)
+              ?: selectNameAround(safeOffset, text)
+      "AttributeNotUnique" -> selectNameAround(safeOffset, text)
       "LessthanInAttValue" -> safeOffset..safeOffset
       "DashDashInComment" ->
           (safeOffset - 1).coerceAtLeast(0)..(safeOffset + 1).coerceAtMost(text.lastIndex)
       else -> safeOffset..safeOffset
     }
+  }
+
+  private fun findMalformedAttributeName(
+      text: String,
+      parserOffset: Int,
+      requireMissingEquals: Boolean,
+  ): IntRange? {
+    val tagStart = text.lastIndexOf('<', parserOffset).takeIf { it >= 0 } ?: return null
+    val previousTagEnd = text.lastIndexOf('>', parserOffset)
+    val effectiveTagStart = if (previousTagEnd > tagStart) text.lastIndexOf('<', tagStart - 1) else tagStart
+    if (effectiveTagStart < 0) {
+      return null
+    }
+    val tagEnd = text.indexOf('>', effectiveTagStart + 1).let { if (it < 0) text.length else it }
+
+    var index = effectiveTagStart + 1
+    // Skip the element name before inspecting attributes.
+    while (index < tagEnd && !text[index].isWhitespace()) {
+      index++
+    }
+    while (index < tagEnd) {
+      while (index < tagEnd && text[index].isWhitespace()) {
+        index++
+      }
+      if (index >= tagEnd || text[index] == '/' || text[index] == '>') {
+        break
+      }
+      val nameStart = index
+      while (index < tagEnd && isXmlNameCharacter(text[index])) {
+        index++
+      }
+      if (index == nameStart) {
+        index++
+        continue
+      }
+      val nameEnd = index
+      while (index < tagEnd && text[index].isWhitespace()) {
+        index++
+      }
+      if (requireMissingEquals && index < tagEnd && text[index] in QUOTES) {
+        return nameStart until nameEnd
+      }
+      if (!requireMissingEquals && index < tagEnd && text[index] == '=') {
+        var valueStart = index + 1
+        while (valueStart < tagEnd && text[valueStart].isWhitespace()) {
+          valueStart++
+        }
+        if (valueStart < tagEnd && text[valueStart] !in QUOTES) {
+          return nameStart until nameEnd
+        }
+      }
+      // Skip a quoted value so names inside the value are not treated as attributes.
+      if (index < tagEnd && text[index] == '=') {
+        index++
+        while (index < tagEnd && text[index].isWhitespace()) {
+          index++
+        }
+      }
+      if (index < tagEnd && text[index] in QUOTES) {
+        val quote = text[index++]
+        while (index < tagEnd && text[index] != quote) {
+          index++
+        }
+        if (index < tagEnd) {
+          index++
+        }
+      }
+    }
+    return null
   }
 
   private fun selectNameAround(offset: Int, text: String): IntRange {
@@ -283,6 +357,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
 
   private const val CODE_XML_PARSER_SYNTAX = "XML005"
   private const val MAX_PARSER_ERRORS = 20
+  private const val QUOTES = "\"'"
   private const val PROPERTY_ERROR_REPORTER =
       "http://apache.org/xml/properties/internal/error-reporter"
   private const val PROPERTY_SECURITY_MANAGER =

@@ -72,13 +72,17 @@ private static final Pattern PROPERTY_PATTERN =
               + "(val|var)\\s+([A-Za-z_][\\w]*)\\s*(?::\\s*([^=\\{]+))?.*$");
   private static final Pattern JVM_STATIC_FUNCTION_PATTERN =
       Pattern.compile(
-          "(?s)@JvmStatic\\s*(?:\\([^)]*\\))?\\s*"
+          "(?s)(?:@JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)\\s*)?"
+              + "@JvmStatic\\s*(?:\\([^)]*\\))?\\s*"
+              + "(?:@JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)\\s*)?"
               + "((?:(?:public|protected|internal|private|open|abstract|final|override|suspend|"
               + "operator|infix|inline|tailrec|external)\\s+)*)fun\\s+(?:<[^>]+>\\s*)?"
               + "([A-Za-z_][\\w]*)\\s*\\(([^)]*)\\)\\s*(?::\\s*([^=\\{]+))?");
   private static final Pattern JVM_STATIC_PROPERTY_PATTERN =
       Pattern.compile(
-          "(?s)@JvmStatic\\s*(?:\\([^)]*\\))?\\s*"
+          "(?s)(?:@(?:get:|set:)?JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)\\s*)*"
+              + "@JvmStatic\\s*(?:\\([^)]*\\))?\\s*"
+              + "(?:@(?:get:|set:)?JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)\\s*)*"
               + "((?:(?:public|protected|internal|private|open|override|const|lateinit)\\s+)*)"
               + "(val|var)\\s+([A-Za-z_][\\w]*)\\s*(?::\\s*([^=\\{]+))?");
   private static final Pattern JVM_FIELD_PROPERTY_PATTERN =
@@ -369,7 +373,8 @@ private static final Pattern PROPERTY_PATTERN =
         parameters.add(javaSyntaxParameter(
             parameter, index, index == function.parameterList.size() - 1));
       }
-      out.append(javaType(function.declaredType)).append(' ').append(function.name)
+      out.append(javaType(function.declaredType)).append(' ')
+          .append(function.jvmName == null ? function.name : function.jvmName)
           .append('(').append(String.join(", ", parameters)).append(')')
           .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
     } finally {
@@ -402,7 +407,8 @@ private static final Pattern PROPERTY_PATTERN =
           out.append("static ");
         }
         out.append(javaTypeParameters(function.typeParameters))
-            .append(javaType(function.declaredType)).append(' ').append(function.name)
+            .append(javaType(function.declaredType)).append(' ')
+            .append(function.jvmName == null ? function.name : function.jvmName)
             .append(javaSyntaxParameterList(
                 parameters.subList(0, count), count == parameters.size()))
             .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
@@ -421,8 +427,12 @@ private static final Pattern PROPERTY_PATTERN =
       return;
     }
     final String type = javaType(property.declaredType);
-    final String getter = propertyGetterName(property.name, property.declaredType);
-    final String setter = propertySetterName(property.name, property.declaredType);
+    final String getter = property.getterJvmName == null
+        ? propertyGetterName(property.name, property.declaredType)
+        : property.getterJvmName;
+    final String setter = property.setterJvmName == null
+        ? propertySetterName(property.name, property.declaredType)
+        : property.setterJvmName;
     out.append("  public ");
     if (topLevel) {
       out.append("static ");
@@ -451,6 +461,12 @@ private static final Pattern PROPERTY_PATTERN =
 
   private static void appendExtensionFunction(
       StringBuilder out, Matcher extension, boolean interfaceType, boolean topLevel) {
+    appendExtensionFunction(out, extension, interfaceType, topLevel, null);
+  }
+
+  private static void appendExtensionFunction(
+      StringBuilder out, Matcher extension, boolean interfaceType, boolean topLevel,
+      String jvmName) {
     out.append("  public ");
     if (topLevel) {
       out.append("static ");
@@ -461,7 +477,8 @@ private static final Pattern PROPERTY_PATTERN =
     if (ordinaryParameters.length() > 2) {
       parameters.add(ordinaryParameters.substring(1, ordinaryParameters.length() - 1));
     }
-    out.append(javaType(extension.group(5))).append(' ').append(extension.group(3))
+    out.append(javaType(extension.group(5))).append(' ')
+        .append(jvmName == null ? extension.group(3) : jvmName)
         .append("(").append(String.join(", ", parameters)).append(")");
     out.append(interfaceType && !topLevel ? ";\n" : methodBody(extension.group(5)));
   }
@@ -472,6 +489,16 @@ private static final Pattern PROPERTY_PATTERN =
       boolean interfaceType,
       boolean topLevel,
       List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters) {
+    appendFunction(out, function, interfaceType, topLevel, typeParameters, null);
+  }
+
+  private static void appendFunction(
+      StringBuilder out,
+      Matcher function,
+      boolean interfaceType,
+      boolean topLevel,
+      List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters,
+      String jvmName) {
     final Set<String> methodVariables = registerTypeVariables(typeParameters);
     try {
       out.append("  public ");
@@ -479,7 +506,8 @@ private static final Pattern PROPERTY_PATTERN =
         out.append("static ");
       }
       out.append(javaTypeParameters(typeParameters))
-          .append(javaType(function.group(4))).append(' ').append(function.group(2))
+          .append(javaType(function.group(4))).append(' ')
+          .append(jvmName == null ? function.group(2) : jvmName)
           .append(parameterList("(" + function.group(3) + ")"));
       out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
     } finally {
@@ -493,6 +521,16 @@ private static final Pattern PROPERTY_PATTERN =
       boolean interfaceType,
       boolean topLevel,
       List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters) {
+    appendFunctionOverloads(out, function, interfaceType, topLevel, typeParameters, null);
+  }
+
+  private static void appendFunctionOverloads(
+      StringBuilder out,
+      Matcher function,
+      boolean interfaceType,
+      boolean topLevel,
+      List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters,
+      String jvmName) {
     final List<String> parameters = splitParameters(function.group(3));
     int firstOmittable = parameters.size();
     for (int index = parameters.size() - 1;
@@ -513,7 +551,8 @@ private static final Pattern PROPERTY_PATTERN =
           out.append("static ");
         }
         out.append(javaTypeParameters(typeParameters))
-            .append(javaType(function.group(4))).append(' ').append(function.group(2))
+            .append(javaType(function.group(4))).append(' ')
+            .append(jvmName == null ? function.group(2) : jvmName)
             .append(javaParameterList(parameters.subList(0, count), false));
         out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
       }
@@ -523,8 +562,11 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static void appendStaticFunction(StringBuilder out, Matcher function) {
+    final Matcher jvmNameMatcher = Pattern.compile(
+        "@JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(function.group());
+    final String name = jvmNameMatcher.find() ? jvmNameMatcher.group(1) : function.group(2);
     out.append("  public static ").append(javaType(function.group(4))).append(' ')
-        .append(function.group(2)).append(parameterList("(" + function.group(3) + ")"))
+        .append(name).append(parameterList("(" + function.group(3) + ")"))
         .append(methodBody(function.group(4)));
   }
 
@@ -544,10 +586,18 @@ private static final Pattern PROPERTY_PATTERN =
 
   private static void appendProperty(
       StringBuilder out, Matcher property, boolean interfaceType, boolean topLevel) {
+    appendProperty(out, property, interfaceType, topLevel, null, null);
+  }
+
+  private static void appendProperty(
+      StringBuilder out, Matcher property, boolean interfaceType, boolean topLevel,
+      String getterJvmName, String setterJvmName) {
     final String type = javaType(property.group(4));
     final String name = property.group(3);
-    final String getter = propertyGetterName(name, property.group(4));
-    final String setter = propertySetterName(name, property.group(4));
+    final String getter = getterJvmName == null
+        ? propertyGetterName(name, property.group(4)) : getterJvmName;
+    final String setter = setterJvmName == null
+        ? propertySetterName(name, property.group(4)) : setterJvmName;
     out.append("  public ");
     if (topLevel) {
       out.append("static ");
@@ -569,8 +619,14 @@ private static final Pattern PROPERTY_PATTERN =
   private static void appendStaticProperty(StringBuilder out, Matcher property) {
     final String type = javaType(property.group(4));
     final String name = property.group(3);
-    final String getter = propertyGetterName(name, property.group(4));
-    final String setter = propertySetterName(name, property.group(4));
+    final Matcher getterJvmNameMatcher = Pattern.compile(
+        "@get:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(property.group());
+    final Matcher setterJvmNameMatcher = Pattern.compile(
+        "@set:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(property.group());
+    final String getter = getterJvmNameMatcher.find()
+        ? getterJvmNameMatcher.group(1) : propertyGetterName(name, property.group(4));
+    final String setter = setterJvmNameMatcher.find()
+        ? setterJvmNameMatcher.group(1) : propertySetterName(name, property.group(4));
     out.append("  public static ").append(type).append(' ').append(getter).append("()")
         .append(" { return ").append(defaultValue(property.group(4))).append("; }\n");
     if ("var".equals(property.group(2))) {
@@ -959,28 +1015,56 @@ private static final Pattern PROPERTY_PATTERN =
       StringBuilder out, String source, boolean interfaceType, boolean topLevel) {
     int depth = 0;
     boolean jvmOverloads = false;
+    String pendingJvmName = null;
+    String pendingGetterJvmName = null;
+    String pendingSetterJvmName = null;
     for (String line : source.split("\\R")) {
       if (depth == 0) {
         final boolean hasJvmOverloads = line.contains("@JvmOverloads");
-        final String declarationLine = line.replace("@JvmOverloads", "").trim();
+        final Matcher jvmNameMatcher = Pattern.compile("@JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)")
+            .matcher(line);
+        if (jvmNameMatcher.find()) {
+          pendingJvmName = jvmNameMatcher.group(1);
+        }
+        final Matcher getterJvmNameMatcher = Pattern.compile(
+            "@get:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(line);
+        if (getterJvmNameMatcher.find()) {
+          pendingGetterJvmName = getterJvmNameMatcher.group(1);
+        }
+        final Matcher setterJvmNameMatcher = Pattern.compile(
+            "@set:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(line);
+        if (setterJvmNameMatcher.find()) {
+          pendingSetterJvmName = setterJvmNameMatcher.group(1);
+        }
+        final String declarationLine = line.replace("@JvmOverloads", "")
+            .replaceAll("@(?:get:|set:)?JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)", "")
+            .trim();
         if (hasJvmOverloads) {
           jvmOverloads = true;
         }
         final Matcher extensionFunction = EXTENSION_FUNCTION_PATTERN.matcher(declarationLine);
         if (extensionFunction.matches() && !isPrivate(extensionFunction.group(1))) {
-          appendExtensionFunction(out, extensionFunction, interfaceType, topLevel);
+          appendExtensionFunction(
+              out, extensionFunction, interfaceType, topLevel, pendingJvmName);
           jvmOverloads = false;
+          pendingJvmName = null;
+          pendingGetterJvmName = null;
+          pendingSetterJvmName = null;
         } else {
           final Matcher function = FUNCTION_PATTERN.matcher(declarationLine);
           if (function.matches() && !isPrivate(function.group(1))) {
             final List<KotlinJvmSyntaxParser.TypeParameterSyntax> functionTypeParameters =
                 functionTypeParametersFallback(declarationLine);
-            appendFunction(out, function, interfaceType, topLevel, functionTypeParameters);
+            appendFunction(
+                out, function, interfaceType, topLevel, functionTypeParameters, pendingJvmName);
             if (jvmOverloads) {
               appendFunctionOverloads(
-                  out, function, interfaceType, topLevel, functionTypeParameters);
+                  out, function, interfaceType, topLevel, functionTypeParameters, pendingJvmName);
             }
             jvmOverloads = false;
+            pendingJvmName = null;
+            pendingGetterJvmName = null;
+            pendingSetterJvmName = null;
             depth += braceDelta(line);
             if (depth < 0) {
               depth = 0;
@@ -996,7 +1080,12 @@ private static final Pattern PROPERTY_PATTERN =
           final Matcher property = PROPERTY_PATTERN.matcher(declarationLine);
           if (property.matches() && !isPrivate(property.group(1))) {
             jvmOverloads = false;
-            appendProperty(out, property, interfaceType, topLevel);
+            appendProperty(
+                out, property, interfaceType, topLevel,
+                pendingGetterJvmName, pendingSetterJvmName);
+            pendingJvmName = null;
+            pendingGetterJvmName = null;
+            pendingSetterJvmName = null;
           }
         }
       }

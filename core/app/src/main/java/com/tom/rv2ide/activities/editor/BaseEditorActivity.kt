@@ -1108,6 +1108,10 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
   override fun onTabSelected(tab: Tab) {
       val position = tab.position
+      val previousEditor = provideCurrentEditor()
+      if (previousEditor != null && previousEditor !== provideEditorAt(position)) {
+        previousEditor.onEditorUnselected()
+      }
       val editorView = provideEditorAt(position)!!
       val selectedFile = editorView.file ?: runCatching { editorViewModel.getOpenedFile(position) }.getOrNull()
 

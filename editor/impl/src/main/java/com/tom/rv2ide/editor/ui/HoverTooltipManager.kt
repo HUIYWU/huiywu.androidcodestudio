@@ -52,6 +52,8 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
   private var hoverRunnable: Runnable? = null
   private var lastHoverLine = -1
   private var lastHoverColumn = -1
+  private var isActive = true
+  private var requestGeneration = 0L
 
   /** Initialize hover support */
   fun init() {
@@ -91,8 +93,10 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
   }
 
   private fun requestHover(line: Int, column: Int) {
+    if (!isActive) return
     val file = editor.file ?: return
     val languageServer = editor.languageServer ?: return
+    val generation = requestGeneration
 
     currentJob =
         scope.launch {
@@ -127,7 +131,8 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
             // Filter out meaningless hover results
             val content = hoverResult.value.trim()
             if (
-                content.isNotEmpty() &&
+              isActive && generation == requestGeneration && editor.isShown &&
+                  content.isNotEmpty() &&
                     content != "Unit" &&
                     !content.equals("unit", ignoreCase = true) &&
                     content.length > 2
@@ -548,7 +553,19 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
     return (dp * context.resources.displayMetrics.density).toInt()
   }
 
+  fun setVisible(visible: Boolean) {
+    if (isActive == visible) return
+    isActive = visible
+    requestGeneration++
+    if (visible) {
+      return
+    }
+    cancelHover()
+  }
+
   fun destroy() {
+    isActive = false
+    requestGeneration++
     cancelHover()
     scope.cancel()
   }
@@ -558,9 +575,14 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
 private const val HOVER_TOOLTIP_TAG = 0x7F0A0002
 
 fun IDEEditor.initHoverTooltips() {
+  (getTag(HOVER_TOOLTIP_TAG) as? HoverTooltipManager)?.destroy()
   val tooltipManager = HoverTooltipManager(context, this)
   tooltipManager.init()
   setTag(HOVER_TOOLTIP_TAG, tooltipManager)
+}
+
+fun IDEEditor.setHoverTooltipsVisible(visible: Boolean) {
+  (getTag(HOVER_TOOLTIP_TAG) as? HoverTooltipManager)?.setVisible(visible)
 }
 
 fun IDEEditor.cleanupHoverTooltips() {

@@ -215,6 +215,9 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmStatic"),
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
+        jvmName(modifierText),
+        null,
+        null,
         name == null ? null : text(source, name),
         name == null ? -1 : startIndex(source, name),
         name == null ? 0 : endIndex(source, name) - startIndex(source, name),
@@ -244,6 +247,9 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmStatic"),
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
+        null,
+        accessorJvmName(modifierText, "get"),
+        accessorJvmName(modifierText, "set"),
         name == null ? null : text(source, name),
         name == null ? -1 : startIndex(source, name),
         name == null ? 0 : endIndex(source, name) - startIndex(source, name),
@@ -254,6 +260,26 @@ final class KotlinJvmSyntaxParser {
         propertyType == null ? null : text(source, propertyType),
         hasDirectToken(declaration, "var"),
         hasDirectToken(declaration, "val"));
+  }
+
+  private static String jvmName(String declarationText) {
+    if (declarationText == null) {
+      return null;
+    }
+    final java.util.regex.Matcher matcher =
+        java.util.regex.Pattern.compile("@JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)")
+            .matcher(declarationText);
+    return matcher.find() ? matcher.group(1) : null;
+  }
+
+  private static String accessorJvmName(String declarationText, String useSite) {
+    if (declarationText == null) {
+      return null;
+    }
+    final java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+        "@" + useSite + ":JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)")
+        .matcher(declarationText);
+    return matcher.find() ? matcher.group(1) : null;
   }
 
   private static List<SuperTypeSyntax> superTypes(String source, TSNode declaration) {
@@ -751,6 +777,9 @@ final class KotlinJvmSyntaxParser {
     final boolean jvmStatic;
     final boolean jvmField;
     final boolean jvmOverloads;
+    final String jvmName;
+    final String getterJvmName;
+    final String setterJvmName;
     final String name;
     final int nameOffset;
     final int nameLength;
@@ -769,6 +798,9 @@ final class KotlinJvmSyntaxParser {
         boolean jvmStatic,
         boolean jvmField,
         boolean jvmOverloads,
+        String jvmName,
+        String getterJvmName,
+        String setterJvmName,
         String name,
         int nameOffset,
         int nameLength,
@@ -785,6 +817,9 @@ final class KotlinJvmSyntaxParser {
       this.jvmStatic = jvmStatic;
       this.jvmField = jvmField;
       this.jvmOverloads = jvmOverloads;
+      this.jvmName = jvmName;
+      this.getterJvmName = getterJvmName;
+      this.setterJvmName = setterJvmName;
       this.name = name;
       this.nameOffset = nameOffset;
       this.nameLength = nameLength;

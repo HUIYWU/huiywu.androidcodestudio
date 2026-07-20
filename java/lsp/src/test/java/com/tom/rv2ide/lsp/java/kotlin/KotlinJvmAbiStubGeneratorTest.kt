@@ -84,6 +84,40 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsJvmNameForFunctionsAndProperties() {
+    val source =
+        """
+        package sample
+
+        @JvmName("loadValue")
+        fun load(): String = "value"
+
+        @JvmName("fetchValue")
+        @JvmOverloads
+        fun fetch(id: Int, suffix: String = ""): String = id.toString() + suffix
+
+        @JvmName("renderText")
+        fun String.render(): String = this
+
+        @get:JvmName("readMode")
+        @set:JvmName("writeMode")
+        var mode: String = "default"
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generate("sample.NamedApiKt", "NamedApi.kt", source)
+
+    assertNotNull(stub)
+    assertContains(stub!!, "public static String loadValue()")
+    assertContains(stub, "public static String fetchValue(int id, String suffix)")
+    assertContains(stub, "public static String fetchValue(int id)")
+    assertContains(stub, "public static String renderText(String receiver)")
+    assertContains(stub, "public static String readMode()")
+    assertContains(stub, "public static void writeMode(String value)")
+    assertFalse(stub.contains("public static String load()"))
+    assertFalse(stub.contains("public static String getMode()"))
+  }
+
+  @Test
   fun generate_projectsTopLevelMembersIntoDefaultFileFacade() {
     val source =
         """
@@ -140,6 +174,10 @@ class KotlinJvmAbiStubGeneratorTest {
         class Config {
           companion object {
             @JvmStatic fun create(name: String): Config = Config()
+            @JvmStatic @JvmName("buildConfig") fun named(name: String): Config = Config()
+            @get:JvmName("readOnline")
+            @set:JvmName("writeOnline")
+            @JvmStatic var online: Boolean = true
             @JvmField val VERSION: Int = 1
             fun ordinary(): String = "value"
           }
@@ -157,6 +195,9 @@ class KotlinJvmAbiStubGeneratorTest {
     assertContains(classStub!!, "public static final class Companion")
     assertContains(classStub, "public static final Companion Companion")
     assertContains(classStub, "public static Config create(String name)")
+    assertContains(classStub, "public static Config buildConfig(String name)")
+    assertContains(classStub, "public static boolean readOnline()")
+    assertContains(classStub, "public static void writeOnline(boolean value)")
     assertContains(classStub, "public static int VERSION;")
     assertContains(classStub, "public String ordinary()")
   }
