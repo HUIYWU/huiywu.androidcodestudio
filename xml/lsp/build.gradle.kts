@@ -50,7 +50,11 @@ dependencies {
     implementation(projects.editor.lexers)
     implementation(projects.xml.dom)
     implementation(projects.xml.utils)
-    implementation(libs.xml.xercesImpl)
+    implementation(libs.xml.xercesImpl) {
+        // The project already supplies JAXP/DOM APIs through composite.jaxp. Xerces' legacy
+        // xml-apis dependency contains the same org.w3c.dom classes and breaks DEX merging.
+        exclude(group = "xml-apis", module = "xml-apis")
+    }
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.common.kotlin)
