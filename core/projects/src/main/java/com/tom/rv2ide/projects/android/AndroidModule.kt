@@ -48,6 +48,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.util.Collections
 import java.util.concurrent.CompletableFuture
 
 /**
@@ -110,6 +111,25 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
   name, description, path, projectDir, buildDir, buildScript, tasks
 ) {
 
+  private data class ResourceTableDescriptor(
+    val packageName: String,
+    val resDirs: List<File>,
+  )
+
+  private data class ResourceTableSnapshot(
+    val workspace: IWorkspace,
+    val sourceDescriptors: List<ResourceTableDescriptor>,
+    val dependencyDescriptors: List<ResourceTableDescriptor>,
+    val generations: Map<String, Long>,
+    val sourceTables: Set<IResourceTable>,
+    val dependencyTables: Set<IResourceTable>,
+  )
+
+  private val resourceTableSnapshotLock = Any()
+
+  @Volatile
+  private var resourceTableSnapshot: ResourceTableSnapshot? = null
+
   /**
    * Whether this project is an Android library project.
    */
@@ -124,6 +144,7 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
 
   companion object {
 
+    private const val MAX_RESOURCE_SNAPSHOT_BUILD_ATTEMPTS = 2
     private val log = LoggerFactory.getLogger(AndroidModule::class.java)
   }
 
@@ -408,41 +429,131 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
   }
 
   /**
-   * Get the resource tables for this module as well as it's dependent modules.
+   * Get the resource tables for this module as well as its dependent modules.
    *
-   * @return The set of resource tables. Empty when project is not initalized.
+   * The returned immutable set is reused until one of its package tables is refreshed. Empty when
+   * the workspace or this module's resource table is not initialized.
    */
   fun getSourceResourceTables(): Set<IResourceTable> {
-    val set = mutableSetOf(getResourceTable() ?: return emptySet())
-    getCompileModuleProjects().filterIsInstance<AndroidModule>().forEach {
-      it.getResourceTable()?.also { table -> set.add(table) }
-    }
-    return set
+    return getResourceTableSnapshot()?.sourceTables ?: emptySet()
   }
 
-  /** Get the resource tables for external dependencies (not local module project dependencies). */
+  /**
+   * Get resource tables for external dependencies (not local module project dependencies).
+   *
+   * The returned immutable set belongs to the same generation-aware snapshot as
+   * [getSourceResourceTables].
+   */
   fun getDependencyResourceTables(): Set<IResourceTable> {
-    val dependencyLibraries = collectDependencyLibraries()
-    return mutableSetOf<IResourceTable>().also {
-      var deps: Int
-      it.addAll(dependencyLibraries.filter { library ->
-        library.type == ANDROID_LIBRARY &&
-          library.androidLibraryData?.resFolder?.exists() == true &&
-          library.findPackageName() != UNKNOWN_PACKAGE
-      }.also { libs -> deps = libs.size }.mapNotNull { library ->
-        ResourceTableRegistry.getInstance().let { registry ->
-          registry.isLoggingEnabled = false
-          registry.forPackage(
-            library.packageName,
-            library.androidLibraryData!!.resFolder,
-          ).also {
-            registry.isLoggingEnabled = true
-          }
-        }
-      })
+    return getResourceTableSnapshot()?.dependencyTables ?: emptySet()
+  }
 
-      // log.info("Created {} resource tables for {} dependencies of module '{}'", it.size, deps, path)
+  private fun getResourceTableSnapshot(): ResourceTableSnapshot? {
+    val workspace = IProjectManager.getInstance().getWorkspace() ?: return null
+    val registry = ResourceTableRegistry.getInstance()
+    resourceTableSnapshot?.takeIf { it.isCurrent(workspace, registry) }?.let { return it }
+
+    return synchronized(resourceTableSnapshotLock) {
+      resourceTableSnapshot?.takeIf { it.isCurrent(workspace, registry) }
+        ?: buildResourceTableSnapshot(
+          workspace,
+          registry,
+          resourceTableSnapshot?.takeIf { it.workspace === workspace },
+        )?.also { resourceTableSnapshot = it }
     }
+  }
+
+  private fun ResourceTableSnapshot.isCurrent(
+    workspace: IWorkspace,
+    registry: ResourceTableRegistry,
+  ): Boolean {
+    return this.workspace === workspace &&
+      generations.all { (packageName, generation) ->
+        registry.getGeneration(packageName) == generation
+      }
+  }
+
+  private fun buildResourceTableSnapshot(
+    workspace: IWorkspace,
+    registry: ResourceTableRegistry,
+    previous: ResourceTableSnapshot? = null,
+  ): ResourceTableSnapshot? {
+    val sourceDescriptors = previous?.sourceDescriptors
+      ?: buildSourceResourceDescriptors(workspace)
+      ?: return null
+    val dependencyDescriptors = previous?.dependencyDescriptors
+      ?: buildDependencyResourceDescriptors()
+    val allPackages = (sourceDescriptors + dependencyDescriptors)
+      .mapTo(linkedSetOf()) { it.packageName }
+
+    // A refresh can race completion. Read generations on both sides and only publish a snapshot
+    // whose table references and generation vector belong to one stable interval.
+    repeat(MAX_RESOURCE_SNAPSHOT_BUILD_ATTEMPTS) {
+      val generationsBefore = allPackages.associateWith(registry::getGeneration)
+      val sourceTableResults = sourceDescriptors.map { descriptor ->
+        registry.forPackage(descriptor.packageName, *descriptor.resDirs.toTypedArray())
+      }
+      // Preserve the previous contract: without this module's own table the project is not ready.
+      if (sourceTableResults.firstOrNull() == null) {
+        return null
+      }
+      val sourceTables = sourceTableResults.filterNotNullTo(linkedSetOf())
+      val dependencyTables = dependencyDescriptors.mapNotNullTo(linkedSetOf()) { descriptor ->
+        registry.forPackage(descriptor.packageName, *descriptor.resDirs.toTypedArray())
+      }
+      val generationsAfter = allPackages.associateWith(registry::getGeneration)
+      if (generationsBefore == generationsAfter) {
+        return ResourceTableSnapshot(
+          workspace = workspace,
+          sourceDescriptors = sourceDescriptors,
+          dependencyDescriptors = dependencyDescriptors,
+          generations = generationsAfter,
+          sourceTables = immutableSet(sourceTables),
+          dependencyTables = immutableSet(dependencyTables),
+        )
+      }
+    }
+    return null
+  }
+
+  private fun buildSourceResourceDescriptors(
+    workspace: IWorkspace,
+  ): List<ResourceTableDescriptor>? {
+    val ownDescriptor = resourceTableDescriptor() ?: return null
+    val result = mutableListOf(ownDescriptor)
+    val modules = mutableListOf<ModuleProject>()
+    collectCompileModuleProjects(
+      workspace,
+      libraries,
+      modules,
+      mutableSetOf(),
+      mutableSetOf(),
+    )
+    modules.filterIsInstance<AndroidModule>().mapNotNullTo(result) { it.resourceTableDescriptor() }
+    return result.distinct()
+  }
+
+  private fun resourceTableDescriptor(): ResourceTableDescriptor? {
+    val packageName = namespace ?: return null
+    val resDirs = mainSourceSet?.sourceProvider?.resDirectories ?: return null
+    return ResourceTableDescriptor(packageName, resDirs.map { it.absoluteFile })
+  }
+
+  private fun buildDependencyResourceDescriptors(): List<ResourceTableDescriptor> {
+    return collectDependencyLibraries().mapNotNull { library ->
+      val resFolder = library.androidLibraryData?.resFolder
+      if (library.type != ANDROID_LIBRARY ||
+        resFolder?.exists() != true ||
+        library.findPackageName() == UNKNOWN_PACKAGE
+      ) {
+        return@mapNotNull null
+      }
+      ResourceTableDescriptor(library.packageName, listOf(resFolder.absoluteFile))
+    }.distinct()
+  }
+
+  private fun immutableSet(tables: Set<IResourceTable>): Set<IResourceTable> {
+    return Collections.unmodifiableSet(LinkedHashSet(tables))
   }
 
   private fun collectDependencyLibraries(): List<DefaultLibrary> {
@@ -497,10 +608,14 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
       return getFrameworkResourceTable()?.let { listOf(it) } ?: emptyList()
     }
 
-    val tables: List<IResourceTable> = mutableListOf<IResourceTable>().apply {
-      getResourceTable()?.let { add(it) }
-      addAll(getSourceResourceTables())
-      addAll(getDependencyResourceTables())
+    val snapshot = getResourceTableSnapshot()
+    val tables: Set<IResourceTable> = linkedSetOf<IResourceTable>().apply {
+      if (snapshot != null) {
+        addAll(snapshot.sourceTables)
+        addAll(snapshot.dependencyTables)
+      } else {
+        getResourceTable()?.let { add(it) }
+      }
     }
 
     val result = mutableListOf<IResourceTable>()
@@ -516,7 +631,7 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
       }
     }
 
-    return emptyList()
+    return result
   }
 
   /**
@@ -526,11 +641,15 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
    * @return The associated resource tables.
    */
   fun getAllResourceTables(): Set<IResourceTable> {
-    return mutableSetOf<IResourceTable>().apply {
-      getResourceTable()?.let { add(it) }
+    val snapshot = getResourceTableSnapshot()
+    return linkedSetOf<IResourceTable>().apply {
       getFrameworkResourceTable()?.let { add(it) }
-      addAll(getSourceResourceTables())
-      addAll(getDependencyResourceTables())
+      if (snapshot != null) {
+        addAll(snapshot.sourceTables)
+        addAll(snapshot.dependencyTables)
+      } else {
+        getResourceTable()?.let { add(it) }
+      }
     }
   }
 

@@ -121,7 +121,13 @@ final class KotlinJvmSyntaxParser {
     final String nodeType = declaration.getType();
     final TSNode nameNode = directChild(declaration, "type_identifier");
     final String name = nameNode == null ? "" : text(source, nameNode);
-    final TSNode bodyNode = directChild(declaration, "class_body", "enum_class_body");
+    TSNode bodyNode = directChild(declaration, "class_body", "enum_class_body");
+    if (bodyNode == null) {
+      bodyNode = firstDescendant(declaration, "class_body");
+    }
+    if (bodyNode == null) {
+      bodyNode = firstDescendant(declaration, "enum_class_body");
+    }
     final TSNode constructor = constructorNode(declaration);
     final String recoveredConstructorText =
         constructorTextFallback(source, declaration, nameNode, bodyNode);
@@ -138,15 +144,7 @@ final class KotlinJvmSyntaxParser {
     final TSNode companion = bodyNode == null ? null : directChild(bodyNode, "companion_object");
     final TSNode companionBodyNode = companion == null ? null : directChild(companion, "class_body");
     final List<TypeSyntax> nestedTypes = new ArrayList<>();
-    if (bodyNode != null) {
-      for (int index = 0; index < bodyNode.getNamedChildCount(); index++) {
-        final TSNode child = bodyNode.getNamedChild(index);
-        if ("class_declaration".equals(child.getType())
-            || "object_declaration".equals(child.getType())) {
-          nestedTypes.add(typeSyntax(source, child));
-        }
-      }
-    }
+    collectDirectNestedTypes(source, bodyNode, nestedTypes);
     return new TypeSyntax(
         nodeType,
         name,
@@ -172,17 +170,55 @@ final class KotlinJvmSyntaxParser {
         hasModifier(declaration, "inner"));
   }
 
+  private static void collectDirectNestedTypes(
+      String source, TSNode node, List<TypeSyntax> result) {
+    if (node == null) {
+      return;
+    }
+    final String kind = node.getType();
+    if ("class_declaration".equals(kind) || "object_declaration".equals(kind)) {
+      result.add(typeSyntax(source, node));
+      return;
+    }
+    if ("function_declaration".equals(kind)
+        || "property_declaration".equals(kind)
+        || "companion_object".equals(kind)
+        || "anonymous_initializer".equals(kind)
+        || "secondary_constructor".equals(kind)) {
+      return;
+    }
+    for (int index = 0; index < node.getNamedChildCount(); index++) {
+      collectDirectNestedTypes(source, node.getNamedChild(index), result);
+    }
+  }
+
+  private static void collectDirectMembers(TSNode node, List<TSNode> result) {
+    final String kind = node.getType();
+    if ("function_declaration".equals(kind) || "property_declaration".equals(kind)) {
+      result.add(node);
+      return;
+    }
+    if ("class_declaration".equals(kind)
+        || "object_declaration".equals(kind)
+        || "companion_object".equals(kind)
+        || "anonymous_initializer".equals(kind)
+        || "secondary_constructor".equals(kind)) {
+      return;
+    }
+    for (int index = 0; index < node.getNamedChildCount(); index++) {
+      collectDirectMembers(node.getNamedChild(index), result);
+    }
+  }
+
   private static List<MemberSyntax> members(String source, TSNode body) {
     if (body == null) {
       return Collections.emptyList();
     }
+    final List<TSNode> declarations = new ArrayList<>();
+    collectDirectMembers(body, declarations);
     final List<MemberSyntax> result = new ArrayList<>();
-    for (int index = 0; index < body.getNamedChildCount(); index++) {
-      final TSNode declaration = body.getNamedChild(index);
+    for (TSNode declaration : declarations) {
       final String kind = declaration.getType();
-      if (!"function_declaration".equals(kind) && !"property_declaration".equals(kind)) {
-        continue;
-      }
       final TSNode modifiers = directChild(declaration, "modifiers");
       final TSNode functionBody = directChild(declaration, "function_body");
       final int declarationStart = modifiers == null ? startIndex(source, declaration) : endIndex(source, modifiers);
@@ -222,7 +258,7 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmStatic"),
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
-        jvmName(modifierText),
+        jvmName(modifierText + " " + text(source, declaration)),
         null,
         null,
         name == null ? null : text(source, name),
@@ -234,7 +270,8 @@ final class KotlinJvmSyntaxParser {
         receiver == null ? null : text(source, receiver),
         returnType == null ? null : text(source, returnType),
         false,
-        false);
+        false,
+        directChild(declaration, "function_body") != null);
   }
 
   private static MemberSyntax propertySyntax(
@@ -255,8 +292,8 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
         null,
-        accessorJvmName(modifierText, "get"),
-        accessorJvmName(modifierText, "set"),
+        accessorJvmName(modifierText + " " + text(source, declaration), "get"),
+        accessorJvmName(modifierText + " " + text(source, declaration), "set"),
         name == null ? null : text(source, name),
         name == null ? -1 : startIndex(source, name),
         name == null ? 0 : endIndex(source, name) - startIndex(source, name),
@@ -266,7 +303,8 @@ final class KotlinJvmSyntaxParser {
         receiver == null ? null : text(source, receiver),
         propertyType == null ? null : text(source, propertyType),
         hasDirectToken(declaration, "var"),
-        hasDirectToken(declaration, "val"));
+        hasDirectToken(declaration, "val"),
+        false);
   }
 
   private static String jvmName(String declarationText) {
@@ -812,6 +850,7 @@ final class KotlinJvmSyntaxParser {
     final String declaredType;
     final boolean mutableProperty;
     final boolean readOnlyProperty;
+    final boolean functionBodyPresent;
 
     MemberSyntax(
         String kind,
@@ -832,7 +871,8 @@ final class KotlinJvmSyntaxParser {
         String receiverType,
         String declaredType,
         boolean mutableProperty,
-        boolean readOnlyProperty) {
+        boolean readOnlyProperty,
+        boolean functionBodyPresent) {
       this.kind = kind;
       this.declarationText = declarationText;
       this.privateMember = privateMember;
@@ -852,6 +892,7 @@ final class KotlinJvmSyntaxParser {
       this.declaredType = declaredType;
       this.mutableProperty = mutableProperty;
       this.readOnlyProperty = readOnlyProperty;
+      this.functionBodyPresent = functionBodyPresent;
     }
 
     boolean function() {

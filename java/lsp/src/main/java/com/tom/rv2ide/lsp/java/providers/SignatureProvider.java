@@ -247,7 +247,13 @@ public class SignatureProvider extends CancelableServiceProvider {
     Trees trees = Trees.instance(task.task);
     TreePath path = trees.getPath(root, method.getIdentifier());
     Scope scope = trees.getScope(path);
-    TypeElement type = (TypeElement) trees.getElement(path);
+    final Element identifierElement = trees.getElement(path);
+    final TypeElement type = identifierElement instanceof TypeElement
+        ? (TypeElement) identifierElement
+        : typeElement(trees.getTypeMirror(path));
+    if (type == null || !(type.asType() instanceof DeclaredType)) {
+      return Collections.emptyList();
+    }
     List<ExecutableElement> list = new ArrayList<>();
     for (Element member : task.task.getElements().getAllMembers(type)) {
       if (member.getKind() != ElementKind.CONSTRUCTOR

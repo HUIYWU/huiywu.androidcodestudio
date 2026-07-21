@@ -49,7 +49,7 @@ final class KotlinJvmAbiStubGenerator {
   private static final ThreadLocal<TypeResolutionContext> TYPE_CONTEXT = new ThreadLocal<>();
   private static final Pattern TYPE_PATTERN =
       Pattern.compile(
-          "(?m)^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|value)\\s+)*)"
+          "(?m)^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|inner|value)\\s+)*)"
               + "((?:enum\\s+class)|annotation\\s+class|class|interface|object)"
               + "\\s+([A-Za-z_][\\w]*)(?:\\s*<[^>{}()]*>)?");
   private static final Pattern SECONDARY_CONSTRUCTOR_PATTERN =
@@ -211,7 +211,7 @@ private static final Pattern PROPERTY_PATTERN =
           appendSyntaxConstructors(
               out, nested.name, nested.constructorParameters, nested.primaryConstructorPresent,
               nested.constructorVisibility, nested.constructorJvmOverloads,
-              nested.secondaryConstructors);
+              nested.secondaryConstructors, false);
           appendSyntaxConstructorProperties(out, nested.constructorParameters);
         }
         appendSyntaxMembers(out, nested.members, interfaceType, false);
@@ -267,7 +267,7 @@ private static final Pattern PROPERTY_PATTERN =
         bodySearchStart = constructorStart + constructor.length();
       }
     }
-    final int bodyStart = source.indexOf('{', bodySearchStart);
+    final int bodyStart = typeBodyStart(source, bodySearchStart);
     final int bodyEnd = bodyStart < 0 ? -1 : matchingBrace(source, bodyStart);
     final String body = bodyEnd > bodyStart ? source.substring(bodyStart + 1, bodyEnd) : "";
     final boolean hasSecondaryConstructors = hasSecondaryConstructorsFallback(body);
@@ -293,9 +293,139 @@ private static final Pattern PROPERTY_PATTERN =
         appendSecondaryConstructorsFallback(out, simpleName, body, constructor);
       }
       appendCompanionMembers(out, body);
+      appendNestedTypesFallback(out, body);
     }
     out.append("}\n");
     return out.toString();
+  }
+
+  private static void appendNestedTypesFallback(StringBuilder out, String body) {
+    final Matcher declaration = TYPE_PATTERN.matcher(body);
+    while (declaration.find()) {
+      if (braceDepthAt(body, declaration.start()) != 0
+          || isPrivate(declaration.group(1))
+          || containsModifier(declaration.group(1), "inner")) {
+        continue;
+      }
+      final String keyword = declaration.group(2);
+      final String name = declaration.group(3);
+      final boolean objectType = "object".equals(keyword);
+      final boolean interfaceType = "interface".equals(keyword);
+      if (keyword.startsWith("enum")) {
+        out.append("  public enum ").append(name).append(" { ; }\n");
+        continue;
+      }
+      if (keyword.startsWith("annotation")) {
+        out.append("  public @interface ").append(name).append(" {}\n");
+        continue;
+      }
+      final List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters =
+          typeParametersFallback(body, declaration.end(3));
+      final Set<String> variables = registerTypeVariables(typeParameters);
+      try {
+        out.append("  public static ").append(interfaceType ? "interface " : "class ")
+            .append(name).append(javaTypeParameters(typeParameters).trim())
+            .append(javaInheritanceClause(
+                superTypesFallback(body, declaration.end(3)), interfaceType))
+            .append(" {\n");
+        final String constructor = objectType || interfaceType
+            ? null : primaryConstructorText(body, declaration.end(3));
+        int bodySearchStart = declaration.end();
+        if (constructor != null) {
+          final int constructorStart = body.indexOf(constructor, declaration.end(3));
+          if (constructorStart >= 0) bodySearchStart = constructorStart + constructor.length();
+        }
+        final int nestedBodyStart = typeBodyStart(body, bodySearchStart);
+        final int nestedBodyEnd = nestedBodyStart < 0 ? -1 : matchingBrace(body, nestedBodyStart);
+        final String nestedBody = nestedBodyEnd > nestedBodyStart
+            ? body.substring(nestedBodyStart + 1, nestedBodyEnd) : "";
+        if (objectType) {
+          out.append("  public static final ").append(name).append(" INSTANCE = null;\n");
+        } else if (!interfaceType) {
+          appendFallbackConstructors(
+              out, name, constructor,
+              primaryConstructorVisibilityFallback(body, declaration.end(3), constructor),
+              primaryConstructorJvmOverloadsFallback(body, declaration.end(3), constructor),
+              hasSecondaryConstructorsFallback(nestedBody),
+              hasNoArgSecondaryConstructorFallback(nestedBody), false);
+          appendConstructorProperties(out, constructor);
+        }
+        if (!nestedBody.isEmpty()) {
+          appendMembers(out, nestedBody, interfaceType, false);
+          if (!interfaceType && !objectType) {
+            appendSecondaryConstructorsFallback(out, name, nestedBody, constructor);
+          }
+          appendCompanionMembers(out, nestedBody);
+          appendNestedTypesFallback(out, nestedBody);
+        }
+        out.append("  }\n");
+      } finally {
+        unregisterTypeVariables(variables);
+      }
+    }
+  }
+
+  private static boolean containsModifier(String modifiers, String modifier) {
+    return modifiers != null
+        && Pattern.compile("(?:^|\\s)" + Pattern.quote(modifier) + "(?:\\s|$)")
+            .matcher(modifiers).find();
+  }
+
+  private static int braceDepthAt(String source, int end) {
+    int depth = 0;
+    boolean quoted = false;
+    boolean escaped = false;
+    boolean lineComment = false;
+    boolean blockComment = false;
+    for (int index = 0; index < end; index++) {
+      final char current = source.charAt(index);
+      final char next = index + 1 < end ? source.charAt(index + 1) : '\0';
+      if (lineComment) {
+        if (current == '\n') lineComment = false;
+        continue;
+      }
+      if (blockComment) {
+        if (current == '*' && next == '/') {
+          blockComment = false;
+          index++;
+        }
+        continue;
+      }
+      if (quoted) {
+        if (current == '"' && !escaped) quoted = false;
+        escaped = current == '\\' && !escaped;
+        if (current != '\\') escaped = false;
+        continue;
+      }
+      if (current == '/' && next == '/') {
+        lineComment = true;
+        index++;
+      } else if (current == '/' && next == '*') {
+        blockComment = true;
+        index++;
+      } else if (current == '"') {
+        quoted = true;
+      } else if (current == '{') {
+        depth++;
+      } else if (current == '}') {
+        depth = Math.max(0, depth - 1);
+      }
+    }
+    return depth;
+  }
+
+  private static int typeBodyStart(String source, int headerEnd) {
+    final int lineEnd = source.indexOf('\n', headerEnd);
+    final int declarationLineEnd = lineEnd < 0 ? source.length() : lineEnd;
+    final int sameLineBrace = source.indexOf('{', headerEnd);
+    if (sameLineBrace >= 0 && sameLineBrace < declarationLineEnd) {
+      return sameLineBrace;
+    }
+    int index = declarationLineEnd;
+    while (index < source.length() && Character.isWhitespace(source.charAt(index))) {
+      index++;
+    }
+    return index < source.length() && source.charAt(index) == '{' ? index : -1;
   }
 
   private static String generateFacade(String packageName, String simpleName, String source) {
@@ -426,10 +556,12 @@ private static final Pattern PROPERTY_PATTERN =
         parameters.add(javaSyntaxParameter(
             parameter, index, index == function.parameterList.size() - 1));
       }
-      out.append(javaType(function.declaredType)).append(' ')
+      final String returnType = functionReturnType(
+          function.declaredType, interfaceType, topLevel, function.functionBodyPresent);
+      out.append(javaType(returnType)).append(' ')
           .append(function.jvmName == null ? function.name : function.jvmName)
           .append('(').append(String.join(", ", parameters)).append(')')
-          .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
+          .append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
     } finally {
       unregisterTypeVariables(methodVariables);
     }
@@ -459,12 +591,14 @@ private static final Pattern PROPERTY_PATTERN =
         if (topLevel) {
           out.append("static ");
         }
+        final String returnType = functionReturnType(
+            function.declaredType, interfaceType, topLevel, function.functionBodyPresent);
         out.append(javaTypeParameters(function.typeParameters))
-            .append(javaType(function.declaredType)).append(' ')
+            .append(javaType(returnType)).append(' ')
             .append(function.jvmName == null ? function.name : function.jvmName)
             .append(javaSyntaxParameterList(
                 parameters.subList(0, count), count == parameters.size()))
-            .append(interfaceType && !topLevel ? ";\n" : methodBody(function.declaredType));
+            .append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
       }
     } finally {
       unregisterTypeVariables(methodVariables);
@@ -530,10 +664,12 @@ private static final Pattern PROPERTY_PATTERN =
     if (ordinaryParameters.length() > 2) {
       parameters.add(ordinaryParameters.substring(1, ordinaryParameters.length() - 1));
     }
-    out.append(javaType(extension.group(5))).append(' ')
+    final String returnType = functionReturnType(
+        extension.group(5), interfaceType, topLevel, fallbackFunctionBodyPresent(extension.group()));
+    out.append(javaType(returnType)).append(' ')
         .append(jvmName == null ? extension.group(3) : jvmName)
         .append("(").append(String.join(", ", parameters)).append(")");
-    out.append(interfaceType && !topLevel ? ";\n" : methodBody(extension.group(5)));
+    out.append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
   }
 
   private static void appendFunction(
@@ -558,11 +694,13 @@ private static final Pattern PROPERTY_PATTERN =
       if (topLevel) {
         out.append("static ");
       }
+      final String returnType = functionReturnType(
+          function.group(4), interfaceType, topLevel, fallbackFunctionBodyPresent(function.group()));
       out.append(javaTypeParameters(typeParameters))
-          .append(javaType(function.group(4))).append(' ')
+          .append(javaType(returnType)).append(' ')
           .append(jvmName == null ? function.group(2) : jvmName)
           .append(parameterList("(" + function.group(3) + ")"));
-      out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
+      out.append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
     } finally {
       unregisterTypeVariables(methodVariables);
     }
@@ -603,11 +741,13 @@ private static final Pattern PROPERTY_PATTERN =
         if (topLevel) {
           out.append("static ");
         }
+        final String returnType = functionReturnType(
+            function.group(4), interfaceType, topLevel, fallbackFunctionBodyPresent(function.group()));
         out.append(javaTypeParameters(typeParameters))
-            .append(javaType(function.group(4))).append(' ')
+            .append(javaType(returnType)).append(' ')
             .append(jvmName == null ? function.group(2) : jvmName)
             .append(javaParameterList(parameters.subList(0, count), false));
-        out.append(interfaceType && !topLevel ? ";\n" : methodBody(function.group(4)));
+        out.append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
       }
     } finally {
       unregisterTypeVariables(methodVariables);
@@ -715,7 +855,6 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static void appendSyntaxConstructors(
-
       StringBuilder out,
       String simpleName,
       List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters,
@@ -723,6 +862,20 @@ private static final Pattern PROPERTY_PATTERN =
       String primaryVisibility,
       boolean primaryJvmOverloads,
       List<KotlinJvmSyntaxParser.ConstructorSyntax> secondaryConstructors) {
+    appendSyntaxConstructors(
+        out, simpleName, kotlinParameters, primaryConstructorPresent, primaryVisibility,
+        primaryJvmOverloads, secondaryConstructors, true);
+  }
+
+  private static void appendSyntaxConstructors(
+      StringBuilder out,
+      String simpleName,
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters,
+      boolean primaryConstructorPresent,
+      String primaryVisibility,
+      boolean primaryJvmOverloads,
+      List<KotlinJvmSyntaxParser.ConstructorSyntax> secondaryConstructors,
+      boolean allowSyntheticBridge) {
     final Set<String> emittedParameters = new LinkedHashSet<>();
     boolean hasRealNoArgConstructor = primaryConstructorPresent && kotlinParameters.isEmpty();
     hasRealNoArgConstructor |= primaryJvmOverloads && allConstructorParametersDefault(kotlinParameters);
@@ -731,7 +884,8 @@ private static final Pattern PROPERTY_PATTERN =
       hasRealNoArgConstructor |=
           constructor.jvmOverloads && allParametersDefault(constructor.parameters);
     }
-    if (!hasRealNoArgConstructor
+    if (allowSyntheticBridge
+        && !hasRealNoArgConstructor
         && (!kotlinParameters.isEmpty()
             || (!primaryConstructorPresent && !secondaryConstructors.isEmpty()))) {
       appendSyntheticNoArgConstructor(out, simpleName);
@@ -854,12 +1008,27 @@ private static final Pattern PROPERTY_PATTERN =
       boolean primaryJvmOverloads,
       boolean hasSecondaryConstructors,
       boolean hasNoArgSecondaryConstructor) {
+    appendFallbackConstructors(
+        out, simpleName, kotlinParameters, primaryVisibility, primaryJvmOverloads,
+        hasSecondaryConstructors, hasNoArgSecondaryConstructor, true);
+  }
+
+  private static void appendFallbackConstructors(
+      StringBuilder out,
+      String simpleName,
+      String kotlinParameters,
+      String primaryVisibility,
+      boolean primaryJvmOverloads,
+      boolean hasSecondaryConstructors,
+      boolean hasNoArgSecondaryConstructor,
+      boolean allowSyntheticBridge) {
     final String parameters = parameterList(kotlinParameters);
     final boolean overloadCreatesNoArg = primaryJvmOverloads
         && kotlinParameters != null
         && allParametersDefaultFallback(
             splitParameters(kotlinParameters.substring(1, kotlinParameters.length() - 1)));
-    if (!hasNoArgSecondaryConstructor
+    if (allowSyntheticBridge
+        && !hasNoArgSecondaryConstructor
         && !overloadCreatesNoArg
         && (!"()".equals(parameters) || (kotlinParameters == null && hasSecondaryConstructors))) {
       appendSyntheticNoArgConstructor(out, simpleName);
@@ -1800,6 +1969,26 @@ private static final Pattern PROPERTY_PATTERN =
       this.rawType = rawType;
       this.arguments = arguments;
     }
+  }
+
+  private static String functionReturnType(
+      String declaredType, boolean interfaceType, boolean topLevel, boolean bodyPresent) {
+    return (declaredType == null || declaredType.trim().isEmpty())
+            && interfaceType && !topLevel && !bodyPresent
+        ? "Unit"
+        : declaredType;
+  }
+
+  private static boolean fallbackFunctionBodyPresent(String declaration) {
+    if (declaration == null) {
+      return false;
+    }
+    final int parametersEnd = declaration.lastIndexOf(')');
+    if (parametersEnd < 0 || parametersEnd + 1 >= declaration.length()) {
+      return false;
+    }
+    final String tail = declaration.substring(parametersEnd + 1);
+    return tail.indexOf('=') >= 0 || tail.indexOf('{') >= 0;
   }
 
   private static String methodBody(String kotlinType) {

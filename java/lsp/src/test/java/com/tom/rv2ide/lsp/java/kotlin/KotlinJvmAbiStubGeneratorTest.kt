@@ -114,6 +114,7 @@ class KotlinJvmAbiStubGeneratorTest {
     assertContains(stub, "public static String readMode()")
     assertContains(stub, "public static void writeMode(String value)")
     assertFalse(stub.contains("public static String load()"))
+    assertFalse(stub.contains("public static String fetch("))
     assertFalse(stub.contains("public static String getMode()"))
   }
 
@@ -233,6 +234,8 @@ class KotlinJvmAbiStubGeneratorTest {
     assertNotNull(stub)
     assertContains(stub!!, "public static class Nested")
     assertContains(stub, "public Nested(String value)")
+    assertFalse(stub.contains("protected Nested()"))
+    assertFalse(stub.contains("public Nested()"))
     assertContains(stub, "public String getValue()")
     assertContains(stub, "public String label()")
     assertContains(stub, "public static class Deep")
