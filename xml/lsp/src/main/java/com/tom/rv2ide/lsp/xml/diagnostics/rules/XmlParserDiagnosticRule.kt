@@ -204,15 +204,56 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       parserOffset: Int,
       requireMissingEquals: Boolean,
   ): IntRange? {
-    val tagStart = text.lastIndexOf('<', parserOffset).takeIf { it >= 0 } ?: return null
-    val previousTagEnd = text.lastIndexOf('>', parserOffset)
-    val effectiveTagStart = if (previousTagEnd > tagStart) text.lastIndexOf('<', tagStart - 1) else tagStart
-    if (effectiveTagStart < 0) {
-      return null
+    var cursor = parserOffset.coerceIn(0, text.lastIndex)
+    val minimumOffset = (cursor - MAX_ATTRIBUTE_LOOKBACK_CHARS).coerceAtLeast(0)
+    repeat(MAX_ATTRIBUTE_LOOKBACK_TAGS) {
+      val tagStart = text.lastIndexOf('<', cursor)
+      if (tagStart < minimumOffset) {
+        return null
+      }
+      cursor = tagStart - 1
+      val marker = text.getOrNull(tagStart + 1)
+      if (marker == null || marker == '/' || marker == '!' || marker == '?') {
+        return@repeat
+      }
+      val tagEnd = findStartTagEnd(text, tagStart)
+      if (tagEnd < 0) {
+        return@repeat
+      }
+      findMalformedAttributeInTag(text, tagStart, tagEnd, requireMissingEquals)?.let {
+        return it
+      }
     }
-    val tagEnd = text.indexOf('>', effectiveTagStart + 1).let { if (it < 0) text.length else it }
+    return null
+  }
 
-    var index = effectiveTagStart + 1
+  /** Finds `>` outside quoted attribute values. */
+  private fun findStartTagEnd(text: String, tagStart: Int): Int {
+    var quote: Char? = null
+    for (index in tagStart + 1 until text.length) {
+      val character = text[index]
+      if (quote == null) {
+        if (character in QUOTES) {
+          quote = character
+        } else if (character == '>') {
+          return index
+        } else if (character == '<') {
+          return -1
+        }
+      } else if (character == quote) {
+        quote = null
+      }
+    }
+    return -1
+  }
+
+  private fun findMalformedAttributeInTag(
+      text: String,
+      tagStart: Int,
+      tagEnd: Int,
+      requireMissingEquals: Boolean,
+  ): IntRange? {
+    var index = tagStart + 1
     // Skip the element name before inspecting attributes.
     while (index < tagEnd && !text[index].isWhitespace()) {
       index++
@@ -221,7 +262,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       while (index < tagEnd && text[index].isWhitespace()) {
         index++
       }
-      if (index >= tagEnd || text[index] == '/' || text[index] == '>') {
+      if (index >= tagEnd || text[index] == '/') {
         break
       }
       val nameStart = index
@@ -357,6 +398,8 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
 
   private const val CODE_XML_PARSER_SYNTAX = "XML005"
   private const val MAX_PARSER_ERRORS = 20
+  private const val MAX_ATTRIBUTE_LOOKBACK_TAGS = 4
+  private const val MAX_ATTRIBUTE_LOOKBACK_CHARS = 4096
   private const val QUOTES = "\"'"
   private const val PROPERTY_ERROR_REPORTER =
       "http://apache.org/xml/properties/internal/error-reporter"

@@ -107,55 +107,7 @@ final class KotlinJvmSyntaxParser {
           if (nameNode == null || !simpleName.equals(text(source, nameNode))) {
             continue;
           }
-          final String declarationText = text(source, declaration);
-          final List<TypeParameterSyntax> typeParameters =
-              typeParameters(source, directChild(declaration, "type_parameters"));
-          final List<SuperTypeSyntax> superTypes = superTypes(source, declaration);
-          final TSNode bodyNode = directChild(declaration, "class_body", "enum_class_body");
-          final String body = bodyNode == null ? "" : innerBody(text(source, bodyNode));
-          final List<MemberSyntax> members = members(source, bodyNode);
-          final TSNode constructor = constructorNode(declaration);
-          final String recoveredConstructorText =
-              constructorTextFallback(source, declaration, nameNode, bodyNode);
-          final String constructorText = constructor == null
-              ? recoveredConstructorText
-              : text(source, constructor);
-          final List<ConstructorParameterSyntax> parsedConstructorParameters =
-              constructorParameters(source, constructor);
-          final String parameterFallbackText =
-              recoveredConstructorText == null ? constructorText : recoveredConstructorText;
-          final List<ConstructorParameterSyntax> constructorParameters =
-              parsedConstructorParameters.isEmpty() && parameterFallbackText != null
-                  ? constructorParametersFallback(parameterFallbackText)
-                  : parsedConstructorParameters;
-          final boolean primaryConstructorPresent = constructor != null || recoveredConstructorText != null;
-          final String constructorVisibility = constructorVisibility(source, constructor);
-          final boolean constructorJvmOverloads = hasJvmOverloads(source, constructor);
-          final List<ConstructorSyntax> secondaryConstructors =
-              secondaryConstructors(source, bodyNode);
-          final TSNode companion = bodyNode == null ? null : directChild(bodyNode, "companion_object");
-          final TSNode companionBodyNode = companion == null ? null : directChild(companion, "class_body");
-          final String companionBody =
-              companionBodyNode == null ? null : innerBody(text(source, companionBodyNode));
-          final List<MemberSyntax> companionMembers = members(source, companionBodyNode);
-          return new TypeSyntax(
-              nodeType,
-              declarationText,
-              body,
-              members,
-              typeParameters,
-              superTypes,
-              constructorParameters,
-              primaryConstructorPresent,
-              constructorVisibility,
-              constructorJvmOverloads,
-              secondaryConstructors,
-              companionBody,
-              companionMembers,
-              hasDirectToken(declaration, "interface"),
-              hasDirectToken(declaration, "enum"),
-              hasModifier(declaration, "annotation"),
-              hasModifier(declaration, "private"));
+          return typeSyntax(source, declaration);
         }
       }
     } catch (Throwable ignored) {
@@ -163,6 +115,61 @@ final class KotlinJvmSyntaxParser {
       // where the native grammar cannot be loaded or an incomplete edit cannot be parsed safely.
     }
     return null;
+  }
+
+  private static TypeSyntax typeSyntax(String source, TSNode declaration) {
+    final String nodeType = declaration.getType();
+    final TSNode nameNode = directChild(declaration, "type_identifier");
+    final String name = nameNode == null ? "" : text(source, nameNode);
+    final TSNode bodyNode = directChild(declaration, "class_body", "enum_class_body");
+    final TSNode constructor = constructorNode(declaration);
+    final String recoveredConstructorText =
+        constructorTextFallback(source, declaration, nameNode, bodyNode);
+    final String constructorText = constructor == null
+        ? recoveredConstructorText : text(source, constructor);
+    final List<ConstructorParameterSyntax> parsedConstructorParameters =
+        constructorParameters(source, constructor);
+    final String parameterFallbackText =
+        recoveredConstructorText == null ? constructorText : recoveredConstructorText;
+    final List<ConstructorParameterSyntax> constructorParameters =
+        parsedConstructorParameters.isEmpty() && parameterFallbackText != null
+            ? constructorParametersFallback(parameterFallbackText)
+            : parsedConstructorParameters;
+    final TSNode companion = bodyNode == null ? null : directChild(bodyNode, "companion_object");
+    final TSNode companionBodyNode = companion == null ? null : directChild(companion, "class_body");
+    final List<TypeSyntax> nestedTypes = new ArrayList<>();
+    if (bodyNode != null) {
+      for (int index = 0; index < bodyNode.getNamedChildCount(); index++) {
+        final TSNode child = bodyNode.getNamedChild(index);
+        if ("class_declaration".equals(child.getType())
+            || "object_declaration".equals(child.getType())) {
+          nestedTypes.add(typeSyntax(source, child));
+        }
+      }
+    }
+    return new TypeSyntax(
+        nodeType,
+        name,
+        nameNode == null ? -1 : startIndex(source, nameNode),
+        nameNode == null ? 0 : endIndex(source, nameNode) - startIndex(source, nameNode),
+        text(source, declaration),
+        bodyNode == null ? "" : innerBody(text(source, bodyNode)),
+        members(source, bodyNode),
+        Collections.unmodifiableList(nestedTypes),
+        typeParameters(source, directChild(declaration, "type_parameters")),
+        superTypes(source, declaration),
+        constructorParameters,
+        constructor != null || recoveredConstructorText != null,
+        constructorVisibility(source, constructor),
+        hasJvmOverloads(source, constructor),
+        secondaryConstructors(source, bodyNode),
+        companionBodyNode == null ? null : innerBody(text(source, companionBodyNode)),
+        members(source, companionBodyNode),
+        hasDirectToken(declaration, "interface"),
+        hasDirectToken(declaration, "enum"),
+        hasModifier(declaration, "annotation"),
+        hasModifier(declaration, "private"),
+        hasModifier(declaration, "inner"));
   }
 
   private static List<MemberSyntax> members(String source, TSNode body) {
@@ -711,9 +718,13 @@ final class KotlinJvmSyntaxParser {
   static final class TypeSyntax {
 
     final String nodeType;
+    final String name;
+    final int nameOffset;
+    final int nameLength;
     final String declarationText;
     final String body;
     final List<MemberSyntax> members;
+    final List<TypeSyntax> nestedTypes;
     final List<TypeParameterSyntax> typeParameters;
     final List<SuperTypeSyntax> superTypes;
     final List<ConstructorParameterSyntax> constructorParameters;
@@ -727,12 +738,17 @@ final class KotlinJvmSyntaxParser {
     final boolean enumType;
     final boolean annotationType;
     final boolean privateType;
+    final boolean innerType;
 
     TypeSyntax(
         String nodeType,
+        String name,
+        int nameOffset,
+        int nameLength,
         String declarationText,
         String body,
         List<MemberSyntax> members,
+        List<TypeSyntax> nestedTypes,
         List<TypeParameterSyntax> typeParameters,
         List<SuperTypeSyntax> superTypes,
         List<ConstructorParameterSyntax> constructorParameters,
@@ -745,11 +761,16 @@ final class KotlinJvmSyntaxParser {
         boolean interfaceType,
         boolean enumType,
         boolean annotationType,
-        boolean privateType) {
+        boolean privateType,
+        boolean innerType) {
       this.nodeType = nodeType;
+      this.name = name;
+      this.nameOffset = nameOffset;
+      this.nameLength = nameLength;
       this.declarationText = declarationText;
       this.body = body;
       this.members = members;
+      this.nestedTypes = nestedTypes;
       this.typeParameters = typeParameters;
       this.superTypes = superTypes;
       this.constructorParameters = constructorParameters;
@@ -763,6 +784,7 @@ final class KotlinJvmSyntaxParser {
       this.enumType = enumType;
       this.annotationType = annotationType;
       this.privateType = privateType;
+      this.innerType = innerType;
     }
 
     boolean objectType() {

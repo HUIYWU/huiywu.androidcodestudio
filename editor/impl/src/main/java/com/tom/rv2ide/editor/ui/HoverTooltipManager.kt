@@ -27,21 +27,14 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
     private const val MIN_HOVER_TEXT_CONTRAST = 3.2
   }
 
-  // private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
   private val tooltipContainer: ViewGroup by lazy {
-    val overlayContainerId =
-        context.resources.getIdentifier("editor_overlay_container", "id", context.packageName)
+    val editorContainer = editor.parent as? ViewGroup
     val overlayContainer =
-        if (overlayContainerId != 0) {
-          editor.rootView.findViewById<View>(overlayContainerId) as? ViewGroup
-        } else {
-          null
-        }
+        editorContainer?.findViewById<ViewGroup>(R.id.editor_overlay_container)
 
     overlayContainer
-        ?: (editor.parent as? ViewGroup)
-        ?: (editor.rootView as? ViewGroup)
-        ?: throw IllegalStateException("Unable to find a valid ViewGroup container for tooltip.")
+        ?: editorContainer
+        ?: throw IllegalStateException("Unable to find the tooltip container for this editor.")
   }
 
   private val handler = Handler(Looper.getMainLooper())

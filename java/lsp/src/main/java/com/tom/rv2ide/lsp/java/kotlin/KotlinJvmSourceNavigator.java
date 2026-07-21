@@ -31,28 +31,35 @@ public final class KotlinJvmSourceNavigator {
     if (companionOwner) {
       owner = (TypeElement) owner.getEnclosingElement();
     }
-    final String qualifiedName = owner.getQualifiedName().toString();
+    final TypeElement topLevelOwner = topLevelOwner(owner);
+    final String qualifiedName = topLevelOwner.getQualifiedName().toString();
     final KotlinTypeDeclaration declaration =
         KotlinJvmTypeIndex.findDeclaration(module, qualifiedName);
     if (declaration == null) {
       return null;
     }
     final String source = FileManager.INSTANCE.getDocumentContents(declaration.file).toString();
+    final KotlinJvmSyntaxParser.TypeSyntax topLevelType =
+        KotlinJvmSyntaxParser.findTopLevelType(source, topLevelOwner.getSimpleName().toString());
+    final KotlinJvmSyntaxParser.TypeSyntax type =
+        nestedType(topLevelType, owner, topLevelOwner);
+    if (element instanceof TypeElement && type != null && type.nameOffset >= 0) {
+      return location(declaration.file, source, type.nameOffset, type.nameLength);
+    }
     if (element instanceof TypeElement) {
       return location(declaration.file, source, declaration.offset, declaration.length);
     }
-
-    final String simpleName = owner.getSimpleName().toString();
-    final KotlinJvmSyntaxParser.TypeSyntax type =
-        KotlinJvmSyntaxParser.findTopLevelType(source, simpleName);
     final SourceRange range = type == null
         ? findFacadeMember(source, element)
         : companionOwner
             ? findMember(type.companionMembers, element, false)
             : findTypeMember(type, declaration, element);
-    return range == null
-        ? location(declaration.file, source, declaration.offset, declaration.length)
-        : location(declaration.file, source, range.offset, range.length);
+    if (range != null) {
+      return location(declaration.file, source, range.offset, range.length);
+    }
+    return type != null && type.nameOffset >= 0
+        ? location(declaration.file, source, type.nameOffset, type.nameLength)
+        : location(declaration.file, source, declaration.offset, declaration.length);
   }
 
   private static SourceRange findTypeMember(
@@ -64,6 +71,9 @@ public final class KotlinJvmSourceNavigator {
         return null;
       }
       final ExecutableElement executable = (ExecutableElement) element;
+      final SourceRange typeRange = type.nameOffset >= 0
+          ? new SourceRange(type.nameOffset, type.nameLength)
+          : new SourceRange(typeDeclaration.offset, typeDeclaration.length);
       SourceRange match = null;
       int matches = 0;
       for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : type.secondaryConstructors) {
@@ -75,12 +85,10 @@ public final class KotlinJvmSourceNavigator {
       }
       if (type.primaryConstructorPresent
           && primaryConstructorMatches(type, executable)) {
-        match = new SourceRange(typeDeclaration.offset, typeDeclaration.length);
+        match = typeRange;
         matches++;
       }
-      return matches == 1
-          ? match
-          : new SourceRange(typeDeclaration.offset, typeDeclaration.length);
+      return matches == 1 ? match : typeRange;
     }
 
     SourceRange range = findMember(type.members, element, false);
@@ -306,6 +314,44 @@ public final class KotlinJvmSourceNavigator {
         }
         return null;
     }
+  }
+
+  private static TypeElement topLevelOwner(TypeElement owner) {
+    TypeElement current = owner;
+    while (current.getEnclosingElement() instanceof TypeElement) {
+      current = (TypeElement) current.getEnclosingElement();
+    }
+    return current;
+  }
+
+  private static KotlinJvmSyntaxParser.TypeSyntax nestedType(
+      KotlinJvmSyntaxParser.TypeSyntax topLevel,
+      TypeElement owner,
+      TypeElement topLevelOwner) {
+    if (topLevel == null || owner.equals(topLevelOwner)) {
+      return topLevel;
+    }
+    final java.util.ArrayList<String> names = new java.util.ArrayList<>();
+    Element current = owner;
+    while (current instanceof TypeElement && !current.equals(topLevelOwner)) {
+      names.add(0, current.getSimpleName().toString());
+      current = current.getEnclosingElement();
+    }
+    KotlinJvmSyntaxParser.TypeSyntax result = topLevel;
+    for (String name : names) {
+      KotlinJvmSyntaxParser.TypeSyntax match = null;
+      for (KotlinJvmSyntaxParser.TypeSyntax nested : result.nestedTypes) {
+        if (name.equals(nested.name)) {
+          match = nested;
+          break;
+        }
+      }
+      if (match == null) {
+        return null;
+      }
+      result = match;
+    }
+    return result;
   }
 
   private static TypeElement ownerType(Element element) {

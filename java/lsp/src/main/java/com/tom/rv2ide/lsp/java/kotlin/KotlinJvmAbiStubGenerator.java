@@ -172,8 +172,61 @@ private static final Pattern PROPERTY_PATTERN =
     if (syntax.companionBody != null) {
       appendCompanionSyntax(out, syntax.companionMembers);
     }
+    appendNestedTypes(out, syntax.nestedTypes);
     out.append("}\n");
     return out.toString();
+  }
+
+  private static void appendNestedTypes(
+      StringBuilder out, List<KotlinJvmSyntaxParser.TypeSyntax> nestedTypes) {
+    for (KotlinJvmSyntaxParser.TypeSyntax nested : nestedTypes) {
+      if (nested.privateType || nested.innerType || nested.name == null || nested.name.isEmpty()) {
+        continue;
+      }
+      final boolean interfaceType = nested.interfaceType;
+      final boolean objectType = nested.objectType();
+      if (nested.enumType) {
+        out.append("  public enum ").append(nested.name).append(" { ; }\n");
+        continue;
+      }
+      if (nested.annotationType) {
+        out.append("  public @interface ").append(nested.name).append(" {}\n");
+        continue;
+      }
+      final TypeResolutionContext context = TYPE_CONTEXT.get();
+      final Set<String> outerVariables = context == null
+          ? java.util.Collections.emptySet()
+          : new LinkedHashSet<>(context.typeVariables);
+      if (context != null) {
+        context.typeVariables.clear();
+      }
+      registerTypeVariables(nested.typeParameters);
+      try {
+        out.append("  public static ").append(interfaceType ? "interface " : "class ")
+            .append(nested.name).append(javaTypeParameters(nested.typeParameters).trim())
+            .append(javaInheritanceClause(nested.superTypes, interfaceType)).append(" {\n");
+        if (objectType) {
+          out.append("  public static final ").append(nested.name).append(" INSTANCE = null;\n");
+        } else if (!interfaceType) {
+          appendSyntaxConstructors(
+              out, nested.name, nested.constructorParameters, nested.primaryConstructorPresent,
+              nested.constructorVisibility, nested.constructorJvmOverloads,
+              nested.secondaryConstructors);
+          appendSyntaxConstructorProperties(out, nested.constructorParameters);
+        }
+        appendSyntaxMembers(out, nested.members, interfaceType, false);
+        if (nested.companionBody != null) {
+          appendCompanionSyntax(out, nested.companionMembers);
+        }
+        appendNestedTypes(out, nested.nestedTypes);
+        out.append("  }\n");
+      } finally {
+        if (context != null) {
+          context.typeVariables.clear();
+          context.typeVariables.addAll(outerVariables);
+        }
+      }
+    }
   }
 
   private static String generateTypeFallback(
@@ -1717,6 +1770,11 @@ private static final Pattern PROPERTY_PATTERN =
       collectTopLevelTypeNamesFallback(source, packageName, declaredTypes);
       declaredTypes.put(
           generatedSimpleName, qualifiedName(packageName, generatedSimpleName));
+      final KotlinJvmSyntaxParser.TypeSyntax generatedType =
+          KotlinJvmSyntaxParser.findTopLevelType(source, generatedSimpleName);
+      if (generatedType != null) {
+        collectNestedTypeNames(generatedType, packageName, generatedSimpleName, declaredTypes);
+      }
 
       final Map<String, String> knownSimpleTypes = new LinkedHashMap<>();
       if (knownTypes != null) {
@@ -1786,6 +1844,21 @@ private static final Pattern PROPERTY_PATTERN =
         }
       }
       braceDepth = Math.max(0, braceDepth + braceDelta(line));
+    }
+  }
+
+  private static void collectNestedTypeNames(
+      KotlinJvmSyntaxParser.TypeSyntax owner,
+      String packageName,
+      String ownerName,
+      Map<String, String> result) {
+    for (KotlinJvmSyntaxParser.TypeSyntax nested : owner.nestedTypes) {
+      if (nested.privateType || nested.innerType || nested.name == null || nested.name.isEmpty()) {
+        continue;
+      }
+      final String sourceName = ownerName + "." + nested.name;
+      result.putIfAbsent(nested.name, qualifiedName(packageName, sourceName));
+      collectNestedTypeNames(nested, packageName, sourceName, result);
     }
   }
 

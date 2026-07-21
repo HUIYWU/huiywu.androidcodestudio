@@ -77,6 +77,42 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnostic.range.end.column).isEqualTo(22)
   }
 
+  fun testMissingEqualsOnLastAttributeDoesNotMoveToChildTag() {
+    val text =
+        """
+        <Root
+          xmlns:tools="http://schemas.android.com/tools"
+          tools:context".MainActivity">
+          <Child />
+        </Root>
+        """.trimIndent()
+
+    val diagnostic = diagnose(text).single { it.code == "XML005" }
+
+    assertThat(diagnostic.range.start.line).isEqualTo(2)
+    assertThat(diagnostic.range.end.line).isEqualTo(2)
+    assertThat(diagnostic.range.start.column).isEqualTo(2)
+    assertThat(diagnostic.range.end.column).isEqualTo(15)
+  }
+
+  fun testMissingEqualsOnLastSelfClosingAttributeDoesNotMoveToNextTag() {
+    val text =
+        """
+        <Root xmlns:android="http://schemas.android.com/apk/res/android">
+          <View
+            android:alpha"0.12" />
+          <Next />
+        </Root>
+        """.trimIndent()
+
+    val diagnostic = diagnose(text).single { it.code == "XML005" }
+
+    assertThat(diagnostic.range.start.line).isEqualTo(2)
+    assertThat(diagnostic.range.end.line).isEqualTo(2)
+    assertThat(diagnostic.range.start.column).isEqualTo(4)
+    assertThat(diagnostic.range.end.column).isEqualTo(17)
+  }
+
   fun testDoesNotDuplicateExistingAttributeDiagnostics() {
     assertThat(diagnose("<View id=\"first\" id=\"second\" />")).isEmpty()
     assertThat(diagnose("<View custom:value=\"example\" />")).isEmpty()

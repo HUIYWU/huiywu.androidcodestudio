@@ -203,6 +203,50 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsOrdinaryNestedTypes() {
+    val source =
+        """
+        package sample
+
+        class Outer {
+          class Nested(val value: String) {
+            fun label(): String = value
+
+            class Deep(val count: Int)
+          }
+
+          interface Listener {
+            fun onChanged(value: Int)
+          }
+
+          object Defaults {
+            val enabled: Boolean = true
+          }
+
+          inner class Entry(val name: String)
+          private class Hidden
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generate("sample.Outer", "Outer.kt", source)
+
+    assertNotNull(stub)
+    assertContains(stub!!, "public static class Nested")
+    assertContains(stub, "public Nested(String value)")
+    assertContains(stub, "public String getValue()")
+    assertContains(stub, "public String label()")
+    assertContains(stub, "public static class Deep")
+    assertContains(stub, "public Deep(int count)")
+    assertContains(stub, "public static interface Listener")
+    assertContains(stub, "public void onChanged(int value)")
+    assertContains(stub, "public static class Defaults")
+    assertContains(stub, "public static final Defaults INSTANCE")
+    assertContains(stub, "public boolean getEnabled()")
+    assertFalse(stub.contains("class Entry"))
+    assertFalse(stub.contains("class Hidden"))
+  }
+
+  @Test
   fun generate_projectsNullablePrimitivesCollectionsAndArrays() {
     val source =
         """
