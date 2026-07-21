@@ -16,13 +16,12 @@
  */
 package com.tom.rv2ide.lsp.xml.diagnostics.rules
 
-import com.android.aapt.Resources.Attribute.FormatFlags
 import com.android.aapt.Resources.Attribute.FormatFlags.BOOLEAN
 import com.android.aapt.Resources.Attribute.FormatFlags.COLOR
 import com.android.aapt.Resources.Attribute.FormatFlags.DIMENSION
 import com.android.aapt.Resources.Attribute.FormatFlags.ENUM
 import com.android.aapt.Resources.Attribute.FormatFlags.FLAGS
-import com.android.aapt.Resources.Attribute.FormatFlags.STRING
+import com.android.aapt.Resources.Attribute.FormatFlags.INTEGER
 import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.STYLEABLE
 import com.android.aaptcompiler.AttributeResource
@@ -267,7 +266,7 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
     return namespace.removePrefix(RESOURCE_NAMESPACE_PREFIX).takeIf { it.isNotBlank() }
   }
 
-  /** Checks only narrow literal boolean, enum and flag formats. */
+  /** Checks only narrow, single-format literal values with unambiguous Android syntax. */
   private fun checkAttributeValues(element: DOMElement, collector: XmlDiagnosticCollector) {
     if (!element.isClosed) {
       return
@@ -305,24 +304,36 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
   // Resource references are not rejected from AttributeResource.typeMask: it describes accepted
   // inline formats and does not imply that references such as android:text="@string/title" fail.
   private fun validateLiteralAttributeValue(attr: AttributeResource, value: String): String? {
-    if (attr.hasAnyType(STRING, COLOR, DIMENSION)) {
-      return null
-    }
-
     val symbols = attr.symbols.mapNotNull { it.symbol.name.entry }.toSet()
-    if (attr.typeMask == BOOLEAN.number && value != "true" && value != "false") {
-      return "Expected a boolean value ('true' or 'false')"
-    }
-    if (attr.typeMask == ENUM.number && value !in symbols) {
-      return "'$value' is not a valid value for this enum attribute"
-    }
-    if (attr.typeMask == FLAGS.number) {
-      val flags = value.split('|').map(String::trim)
-      if (flags.isEmpty() || flags.any { it.isEmpty() || it !in symbols }) {
-        return "'$value' contains an invalid flag value"
+    return validateLiteralAttributeValue(attr.typeMask, symbols, value)
+  }
+
+  /** Validates only pure, unambiguous inline formats; mixed masks remain intentionally permissive. */
+  internal fun validateLiteralAttributeValue(
+      typeMask: Int,
+      symbols: Set<String>,
+      value: String,
+  ): String? {
+    return when (typeMask) {
+      BOOLEAN.number ->
+          if (value == "true" || value == "false") null
+          else "Expected a boolean value ('true' or 'false')"
+      INTEGER.number ->
+          if (INTEGER_LITERAL.matches(value)) null else "Expected an integer value"
+      DIMENSION.number ->
+          if (value in ZERO_DIMENSION_LITERALS || DIMENSION_LITERAL.matches(value)) null
+          else "Expected a dimension value with a valid unit"
+      COLOR.number ->
+          if (COLOR_LITERAL.matches(value)) null else "Expected a color value"
+      ENUM.number ->
+          if (value in symbols) null else "'$value' is not a valid value for this enum attribute"
+      FLAGS.number -> {
+        val flags = value.split('|').map(String::trim)
+        if (flags.isNotEmpty() && flags.all { it.isNotEmpty() && it in symbols }) null
+        else "'$value' contains an invalid flag value"
       }
+      else -> null
     }
-    return null
   }
 
   private fun isDeferredAttributeValue(value: String): Boolean {
@@ -330,10 +341,6 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
         value.startsWith("?") ||
         value.startsWith("@{") ||
         value.startsWith("@={")
-  }
-
-  private fun AttributeResource.hasAnyType(vararg types: FormatFlags): Boolean {
-    return types.any { typeMask and it.number != 0 }
   }
 
   private fun hasNonFrameworkParent(element: DOMElement): Boolean {
@@ -372,6 +379,11 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
   private const val TOOLS_NAMESPACE_URI = "http://schemas.android.com/tools"
   private const val XMLNS_NAMESPACE_URI = "http://www.w3.org/2000/xmlns/"
   private const val AUTO_PACKAGE = "<auto>"
+  private val INTEGER_LITERAL = Regex("^[+-]?(?:0[xX][0-9a-fA-F]+|[0-9]+)$")
+  private val ZERO_DIMENSION_LITERALS = setOf("0", "+0", "-0")
+  private val DIMENSION_LITERAL =
+      Regex("^[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?)|(?:\\.[0-9]+))(?:[eE][+-]?[0-9]+)?(?:px|dp|dip|sp|pt|in|mm)$")
+  private val COLOR_LITERAL = Regex("^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
   private val LAYOUT_SPECIAL_TAGS =
       setOf("include", "merge", "view", "fragment", "tag", "layout")
 }

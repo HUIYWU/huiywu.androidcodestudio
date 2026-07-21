@@ -255,7 +255,9 @@ public class SignatureProvider extends CancelableServiceProvider {
       return Collections.emptyList();
     }
     List<ExecutableElement> list = new ArrayList<>();
-    for (Element member : task.task.getElements().getAllMembers(type)) {
+    // Constructors are declared members, not inherited members. Javac's getAllMembers view is
+    // intended for inheritance-aware lookup and may omit constructors, especially for nested types.
+    for (Element member : type.getEnclosedElements()) {
       if (member.getKind() != ElementKind.CONSTRUCTOR
           || KotlinAbiSyntheticMembers.isSyntheticConstructor(member)) {
         continue;

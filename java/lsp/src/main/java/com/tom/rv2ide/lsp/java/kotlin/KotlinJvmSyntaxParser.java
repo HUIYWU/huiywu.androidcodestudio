@@ -258,7 +258,8 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmStatic"),
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
-        jvmName(modifierText + " " + text(source, declaration)),
+        jvmName(leadingAnnotations(source, declaration) + " "
+            + modifierText + " " + text(source, declaration)),
         null,
         null,
         name == null ? null : text(source, name),
@@ -292,8 +293,10 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
         null,
-        accessorJvmName(modifierText + " " + text(source, declaration), "get"),
-        accessorJvmName(modifierText + " " + text(source, declaration), "set"),
+        accessorJvmName(leadingAnnotations(source, declaration) + " "
+            + modifierText + " " + text(source, declaration), "get"),
+        accessorJvmName(leadingAnnotations(source, declaration) + " "
+            + modifierText + " " + text(source, declaration), "set"),
         name == null ? null : text(source, name),
         name == null ? -1 : startIndex(source, name),
         name == null ? 0 : endIndex(source, name) - startIndex(source, name),
@@ -305,6 +308,37 @@ final class KotlinJvmSyntaxParser {
         hasDirectToken(declaration, "var"),
         hasDirectToken(declaration, "val"),
         false);
+  }
+
+  private static String leadingAnnotations(String source, TSNode declaration) {
+    final int declarationStart = startIndex(source, declaration);
+    int lineStart = declarationStart;
+    while (lineStart > 0 && source.charAt(lineStart - 1) != '\n') {
+      lineStart--;
+    }
+    final StringBuilder annotations = new StringBuilder();
+    final String sameLinePrefix = source.substring(lineStart, declarationStart).trim();
+    if (sameLinePrefix.startsWith("@") && !sameLinePrefix.startsWith("@file:")) {
+      annotations.append(sameLinePrefix).append(' ');
+    }
+    int cursor = lineStart;
+    while (cursor > 0) {
+      int previousEnd = cursor - 1;
+      if (previousEnd > 0 && source.charAt(previousEnd - 1) == '\r') {
+        previousEnd--;
+      }
+      int previousStart = previousEnd;
+      while (previousStart > 0 && source.charAt(previousStart - 1) != '\n') {
+        previousStart--;
+      }
+      final String line = source.substring(previousStart, previousEnd).trim();
+      if (!line.startsWith("@") || line.startsWith("@file:")) {
+        break;
+      }
+      annotations.insert(0, line + " ");
+      cursor = previousStart;
+    }
+    return annotations.toString();
   }
 
   private static String jvmName(String declarationText) {
