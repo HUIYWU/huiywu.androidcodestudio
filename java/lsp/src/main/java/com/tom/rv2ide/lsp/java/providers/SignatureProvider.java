@@ -124,7 +124,12 @@ public class SignatureProvider extends CancelableServiceProvider {
     return synchronizedTask.get(
         task -> {
           final CompilationUnitTree root = task.root(file);
-          final long cursor = root.getLineMap().getPosition(line, column);
+          // Position.index is the editor's authoritative UTF-16 offset. Recomputing it from
+          // line/column can drift when the client and javac line maps normalize line endings
+          // differently. Fall back to line/column only for older clients without an index.
+          final long cursor = cursorIndex >= 0
+              ? cursorIndex
+              : root.getLineMap().getPosition(line, column);
           final TreePath path = new FindInvocationAt(task.task, this).scan(root, cursor);
           if (IdeLogConfig.shouldLogInfo()) {
             LOG.info(

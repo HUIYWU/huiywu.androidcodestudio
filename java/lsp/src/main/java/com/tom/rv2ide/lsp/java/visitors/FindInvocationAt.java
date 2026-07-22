@@ -55,7 +55,7 @@ public class FindInvocationAt extends TreePathScanner<TreePath, Long> {
     cancelChecker.abortIfCancelled();
     SourcePositions pos = Trees.instance(task).getSourcePositions();
     long start = pos.getEndPosition(root, t.getMethodSelect()) + 1;
-    long end = pos.getEndPosition(root, t) - 1;
+    long end = pos.getEndPosition(root, t);
     if (start <= find && find <= end) {
       return reduce(super.visitMethodInvocation(t, find), getCurrentPath());
     }
@@ -69,7 +69,9 @@ public class FindInvocationAt extends TreePathScanner<TreePath, Long> {
     long identifierEnd = pos.getEndPosition(root, t.getIdentifier());
     long invocationEnd = pos.getEndPosition(root, t);
     long start = identifierEnd + 1;
-    long end = invocationEnd - 1;
+    // SourcePositions end offsets are exclusive. The editor can request signature help after an
+    // auto-inserted closing parenthesis, where its cursor equals invocationEnd.
+    long end = invocationEnd;
     final boolean matched = start <= find && find <= end;
     if (IdeLogConfig.shouldLogInfo()) {
       LOG.info(
