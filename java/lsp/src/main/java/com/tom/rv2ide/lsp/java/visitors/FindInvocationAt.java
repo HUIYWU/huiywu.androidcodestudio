@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.lsp.java.visitors;
 
+import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.progress.ICancelChecker;
 import openjdk.source.tree.CompilationUnitTree;
 import openjdk.source.tree.MethodInvocationTree;
@@ -26,8 +27,12 @@ import openjdk.source.util.SourcePositions;
 import openjdk.source.util.TreePath;
 import openjdk.source.util.TreePathScanner;
 import openjdk.source.util.Trees;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class FindInvocationAt extends TreePathScanner<TreePath, Long> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(FindInvocationAt.class);
 
   private final JavacTask task;
   private final ICancelChecker cancelChecker;
@@ -61,9 +66,25 @@ public class FindInvocationAt extends TreePathScanner<TreePath, Long> {
   public TreePath visitNewClass(NewClassTree t, Long find) {
     cancelChecker.abortIfCancelled();
     SourcePositions pos = Trees.instance(task).getSourcePositions();
-    long start = pos.getEndPosition(root, t.getIdentifier()) + 1;
-    long end = pos.getEndPosition(root, t) - 1;
-    if (start <= find && find <= end) {
+    long identifierEnd = pos.getEndPosition(root, t.getIdentifier());
+    long invocationEnd = pos.getEndPosition(root, t);
+    long start = identifierEnd + 1;
+    long end = invocationEnd - 1;
+    final boolean matched = start <= find && find <= end;
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info(
+          "Signature invocation NewClass identifier={} identifierKind={} identifierEnd={} invocationEnd={} rangeStart={} rangeEnd={} cursor={} matched={} arguments={}",
+          t.getIdentifier(),
+          t.getIdentifier().getKind(),
+          identifierEnd,
+          invocationEnd,
+          start,
+          end,
+          find,
+          matched,
+          t.getArguments().size());
+    }
+    if (matched) {
       return reduce(super.visitNewClass(t, find), getCurrentPath());
     }
     return super.visitNewClass(t, find);
