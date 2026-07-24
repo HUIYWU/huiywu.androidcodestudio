@@ -14,8 +14,9 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.tom.rv2ide.treesitter
+
+import com.itsaky.androidide.treesitter.TSRange
 
 /** The 0-based start line number. */
 val TSRange.startLine: Int

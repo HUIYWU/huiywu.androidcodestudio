@@ -17,6 +17,9 @@
 
 package com.tom.rv2ide.treesitter
 
+import com.itsaky.androidide.treesitter.TSNode
+import com.itsaky.androidide.treesitter.TSPoint
+
 /**
  * Get the first node at the line and column.
  *
