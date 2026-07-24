@@ -14,8 +14,9 @@
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 @file:Suppress("UnstableApiUsage")
+import org.gradle.authentication.http.BasicAuthentication
+
 
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
@@ -67,6 +68,26 @@ dependencyResolutionManagement {
 
   repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
   repositories {
+    // Auditable Tree-sitter wrapper and grammars published from HUIYWU/android-tree-sitter.
+    // The dedicated group ID avoids collisions with the archived upstream artifacts.
+    maven {
+      name = "HuiywuAndroidTreeSitter"
+      url = uri("https://maven.pkg.github.com/HUIYWU/android-tree-sitter")
+      credentials {
+        username = providers.gradleProperty("gpr.user").orNull
+          ?: System.getenv("GPR_USER")
+          ?: System.getenv("GITHUB_ACTOR")
+        password = providers.gradleProperty("gpr.key").orNull
+          ?: System.getenv("GPR_TOKEN")
+          ?: System.getenv("GITHUB_TOKEN")
+      }
+      authentication {
+        create<BasicAuthentication>("basic")
+      }
+      content {
+        includeGroup("com.huiywu.androidcs.treesitter")
+      }
+    }
     mavenLocal()
     google()
     mavenCentral()
