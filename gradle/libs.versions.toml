@@ -52,7 +52,6 @@ composite-layoutlibApi = { module = "com.tom.rv2ide.build:layoutlib-api" }
 
 # Auditable Tree-sitter fork published through GitHub Packages.
 androidide-ts = { module = "com.huiywu.androidcs.treesitter:android-tree-sitter", version.ref = "tree-sitter" }
-androidide-ts-annotations = { module = "com.huiywu.androidcs.treesitter:annotations", version.ref = "tree-sitter" }
 androidide-ts-java = { module = "com.huiywu.androidcs.treesitter:tree-sitter-java", version.ref = "tree-sitter" }
 androidide-ts-json = { module = "com.huiywu.androidcs.treesitter:tree-sitter-json", version.ref = "tree-sitter" }
 androidide-ts-kotlin = { module = "com.huiywu.androidcs.treesitter:tree-sitter-kotlin", version.ref = "tree-sitter" }

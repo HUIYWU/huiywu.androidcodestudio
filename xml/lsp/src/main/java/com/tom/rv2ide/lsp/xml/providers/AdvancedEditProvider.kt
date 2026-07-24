@@ -28,14 +28,14 @@ import com.tom.rv2ide.lsp.models.TextEdit
 import com.tom.rv2ide.lsp.xml.XMLLanguageServer
 import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.FileManager
-import com.tom.rv2ide.treesitter.TSParser
-import com.tom.rv2ide.treesitter.TSQuery
-import com.tom.rv2ide.treesitter.TSQueryCapture
-import com.tom.rv2ide.treesitter.TSQueryCursor
-import com.tom.rv2ide.treesitter.TSQueryError
-import com.tom.rv2ide.treesitter.TSQueryMatch
-import com.tom.rv2ide.treesitter.TSTree
-import com.tom.rv2ide.treesitter.xml.TSLanguageXml
+import com.itsaky.androidide.treesitter.TSParser
+import com.itsaky.androidide.treesitter.TSQuery
+import com.itsaky.androidide.treesitter.TSQueryCapture
+import com.itsaky.androidide.treesitter.TSQueryCursor
+import com.itsaky.androidide.treesitter.TSQueryError
+import com.itsaky.androidide.treesitter.TSQueryMatch
+import com.itsaky.androidide.treesitter.TSTree
+import com.itsaky.androidide.treesitter.xml.TSLanguageXml
 
 /** @author Akash Yadav */
 object AdvancedEditProvider {

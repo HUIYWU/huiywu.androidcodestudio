@@ -31,7 +31,6 @@ android {
 
 dependencies {
   api(libs.androidide.ts)
-  implementation(libs.androidide.ts.annotations)
 
   api(projects.core.lspApi)
   api(projects.core.lspModels)
