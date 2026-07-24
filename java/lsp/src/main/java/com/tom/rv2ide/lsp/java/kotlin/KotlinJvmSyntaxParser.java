@@ -28,6 +28,33 @@ final class KotlinJvmSyntaxParser {
 
   private KotlinJvmSyntaxParser() {}
 
+  /** Reports whether the native Kotlin grammar can create a usable syntax tree. Test diagnostics
+   * use this instead of mistaking a swallowed native-linkage failure for a grammar mismatch. */
+  static ParseStatus parseStatus(String source) {
+    if (source == null) {
+      return new ParseStatus(false, "SOURCE", "Source is null");
+    }
+    try (TSParser parser = TSParser.create()) {
+      parser.setLanguage(TSLanguageKotlin.getInstance());
+      try (var tree = parser.parseString(source)) {
+        if (tree == null) {
+          return new ParseStatus(false, "TREE", "parseString returned null");
+        }
+        final TSNode root = tree.getRootNode();
+        if (root == null || root.isNull()) {
+          return new ParseStatus(false, "ROOT", "parse tree has no root node");
+        }
+        return new ParseStatus(true, "OK", root.getType());
+      }
+    } catch (Throwable error) {
+      final String message = error.getMessage();
+      return new ParseStatus(
+          false,
+          error.getClass().getName(),
+          message == null || message.isEmpty() ? error.toString() : message);
+    }
+  }
+
   static List<TopLevelTypeSyntax> findTopLevelTypes(String source) {
     if (source == null) {
       return null;
@@ -305,8 +332,8 @@ final class KotlinJvmSyntaxParser {
         Collections.emptyList(),
         receiver == null ? null : text(source, receiver),
         propertyType == null ? null : text(source, propertyType),
-        hasDirectToken(declaration, "var"),
-        hasDirectToken(declaration, "val"),
+        hasBindingPattern(declaration, "var"),
+        hasBindingPattern(declaration, "val"),
         false);
   }
 
@@ -473,8 +500,8 @@ final class KotlinJvmSyntaxParser {
           type == null ? null : text(source, type),
           name == null ? -1 : startIndex(source, name),
           name == null ? 0 : endIndex(source, name) - startIndex(source, name),
-          hasDirectToken(parameter, "val"),
-          hasDirectToken(parameter, "var"),
+          hasBindingPattern(parameter, "val"),
+          hasBindingPattern(parameter, "var"),
           hasDefaultValue(source, parameter)));
     }
     return Collections.unmodifiableList(result);
@@ -733,6 +760,15 @@ final class KotlinJvmSyntaxParser {
     return false;
   }
 
+  /** Supports both 0.3.6's direct val/var tokens and 0.3.8's binding_pattern_kind node. */
+  private static boolean hasBindingPattern(TSNode declaration, String token) {
+    if (hasDirectToken(declaration, token)) {
+      return true;
+    }
+    final TSNode bindingPattern = directChild(declaration, "binding_pattern_kind");
+    return bindingPattern != null && containsToken(bindingPattern, token);
+  }
+
   private static boolean hasModifier(TSNode declaration, String modifier) {
     final TSNode modifiers = directChild(declaration, "modifiers");
     return modifiers != null && containsToken(modifiers, modifier);
@@ -773,6 +809,23 @@ final class KotlinJvmSyntaxParser {
     final int end = body.lastIndexOf('}');
     return start >= 0 && end > start ? body.substring(start + 1, end) : "";
   }
+  static final class ParseStatus {
+    final boolean available;
+    final String stage;
+    final String detail;
+
+    ParseStatus(boolean available, String stage, String detail) {
+      this.available = available;
+      this.stage = stage;
+      this.detail = detail;
+    }
+
+    @Override
+    public String toString() {
+      return "available=" + available + ", stage=" + stage + ", detail=" + detail;
+    }
+  }
+
   static final class TopLevelTypeSyntax {
     final String name;
     final int nameOffset;

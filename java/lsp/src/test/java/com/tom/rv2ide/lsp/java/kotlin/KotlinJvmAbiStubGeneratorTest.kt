@@ -1,5 +1,7 @@
 package com.tom.rv2ide.lsp.java.kotlin
 
+import com.tom.rv2ide.treesitter.TreeSitter
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -577,6 +579,201 @@ class KotlinJvmAbiStubGeneratorTest {
     assertContains(stub!!, "public String visible()")
     assertFalse(stub.contains("secret("))
     assertFalse(stub.contains("getToken("))
+  }
+
+  @Test
+  fun generate_structuredAndFallbackHaveJvmSurfaceParity() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+
+    val cases =
+        listOf(
+            AbiParityCase(
+                "class members and resolved types",
+                "sample.Service",
+                "Service.kt",
+                """
+                package sample
+
+                open class Base<T>
+                class Service(val name: String, var count: Int) : Base<String>() {
+                  fun labels(values: List<String?>): List<String?> = values
+                  fun <T> echo(value: T): T = value
+                  val enabled: Boolean = true
+                }
+                """.trimIndent()),
+            AbiParityCase(
+                "JVM names and companion members",
+                "sample.Named",
+                "Named.kt",
+                """
+                package sample
+
+                class Named(var isActive: Boolean) {
+                  @get:JvmName("readMode")
+                  @set:JvmName("writeMode")
+                  var mode: String = "default"
+
+                  @JvmName("loadValue")
+                  fun load(): String = mode
+
+                  companion object {
+                    @JvmStatic fun create(value: String): Named = Named(value.isNotEmpty())
+                    @JvmField val version: Int = 1
+                  }
+                }
+                """.trimIndent()),
+            AbiParityCase(
+                "top-level facade JVM names",
+                "sample.NamedApiKt",
+                "NamedApi.kt",
+                """
+                package sample
+
+                @JvmName("loadValue")
+                fun load(): String = "value"
+
+                @get:JvmName("readMode")
+                @set:JvmName("writeMode")
+                var mode: String = "default"
+
+                var isFeatureEnabled: Boolean = true
+                """.trimIndent()),
+            AbiParityCase(
+                "constructors and nested types",
+                "sample.Outer",
+                "Outer.kt",
+                """
+                package sample
+
+                class Outer @JvmOverloads constructor(val id: String, val count: Int = 0) {
+                  constructor(id: Int) : this(id.toString())
+
+                  class Nested(val value: String) {
+                    class Deep(val count: Int)
+                  }
+                  interface Listener { fun onChanged(value: Int) }
+                  object Defaults { val enabled: Boolean = true }
+                  inner class Entry(val name: String)
+                  private class Hidden
+                }
+                """.trimIndent()))
+
+    for (case in cases) {
+      val structured =
+          KotlinJvmAbiStubGenerator.generateForTest(
+              case.qualifiedName,
+              case.fileName,
+              case.source,
+              emptySet(),
+              KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+      val fallback =
+          KotlinJvmAbiStubGenerator.generateForTest(
+              case.qualifiedName,
+              case.fileName,
+              case.source,
+              emptySet(),
+              KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)
+
+      assertNotNull("Structured generation failed for ${case.description}", structured)
+      assertNotNull("Fallback generation failed for ${case.description}", fallback)
+      assertEquals(
+          "JVM ABI surface differs for ${case.description}\n" +
+              "Structured stub:\n$structured\nFallback stub:\n$fallback",
+          jvmSurface(structured!!),
+          jvmSurface(fallback!!))
+    }
+  }
+
+  private data class AbiParityCase(
+      val description: String,
+      val qualifiedName: String,
+      val fileName: String,
+      val source: String)
+
+  /**
+   * Converts generated Java into an order-independent declaration surface. Generator stubs place
+   * declarations on individual lines, so this intentionally ignores formatting and method bodies
+   * while retaining the declaring type, modifiers, names, parameter types, and return types.
+   */
+  private fun jvmSurface(stub: String): Set<String> {
+    val result = linkedSetOf<String>()
+    val owners = mutableListOf<String>()
+    val typePattern =
+        Regex(
+            "(?:public\\s+)?(?:static\\s+)?(?:final\\s+)?" +
+                "(class|interface|enum|@interface)\\s+([A-Za-z_$][\\w$]*)")
+
+    for (rawLine in stub.lineSequence()) {
+      val line = rawLine.trim().replace(Regex("\\s+"), " ")
+      if (line.isEmpty() || line.startsWith("package ")) continue
+
+      val type = typePattern.find(line)
+      if (type != null) {
+        val owner = (owners + type.groupValues[2]).joinToString(".")
+        val declaration = line.substringBefore('{').trim()
+        result += "type:$owner:$declaration"
+        if (line.contains('{') && !line.contains("{}") && !line.contains("{ ; }")) {
+          owners += type.groupValues[2]
+        }
+        continue
+      }
+
+      if (line == "}") {
+        if (owners.isNotEmpty()) owners.removeAt(owners.lastIndex)
+        continue
+      }
+      if (owners.isEmpty()) continue
+
+      val declaration = canonicalMemberDeclaration(line)
+      if (declaration.isNotEmpty()) {
+        result += "member:${owners.joinToString(".")}:$declaration"
+      }
+    }
+    return result.toSortedSet()
+  }
+
+  private fun canonicalMemberDeclaration(line: String): String {
+    val declaration =
+        line
+            .substringBefore(" { return ")
+            .substringBefore(" { throw ")
+            .removeSuffix(" {}")
+            .removeSuffix(";")
+            .trim()
+    val open = declaration.indexOf('(')
+    val close = declaration.lastIndexOf(')')
+    if (open < 0 || close < open) {
+      return declaration.substringBefore(" = ").trim()
+    }
+
+    val parameterTypes =
+        splitJavaParameters(declaration.substring(open + 1, close)).map { parameter ->
+          parameter.trim().substringBeforeLast(' ', parameter.trim())
+        }
+    return declaration.substring(0, open + 1) +
+        parameterTypes.joinToString(",") +
+        declaration.substring(close)
+  }
+
+  private fun splitJavaParameters(parameters: String): List<String> {
+    if (parameters.isBlank()) return emptyList()
+    val result = mutableListOf<String>()
+    var genericDepth = 0
+    var start = 0
+    for (index in parameters.indices) {
+      when (parameters[index]) {
+        '<' -> genericDepth++
+        '>' -> genericDepth--
+        ',' ->
+            if (genericDepth == 0) {
+              result += parameters.substring(start, index)
+              start = index + 1
+            }
+      }
+    }
+    result += parameters.substring(start)
+    return result
   }
 
   private fun assertContains(actual: String, expected: String) {

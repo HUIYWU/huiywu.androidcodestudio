@@ -1,0 +1,264 @@
+package com.tom.rv2ide.lsp.java.kotlin
+
+import com.tom.rv2ide.treesitter.TreeSitter
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
+import org.junit.Test
+
+/**
+ * Contracts for the real Tree-sitter Kotlin structured path.
+ *
+ * These tests deliberately call [KotlinJvmSyntaxParser] directly. They must not silently pass via
+ * the ABI generator's text fallback: when the host native grammar is unavailable, the failure
+ * message should make that environment problem explicit.
+ */
+class KotlinJvmSyntaxParserTest {
+
+  companion object {
+    @Volatile private var nativeLoadAttempted = false
+    @Volatile private var nativeLoadFailure: Throwable? = null
+
+    @Synchronized
+    private fun loadNativeLibraries(): Throwable? {
+      if (!nativeLoadAttempted) {
+        nativeLoadAttempted = true
+        nativeLoadFailure =
+            try {
+              TreeSitter.loadLibrary()
+              System.loadLibrary("tree-sitter-kotlin")
+              null
+            } catch (error: Throwable) {
+              error
+            }
+      }
+      return nativeLoadFailure
+    }
+  }
+
+  @Test
+  fun structured_nativeKotlinGrammarIsAvailable() {
+    val loadFailure = loadNativeLibraries()
+    assertNull(
+        "Unable to explicitly load Tree-sitter core/Kotlin native libraries: " +
+            nativeFailureDescription(loadFailure),
+        loadFailure)
+    val status = KotlinJvmSyntaxParser.parseStatus("fun value(): Int = 1")
+    assertTrue("Tree-sitter Kotlin structured parser unavailable after explicit load: $status", status.available)
+  }
+
+  @Test
+  fun structured_projectsTopLevelJvmNameAcrossAnnotationLayouts() {
+    val separateLine =
+        """
+        package sample
+
+        @JvmName("loadValue")
+        fun load(): String = "value"
+        """.trimIndent()
+    val sameLine =
+        """
+        package sample
+
+        @JvmName("fetchValue") fun fetch(id: Int): String = id.toString()
+        """.trimIndent()
+
+    val load = requireTopLevelMembers(separateLine).single { it.name == "load" }
+    assertEquals("loadValue", load.jvmName)
+    assertEquals("String", load.declaredType)
+    assertTrue(load.functionBodyPresent)
+    assertNameRange(separateLine, load.nameOffset, load.nameLength, "load")
+
+    val fetch = requireTopLevelMembers(sameLine).single { it.name == "fetch" }
+    assertEquals("fetchValue", fetch.jvmName)
+    assertEquals(1, fetch.parameterList.size)
+    assertNameRange(sameLine, fetch.nameOffset, fetch.nameLength, "fetch")
+  }
+
+  @Test
+  fun structured_projectsJvmAccessorUseSiteAnnotations() {
+    val source =
+        """
+        package sample
+
+        @get:JvmName("readMode")
+        @set:JvmName("writeMode")
+        var mode: String = "default"
+        val stable: Int = 1
+        """.trimIndent()
+
+    val members = requireTopLevelMembers(source)
+    val mode = members.single { it.name == "mode" }
+    assertFalse(mode.function())
+    assertTrue(mode.mutableProperty)
+    assertFalse(mode.readOnlyProperty)
+    assertEquals("readMode", mode.getterJvmName)
+    assertEquals("writeMode", mode.setterJvmName)
+    assertNameRange(source, mode.nameOffset, mode.nameLength, "mode")
+
+    val stable = members.single { it.name == "stable" }
+    assertTrue(stable.readOnlyProperty)
+    assertFalse(stable.mutableProperty)
+    assertNameRange(source, stable.nameOffset, stable.nameLength, "stable")
+  }
+
+  @Test
+  fun structured_preservesNestedOwnerChainAndDirectMemberBoundaries() {
+    val source =
+        """
+        package sample
+
+        class Outer {
+          fun outerLabel(): String = "outer"
+
+          fun createLocal() {
+            class Local
+          }
+
+          val factory = {
+            class LambdaLocal
+          }
+
+          class Nested(val value: String) {
+            fun nestedLabel(): String = value
+            class Deep(val count: Int)
+          }
+
+          interface Listener {
+            fun onChanged(value: Int)
+          }
+
+          object Defaults {
+            val enabled: Boolean = true
+          }
+        }
+        """.trimIndent()
+
+    val outer = requireTopLevelType(source, "Outer")
+    assertEquals(listOf("Nested", "Listener", "Defaults"), outer.nestedTypes.map { it.name })
+    assertEquals(listOf("outerLabel", "createLocal", "factory"), outer.members.map { it.name })
+    assertFalse(outer.nestedTypes.any { it.name == "Local" || it.name == "LambdaLocal" })
+
+    val nested = outer.nestedTypes.single { it.name == "Nested" }
+    assertEquals(listOf("Deep"), nested.nestedTypes.map { it.name })
+    assertEquals(listOf("nestedLabel"), nested.members.map { it.name })
+    assertNameRange(source, nested.nameOffset, nested.nameLength, "Nested")
+
+    val deep = nested.nestedTypes.single()
+    assertEquals("Deep", deep.name)
+    assertTrue(deep.nestedTypes.isEmpty())
+    assertNameRange(source, deep.nameOffset, deep.nameLength, "Deep")
+
+    val listener = outer.nestedTypes.single { it.name == "Listener" }
+    assertTrue(listener.interfaceType)
+    val callback = listener.members.single { it.name == "onChanged" }
+    assertNull(callback.declaredType)
+    assertFalse(callback.functionBodyPresent)
+
+    val defaults = outer.nestedTypes.single { it.name == "Defaults" }
+    assertTrue(defaults.objectType())
+    assertEquals(listOf("enabled"), defaults.members.map { it.name })
+  }
+
+  @Test
+  fun structured_keepsCompanionMembersSeparateFromHostMembers() {
+    val source =
+        """
+        package sample
+
+        class Host {
+          fun instanceMethod(): String = "instance"
+
+          companion object {
+            @JvmStatic
+            fun create(): Host = Host()
+
+            val version: Int = 1
+          }
+        }
+        """.trimIndent()
+
+    val host = requireTopLevelType(source, "Host")
+    assertEquals(listOf("instanceMethod"), host.members.map { it.name })
+    assertNotNull("Structured parser must locate the companion body", host.companionBody)
+    assertEquals(listOf("create", "version"), host.companionMembers.map { it.name })
+    assertTrue(host.companionMembers.single { it.name == "create" }.jvmStatic)
+  }
+
+  @Test
+  fun structured_projectsPrimaryAndSecondaryConstructors() {
+    val source =
+        """
+        package sample
+
+        class Profile @JvmOverloads internal constructor(
+          val id: Int,
+          var name: String = "default"
+        ) {
+          protected constructor(id: Long) : this(id.toInt())
+        }
+        """.trimIndent()
+
+    val profile = requireTopLevelType(source, "Profile")
+    assertTrue(profile.primaryConstructorPresent)
+    assertEquals("public", profile.constructorVisibility)
+    assertTrue(profile.constructorJvmOverloads)
+    assertEquals(listOf("id", "name"), profile.constructorParameters.map { it.name })
+    val id = profile.constructorParameters.single { it.name == "id" }
+    assertTrue(id.property)
+    assertFalse(id.mutableProperty)
+    assertTrue(profile.constructorParameters.single { it.name == "name" }.mutableProperty)
+    assertTrue(profile.constructorParameters.single { it.name == "name" }.defaultValue)
+
+    assertEquals(1, profile.secondaryConstructors.size)
+    val secondary = profile.secondaryConstructors.single()
+    assertEquals("protected", secondary.visibility)
+    assertEquals(listOf("Long"), secondary.parameters.map { it.type })
+  }
+
+  private fun requireTopLevelMembers(source: String): List<KotlinJvmSyntaxParser.MemberSyntax> {
+    val loadFailure = loadNativeLibraries()
+    assumeTrue(
+        "Unable to explicitly load Tree-sitter native libraries: " +
+            nativeFailureDescription(loadFailure),
+        loadFailure == null)
+    val status = KotlinJvmSyntaxParser.parseStatus(source)
+    assumeTrue("Tree-sitter Kotlin structured parser unavailable: $status", status.available)
+    val members = KotlinJvmSyntaxParser.findTopLevelMembers(source)
+    assertNotNull(
+        "Tree-sitter reported available but did not produce structured top-level members: $status",
+        members)
+    return members!!
+  }
+
+  private fun requireTopLevelType(
+      source: String,
+      name: String
+  ): KotlinJvmSyntaxParser.TypeSyntax {
+    val loadFailure = loadNativeLibraries()
+    assumeTrue(
+        "Unable to explicitly load Tree-sitter native libraries: " +
+            nativeFailureDescription(loadFailure),
+        loadFailure == null)
+    val status = KotlinJvmSyntaxParser.parseStatus(source)
+    assumeTrue("Tree-sitter Kotlin structured parser unavailable: $status", status.available)
+    val type = KotlinJvmSyntaxParser.findTopLevelType(source, name)
+    assertNotNull(
+        "Tree-sitter reported available but did not produce top-level type $name: $status",
+        type)
+    return type!!
+  }
+
+  private fun nativeFailureDescription(error: Throwable?): String {
+    if (error == null) return "none"
+    return error.javaClass.name + ": " + (error.message ?: error.toString())
+  }
+
+  private fun assertNameRange(source: String, offset: Int, length: Int, expected: String) {
+    assertTrue("Expected a non-negative source offset for $expected, got $offset", offset >= 0)
+    assertEquals(expected, source.substring(offset, offset + length))
+  }
+}

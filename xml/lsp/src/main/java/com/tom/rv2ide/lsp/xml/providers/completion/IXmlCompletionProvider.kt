@@ -203,9 +203,10 @@ abstract class IXmlCompletionProvider(private val provider: ICompletionProvider)
       type: String,
       name: String,
       matchLevel: MatchLevel,
+      referenceMarker: Char = '@',
   ): CompletionItem {
     val sb = StringBuilder()
-    sb.append("@")
+    sb.append(referenceMarker)
     if (pck.isNotBlank() && pck == ResourceTableRegistry.PCK_ANDROID) {
       sb.append(pck)
       sb.append(":")

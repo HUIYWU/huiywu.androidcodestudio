@@ -25,6 +25,10 @@ package com.tom.rv2ide.lsp.xml.edits
 class AttrValueEditHandler : QualifiedValueEditHandler() {
 
   override fun isPartialPart(c: Char): Boolean {
-    return super.isPartialPart(c) || c in charArrayOf('@', '.', ':', '/')
+    return super.isPartialPart(c) || isAttributeValueReferencePart(c)
   }
+}
+
+internal fun isAttributeValueReferencePart(c: Char): Boolean {
+  return c in charArrayOf('@', '?', '.', ':', '/')
 }

@@ -130,6 +130,15 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
 
     val value = attrValue ?: this.attrAtCursor.value
 
+    // Theme references can only target ATTR resources. Keep this separate from the generic '@'
+    // reference path so '?string/...' and other invalid theme reference types are never suggested.
+    if (value.startsWith('?')) {
+      parseThemeReferenceQueries(value).forEach { query ->
+        addThemeAttributeValues(query, list)
+      }
+      return CompletionResult(list)
+    }
+
     // If user is directly typing the entry name. For example 'app_name'
     if (!value.startsWith('@')) {
       addValuesForAttr(attr, pck, prefix, list)
@@ -188,6 +197,49 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
     }
 
     return EMPTY
+  }
+
+  private fun addThemeAttributeValues(
+      query: ThemeReferenceQuery,
+      list: MutableList<CompletionItem>,
+  ) {
+    val entries =
+        allNamespaces
+            .flatMap { findResourceTables(it.second) }
+            .flatMap { table ->
+              table.packages.mapNotNull { resourcePackage ->
+                if (query.packageName == ResourceTableRegistry.PCK_ANDROID &&
+                    resourcePackage.name != ResourceTableRegistry.PCK_ANDROID) {
+                  return@mapNotNull null
+                }
+                if (query.packageName == null &&
+                    resourcePackage.name == ResourceTableRegistry.PCK_ANDROID) {
+                  return@mapNotNull null
+                }
+                resourcePackage.name to
+                    resourcePackage.findGroup(ATTR)?.findEntries { entryName ->
+                      matchLevel(entryName, query.entryPrefix) != NO_MATCH
+                    }
+              }
+            }
+            .toHashSet()
+
+    entries.forEach { (packageName, packageEntries) ->
+      packageEntries?.forEach { entry ->
+        if (list.size >= MAX_ITEMS + 1) {
+          return
+        }
+        list.add(
+            createAttrValueCompletionItem(
+                pck = packageName,
+                type = ATTR.tagName,
+                name = entry.name,
+                matchLevel = matchLevel(entry.name, query.entryPrefix),
+                referenceMarker = '?',
+            )
+        )
+      }
+    }
   }
 
   private fun addPackages(incompletePck: String, list: MutableList<CompletionItem>) {
@@ -425,5 +477,36 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
 
   private fun AttributeResource.hasType(check: Int): Boolean {
     return this.typeMask and check != 0
+  }
+}
+
+internal data class ThemeReferenceQuery(
+    val packageName: String?,
+    val entryPrefix: String,
+)
+
+internal fun parseThemeReferenceQueries(value: String): List<ThemeReferenceQuery> {
+  if (!value.startsWith('?')) {
+    return emptyList()
+  }
+  val body = value.drop(1)
+  val localPrefix = "attr/"
+  val frameworkPrefix = "android:attr/"
+  return buildList {
+    if (localPrefix.startsWith(body)) {
+      add(ThemeReferenceQuery(packageName = null, entryPrefix = ""))
+    } else if (body.startsWith(localPrefix)) {
+      add(ThemeReferenceQuery(packageName = null, entryPrefix = body.removePrefix(localPrefix)))
+    }
+    if (frameworkPrefix.startsWith(body)) {
+      add(ThemeReferenceQuery(packageName = ResourceTableRegistry.PCK_ANDROID, entryPrefix = ""))
+    } else if (body.startsWith(frameworkPrefix)) {
+      add(
+          ThemeReferenceQuery(
+              packageName = ResourceTableRegistry.PCK_ANDROID,
+              entryPrefix = body.removePrefix(frameworkPrefix),
+          )
+      )
+    }
   }
 }

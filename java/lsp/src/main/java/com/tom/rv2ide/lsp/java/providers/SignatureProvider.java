@@ -34,7 +34,6 @@ import com.tom.rv2ide.lsp.models.ParameterInformation;
 import com.tom.rv2ide.lsp.models.SignatureHelp;
 import com.tom.rv2ide.lsp.models.SignatureHelpParams;
 import com.tom.rv2ide.lsp.models.SignatureInformation;
-import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.progress.ICancelChecker;
 import java.nio.file.Path;
@@ -69,11 +68,7 @@ import openjdk.source.util.DocTrees;
 import openjdk.source.util.SourcePositions;
 import openjdk.source.util.TreePath;
 import openjdk.source.util.Trees;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 public class SignatureProvider extends CancelableServiceProvider {
-
-  private static final Logger LOG = LoggerFactory.getLogger(SignatureProvider.class);
   public static final SignatureHelp NOT_SUPPORTED =
       new SignatureHelp(Collections.emptyList(), -1, -1);
   private final CompilerProvider compiler;
@@ -103,11 +98,6 @@ public class SignatureProvider extends CancelableServiceProvider {
 
     final boolean requiresKotlinAbi =
         JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled();
-    if (IdeLogConfig.shouldLogInfo()) {
-      LOG.info(
-          "Signature help request file={} line={} column={} cursorIndex={} contentPresent={} kotlinAbi={}",
-          file, l, c, cursorIndex, content != null, requiresKotlinAbi);
-    }
     final SynchronizedTask synchronizedTask;
     if (content != null) {
       final var source = new SourceFileObject(file, content, Instant.now());
@@ -131,16 +121,6 @@ public class SignatureProvider extends CancelableServiceProvider {
               ? cursorIndex
               : root.getLineMap().getPosition(line, column);
           final TreePath path = new FindInvocationAt(task.task, this).scan(root, cursor);
-          if (IdeLogConfig.shouldLogInfo()) {
-            LOG.info(
-                "Signature help invocation lookup file={} cursor={} rootPresent={} pathPresent={} leafKind={} leaf={}",
-                file,
-                cursor,
-                root != null,
-                path != null,
-                path == null ? null : path.getLeaf().getKind(),
-                path == null ? null : path.getLeaf());
-          }
           if (path == null) {
             return NOT_SUPPORTED;
           }
@@ -162,11 +142,6 @@ public class SignatureProvider extends CancelableServiceProvider {
           if (path.getLeaf() instanceof NewClassTree) {
             NewClassTree invoke = (NewClassTree) path.getLeaf();
             List<ExecutableElement> overloads = constructorOverloads(task, root, invoke);
-            if (IdeLogConfig.shouldLogInfo()) {
-              LOG.info(
-                  "Signature help constructor result identifier={} arguments={} overloads={}",
-                  invoke.getIdentifier(), invoke.getArguments().size(), overloads.size());
-            }
             List<SignatureInformation> signatures = new ArrayList<>();
             for (ExecutableElement method : overloads) {
               SignatureInformation info = info(method);
@@ -276,11 +251,6 @@ public class SignatureProvider extends CancelableServiceProvider {
     Trees trees = Trees.instance(task.task);
     TreePath path = trees.getPath(root, method.getIdentifier());
     if (path == null) {
-      if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info(
-            "Constructor lookup stopped: no identifier TreePath identifier={} identifierKind={}",
-            method.getIdentifier(), method.getIdentifier().getKind());
-      }
       return Collections.emptyList();
     }
     Scope scope = trees.getScope(path);
@@ -289,24 +259,7 @@ public class SignatureProvider extends CancelableServiceProvider {
     final TypeElement type = identifierElement instanceof TypeElement
         ? (TypeElement) identifierElement
         : typeElement(identifierMirror);
-    if (IdeLogConfig.shouldLogInfo()) {
-      LOG.info(
-          "Constructor lookup identifier={} identifierKind={} pathPresent={} element={} elementKind={} mirror={} mirrorKind={} resolvedType={} scopeEnclosing={}",
-          method.getIdentifier(),
-          method.getIdentifier().getKind(),
-          path != null,
-          identifierElement,
-          identifierElement == null ? null : identifierElement.getKind(),
-          identifierMirror,
-          identifierMirror == null ? null : identifierMirror.getKind(),
-          type == null ? null : type.getQualifiedName(),
-          scope == null ? null : scope.getEnclosingClass());
-    }
     if (type == null || !(type.asType() instanceof DeclaredType)) {
-      if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info("Constructor lookup stopped: unresolved or non-declared type identifier={}",
-            method.getIdentifier());
-      }
       return Collections.emptyList();
     }
     List<ExecutableElement> list = new ArrayList<>();
@@ -319,20 +272,10 @@ public class SignatureProvider extends CancelableServiceProvider {
       final boolean synthetic = KotlinAbiSyntheticMembers.isSyntheticConstructor(member);
       final boolean accessible = !synthetic
           && trees.isAccessible(scope, member, (DeclaredType) type.asType());
-      if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info(
-            "Constructor candidate owner={} member={} modifiers={} synthetic={} accessible={}",
-            type.getQualifiedName(), member, member.getModifiers(), synthetic, accessible);
-      }
       if (synthetic || !accessible) {
         continue;
       }
       list.add((ExecutableElement) member);
-    }
-    if (IdeLogConfig.shouldLogInfo()) {
-      LOG.info(
-          "Constructor lookup completed type={} enclosedMembers={} acceptedConstructors={}",
-          type.getQualifiedName(), type.getEnclosedElements().size(), list.size());
     }
     return list;
   }

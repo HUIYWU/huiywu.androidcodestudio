@@ -47,6 +47,7 @@ final class KotlinJvmAbiStubGenerator {
   private static final Pattern JAVA_TYPE_NAME_PATTERN =
       Pattern.compile("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*");
   private static final ThreadLocal<TypeResolutionContext> TYPE_CONTEXT = new ThreadLocal<>();
+  private static final ThreadLocal<GenerationMode> GENERATION_MODE = new ThreadLocal<>();
   private static final Pattern TYPE_PATTERN =
       Pattern.compile(
           "(?m)^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|inner|value)\\s+)*)"
@@ -93,8 +94,46 @@ private static final Pattern PROPERTY_PATTERN =
 
   private KotlinJvmAbiStubGenerator() {}
 
+  enum GenerationMode {
+    AUTO,
+    STRUCTURED,
+    FALLBACK
+  }
+
+  private static GenerationMode generationMode() {
+    final GenerationMode mode = GENERATION_MODE.get();
+    return mode == null ? GenerationMode.AUTO : mode;
+  }
+
+  private static boolean structuredGenerationEnabled() {
+    return generationMode() != GenerationMode.FALLBACK;
+  }
+
+  private static boolean fallbackGenerationEnabled() {
+    return generationMode() != GenerationMode.STRUCTURED;
+  }
+
   static String generate(String qualifiedName, String kotlinFileName, String source) {
     return generate(qualifiedName, kotlinFileName, source, java.util.Collections.emptySet());
+  }
+
+  static String generateForTest(
+      String qualifiedName,
+      String kotlinFileName,
+      String source,
+      Set<String> knownTypes,
+      GenerationMode mode) {
+    final GenerationMode previous = GENERATION_MODE.get();
+    GENERATION_MODE.set(mode);
+    try {
+      return generate(qualifiedName, kotlinFileName, source, knownTypes);
+    } finally {
+      if (previous == null) {
+        GENERATION_MODE.remove();
+      } else {
+        GENERATION_MODE.set(previous);
+      }
+    }
   }
 
   static String generate(
@@ -113,17 +152,21 @@ private static final Pattern PROPERTY_PATTERN =
         TypeResolutionContext.create(sourcePackage, simpleName, source, knownTypes));
     try {
       final KotlinJvmSyntaxParser.TypeSyntax syntax =
-          KotlinJvmSyntaxParser.findTopLevelType(source, simpleName);
+          structuredGenerationEnabled()
+              ? KotlinJvmSyntaxParser.findTopLevelType(source, simpleName)
+              : null;
       if (syntax != null) {
         return syntax.privateType ? null : generateType(packageName, simpleName, syntax);
       }
 
       // Retain the previous scanner as a compatibility fallback when the native grammar is
       // unavailable or an incomplete edit produces no usable top-level declaration.
-      final Matcher typeMatcher = TYPE_PATTERN.matcher(source);
-      while (typeMatcher.find()) {
-        if (simpleName.equals(typeMatcher.group(3)) && !isPrivate(typeMatcher.group(1))) {
-          return generateTypeFallback(packageName, simpleName, typeMatcher, source);
+      if (fallbackGenerationEnabled()) {
+        final Matcher typeMatcher = TYPE_PATTERN.matcher(source);
+        while (typeMatcher.find()) {
+          if (simpleName.equals(typeMatcher.group(3)) && !isPrivate(typeMatcher.group(1))) {
+            return generateTypeFallback(packageName, simpleName, typeMatcher, source);
+          }
         }
       }
       return isFacadeName(simpleName, kotlinFileName, source)
@@ -433,11 +476,15 @@ private static final Pattern PROPERTY_PATTERN =
     out.append("public final class ").append(simpleName).append(" {\n");
     out.append("  private ").append(simpleName).append("() {}\n");
     final List<KotlinJvmSyntaxParser.MemberSyntax> members =
-        KotlinJvmSyntaxParser.findTopLevelMembers(source);
+        structuredGenerationEnabled()
+            ? KotlinJvmSyntaxParser.findTopLevelMembers(source)
+            : null;
     if (members != null) {
       appendSyntaxMembers(out, members, false, true);
-    } else {
+    } else if (fallbackGenerationEnabled()) {
       appendMembers(out, source, false, true);
+    } else {
+      return null;
     }
     out.append("}\n");
     return out.toString();
@@ -1928,7 +1975,9 @@ private static final Pattern PROPERTY_PATTERN =
 
       final Map<String, String> declaredTypes = new LinkedHashMap<>();
       final List<KotlinJvmSyntaxParser.TopLevelTypeSyntax> syntaxTypes =
-          KotlinJvmSyntaxParser.findTopLevelTypes(source);
+          structuredGenerationEnabled()
+              ? KotlinJvmSyntaxParser.findTopLevelTypes(source)
+              : null;
       if (syntaxTypes != null) {
         for (KotlinJvmSyntaxParser.TopLevelTypeSyntax type : syntaxTypes) {
           if (!type.privateType && type.name != null) {
@@ -1936,11 +1985,15 @@ private static final Pattern PROPERTY_PATTERN =
           }
         }
       }
-      collectTopLevelTypeNamesFallback(source, packageName, declaredTypes);
+      if (fallbackGenerationEnabled()) {
+        collectTopLevelTypeNamesFallback(source, packageName, declaredTypes);
+      }
       declaredTypes.put(
           generatedSimpleName, qualifiedName(packageName, generatedSimpleName));
       final KotlinJvmSyntaxParser.TypeSyntax generatedType =
-          KotlinJvmSyntaxParser.findTopLevelType(source, generatedSimpleName);
+          structuredGenerationEnabled()
+              ? KotlinJvmSyntaxParser.findTopLevelType(source, generatedSimpleName)
+              : null;
       if (generatedType != null) {
         collectNestedTypeNames(generatedType, packageName, generatedSimpleName, declaredTypes);
       }
