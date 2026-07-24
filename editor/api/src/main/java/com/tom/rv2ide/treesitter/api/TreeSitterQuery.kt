@@ -17,7 +17,7 @@
 
 package com.tom.rv2ide.treesitter.api
 
-import com.tom.rv2ide.treesitter.TSQuery
+import com.itsaky.androidide.treesitter.TSQuery
 import com.tom.rv2ide.utils.DefaultRecyclable
 import com.tom.rv2ide.utils.RecyclableObjectPool
 

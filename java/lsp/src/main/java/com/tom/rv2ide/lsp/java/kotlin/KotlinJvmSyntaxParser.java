@@ -16,9 +16,9 @@
  */
 package com.tom.rv2ide.lsp.java.kotlin;
 
-import com.tom.rv2ide.treesitter.TSNode;
-import com.tom.rv2ide.treesitter.TSParser;
-import com.tom.rv2ide.treesitter.kotlin.TSLanguageKotlin;
+import com.itsaky.androidide.treesitter.TSNode;
+import com.itsaky.androidide.treesitter.TSParser;
+import com.itsaky.androidide.treesitter.kotlin.TSLanguageKotlin;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

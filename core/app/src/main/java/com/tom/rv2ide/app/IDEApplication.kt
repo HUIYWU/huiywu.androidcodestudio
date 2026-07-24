@@ -56,7 +56,7 @@ import com.tom.rv2ide.resources.localization.LocaleProvider
 import com.tom.rv2ide.stats.AndroidIDEStats
 import com.tom.rv2ide.stats.StatUploadWorker
 import com.tom.rv2ide.syntax.colorschemes.SchemeAndroidIDE
-import com.tom.rv2ide.treesitter.TreeSitter
+import com.itsaky.androidide.treesitter.TreeSitter
 import com.tom.rv2ide.ui.themes.IDETheme
 import com.tom.rv2ide.ui.themes.IThemeManager
 import com.tom.rv2ide.utils.ChartMemoryCleanupTask

@@ -7,7 +7,8 @@ gradle-tooling = "8.9"
 junit-jupiter = "5.10.2"
 kotlin = "2.1.0"
 kotlin-coroutines = "1.10.2"
-tree-sitter = "1.0.1"
+# Auditable Android Tree-sitter wrapper/grammars published from HUIYWU/android-tree-sitter.
+tree-sitter = "0.1.0"
 editor = "0.23.7"
 glide = "5.0.4"
 androidx-vectordrawable = "1.2.0"
@@ -49,14 +50,15 @@ composite-jaxp = { module = "com.tom.rv2ide.build:jaxp" }
 composite-jdt = { module = "com.tom.rv2ide.build:jdt" }
 composite-layoutlibApi = { module = "com.tom.rv2ide.build:layoutlib-api" }
 
-# AndroidIDE
-androidide-ts = { module = "io.github.mohammed-baqer-null:android-tree-sitter", version.ref = "tree-sitter" }
-androidide-ts-java = { module = "io.github.mohammed-baqer-null:tree-sitter-java", version.ref = "tree-sitter" }
-androidide-ts-json = { module = "io.github.mohammed-baqer-null:tree-sitter-json", version.ref = "tree-sitter" }
-androidide-ts-kotlin = { module = "io.github.mohammed-baqer-null:tree-sitter-kotlin", version.ref = "tree-sitter" }
-androidide-ts-cpp = { module = "io.github.mohammed-baqer-null:tree-sitter-cpp", version.ref = "tree-sitter" }
-androidide-ts-log = { module = "io.github.mohammed-baqer-null:tree-sitter-log", version.ref = "tree-sitter" }
-androidide-ts-xml = { module = "io.github.mohammed-baqer-null:tree-sitter-xml", version.ref = "tree-sitter" }
+# Auditable Tree-sitter fork published through GitHub Packages.
+androidide-ts = { module = "com.huiywu.androidcs.treesitter:android-tree-sitter", version.ref = "tree-sitter" }
+androidide-ts-annotations = { module = "com.huiywu.androidcs.treesitter:annotations", version.ref = "tree-sitter" }
+androidide-ts-java = { module = "com.huiywu.androidcs.treesitter:tree-sitter-java", version.ref = "tree-sitter" }
+androidide-ts-json = { module = "com.huiywu.androidcs.treesitter:tree-sitter-json", version.ref = "tree-sitter" }
+androidide-ts-kotlin = { module = "com.huiywu.androidcs.treesitter:tree-sitter-kotlin", version.ref = "tree-sitter" }
+androidide-ts-cpp = { module = "com.huiywu.androidcs.treesitter:tree-sitter-cpp", version.ref = "tree-sitter" }
+androidide-ts-log = { module = "com.huiywu.androidcs.treesitter:tree-sitter-log", version.ref = "tree-sitter" }
+androidide-ts-xml = { module = "com.huiywu.androidcs.treesitter:tree-sitter-xml", version.ref = "tree-sitter" }
 jcodings = { module = "org.jruby.jcodings:jcodings", version = "1.0.63" }
 joni = { module = "org.jruby.joni:joni", version = "2.2.6" }
 snakeyaml-engine = { module = "org.snakeyaml:snakeyaml-engine", version = "2.10" }

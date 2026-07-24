@@ -22,7 +22,7 @@ import com.tom.rv2ide.editor.language.treesitter.TreeSitterLanguage.Factory
 import com.tom.rv2ide.lsp.api.ILanguageServer
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.kotlin.KotlinLanguageServer
-import com.tom.rv2ide.treesitter.kotlin.TSLanguageKotlin
+import com.itsaky.androidide.treesitter.kotlin.TSLanguageKotlin
 import io.github.rosemoe.sora.lang.Language.INTERRUPTION_LEVEL_STRONG
 import io.github.rosemoe.sora.lang.Language.INTERRUPTION_LEVEL_NONE
 import io.github.rosemoe.sora.util.MyCharacter

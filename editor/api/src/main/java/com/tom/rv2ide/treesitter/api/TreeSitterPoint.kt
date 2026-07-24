@@ -17,7 +17,7 @@
 
 package com.tom.rv2ide.treesitter.api
 
-import com.tom.rv2ide.treesitter.TSPoint
+import com.itsaky.androidide.treesitter.TSPoint
 import com.tom.rv2ide.utils.DefaultRecyclable
 import com.tom.rv2ide.utils.RecyclableObjectPool
 

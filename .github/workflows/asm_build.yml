@@ -21,10 +21,17 @@ on:
       - '.github/workflows/crowdin_contributors.yml'
   workflow_dispatch: { }
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   build_release_apk:
     name: Build Release APK
     runs-on: ubuntu-latest
+    env:
+      GPR_USER: ${{ secrets.TREE_SITTER_PACKAGES_USER || github.actor }}
+      GPR_TOKEN: ${{ secrets.TREE_SITTER_PACKAGES_TOKEN || github.token }}
     steps:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.12.1

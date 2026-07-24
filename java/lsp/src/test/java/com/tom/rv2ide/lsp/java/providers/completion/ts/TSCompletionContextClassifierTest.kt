@@ -1,6 +1,6 @@
 package com.tom.rv2ide.lsp.java.providers.completion.ts
 
-import com.tom.rv2ide.treesitter.TreeSitter
+import com.itsaky.androidide.treesitter.TreeSitter
 import java.nio.file.Paths
 import org.junit.Assert.assertEquals
 import org.junit.Test

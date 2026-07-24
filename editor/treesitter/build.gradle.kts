@@ -37,9 +37,8 @@ android {
 dependencies {
     api(libs.common.editor)
     api(libs.common.kotlin.coroutines.android)
-    api(libs.androidide.ts) {
-        isChanging = true
-    }
+    api(libs.androidide.ts)
+    implementation(libs.androidide.ts.annotations)
     api(libs.androidx.collection)
 
     api(projects.core.common)

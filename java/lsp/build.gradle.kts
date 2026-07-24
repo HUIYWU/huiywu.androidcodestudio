@@ -60,6 +60,7 @@ dependencies {
   // implementation(projects.server.shared)
 
   implementation(libs.androidide.ts)
+  implementation(libs.androidide.ts.annotations)
   implementation(libs.androidide.ts.java)
   implementation(libs.androidide.ts.kotlin)
   implementation(libs.androidx.annotation)

@@ -25,7 +25,7 @@ import com.tom.rv2ide.editor.language.utils.CommonSymbolPairs
 import com.tom.rv2ide.lsp.api.ILanguageServer
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.java.JavaLanguageServer
-import com.tom.rv2ide.treesitter.java.TSLanguageJava
+import com.itsaky.androidide.treesitter.java.TSLanguageJava
 import io.github.rosemoe.sora.lang.Language.INTERRUPTION_LEVEL_SLIGHT
 import io.github.rosemoe.sora.util.MyCharacter
 import io.github.rosemoe.sora.widget.SymbolPairMatch

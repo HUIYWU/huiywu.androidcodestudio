@@ -17,9 +17,9 @@
 
 package com.tom.rv2ide.editor.language.treesitter.predicates
 
-import com.tom.rv2ide.treesitter.TSQuery
-import com.tom.rv2ide.treesitter.TSQueryMatch
-import com.tom.rv2ide.treesitter.TSQueryPredicateStep
+import com.itsaky.androidide.treesitter.TSQuery
+import com.itsaky.androidide.treesitter.TSQueryMatch
+import com.itsaky.androidide.treesitter.TSQueryPredicateStep
 import io.github.rosemoe.sora.editor.ts.predicate.PredicateResult
 import io.github.rosemoe.sora.editor.ts.predicate.TsClientPredicateStep
 import io.github.rosemoe.sora.editor.ts.predicate.TsPredicate

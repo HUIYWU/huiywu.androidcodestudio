@@ -17,11 +17,11 @@
 
 package com.tom.rv2ide.treesitter.api
 
-import com.tom.rv2ide.treesitter.TSNode
-import com.tom.rv2ide.treesitter.TSQuery
-import com.tom.rv2ide.treesitter.TSQueryCursor
-import com.tom.rv2ide.treesitter.TSQueryMatch
-import com.tom.rv2ide.treesitter.TSTree
+import com.itsaky.androidide.treesitter.TSNode
+import com.itsaky.androidide.treesitter.TSQuery
+import com.itsaky.androidide.treesitter.TSQueryCursor
+import com.itsaky.androidide.treesitter.TSQueryMatch
+import com.itsaky.androidide.treesitter.TSTree
 import org.slf4j.LoggerFactory
 
 @PublishedApi internal val log = LoggerFactory.getLogger("TsUtilsKt")

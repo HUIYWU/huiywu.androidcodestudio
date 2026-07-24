@@ -1,6 +1,6 @@
 package com.tom.rv2ide.lsp.java.kotlin
 
-import com.tom.rv2ide.treesitter.TreeSitter
+import com.itsaky.androidide.treesitter.TreeSitter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

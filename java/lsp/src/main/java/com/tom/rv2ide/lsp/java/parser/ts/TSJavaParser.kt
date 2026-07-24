@@ -21,8 +21,8 @@ import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.eventbus.events.file.FileDeletionEvent
 import com.tom.rv2ide.eventbus.events.file.FileRenameEvent
 import com.tom.rv2ide.lsp.java.parser.IJavaParser
-import com.tom.rv2ide.treesitter.TSParser
-import com.tom.rv2ide.treesitter.java.TSLanguageJava
+import com.itsaky.androidide.treesitter.TSParser
+import com.itsaky.androidide.treesitter.java.TSLanguageJava
 import com.tom.rv2ide.utils.StopWatch
 import jdkx.tools.JavaFileObject
 import org.greenrobot.eventbus.EventBus

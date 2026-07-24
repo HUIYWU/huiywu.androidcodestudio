@@ -17,7 +17,7 @@
 
 package com.tom.rv2ide.lsp.java.parser.ts
 
-import com.tom.rv2ide.treesitter.TSTree
+import com.itsaky.androidide.treesitter.TSTree
 import java.net.URI
 import jdkx.tools.JavaFileObject
 

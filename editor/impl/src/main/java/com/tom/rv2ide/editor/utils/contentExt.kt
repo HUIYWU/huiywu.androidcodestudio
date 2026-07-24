@@ -17,9 +17,9 @@
 
 package com.tom.rv2ide.editor.utils
 
-import com.tom.rv2ide.treesitter.TSNode
-import com.tom.rv2ide.treesitter.TSTree
-import com.tom.rv2ide.treesitter.getNodeAt
+import com.itsaky.androidide.treesitter.TSNode
+import com.itsaky.androidide.treesitter.TSTree
+import com.itsaky.androidide.treesitter.getNodeAt
 import io.github.rosemoe.sora.text.Content
 import io.github.rosemoe.sora.text.TextUtils
 import io.github.rosemoe.sora.util.IntPair

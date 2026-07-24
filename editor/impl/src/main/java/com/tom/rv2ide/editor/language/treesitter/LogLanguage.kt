@@ -19,7 +19,7 @@ package com.tom.rv2ide.editor.language.treesitter
 
 import android.content.Context
 import com.tom.rv2ide.editor.language.treesitter.TreeSitterLanguage.Factory
-import com.tom.rv2ide.treesitter.log.TSLanguageLog
+import com.itsaky.androidide.treesitter.log.TSLanguageLog
 
 /**
  * Tree Sitter language implementation for logs.

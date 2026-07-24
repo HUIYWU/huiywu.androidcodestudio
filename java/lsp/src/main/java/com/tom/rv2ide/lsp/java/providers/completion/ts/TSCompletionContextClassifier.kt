@@ -1,10 +1,10 @@
 package com.tom.rv2ide.lsp.java.providers.completion.ts
 
 import com.tom.rv2ide.common.logging.IdeLogConfig
-import com.tom.rv2ide.treesitter.TSNode
-import com.tom.rv2ide.treesitter.TSParser
-import com.tom.rv2ide.treesitter.TSPoint
-import com.tom.rv2ide.treesitter.java.TSLanguageJava
+import com.itsaky.androidide.treesitter.TSNode
+import com.itsaky.androidide.treesitter.TSParser
+import com.itsaky.androidide.treesitter.TSPoint
+import com.itsaky.androidide.treesitter.java.TSLanguageJava
 
 import jdkx.tools.JavaFileObject
 import jdkx.tools.SimpleJavaFileObject
