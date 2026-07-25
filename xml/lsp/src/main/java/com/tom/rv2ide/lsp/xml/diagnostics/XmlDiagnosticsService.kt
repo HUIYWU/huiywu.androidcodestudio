@@ -20,6 +20,7 @@ import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.util.setupLookupForCompletion
 import com.tom.rv2ide.projects.FileManager
 import java.nio.file.Path
+import kotlinx.coroutines.CancellationException
 import org.eclipse.lemminx.dom.DOMElement
 import org.eclipse.lemminx.dom.DOMNode
 import org.eclipse.lemminx.dom.DOMParser
@@ -65,7 +66,12 @@ internal class XmlDiagnosticsService {
     val collector = XmlDiagnosticCollector(context.text)
     XmlDiagnosticRuleRegistry.documentRules.forEach { rule ->
       if (rule.supports(context)) {
-        rule.diagnose(context, collector)
+        try {
+          rule.diagnose(context, collector)
+        } catch (error: Exception) {
+          if (error is CancellationException) throw error
+          log.warn("XML document diagnostic rule '{}' failed for {}", rule.id, file, error)
+        }
       }
     }
     val elementRecoveryRules =
@@ -88,13 +94,33 @@ internal class XmlDiagnosticsService {
     if (node is DOMElement) {
       val shouldSuppress =
           elementRecoveryRules.any { rule ->
-            rule.diagnoseAndShouldSuppress(node, context, collector)
+            try {
+              rule.diagnoseAndShouldSuppress(node, context, collector)
+            } catch (error: Exception) {
+              if (error is CancellationException) throw error
+              log.warn("XML recovery diagnostic rule '{}' failed for {}", rule.id, context.file, error)
+              false
+            }
           }
       if (!shouldSuppress) {
-        elementRules.forEach { rule -> rule.diagnose(node, context, collector) }
+        elementRules.forEach { rule ->
+          try {
+            rule.diagnose(node, context, collector)
+          } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            log.warn("XML element diagnostic rule '{}' failed for {}", rule.id, context.file, error)
+          }
+        }
       }
     } else if (node is DOMText && node.isText) {
-      textRules.forEach { rule -> rule.diagnose(node, context, collector) }
+      textRules.forEach { rule ->
+        try {
+          rule.diagnose(node, context, collector)
+        } catch (error: Exception) {
+          if (error is CancellationException) throw error
+          log.warn("XML text diagnostic rule '{}' failed for {}", rule.id, context.file, error)
+        }
+      }
     }
 
     node.children.forEach { child ->

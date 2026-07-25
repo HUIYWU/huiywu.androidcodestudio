@@ -39,7 +39,10 @@ internal object StyleableResolver {
   const val VIEW_GROUP = "ViewGroup"
   const val VIEW_GROUP_CLASS = "android.view.ViewGroup"
 
-  fun widgetFor(tagName: String, widgets: WidgetTable): Widget? {
+  fun widgetFor(tagName: String?, widgets: WidgetTable): Widget? {
+    if (tagName.isNullOrBlank()) {
+      return null
+    }
     return if (tagName.contains('.')) widgets.getWidget(tagName)
     else widgets.findWidgetWithSimpleName(tagName)
   }
@@ -67,7 +70,9 @@ internal object StyleableResolver {
     if (includeView) {
       addEntry(styleables, "View", result)
     }
-    addEntry(styleables, "${simpleName(node.nodeName)}$suffix", result)
+    node.nodeName?.takeIf { it.isNotBlank() }?.let { name ->
+      addEntry(styleables, "${simpleName(name)}$suffix", result)
+    }
     if (includeParentLayoutParams) {
       node.parentNode?.let { result.addAll(layoutParamsFor(styleables, it)) }
     }
@@ -78,7 +83,9 @@ internal object StyleableResolver {
     val result = mutableSetOf<Styleable>()
     addEntry(styleables, "$VIEW_GROUP$LAYOUT_SUFFIX", result)
     addEntry(styleables, "$VIEW_GROUP$MARGIN_LAYOUT_SUFFIX", result)
-    addEntry(styleables, "${simpleName(parentNode.nodeName)}$LAYOUT_SUFFIX", result)
+    parentNode.nodeName?.takeIf { it.isNotBlank() }?.let { name ->
+      addEntry(styleables, "${simpleName(name)}$LAYOUT_SUFFIX", result)
+    }
     return result
   }
 

@@ -37,6 +37,15 @@ class StyleableResolverTest : TestCase() {
     assertThat(StyleableResolver.widgetFor("example.CustomView", table)).isSameInstanceAs(customView)
     assertThat(table.qualifiedLookups).containsExactly("example.CustomView")
   }
+  fun testIncompleteTagNameDoesNotQueryWidgetTable() {
+    val table = RecordingWidgetTable(testWidget("android.widget.TextView"))
+
+    assertThat(StyleableResolver.widgetFor(null, table)).isNull()
+    assertThat(StyleableResolver.widgetFor("", table)).isNull()
+    assertThat(table.simpleLookups).isEmpty()
+    assertThat(table.qualifiedLookups).isEmpty()
+  }
+
   fun testNormalizesQualifiedStyleableClassNames() {
     assertThat(StyleableResolver.simpleName("androidx.coordinatorlayout.widget.CoordinatorLayout"))
         .isEqualTo("CoordinatorLayout")

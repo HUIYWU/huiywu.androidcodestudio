@@ -1,6 +1,9 @@
 package com.tom.rv2ide.lsp.java.kotlin
 
+import com.itsaky.androidide.treesitter.TSNode
+import com.itsaky.androidide.treesitter.TSParser
 import com.itsaky.androidide.treesitter.TreeSitter
+import com.itsaky.androidide.treesitter.kotlin.TSLanguageKotlin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -48,6 +51,34 @@ class KotlinJvmSyntaxParserTest {
         loadFailure)
     val status = KotlinJvmSyntaxParser.parseStatus("fun value(): Int = 1")
     assertTrue("Tree-sitter Kotlin structured parser unavailable after explicit load: $status", status.available)
+  }
+
+  @Test
+  fun structured_usesFwcd038BindingPatternNodes() {
+    val loadFailure = loadNativeLibraries()
+    assertNull(
+        "Unable to explicitly load Tree-sitter core/Kotlin native libraries: " +
+            nativeFailureDescription(loadFailure),
+        loadFailure)
+    val source =
+        """
+        package sample
+
+        val topLevel: Int = 1
+        class Profile(val id: Int, var name: String)
+        """.trimIndent()
+
+    TSParser.create().use { parser ->
+      parser.language = TSLanguageKotlin.getInstance()
+      parser.parseString(source).use { tree ->
+        assertNotNull("tree-sitter-kotlin returned no syntax tree", tree)
+        val root = tree.rootNode
+        assertTrue(
+            "Expected fwcd tree-sitter-kotlin 0.3.8+ AST node 'binding_pattern_kind'. " +
+                "The host libtree-sitter-kotlin may still be built from 0.3.6. Root: $root",
+            containsNodeType(root, "binding_pattern_kind"))
+      }
+    }
   }
 
   @Test
@@ -217,6 +248,14 @@ class KotlinJvmSyntaxParserTest {
     val secondary = profile.secondaryConstructors.single()
     assertEquals("protected", secondary.visibility)
     assertEquals(listOf("Long"), secondary.parameters.map { it.type })
+  }
+
+  private fun containsNodeType(node: TSNode, expectedType: String): Boolean {
+    if (node.type == expectedType) return true
+    for (index in 0 until node.childCount) {
+      if (containsNodeType(node.getChild(index), expectedType)) return true
+    }
+    return false
   }
 
   private fun requireTopLevelMembers(source: String): List<KotlinJvmSyntaxParser.MemberSyntax> {
