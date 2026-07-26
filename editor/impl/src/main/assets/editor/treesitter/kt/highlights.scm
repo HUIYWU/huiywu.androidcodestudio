@@ -1,6 +1,24 @@
+;; Based on the nvim-treesitter highlighting, which is under the Apache license.
+;; See https://github.com/nvim-treesitter/nvim-treesitter/blob/f8ab59861eed4a1c168505e3433462ed800f2bae/queries/kotlin/highlights.scm
+;;
+;; The only difference in this file is that queries using #lua-match?
+;; have been removed.
+
 ;;; Identifiers
 
-(simple_identifier) @identifier
+(simple_identifier) @variable
+
+; `it` keyword inside lambdas
+; FIXME: This will highlight the keyword outside of lambdas since tree-sitter
+;        does not allow us to check for arbitrary nestation
+((simple_identifier) @variable.builtin
+(#eq? @variable.builtin "it"))
+
+; `field` keyword inside property getter/setter
+; FIXME: This will highlight the keyword outside of getters and setters
+;        since tree-sitter does not allow us to check for arbitrary nestation
+((simple_identifier) @variable.builtin
+(#eq? @variable.builtin "field"))
 
 ; `this` this keyword inside classes
 (this_expression) @variable.builtin
@@ -8,45 +26,23 @@
 ; `super` keyword inside classes
 (super_expression) @variable.builtin
 
-(statements
-	  (property_declaration
-  	  	(variable_declaration
-  		  	(simple_identifier) @property.local)))
-
-(source_file
-	(property_declaration
-		(variable_declaration
-			(simple_identifier) @property.top_level)))
+(class_parameter
+	(simple_identifier) @property)
 
 (class_body
 	(property_declaration
 		(variable_declaration
-			(simple_identifier) @property.class)))
-
-(class_parameter
-	(simple_identifier) @property.class)
+			(simple_identifier) @property)))
 
 ; id_1.id_2.id_3: `id_2` and `id_3` are assumed as object properties
 (_
 	(navigation_suffix
-		(simple_identifier) @property.class))
-
-; SCREAMING CASE identifiers are assumed to be constants
-((simple_identifier) @constant
-(#match? @constant "^[A-Z][A-Z0-9_]*$"))
-
-(_
-	(navigation_suffix
-		(simple_identifier) @constant
-		(#match? @constant "^[A-Z][A-Z0-9_]*$")))
+		(simple_identifier) @property))
 
 (enum_entry
 	(simple_identifier) @constant)
 
 (type_identifier) @type
-
-; '?' operator, replacement for Java @Nullable
-(nullable_type) @punctuation.special
 
 ((type_identifier) @type.builtin
 	(#any-of? @type.builtin
@@ -88,40 +84,36 @@
 ))
 
 (package_header
-  "package" @keyword)
+	. (identifier)) @namespace
 
 (import_header
-	"import" @keyword)
+	"import" @include)
+
+
+; TODO: Seperate labeled returns/breaks/continue/super/this
+;       Must be implemented in the parser first
+(label) @label
 
 ;;; Function definitions
 
 (function_declaration
-	(simple_identifier) @function.declaration)
+	. (simple_identifier) @function)
 
 (getter
 	("get") @function.builtin)
 (setter
 	("set") @function.builtin)
 
-(primary_constructor
-  "constructor" @keyword
-  (class_parameter
-    (simple_identifier) @property.class
-    (_
-      (type_identifier) @type )))
-
+(primary_constructor) @constructor
 (secondary_constructor
-	("constructor") @keyword)
-
-(constructor_delegation_call
-	[ "this" "super" ] @keyword)
+	("constructor") @constructor)
 
 (constructor_invocation
 	(user_type
 		(type_identifier) @constructor))
 
 (anonymous_initializer
-	("init") @function.invocation)
+	("init") @constructor)
 
 (parameter
 	(simple_identifier) @parameter)
@@ -139,17 +131,13 @@
 
 ; function()
 (call_expression
-	. (simple_identifier) @function.invocation)
-
-; ::function
-(callable_reference
-	. (simple_identifier) @function.invocation)
+	. (simple_identifier) @function)
 
 ; object.function() or object.property.function()
 (call_expression
 	(navigation_expression
 		(navigation_suffix
-			(simple_identifier) @function.invocation) . ))
+			(simple_identifier) @function) . ))
 
 (call_expression
 	. (simple_identifier) @function.builtin
@@ -195,17 +183,18 @@
 		"require"
 		"requireNotNull"
 		"with"
-		"suspend"
 		"synchronized"
 ))
 
 ;;; Literals
 
-[(line_comment) (multiline_comment)] @comment
+[
+	(line_comment)
+	(multiline_comment)
+	(shebang_line)
+] @comment
 
-(shebang_line) @preproc
-
-(real_literal) @number
+(real_literal) @float
 [
 	(integer_literal)
 	(long_literal)
@@ -215,13 +204,15 @@
 ] @number
 
 [
-	"null" ; should be highlighted the same as booleans
+	(null_literal) ; should be highlighted the same as booleans
 	(boolean_literal)
-] @constant.builtin
+] @boolean
 
-(character_literal) @string
+(character_literal) @character
 
 (string_literal) @string
+
+(character_escape_seq) @string.escape
 
 ; There are 3 ways to define a regex
 ;    - "[abc]?".toRegex()
@@ -241,7 +232,7 @@
 			(value_argument
 				(string_literal) @string.regex))))
 
-;    - Regex.fromLiteral("[abc]?")
+;   - Regex.fromLiteral("[abc]?")
 (call_expression
 	(navigation_expression
 		((simple_identifier) @_class
@@ -257,9 +248,6 @@
 ;;; Keywords
 
 (type_alias "typealias" @keyword)
-
-(companion_object "companion" @keyword)
-
 [
 	(class_modifier)
 	(member_modifier)
@@ -271,7 +259,7 @@
 	(visibility_modifier)
 	(reification_modifier)
 	(inheritance_modifier)
-] @type.qualifier
+]@keyword
 
 [
 	"val"
@@ -280,25 +268,32 @@
 	"class"
 	"object"
 	"interface"
-	"fun"
 ;	"typeof" ; NOTE: It is reserved for future use
-  "fun"
+] @keyword
+
+("fun") @keyword.function
+
+(jump_expression) @keyword.return
+
+[
+	"if"
+	"else"
+	"when"
+] @conditional
+
+[
 	"for"
 	"do"
 	"while"
-	"try"
-  "catch"
-  "throw"
-  "finally"
-  "if"
-  "else"
-  "when"
-  "return"
-  "continue"
-  "break"
-] @keyword
+] @repeat
 
-(label) @label
+[
+	"try"
+	"catch"
+	"throw"
+	"finally"
+] @exception
+
 
 (annotation
 	"@" @attribute (use_site_target)? @attribute)
@@ -351,22 +346,33 @@
 	"?:"
 	"!!"
 	"is"
-	"!is"
 	"in"
-	"!in"
 	"as"
 	"as?"
 	".."
+	"..<"
 	"->"
+] @operator
+
+[
+	"(" ")"
+	"[" "]"
+	"{" "}"
+] @punctuation.bracket
+
+[
 	"."
 	","
 	";"
 	":"
 	"::"
-] @operator
+] @punctuation.delimiter
 
-[
-  "(" ")"
-  "[" "]"
-  "{" "}"
-] @bracket
+; NOTE: `interpolated_identifier`s can be highlighted in any way
+(string_literal
+	(interpolation_identifier_start) @punctuation.special
+	(interpolated_identifier) @none)
+(string_literal
+	(interpolation_expression_start) @punctuation.special
+	(interpolated_expression) @none
+	(interpolation_expression_end) @punctuation.special)

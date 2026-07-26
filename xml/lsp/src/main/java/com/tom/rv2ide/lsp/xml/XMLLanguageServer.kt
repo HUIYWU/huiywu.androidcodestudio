@@ -45,6 +45,7 @@ import com.tom.rv2ide.lsp.xml.models.XMLServerSettings
 import com.tom.rv2ide.lsp.xml.providers.AdvancedEditProvider.onContentChange
 import com.tom.rv2ide.lsp.xml.providers.CodeFormatProvider
 import com.tom.rv2ide.lsp.xml.providers.XmlCompletionProvider
+import com.tom.rv2ide.lsp.xml.providers.XmlDefinitionProvider
 import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.utils.DocumentUtils
@@ -126,7 +127,10 @@ class XMLLanguageServer : ILanguageServer {
   }
 
   override suspend fun findDefinition(params: DefinitionParams): DefinitionResult {
-    return DefinitionResult(emptyList())
+    if (!DocumentUtils.isXmlFile(params.file) || !getSettings().definitionsEnabled()) {
+      return DefinitionResult(emptyList())
+    }
+    return XmlDefinitionProvider().findDefinition(params)
   }
 
   override suspend fun expandSelection(params: ExpandSelectionParams): Range {
