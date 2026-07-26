@@ -275,7 +275,7 @@ final class KotlinJvmSyntaxParser {
     final List<TypeParameterSyntax> typeParameters =
         typeParameters(source, directChild(declaration, "type_parameters"));
     final TSNode parameters = directChild(declaration, "function_value_parameters");
-    final TSNode receiver = typeChildBefore(declaration, name);
+    final TSNode receiver = extensionReceiver(declaration, name);
     final TSNode returnType = typeChildAfter(declaration, parameters);
     final List<ParameterSyntax> parameterList = parameters(source, parameters);
     return new MemberSyntax(
@@ -311,7 +311,7 @@ final class KotlinJvmSyntaxParser {
     final TSNode variable = directChild(declaration, "variable_declaration");
     final TSNode name = variable == null ? null : directChild(variable, "simple_identifier");
     final TSNode propertyType = variable == null ? null : firstTypeChild(variable);
-    final TSNode receiver = variable == null ? null : typeChildBefore(declaration, variable);
+    final TSNode receiver = variable == null ? null : extensionReceiver(declaration, variable);
     return new MemberSyntax(
         "property_declaration",
         declarationText,
@@ -544,6 +544,12 @@ final class KotlinJvmSyntaxParser {
           varargs.get(index)));
     }
     return Collections.unmodifiableList(result);
+  }
+
+  /** Supports 0.3.6's hidden receiver type and 0.4.0's named receiver_type wrapper. */
+  private static TSNode extensionReceiver(TSNode declaration, TSNode boundary) {
+    final TSNode receiver = directChild(declaration, "receiver_type");
+    return receiver != null ? receiver : typeChildBefore(declaration, boundary);
   }
 
   private static TSNode typeChildBefore(TSNode parent, TSNode boundary) {

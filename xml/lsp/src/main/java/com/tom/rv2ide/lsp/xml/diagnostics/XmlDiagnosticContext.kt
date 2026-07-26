@@ -19,6 +19,10 @@ package com.tom.rv2ide.lsp.xml.diagnostics
 import com.android.aaptcompiler.AaptResourceType.ID
 import com.android.aaptcompiler.AaptResourceType.LAYOUT
 import com.android.aaptcompiler.extractPathData
+import com.tom.rv2ide.lookup.Lookup
+import com.tom.rv2ide.projects.ModuleProject
+import com.tom.rv2ide.projects.android.AndroidModule
+import com.tom.rv2ide.xml.versions.ApiVersions
 import java.nio.file.Path
 import org.eclipse.lemminx.dom.DOMDocument
 import org.eclipse.lemminx.dom.DOMElement
@@ -32,12 +36,18 @@ internal data class XmlDiagnosticContext(
     val isLayoutFile: Boolean,
     val isValuesFile: Boolean,
     val isManifestFile: Boolean,
+    val minSdk: Int?,
+    val resourceApiQualifier: Int,
+    val apiVersions: ApiVersions?,
     val declaredIds: Set<String>,
     val moduleResourceIds: ModuleResourceIdIndex.Snapshot,
 ) {
   companion object {
     fun create(file: Path, text: String, document: DOMDocument): XmlDiagnosticContext {
       val pathData = runCatching { extractPathData(file.toFile()) }.getOrNull()
+      val lookupModule =
+          Lookup.getDefault().lookup(ModuleProject.COMPLETION_MODULE_KEY) as? AndroidModule
+      val module = lookupModule?.takeIf { file.belongsTo(it) }
       return XmlDiagnosticContext(
           file = file,
           text = text,
@@ -45,11 +55,20 @@ internal data class XmlDiagnosticContext(
           isLayoutFile = pathData?.type == LAYOUT,
           isValuesFile = pathData?.resourceDirectory == VALUES_DIRECTORY,
           isManifestFile = pathData?.file?.name == ANDROID_MANIFEST_FILE_NAME,
+          minSdk = module?.getSelectedVariant()?.mainArtifact?.minSdkVersion,
+          resourceApiQualifier = pathData?.config?.sdkVersion?.toInt() ?: 0,
+          apiVersions = module?.getApiVersions(),
           declaredIds = collectLocalIdDeclarations(document),
           moduleResourceIds = ModuleResourceIdIndex.snapshot(file, text),
       )
     }
   }
+}
+
+private fun Path.belongsTo(module: AndroidModule): Boolean {
+  return runCatching {
+    toAbsolutePath().normalize().startsWith(module.projectDir.toPath().toAbsolutePath().normalize())
+  }.getOrDefault(false)
 }
 
 /** Collects unqualified IDs created in this document before resource tables are refreshed. */

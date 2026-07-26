@@ -633,6 +633,9 @@ class KotlinJvmAbiStubGeneratorTest {
                 @JvmName("loadValue")
                 fun load(): String = "value"
 
+                @JvmName("renderText")
+                fun String.render(): String = this
+
                 @get:JvmName("readMode")
                 @set:JvmName("writeMode")
                 var mode: String = "default"

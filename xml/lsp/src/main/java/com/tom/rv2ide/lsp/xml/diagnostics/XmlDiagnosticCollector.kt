@@ -39,10 +39,23 @@ internal class XmlDiagnosticCollector(private val text: String) {
   }
 
   fun errorTag(code: String, message: String, element: DOMElement) {
+    addTag(code, message, ERROR, element)
+  }
+
+  fun warningTag(code: String, message: String, element: DOMElement) {
+    addTag(code, message, WARNING, element)
+  }
+
+  private fun addTag(
+      code: String,
+      message: String,
+      severity: DiagnosticSeverity,
+      element: DOMElement,
+  ) {
     val tagName = element.tagName ?: return
     val start = (element.start + 1).coerceIn(0, text.length)
     val end = (start + tagName.length).coerceIn(start, text.length)
-    add(code, message, ERROR, start, end)
+    add(code, message, severity, start, end)
   }
 
   fun errorRange(code: String, message: String, start: Int, end: Int) {

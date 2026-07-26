@@ -110,6 +110,31 @@ class KotlinJvmSyntaxParserTest {
   }
 
   @Test
+  fun structured_projectsExtensionReceivers() {
+    val source =
+        """
+        package sample
+
+        @JvmName("renderText")
+        fun String.render(): String = this
+
+        val String.renderLength: Int
+          get() = length
+        """.trimIndent()
+
+    val members = requireTopLevelMembers(source)
+    val function = members.single { it.name == "render" }
+    assertTrue(function.function())
+    assertEquals("String", function.receiverType)
+    assertEquals("renderText", function.jvmName)
+
+    val property = members.single { it.name == "renderLength" }
+    assertFalse(property.function())
+    assertEquals("String", property.receiverType)
+    assertEquals("Int", property.declaredType)
+  }
+
+  @Test
   fun structured_projectsJvmAccessorUseSiteAnnotations() {
     val source =
         """

@@ -32,10 +32,11 @@ import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlElementDiagnosticRule
 import com.tom.rv2ide.lsp.xml.resolver.StyleableResolver
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
+import com.tom.rv2ide.xml.versions.ApiVersions
 import com.tom.rv2ide.xml.widgets.WidgetTable
 import org.eclipse.lemminx.dom.DOMElement
 
-/** AXML001, AXML002, AXML004 and AXML006: conservative Layout diagnostics. */
+/** AXML001, AXML002, AXML004, AXML006 and AXML007: conservative Layout diagnostics. */
 internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
   override val id: String = "layout"
 
@@ -50,6 +51,7 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
     checkAttributes(element, collector)
     checkCustomAttributes(element, context, collector)
     checkAttributeValues(element, collector)
+    checkApiLevels(element, context, collector)
   }
 
   private fun checkTag(element: DOMElement, collector: XmlDiagnosticCollector) {
@@ -336,6 +338,73 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
     }
   }
 
+  private fun checkApiLevels(
+      element: DOMElement,
+      context: XmlDiagnosticContext,
+      collector: XmlDiagnosticCollector,
+  ) {
+    if (!element.isClosed) {
+      return
+    }
+    val minSdk = context.minSdk ?: return
+    val effectiveApi = effectiveApiLevel(minSdk, context.resourceApiQualifier)
+    val tagName = element.tagName ?: return
+    val lookup = Lookup.getDefault()
+    val widgets = lookup.lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return
+    val widget = StyleableResolver.widgetFor(tagName, widgets) ?: return
+    val versions = context.apiVersions ?: return
+
+    requiredApiForWidget(versions, widget.qualifiedName)
+        ?.takeIf { requiresHigherApi(it, effectiveApi) }
+        ?.let { requiredApi ->
+      collector.warningTag(
+          code = CODE_API_LEVEL,
+          message = apiLevelMessage("View '${widget.simpleName}'", requiredApi, effectiveApi),
+          element = element,
+      )
+    }
+
+    element.attributeNodes.orEmpty().forEach { attribute ->
+      val name = attribute.name ?: return@forEach
+      if (!name.startsWith(ANDROID_ATTRIBUTE_PREFIX)) {
+        return@forEach
+      }
+      val localName = name.removePrefix(ANDROID_ATTRIBUTE_PREFIX)
+      val requiredApi = requiredApiForFrameworkAttribute(versions, localName) ?: return@forEach
+      if (!requiresHigherApi(requiredApi, effectiveApi)) {
+        return@forEach
+      }
+      collector.warning(
+          code = CODE_API_LEVEL,
+          message = apiLevelMessage("Attribute '$name'", requiredApi, effectiveApi),
+          attribute = attribute,
+      )
+    }
+  }
+
+  internal fun requiredApiForWidget(versions: ApiVersions, qualifiedName: String): Int? {
+    return versions.classInfo(qualifiedName)?.since
+  }
+
+  internal fun requiredApiForFrameworkAttribute(
+      versions: ApiVersions,
+      attributeName: String,
+  ): Int? {
+    return versions.memberInfo(ANDROID_R_ATTR_CLASS, attributeName)?.since
+  }
+
+  internal fun effectiveApiLevel(minSdk: Int, resourceApiQualifier: Int): Int {
+    return maxOf(minSdk, resourceApiQualifier)
+  }
+
+  internal fun requiresHigherApi(requiredApi: Int?, effectiveApi: Int): Boolean {
+    return requiredApi != null && requiredApi > effectiveApi
+  }
+
+  private fun apiLevelMessage(subject: String, requiredApi: Int, effectiveApi: Int): String {
+    return "$subject requires API level $requiredApi; current effective minimum is $effectiveApi"
+  }
+
   private fun isDeferredAttributeValue(value: String): Boolean {
     return value.startsWith("@") ||
         value.startsWith("?") ||
@@ -368,6 +437,8 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
   private const val CODE_UNKNOWN_LAYOUT_ATTRIBUTE = "AXML002"
   private const val CODE_INVALID_ATTRIBUTE_VALUE = "AXML004"
   private const val CODE_UNKNOWN_CUSTOM_ATTRIBUTE = "AXML006"
+  private const val CODE_API_LEVEL = "AXML007"
+  private const val ANDROID_R_ATTR_CLASS = "android.R\$attr"
   private const val ANDROID_ATTRIBUTE_PREFIX = "android:"
   private const val LAYOUT_ATTRIBUTE_PREFIX = "layout_"
   private const val ANDROID_VIEW_PACKAGE_PREFIX = "android."

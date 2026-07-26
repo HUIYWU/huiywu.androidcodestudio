@@ -41,6 +41,14 @@ class XmlDiagnosticContextTest : TestCase() {
     assertThat(manifest.isManifestFile).isTrue()
   }
 
+  fun testCapturesResourceVersionQualifier() {
+    val base = context("project/src/main/res/layout/screen.xml", "<View />")
+    val versioned = context("project/src/main/res/layout-v31/screen.xml", "<View />")
+
+    assertThat(base.resourceApiQualifier).isEqualTo(0)
+    assertThat(versioned.resourceApiQualifier).isEqualTo(31)
+  }
+
   private fun context(path: String, text: String): XmlDiagnosticContext {
     val document =
         DOMParser.getInstance().parse(text, ANDROID_NAMESPACE, URIResolverExtensionManager())
