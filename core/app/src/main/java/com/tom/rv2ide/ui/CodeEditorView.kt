@@ -495,8 +495,9 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
     binding.editor.postDelayed(
       {
-        if (_binding != null && isAttachedToWindow && context is Activity && !context.isFinishing) {
-          prewarmEditorBinding(context)
+        val activity = context as? Activity
+        if (_binding != null && isAttachedToWindow && activity?.isFinishing == false) {
+          prewarmEditorBinding(activity)
         }
       },
       800,
