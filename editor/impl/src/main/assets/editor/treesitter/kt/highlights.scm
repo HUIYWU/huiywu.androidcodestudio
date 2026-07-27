@@ -104,8 +104,8 @@
 (setter
 	("set") @function.builtin)
 
-(primary_constructor
-	("constructor") @keyword)
+; The primary constructor keyword is represented by the hidden external
+; _primary_constructor_keyword and cannot be queried as an anonymous token.
 (secondary_constructor
 	("constructor") @keyword)
 
