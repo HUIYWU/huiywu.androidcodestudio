@@ -73,6 +73,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     LinearLayoutCompat(context), Closeable {
 
   private var _binding: LayoutCodeEditorBinding? = null
+  private var requestedFile: File = file
   private var _searchLayout: EditorSearchLayout? = null
   private var _suggestionView: SuggestionView? = null
   private val prefManager: PreferenceManager
@@ -125,9 +126,9 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     }
   }
 
-  /** Get the file of this editor. */
+  /** Get the file requested for this editor, including while its content is still loading. */
   val file: File?
-    get() = editor?.file
+    get() = editor?.file ?: requestedFile
 
   /** Get the [IDEEditor] instance of this editor view. */
   val editor: IDEEditor?
@@ -256,6 +257,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
    * resets the content.
    */
   fun updateFile(file: File) {
+    requestedFile = file
     val editor = _binding?.editor ?: return
     editor.file = file
     postRead(file)
@@ -471,6 +473,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
       binding.editor.setLanguageClient(IDELanguageClientImpl.getInstance())
     }
 
+    requestedFile = file
     binding.editor.file = file
 
     if (file.extension in setOf("c", "cpp", "cc", "cxx", "h", "hpp")) {
@@ -492,7 +495,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
     binding.editor.postDelayed(
       {
-        if (_binding != null) {
+        if (_binding != null && isAttachedToWindow && context is Activity && !context.isFinishing) {
           prewarmEditorBinding(context)
         }
       },
@@ -692,5 +695,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     }
 
     readWriteContext.use {}
+    _binding = null
+    contentReadyCallbacks.clear()
   }
 }

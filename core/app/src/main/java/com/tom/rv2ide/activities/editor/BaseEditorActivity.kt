@@ -677,8 +677,8 @@ override fun onApplySystemBarInsets(insets: Insets) {
       content.apply {
         // editorAppBarLayout.updatePadding(top = insets.top)  // THIS IS THE PROBLEM!
         editorToolbar.updatePaddingRelative(
-            start = editorToolbar.paddingStart + insets.left,
-            end = editorToolbar.paddingEnd + insets.right,
+            start = insets.left,
+            end = insets.right,
         )
       }
     }

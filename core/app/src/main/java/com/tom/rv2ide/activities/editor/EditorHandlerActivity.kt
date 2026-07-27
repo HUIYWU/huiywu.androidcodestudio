@@ -77,6 +77,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   protected val isOpenedFilesSaved = AtomicBoolean(false)
 
   private val pendingEditorFiles = mutableSetOf<File>()
+  private var openedFilesRestored = false
 
   override fun doOpenFile(file: File, selection: Range?) {
     openFileAndSelect(file, selection)
@@ -124,7 +125,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     editorViewModel.observeFiles(this) { files ->
       // rewrite the cached files index if there are any opened files
       val currentFile =
-          getCurrentEditor()?.editor?.file?.absolutePath
+          getCurrentEditor()?.file?.absolutePath
               ?: run {
                 editorViewModel.writeOpenedFiles(null)
                 editorViewModel.openedFilesCache = null
@@ -191,15 +192,20 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   override fun onStart() {
     super.onStart()
 
+    if (openedFilesRestored) {
+      return
+    }
+    openedFilesRestored = true
+
     try {
       editorViewModel.getOrReadOpenedFilesCache(this::onReadOpenedFilesCache)
-      editorViewModel.openedFilesCache = null
     } catch (err: Throwable) {
       log.error("Failed to reopen recently opened files", err)
     }
   }
 
   private fun onReadOpenedFilesCache(cache: OpenedFilesCache?) {
+    editorViewModel.openedFilesCache = null
     cache ?: return
     cache.allFiles.forEach { file -> openFile(File(file.filePath), file.selection) }
     openFile(File(cache.selectedFile))
@@ -335,51 +341,64 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
       return openedFileIndex
     }
 
+    val pendingIndex = findIndexOfEditorViewByFile(file)
+    if (pendingIndex != -1) {
+      return pendingIndex
+    }
+
     if (!file.exists()) {
       return -1
     }
 
-    val position = editorViewModel.getOpenedFileCount()
-
-    log.info("Opening file at index {} file:{}", position, file)
-
     val editor = CodeEditorView(this, file, selection!!)
     editor.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
-
     editor.visibility = View.INVISIBLE
+
+    val position = content.editorContainer.childCount
+    log.info("Opening file at index {} file:{}", position, file)
+
     content.editorContainer.addView(editor)
+    content.tabs.addTab(content.tabs.newTab(), false)
+    editorViewModel.addFile(file)
     pendingEditorFiles.add(file)
+    updateTabs()
 
     editor.doOnContentReady {
       if (!pendingEditorFiles.remove(file) || editor.parent == null) {
         return@doOnContentReady
       }
-      val currentPosition = editorViewModel.getOpenedFileCount()
-      if (currentPosition != position) {
-        log.warn(
-          "Pending editor position changed for file {}. expected={}, actual={}",
-          file,
-          position,
-          currentPosition,
-        )
+
+      val currentPosition = content.editorContainer.indexOfChild(editor)
+      if (currentPosition < 0 || currentPosition >= editorViewModel.getOpenedFileCount()) {
+        log.warn("Loaded editor is no longer registered for file {}", file)
+        return@doOnContentReady
       }
 
       editor.visibility = View.VISIBLE
-      content.tabs.addTab(content.tabs.newTab(), false)
-      editorViewModel.addFile(file)
-      editorViewModel.setCurrentFile(currentPosition, file)
-      updateTabs()
       onFileLoaded(editor, file)
       refreshSymbolInput(editor)
 
-      val tab = content.tabs.getTabAt(currentPosition)
-      if (tab != null && !tab.isSelected) {
-        tab.select()
-      } else {
-        content.editorContainer.displayedChild = currentPosition
+      if (editorViewModel.getCurrentFile() == file) {
+        val tab = content.tabs.getTabAt(currentPosition)
+        if (tab != null && !tab.isSelected) {
+          tab.select()
+        } else {
+          editorViewModel.setCurrentFile(currentPosition, file)
+          content.editorContainer.displayedChild = currentPosition
+        }
       }
     }
     return position
+  }
+
+  private fun findIndexOfEditorViewByFile(file: File): Int {
+    for (i in 0 until content.editorContainer.childCount) {
+      val editor = content.editorContainer.getChildAt(i) as? CodeEditorView
+      if (editor?.file == file) {
+        return i
+      }
+    }
+    return -1
   }
 
   override fun getEditorForFile(file: File): CodeEditorView? {
@@ -589,6 +608,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
       return
     }
 
+    pendingEditorFiles.remove(opened)
     editor?.close() ?: run { log.error("Cannot save file before close. Editor instance is null") }
 
     editorViewModel.removeFile(index)
@@ -655,6 +675,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     }
 
     // Files were already saved, close all files one by one
+    pendingEditorFiles.clear()
     for (i in 0 until count) {
       getEditorAtIndex(i)?.close() ?: run { log.error("Unable to close file at index {}", i) }
     }
@@ -671,8 +692,9 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   override fun getOpenedFiles() =
       editorViewModel.getOpenedFiles().mapNotNull {
-        val editor = getEditorForFile(it)?.editor ?: return@mapNotNull null
-        OpenedFile(it.absolutePath, editor.cursorLSPRange)
+        val editorView = getEditorForFile(it) ?: return@mapNotNull null
+        val selection = editorView.editor?.cursorLSPRange ?: Range.NONE
+        OpenedFile(it.absolutePath, selection)
       }
 
   private fun notifyFilesUnsaved(unsavedEditors: List<CodeEditorView?>, invokeAfter: Runnable) {

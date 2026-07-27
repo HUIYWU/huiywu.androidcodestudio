@@ -6,7 +6,7 @@
 
 ;;; Identifiers
 
-(simple_identifier) @variable
+(simple_identifier) @identifier
 
 ; `it` keyword inside lambdas
 ; FIXME: This will highlight the keyword outside of lambdas since tree-sitter
@@ -27,17 +27,17 @@
 (super_expression) @variable.builtin
 
 (class_parameter
-	(simple_identifier) @property)
+	(simple_identifier) @property.class)
 
 (class_body
 	(property_declaration
 		(variable_declaration
-			(simple_identifier) @property)))
+			(simple_identifier) @property.class)))
 
 ; id_1.id_2.id_3: `id_2` and `id_3` are assumed as object properties
 (_
 	(navigation_suffix
-		(simple_identifier) @property))
+		(simple_identifier) @property.class))
 
 (enum_entry
 	(simple_identifier) @constant)
@@ -84,10 +84,10 @@
 ))
 
 (package_header
-	. (identifier)) @namespace
+	"package" @keyword)
 
 (import_header
-	"import" @include)
+	"import" @keyword)
 
 
 ; TODO: Seperate labeled returns/breaks/continue/super/this
@@ -97,16 +97,17 @@
 ;;; Function definitions
 
 (function_declaration
-	. (simple_identifier) @function)
+	(simple_identifier) @function.declaration)
 
 (getter
 	("get") @function.builtin)
 (setter
 	("set") @function.builtin)
 
-(primary_constructor) @constructor
+(primary_constructor
+	("constructor") @keyword)
 (secondary_constructor
-	("constructor") @constructor)
+	("constructor") @keyword)
 
 (constructor_invocation
 	(user_type
@@ -131,13 +132,13 @@
 
 ; function()
 (call_expression
-	. (simple_identifier) @function)
+	. (simple_identifier) @function.invocation)
 
 ; object.function() or object.property.function()
 (call_expression
 	(navigation_expression
 		(navigation_suffix
-			(simple_identifier) @function) . ))
+			(simple_identifier) @function.invocation) . ))
 
 (call_expression
 	. (simple_identifier) @function.builtin
@@ -194,7 +195,7 @@
 	(shebang_line)
 ] @comment
 
-(real_literal) @float
+(real_literal) @number
 [
 	(integer_literal)
 	(long_literal)
@@ -204,11 +205,11 @@
 ] @number
 
 [
-	(null_literal) ; should be highlighted the same as booleans
+	(null_literal)
 	(boolean_literal)
-] @boolean
+] @constant.builtin
 
-(character_literal) @character
+(character_literal) @string
 
 (string_literal) @string
 
@@ -271,28 +272,32 @@
 ;	"typeof" ; NOTE: It is reserved for future use
 ] @keyword
 
-("fun") @keyword.function
+("fun") @keyword
 
-(jump_expression) @keyword.return
+[
+	"return"
+	"continue"
+	"break"
+	"throw"
+] @keyword
 
 [
 	"if"
 	"else"
 	"when"
-] @conditional
+] @keyword
 
 [
 	"for"
 	"do"
 	"while"
-] @repeat
+] @keyword
 
 [
 	"try"
 	"catch"
-	"throw"
 	"finally"
-] @exception
+] @keyword
 
 
 (annotation
@@ -358,7 +363,7 @@
 	"(" ")"
 	"[" "]"
 	"{" "}"
-] @punctuation.bracket
+] @bracket
 
 [
 	"."
@@ -366,7 +371,7 @@
 	";"
 	":"
 	"::"
-] @punctuation.delimiter
+] @operator
 
 ; NOTE: `interpolated_identifier`s can be highlighted in any way
 (string_literal
