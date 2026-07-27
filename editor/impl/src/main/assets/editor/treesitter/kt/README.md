@@ -44,7 +44,7 @@ AndroidIDE Default 浅色主题的当前示例，不属于稳定接口。
 | `@number` | 整数、浮点数及其他数值字面量 | `@number` | `#558b2f` | 捕获完整数值字面量 |
 | `@string` | 字符和字符串字面量 | `@string` | `#558b2f` | 捕获字面量范围 |
 | `@string.regex` | 正则表达式字符串 | `@string` | `#558b2f` | 禁用普通代码补全 |
-| `@string.escape` | 字符串转义 | `@kt.string.esc` | `#2196f3` | 只捕获转义序列，并覆盖父字符串样式 |
+| `@string.escape` | 字符与普通字符串转义 | `@kt.string.esc` | `#2196f3` | 字符字面量由 query 捕获；普通字符串由 span factory 在 `@string` 内切分 |
 | `@comment` | 行注释和多行注释 | `@comment` | `#9e9e9e` | 当前附加 italic 样式 |
 | `@attribute` | 注解及注解标记 | `@attribute` | `#827717` | 按 query 规则捕获注解名称或标记 |
 | `@operator` | 运算符与普通分隔符 | `@operator` | `#1976d2` | 优先捕获单个 token |
@@ -168,7 +168,12 @@ val/var 构造器参数   -> @property.class
 
 `LineSpansGenerator` 会把视觉 capture 转为区间并进行分段合成：更窄的嵌套 capture
 覆盖父 capture，子区间结束后恢复父样式。因此完整 `(string_literal) @string` 内的
-`@string.escape`、插值 `@punctuation.special` 和 `@none` 可以独立生效。
+插值 `@punctuation.special` 和 `@none` 可以独立生效。
+
+当前 grammar 的 external scanner 会把普通字符串内容（包括 `\\n` 等 escape）合并为
+`string_content`，只有字符字面量中的 escape 才形成 `character_escape_seq`。因此普通
+字符串 escape 由 Kotlin `TreeSitterSpanFactory` 在 `@string` capture 内按源文本切分，
+三引号 raw string 不进行 escape 切分。
 
 完全相同范围的 capture 仍保留 query 顺序优先级。例如正则字符串与普通字符串起点
 和范围相同，应继续将 `@string.regex` 规则放在普通 `@string` fallback 之前。

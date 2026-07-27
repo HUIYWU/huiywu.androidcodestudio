@@ -67,7 +67,13 @@ class TreeSitterSpanFactory(
 
     val captureName = query.getCaptureNameForId(capture.index)
     val styleDef = langScheme.getStyles()[captureName]
-    if (styleDef?.maybeHexColor != true) {
+    val escapeStyle =
+        if (captureName == "string" && langScheme.getFileTypes().any { it == "kt" || it == "kts" }) {
+          langScheme.getStyles()["string.escape"]?.makeStyle()
+        } else {
+          null
+        }
+    if (styleDef?.maybeHexColor != true && escapeStyle == null) {
       return super.createSpans(capture, column, spanStyle)
     }
 
@@ -77,64 +83,116 @@ class TreeSitterSpanFactory(
         }
 
     if (start.line != end.line || start.column != column) {
-      // A HEX color can only be defined on a single line
+      // HEX colors and Kotlin escaped strings are both limited to a single source line here.
       return super.createSpans(capture, column, spanStyle)
     }
 
-    val text = content.subContent(start.line, start.column, end.line, end.column)
-    val results = HEX_REGEX.findAll(text)
+    val text = content.subContent(start.line, start.column, end.line, end.column).toString()
+    val escapeRanges = escapeStyle?.let { findKotlinEscapeRanges(text) }.orEmpty()
+    val colorRanges =
+        if (styleDef?.maybeHexColor == true) {
+          HEX_REGEX.findAll(text).mapNotNull { result ->
+            try {
+              result.range.first until (result.range.last + 1) to
+                  parseHexColor(result.groupValues[1]).toInt()
+            } catch (error: Exception) {
+              log.error("An error occurred parsing hex color. text={}", text, error)
+              null
+            }
+          }.toList()
+        } else {
+          emptyList()
+        }
+
+    if (escapeRanges.isEmpty() && colorRanges.isEmpty()) {
+      return super.createSpans(capture, column, spanStyle)
+    }
+
+    val boundaries =
+        buildSet {
+              add(0)
+              add(text.length)
+              escapeRanges.forEach {
+                add(it.first)
+                add(it.last + 1)
+              }
+              colorRanges.forEach { (range, _) ->
+                add(range.first)
+                add(range.last + 1)
+              }
+            }
+            .sorted()
+
     val spans = mutableListOf<Span>()
-    var s = -1
-    var e = -1
-    results.forEach { result ->
-      if (e != -1 && e < result.range.first) {
-        // there is some interval between previous color span
-        // and this color span
-        // fill the gap
-        spans.add(Span.obtain(column + e + 1, spanStyle))
-      }
+    for (index in 0 until boundaries.lastIndex) {
+      val offset = boundaries[index]
+      val segmentEnd = boundaries[index + 1]
+      if (offset >= segmentEnd) continue
 
-      if (s == -1) {
-        s = result.range.first
-      }
-      e = result.range.last
-
+      val isEscape = escapeRanges.any { offset >= it.first && segmentEnd <= it.last + 1 }
       val color =
-          try {
-            parseHexColor(result.groupValues[1]).toInt()
-          } catch (e: Exception) {
-            log.error("An error occurred parsing hex color. text={}", text, e)
-            return@forEach
+          if (isEscape) null
+          else
+              colorRanges
+                  .firstOrNull { (range, _) ->
+                    offset >= range.first && segmentEnd <= range.last + 1
+                  }
+                  ?.second
+
+      val span =
+          when {
+            isEscape -> SpanFactory.obtain(column + offset, requireNotNull(escapeStyle))
+            color != null -> {
+              val textColor =
+                  if (ColorUtils.calculateLuminance(color) > 0.5f) Color.BLACK else Color.WHITE
+              SpanFactory.obtain(column + offset, requireNotNull(styleDef).makeStaticStyle()).also {
+                it.setSpanExt(
+                    SpanExtAttrs.EXT_COLOR_RESOLVER,
+                    SpanConstColorResolver(textColor, color),
+                )
+              }
+            }
+            else -> SpanFactory.obtain(column + offset, spanStyle)
           }
-
-      val textColor =
-          if (ColorUtils.calculateLuminance(color) > 0.5f) {
-            Color.BLACK
-          } else {
-            Color.WHITE
-          }
-
-      val col = column + result.range.first
-      val span = SpanFactory.obtain(col, styleDef.makeStaticStyle())
-
-      span.setSpanExt(SpanExtAttrs.EXT_COLOR_RESOLVER, SpanConstColorResolver(textColor, color))
-
       spans.add(span)
     }
-
-    if (spans.isEmpty()) {
-      return super.createSpans(capture, column, spanStyle)
-    }
-
-    // make sure that the default style is used for unmatched regions
-    if (s != 0) {
-      spans.add(0, SpanFactory.obtain(column, spanStyle))
-    }
-
-    if (e != text.lastIndex) {
-      spans.add(SpanFactory.obtain(column + e + 1, spanStyle))
-    }
-
     return spans
+  }
+
+  /**
+   * Finds escape sequences in an ordinary Kotlin string literal. Triple-quoted strings are raw and
+   * deliberately return no ranges. The grammar scanner exposes ordinary string contents as a single
+   * `string_content` node, so these ranges cannot currently be expressed by a Tree-sitter query.
+   */
+  private fun findKotlinEscapeRanges(text: String): List<IntRange> {
+    var quote = 0
+    while (quote < text.length && text[quote] == '$') quote++
+    if (quote >= text.length || text[quote] != '"') return emptyList()
+    if (text.startsWith("\"\"\"", quote)) return emptyList()
+
+    val ranges = mutableListOf<IntRange>()
+    var index = quote + 1
+    while (index < text.lastIndex) {
+      if (text[index] != '\\') {
+        index++
+        continue
+      }
+
+      val endExclusive =
+          if (
+              index + 5 < text.length &&
+                  text[index + 1] == 'u' &&
+                  text.substring(index + 2, index + 6).all {
+                    it.isDigit() || it.lowercaseChar() in 'a'..'f'
+                  }
+          ) {
+            index + 6
+          } else {
+            (index + 2).coerceAtMost(text.length)
+          }
+      ranges.add(index until endExclusive)
+      index = endExclusive
+    }
+    return ranges
   }
 }

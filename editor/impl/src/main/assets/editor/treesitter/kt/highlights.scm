@@ -310,7 +310,8 @@
 ; Ordinary string fallback follows regex-specific captures.
 (string_literal) @string
 
-; Nested captures override the parent string range in LineSpansGenerator.
+; This node is emitted for character literals. Ordinary string escapes are part of the scanner's
+; string_content token and are split by the Kotlin-aware TreeSitterSpanFactory instead.
 (character_escape_seq) @string.escape
 
 ;;; Keywords
