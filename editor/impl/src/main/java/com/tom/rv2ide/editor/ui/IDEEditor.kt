@@ -124,6 +124,7 @@ constructor(
   private var _actionsMenu: EditorActionsMenu? = null
   private var _signatureHelpWindow: SignatureHelpWindow? = null
   private var _diagnosticWindow: DiagnosticWindow? = null
+  private var _hoverWindow: HoverWindow? = null
   private var fileVersion = 0
   internal var isModified = false
 
@@ -178,6 +179,12 @@ constructor(
   val diagnosticWindow: DiagnosticWindow
     get() {
       return _diagnosticWindow ?: DiagnosticWindow(this).also { _diagnosticWindow = it }
+    }
+
+  /** The language-server hover window for the editor. */
+  val hoverWindow: HoverWindow
+    get() {
+      return _hoverWindow ?: HoverWindow(this).also { _hoverWindow = it }
     }
   companion object {
 
@@ -373,6 +380,16 @@ constructor(
         ?.logError("expand selection request")
   }
 
+  internal fun canShowHoverWindow(): Boolean {
+    return _diagnosticWindow?.isShowing != true &&
+        _signatureHelpWindow?.isShowing != true &&
+        _actionsMenu?.isShowing != true
+  }
+
+  internal fun dismissHoverWindow() {
+    _hoverWindow?.dismissHover()
+  }
+
   override fun ensureWindowsDismissed() {
     if (_diagnosticWindow?.isShowing == true) {
       _diagnosticWindow?.dismiss()
@@ -380,6 +397,10 @@ constructor(
 
     if (_signatureHelpWindow?.isShowing == true) {
       _signatureHelpWindow?.dismiss()
+    }
+
+    if (_hoverWindow?.isShowing == true) {
+      _hoverWindow?.dismiss()
     }
 
     if (_actionsMenu?.isShowing == true) {
@@ -422,6 +443,7 @@ constructor(
     _actionsMenu = null
     _signatureHelpWindow = null
     _diagnosticWindow = null
+    _hoverWindow = null
 
     languageServer = null
     languageClient = null

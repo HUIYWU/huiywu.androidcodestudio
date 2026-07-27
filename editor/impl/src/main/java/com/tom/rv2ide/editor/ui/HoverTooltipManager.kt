@@ -2,19 +2,20 @@ package com.tom.rv2ide.editor.ui
 
 import android.content.Context
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.TextView
-import com.tom.rv2ide.editor.R
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.ForegroundColorSpan
+import android.text.style.TypefaceSpan
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.models.DefinitionParams
 import com.tom.rv2ide.models.Position
 import com.tom.rv2ide.progress.ICancelChecker
+import com.tom.rv2ide.resources.R
+import com.tom.rv2ide.utils.resolveAttr
+import io.github.rosemoe.sora.event.SelectionChangeEvent
+import io.github.rosemoe.sora.event.SubscriptionReceipt
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 
@@ -27,22 +28,12 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
     private const val MIN_HOVER_TEXT_CONTRAST = 3.2
   }
 
-  private val tooltipContainer: ViewGroup by lazy {
-    val editorContainer = editor.parent as? ViewGroup
-    val overlayContainer =
-        editorContainer?.findViewById<ViewGroup>(R.id.editor_overlay_container)
-
-    overlayContainer
-        ?: editorContainer
-        ?: throw IllegalStateException("Unable to find the tooltip container for this editor.")
-  }
-
   private val handler = Handler(Looper.getMainLooper())
   private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-  private var tooltipView: View? = null
   private var currentJob: Job? = null
   private var hoverRunnable: Runnable? = null
+  private var selectionReceipt: SubscriptionReceipt<SelectionChangeEvent>? = null
   private var lastHoverLine = -1
   private var lastHoverColumn = -1
   private var isActive = true
@@ -50,11 +41,9 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
 
   /** Initialize hover support */
   fun init() {
-    // Listen to cursor/selection changes
-    editor.subscribeEvent(io.github.rosemoe.sora.event.SelectionChangeEvent::class.java) { event, _
-      ->
-      handleCursorMove()
-    }
+    // Listen to cursor/selection changes.
+    selectionReceipt =
+        editor.subscribeEvent(SelectionChangeEvent::class.java) { _, _ -> handleCursorMove() }
   }
 
   private fun handleCursorMove() {
@@ -82,7 +71,7 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
     hoverRunnable = null
     currentJob?.cancel()
     currentJob = null
-    dismissTooltip()
+    editor.dismissHoverWindow()
   }
 
   private fun requestHover(line: Int, column: Int) {
@@ -124,11 +113,13 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
             // Filter out meaningless hover results
             val content = hoverResult.value.trim()
             if (
-              isActive && generation == requestGeneration && editor.isShown &&
+              isActive &&
+                  generation == requestGeneration &&
+                  editor.isShown &&
                   content.isNotEmpty() &&
-                    content != "Unit" &&
-                    !content.equals("unit", ignoreCase = true) &&
-                    content.length > 2
+                  content != "Unit" &&
+                  !content.equals("unit", ignoreCase = true) &&
+                  content.length > 2
             ) {
               withContext(Dispatchers.Main) { displayTooltip(content) }
             }
@@ -142,131 +133,40 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
   }
 
   private fun displayTooltip(content: String) {
-    dismissTooltip()
+    if (!isActive || !editor.isShown || !editor.canShowHoverWindow()) return
 
     try {
-      val colorScheme = editor.colorScheme
-      val hoverBackgroundRaw =
-          colorScheme.getColor(io.github.rosemoe.sora.widget.schemes.EditorColorScheme.WHOLE_BACKGROUND)
-      val hoverBackground = ensureOpaque(hoverBackgroundRaw)
-      val hoverTextColor =
-          readableOnBackground(
-              ensureOpaque(colorScheme.getColor(io.github.rosemoe.sora.widget.schemes.EditorColorScheme.TEXT_NORMAL)),
-              hoverBackground,
-          )
-      val hoverStroke =
-          if (isDarkTheme()) {
-            Color.argb((0.45f * 255).toInt(), 255, 255, 255)
-          } else {
-            Color.argb((0.28f * 255).toInt(), 0, 0, 0)
-          }
-      val cardBackground =
-          GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(hoverBackground)
-            setStroke(dpToPx(1), hoverStroke)
-            cornerRadius = dpToPx(8).toFloat()
-          }
+      editor.hoverWindow.showHover(formatHoverContent(content))
+    } catch (e: Exception) {
+      log.error("Failed to display hover window", e)
+    }
+  }
 
+  private fun formatHoverContent(content: String): CharSequence {
+    val background = context.resolveAttr(R.attr.colorSurface)
+    val defaultTextColor = context.resolveAttr(R.attr.colorOnPrimaryContainer)
+    val result = SpannableStringBuilder()
 
-      val cardView =
-          FrameLayout(context).apply {
-            background = cardBackground
-            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
-          }
-
-      val sections = parseHoverSections(content)
-      val containerLayout =
-          android.widget.LinearLayout(context).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-          }
-
-      sections.forEachIndexed { index, section ->
-        if (index > 0) {
-          containerLayout.addView(
-              View(context).apply {
-                layoutParams =
-                    android.widget.LinearLayout.LayoutParams(
-                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                        dpToPx(1),
-                    ).apply {
-                      topMargin = dpToPx(6)
-                      bottomMargin = dpToPx(6)
-                    }
-                background = GradientDrawable().apply {
-                  shape = GradientDrawable.RECTANGLE
-                  setColor(adjustAlpha(hoverTextColor, if (isDarkTheme()) 0.22f else 0.16f))
-                }
-              }
-          )
-        }
-
-        val textView =
-            TextView(context).apply {
-              text =
-                  if (section.isCode) {
-                    applySyntaxHighlighting(section.text, hoverBackground, hoverTextColor)
-                  } else {
-                    formatDocText(section.text)
-                  }
-              textSize = 11f
-              setTextColor(hoverTextColor)
-              typeface =
-                  if (section.isCode) android.graphics.Typeface.MONOSPACE else android.graphics.Typeface.DEFAULT
-              maxLines = if (section.isCode) 15 else 12
-              ellipsize = android.text.TextUtils.TruncateAt.END
-            }
-        containerLayout.addView(textView)
+    parseHoverSections(content).forEachIndexed { index, section ->
+      if (index > 0) {
+        result.append("\n────────\n")
       }
 
-      cardView.addView(containerLayout)
-
-      val maxWidth =
-          (editor.width - (measureNormalLineNumberGutterWidth() * 2f)).toInt().coerceAtLeast(dpToPx(48))
-      cardView.measure(
-          View.MeasureSpec.makeMeasureSpec(maxWidth, View.MeasureSpec.AT_MOST),
-          View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-      )
-      // Tooltip dimensions
-      val tooltipHeight = cardView.measuredHeight
-      val tooltipWidth = cardView.measuredWidth
-
-      // Reserve one normal line-number gutter width on both sides, based on the editor's
-      // real gutter/text-region metrics rather than estimated text widths.
-      val normalLineNumberGutterWidth = measureNormalLineNumberGutterWidth().toInt()
-      val visibleLeftBound = normalLineNumberGutterWidth
-      val visibleRightBound = editor.width - normalLineNumberGutterWidth
-      val availableWidth = (visibleRightBound - visibleLeftBound).coerceAtLeast(dpToPx(48))
-
-      // Leave one normal row height from the top of the editor.
-      val top = measureNormalRowHeight()
-
-      // Horizontally center within the safe content area.
-      val centeredLeft = visibleLeftBound + ((availableWidth - tooltipWidth) / 2)
-      val left =
-          centeredLeft
-              .coerceIn(
-                  visibleLeftBound,
-                  (visibleRightBound - tooltipWidth).coerceAtLeast(visibleLeftBound),
-              )
-
-
-      val layoutParams =
-          FrameLayout.LayoutParams(
-                  FrameLayout.LayoutParams.WRAP_CONTENT,
-                  FrameLayout.LayoutParams.WRAP_CONTENT,
-              )
-              .apply {
-                gravity = Gravity.TOP or Gravity.START
-                leftMargin = left
-                topMargin = top
-              }
-
-      tooltipContainer.addView(cardView, layoutParams)
-      tooltipView = cardView
-    } catch (e: Exception) {
-      log.error("Failed to display tooltip", e)
+      val start = result.length
+      if (section.isCode) {
+        result.append(applySyntaxHighlighting(section.text, background, defaultTextColor))
+        result.setSpan(
+            TypefaceSpan("monospace"),
+            start,
+            result.length,
+            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+      } else {
+        result.append(formatDocText(section.text))
+      }
     }
+
+    return result
   }
 
   private fun applySyntaxHighlighting(
@@ -274,7 +174,7 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
     backgroundColor: Int,
     defaultTextColor: Int,
   ): CharSequence {
-    val builder = android.text.SpannableStringBuilder(text)
+    val builder = SpannableStringBuilder(text)
 
     val darkTheme = isDarkTheme()
     val keywordColor =
@@ -336,10 +236,10 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
           return@forEach
         }
         builder.setSpan(
-            android.text.style.ForegroundColorSpan(color),
+            ForegroundColorSpan(color),
             start,
             endExclusive,
-            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
         )
         for (index in start until endExclusive) {
           occupied[index] = true
@@ -418,30 +318,6 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
         .take(1000)
   }
 
-  private fun ensureOpaque(color: Int): Int {
-    return Color.argb(255, Color.red(color), Color.green(color), Color.blue(color))
-  }
-
-  private fun readableOnBackground(candidate: Int, background: Int): Int {
-    return if (contrastRatio(candidate, background) >= MIN_HOVER_TEXT_CONTRAST) {
-      candidate
-    } else if (isDarkTheme()) {
-      Color.WHITE
-    } else {
-      Color.BLACK
-    }
-  }
-
-  private fun adjustAlpha(color: Int, alphaFraction: Float): Int {
-    val clamped = alphaFraction.coerceIn(0f, 1f)
-    return Color.argb(
-        (Color.alpha(color) * clamped).toInt(),
-        Color.red(color),
-        Color.green(color),
-        Color.blue(color),
-    )
-  }
-
   private fun readableMutedColor(candidate: Int, background: Int, defaultTextColor: Int): Int {
     return if (contrastRatio(candidate, background) >= MIN_HOVER_TEXT_CONTRAST) {
       candidate
@@ -457,16 +333,6 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
     val boosted = shiftColorForContrast(candidate, background)
     if (contrastRatio(boosted, background) >= MIN_HOVER_TEXT_CONTRAST) {
       return boosted
-    }
-    return defaultTextColor
-  }
-
-  private fun readableColor(candidate: Int, background: Int, defaultTextColor: Int, fallback: Int): Int {
-    if (contrastRatio(candidate, background) >= MIN_HOVER_TEXT_CONTRAST) {
-      return candidate
-    }
-    if (contrastRatio(fallback, background) >= MIN_HOVER_TEXT_CONTRAST) {
-      return fallback
     }
     return defaultTextColor
   }
@@ -516,36 +382,6 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
     return nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES
   }
 
-  private fun dismissTooltip() {
-    tooltipView?.let { view ->
-      try {
-        tooltipContainer.removeView(view)
-      } catch (e: Exception) {
-        if (IdeLogConfig.shouldLogDebug()) {
-          log.debug("Error removing tooltip view", e)
-        }
-      }
-
-      tooltipView = null
-    }
-  }
-
-  private fun formatContent(text: String): String {
-    return text.replace(Regex("```[a-z]*\\n"), "").replace("```", "").trim().take(1000)
-  }
-
-  private fun measureNormalLineNumberGutterWidth(): Float {
-    return editor.measureTextRegionOffset()
-  }
-
-  private fun measureNormalRowHeight(): Int {
-    return editor.rowHeight
-  }
-
-  private fun dpToPx(dp: Int): Int {
-    return (dp * context.resources.displayMetrics.density).toInt()
-  }
-
   fun setVisible(visible: Boolean) {
     if (isActive == visible) return
     isActive = visible
@@ -559,6 +395,8 @@ class HoverTooltipManager(private val context: Context, private val editor: IDEE
   fun destroy() {
     isActive = false
     requestGeneration++
+    selectionReceipt?.unsubscribe()
+    selectionReceipt = null
     cancelHover()
     scope.cancel()
   }
