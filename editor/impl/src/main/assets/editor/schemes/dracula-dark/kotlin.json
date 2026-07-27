@@ -63,7 +63,7 @@
       "italic": true
     },
     "type.builtin": {
-      "fg": "@keyword",
+      "fg": "@type",
       "bold": true
     },
     "constant": {

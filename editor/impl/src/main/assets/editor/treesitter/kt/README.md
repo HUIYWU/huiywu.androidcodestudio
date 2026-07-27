@@ -29,7 +29,7 @@ AndroidIDE Default 浅色主题的当前示例，不属于稳定接口。
 | `@label` | 标签 | `@keyword` | `#d32f2f` | 捕获 label 节点 |
 | `@type.qualifier` | 类型/声明修饰符 | `@keyword` | `#d32f2f` | 仅用于需要与普通 keyword 区分配置的修饰符 |
 | `@type` | 用户类型 | `@type` | `#1976d2` | 捕获类型标识符，不包含 nullable 标记 |
-| `@type.builtin` | Kotlin 内建类型 | `@keyword` | `#d32f2f` | 仅捕获内建类型标识符 |
+| `@type.builtin` | Kotlin 内建类型 | `@type` | `#1976d2` | 仅捕获内建类型标识符；当前附加 bold 样式 |
 | `@function.declaration` | 函数声明名 | `@func.decl` | `#2196f3` | 只捕获函数名 |
 | `@function.invocation` | 函数调用名 | `@func.call` | `#2196f3` | 只捕获被调用的名称 |
 | `@function.builtin` | 内建函数或访问器 | `@func.call` | `#2196f3` | 当前附加 italic 样式 |
