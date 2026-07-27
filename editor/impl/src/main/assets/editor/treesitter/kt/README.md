@@ -44,12 +44,12 @@ AndroidIDE Default 浅色主题的当前示例，不属于稳定接口。
 | `@number` | 整数、浮点数及其他数值字面量 | `@number` | `#558b2f` | 捕获完整数值字面量 |
 | `@string` | 字符和字符串字面量 | `@string` | `#558b2f` | 捕获字面量范围 |
 | `@string.regex` | 正则表达式字符串 | `@string` | `#558b2f` | 禁用普通代码补全 |
-| `@string.escape` | 字符串转义 | `@kt.string.esc` | `#2196f3` | 只捕获转义序列；当前 span 引擎会被父字符串 capture 遮蔽 |
+| `@string.escape` | 字符串转义 | `@kt.string.esc` | `#2196f3` | 只捕获转义序列，并覆盖父字符串样式 |
 | `@comment` | 行注释和多行注释 | `@comment` | `#9e9e9e` | 当前附加 italic 样式 |
 | `@attribute` | 注解及注解标记 | `@attribute` | `#827717` | 按 query 规则捕获注解名称或标记 |
 | `@operator` | 运算符与普通分隔符 | `@operator` | `#1976d2` | 优先捕获单个 token |
 | `@bracket` | `()`、`[]`、`{}` | `@onSurface` | `#1E1B19` | 只捕获括号 token |
-| `@punctuation.special` | nullable `?`、字符串插值边界等特殊标点 | `@kt.punctuation.special` | `#d32f2f` | 只捕获特殊标点；字符串内捕获当前会被父字符串 capture 遮蔽 |
+| `@punctuation.special` | nullable `?`、字符串插值边界等特殊标点 | `@kt.punctuation.special` | `#d32f2f` | 只捕获特殊标点，并可覆盖父类型/字符串样式 |
 | `@preproc` | Kotlin 脚本 shebang | `@kt.preproc` | `#9e9e9e` | 当前附加 italic、bold 样式 |
 | `@none` | 明确取消某段继承高亮 | 无 | 基础文本色 | 仅用于有意阻止父捕获影响子节点 |
 
@@ -101,9 +101,16 @@ val/var 构造器参数   -> @property.class
 - 禁止用 `@constructor` 或 `@keyword` 捕获完整 `primary_constructor`、
   `secondary_constructor` 或 `constructor_delegation_call`。
 
-当前 fwcd grammar 将显式主构造器的 `constructor` 生成为不可见 external symbol
-`_primary_constructor_keyword`。在 grammar 提供 query-visible alias 之前，query 无法只
-捕获该关键字。不得用下面的宽范围规则绕过：
+自 Tree-sitter Kotlin artifact `0.1.3` 起，不可见 external
+`_primary_constructor_keyword` 通过 named alias 暴露为 query-visible
+`primary_constructor_keyword`。主项目使用以下规则精确捕获显式主构造器关键字：
+
+```scm
+(primary_constructor
+  (primary_constructor_keyword) @keyword)
+```
+
+不得用下面的宽范围规则绕过或替代该规则：
 
 ```scm
 (primary_constructor) @constructor
@@ -140,10 +147,11 @@ val/var 构造器参数   -> @property.class
 3. 标点 capture 只覆盖标点节点；
 4. 不用父声明/父表达式替代不可查询的子 token；
 5. 同一文本若有多条规则，具体语义规则应覆盖普通 `@identifier`；
-6. AndroidCodeStudio 的 `LineSpansGenerator` 会按起始位置排序 capture，并跳过后续
-   重叠范围；同一起点时应让具体规则先于宽泛 fallback 出现在 query 中；
-7. `@function.builtin` 应先于普通 `@function.invocation`，属性/函数/常量等具体规则
-   应先于 `@identifier`；类型上下文顺序应为注解、构造调用、内建类型、普通类型；
+6. AndroidCodeStudio 的 `LineSpansGenerator` 会让更窄的嵌套 capture 覆盖父 capture，
+   并在子范围结束后恢复父样式；
+7. 完全相同范围的 capture 保留 query 顺序优先级，因此 `@function.builtin` 应先于普通
+   `@function.invocation`，属性/函数/常量等具体规则应先于 `@identifier`；类型上下文
+   顺序应为注解、构造调用、内建类型、普通类型；
 8. `@identifier` 与普通 `@type` fallback 应集中放在 query 尾部；
 9. 新规则必须同时满足当前 grammar 的 node type 与父子结构，否则 TSQuery 会以
    `NodeType` 或 `Structure` 错误拒绝整个 query。
@@ -156,16 +164,17 @@ val/var 构造器参数   -> @property.class
 (nullable_type) @punctuation.special
 ```
 
-## 字符串子范围限制
+## 嵌套 capture 与字符串子范围
 
-当前 `LineSpansGenerator` 生成的是不重叠 span：父级 `(string_literal) @string` 会先
-覆盖完整字符串，位于内部的 `@string.escape`、插值 `@punctuation.special` 和
-`@none` 随后会因范围重叠被跳过。
+`LineSpansGenerator` 会把视觉 capture 转为区间并进行分段合成：更窄的嵌套 capture
+覆盖父 capture，子区间结束后恢复父样式。因此完整 `(string_literal) @string` 内的
+`@string.escape`、插值 `@punctuation.special` 和 `@none` 可以独立生效。
 
-query 仍保留这些细粒度 capture，作为稳定契约和未来 span 引擎改造后的目标行为；
-在改造重叠 capture 的分段/优先级处理之前，不应宣称字符串转义和插值边界已能独立
-着色。正则字符串与普通字符串起点相同，因此可通过将 `@string.regex` 规则放在普通
-`@string` fallback 之前维持正则 capture 的优先级。
+完全相同范围的 capture 仍保留 query 顺序优先级。例如正则字符串与普通字符串起点
+和范围相同，应继续将 `@string.regex` 规则放在普通 `@string` fallback 之前。
+
+区间合成会保留 `TsSpanFactory` 为单个 capture 生成的内部 span 边界和扩展属性，
+例如字符串中的十六进制颜色背景。
 
 ## locals query 的边界
 

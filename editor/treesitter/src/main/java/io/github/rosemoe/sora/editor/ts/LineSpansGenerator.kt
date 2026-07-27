@@ -58,6 +58,10 @@ import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
  *
  * Note that this implementation does not support external modifications.
  *
+ * Unlike Sora Editor 0.23.7 and its current main implementation, this integration composes
+ * overlapping query captures into non-overlapping output spans. Narrow nested captures override
+ * parents while identical ranges preserve query order.
+ *
  * @author Rosemoe
  */
 class LineSpansGenerator(
@@ -125,29 +129,30 @@ class LineSpansGenerator(
         }
       }
 
-      captures.sortBy { it.node.startByte }
-      var lastIndex = 0
+      val regionLength = (endIndex - startIndex).coerceAtLeast(0)
+      val styledRanges = mutableListOf<StyledRange>()
 
-      for (capture in captures) {
-        val startByte = capture.node.startByte
-        val endByte = capture.node.endByte
-        val start = (startByte / 2 - startIndex).coerceAtLeast(0)
-        val pattern = capture.index
-        // Do not add span for overlapping regions and out-of-bounds regions
-        if (
-            start >= lastIndex &&
-                endByte / 2 >= startIndex &&
-                startByte / 2 < endIndex &&
-                (pattern !in languageSpec.localsScopeIndices &&
-                    pattern !in languageSpec.localsDefinitionIndices &&
-                    pattern !in languageSpec.localsDefinitionValueIndices &&
-                    pattern !in languageSpec.localsMembersScopeIndices)
-        ) {
-          if (start != lastIndex) {
-            list.addAll(createSpans(capture, lastIndex, start - 1, theme.normalTextStyle))
+      // Preserve query order for captures with identical ranges. Nested captures are handled
+      // separately below so that a narrower child can override its parent and the parent style can
+      // be restored after the child ends.
+      try {
+        for ((order, capture) in captures.withIndex()) {
+          val startByte = capture.node.startByte
+          val endByte = capture.node.endByte
+          val pattern = capture.index
+          if (
+              endByte / 2 <= startIndex ||
+                  startByte / 2 >= endIndex ||
+                  pattern in languageSpec.localsScopeIndices ||
+                  pattern in languageSpec.localsDefinitionIndices ||
+                  pattern in languageSpec.localsDefinitionValueIndices ||
+                  pattern in languageSpec.localsMembersScopeIndices
+          ) {
+            continue
           }
+
           var style = 0L
-          if (capture.index in languageSpec.localsReferenceIndices) {
+          if (pattern in languageSpec.localsReferenceIndices) {
             val def =
                 scopedVariables.findDefinition(
                     startByte / 2,
@@ -157,29 +162,90 @@ class LineSpansGenerator(
             if (def != null && def.matchedHighlightPattern != -1) {
               style = theme.resolveStyleForPattern(def.matchedHighlightPattern)
             }
-            // This reference can not be resolved to its definition
-            // but it can have its own fallback color by other captures
-            // so continue to next capture
+            // Let a regular highlight capture style unresolved references.
             if (style == 0L) {
               continue
             }
           }
           if (style == 0L) {
-            style = theme.resolveStyleForPattern(capture.index)
+            style = theme.resolveStyleForPattern(pattern)
           }
           if (style == 0L) {
             style = theme.normalTextStyle
           }
-          val end = (endByte / 2 - startIndex).coerceAtMost(endIndex)
-          list.addAll(createSpans(capture, start, end, style))
-          lastIndex = end
+
+          val start = (startByte / 2 - startIndex).coerceIn(0, regionLength)
+          val end = (endByte / 2 - startIndex).coerceIn(0, regionLength)
+          if (start >= end) {
+            continue
+          }
+
+          val spans = createSpans(capture, start, end, style)
+          for (index in spans.indices) {
+            val span = spans[index]
+            val spanStart = span.column.coerceIn(start, end)
+            val spanEnd = (spans.getOrNull(index + 1)?.column ?: end).coerceIn(spanStart, end)
+            if (spanStart < spanEnd) {
+              styledRanges.add(
+                  StyledRange(
+                      start = spanStart,
+                      end = spanEnd,
+                      captureWidth = end - start,
+                      order = order,
+                      template = span,
+                  )
+              )
+            } else {
+              span.recycle()
+            }
+          }
+
         }
 
-        (capture as? TreeSitterQueryCapture?)?.recycle()
+        val boundaries =
+            buildSet {
+                  add(0)
+                  add(regionLength)
+                  styledRanges.forEach {
+                    add(it.start)
+                    add(it.end)
+                  }
+                }
+                .sorted()
+
+        var previous: StyledRange? = null
+        var emitted = false
+        for (index in 0 until boundaries.lastIndex) {
+          val segmentStart = boundaries[index]
+          val segmentEnd = boundaries[index + 1]
+          if (segmentStart >= segmentEnd) {
+            continue
+          }
+
+          val winner =
+              styledRanges
+                  .asSequence()
+                  .filter { it.start <= segmentStart && it.end >= segmentEnd }
+                  // Narrower captures are more specific. Identical ranges preserve query order.
+                  .minWithOrNull(compareBy<StyledRange> { it.captureWidth }.thenBy { it.order })
+
+          if (!emitted || winner !== previous) {
+            if (winner == null) {
+              list.add(emptySpan(segmentStart))
+            } else {
+              list.add(winner.template.copy().also { it.column = segmentStart })
+            }
+            previous = winner
+            emitted = true
+          }
+        }
+      } finally {
+        styledRanges.forEach { it.template.recycle() }
+        captures.forEach { (it as? TreeSitterQueryCapture)?.recycle() }
       }
 
-      if (lastIndex != endIndex) {
-        list.add(emptySpan(lastIndex))
+      if (list.isEmpty()) {
+        list.add(emptySpan(0))
       }
     }
     if (list.isEmpty()) {
@@ -195,27 +261,28 @@ class LineSpansGenerator(
       style: Long,
   ): List<Span> {
     val spans = spanFactory.createSpans(capture, startColumn, style)
-    if (spans.size > 1) {
-      var prevCol = spans[0].column
-      if (prevCol > endColumn) {
-        throw IndexOutOfBoundsException(
-            "Span's column is out of bounds! column=$prevCol, endColumn=$endColumn"
-        )
-      }
-      for (i in 1..spans.lastIndex) {
-        val col = spans[i].column
-        if (col <= prevCol) {
-          throw IllegalStateException("Spans must not overlap! prevCol=$prevCol, col=$col")
-        }
-        if (col > endColumn) {
+    try {
+      var previousColumn: Int? = null
+      for (span in spans) {
+        val column = span.column
+        if (column < startColumn || column > endColumn) {
           throw IndexOutOfBoundsException(
-              "Span's column is out of bounds! column=$col, endColumn=$endColumn"
+              "Span's column is out of bounds! column=$column, " +
+                  "startColumn=$startColumn, endColumn=$endColumn"
           )
         }
-        prevCol = col
+        if (previousColumn != null && column <= previousColumn) {
+          throw IllegalStateException(
+              "Spans must not overlap! prevCol=$previousColumn, col=$column"
+          )
+        }
+        previousColumn = column
       }
+      return spans
+    } catch (error: Throwable) {
+      spans.forEach { it.recycle() }
+      throw error
     }
-    return spans
   }
 
   private fun emptySpan(column: Int): Span {
@@ -279,5 +346,13 @@ class LineSpansGenerator(
 
   override fun getLineCount() = lineCount
 }
+
+private data class StyledRange(
+    val start: Int,
+    val end: Int,
+    val captureWidth: Int,
+    val order: Int,
+    val template: Span,
+)
 
 data class SpanCache(val spans: MutableList<Span>, val line: Int)

@@ -10,7 +10,8 @@
 
 ;;; Specific identifiers
 ;; Broad identifier/type fallbacks are intentionally placed at the end because
-;; AndroidCodeStudio resolves overlapping captures with the first capture winning.
+;; captures with identical ranges preserve query order. Nested narrower captures
+;; override their parents independently of order.
 
 ; `it` keyword inside lambdas
 ; FIXME: This will highlight the keyword outside of lambdas since tree-sitter
@@ -32,7 +33,7 @@
 
 ;;; Annotations and constructor calls
 ;; These context-specific type captures must precede builtin and ordinary type
-;; rules because overlapping captures at the same start use the first match.
+;; rules when they cover the same identifier range.
 (annotation
 	"@" @attribute (use_site_target)? @attribute)
 (annotation
@@ -148,10 +149,11 @@
 (setter
 	("set") @function.builtin)
 
-; The primary constructor keyword is represented by the hidden external
-; _primary_constructor_keyword and cannot be queried as an anonymous token.
+(primary_constructor
+  (primary_constructor_keyword) @keyword)
+
 (secondary_constructor
-	("constructor") @keyword)
+  ("constructor") @keyword)
 
 (constructor_delegation_call
 	["this" "super"] @keyword)
@@ -173,8 +175,8 @@
 
 ;;; Function calls
 
-; Built-in calls must precede ordinary call rules because the first overlapping
-; capture wins in AndroidCodeStudio.
+; Built-in calls must precede ordinary call rules because they capture the same
+; identifier range and identical ranges preserve query order.
 (call_expression
 	. (simple_identifier) @function.builtin
     (#any-of? @function.builtin
@@ -308,8 +310,7 @@
 ; Ordinary string fallback follows regex-specific captures.
 (string_literal) @string
 
-; Retained as part of the capture contract. With the current non-overlapping
-; span generator, a parent string capture wins over nested escape captures.
+; Nested captures override the parent string range in LineSpansGenerator.
 (character_escape_seq) @string.escape
 
 ;;; Keywords
@@ -433,8 +434,7 @@
 	(interpolation_expression_end) @punctuation.special)
 
 ;;; Broad fallbacks
-;; Keep these patterns last. LineSpansGenerator sorts captures by start offset and
-;; ignores later overlapping captures, so specific captures at the same start
+;; Keep these patterns last. Specific captures covering the same identifier range
 ;; must be emitted before these broad type/identifier defaults.
 (type_identifier) @type
 (simple_identifier) @identifier
