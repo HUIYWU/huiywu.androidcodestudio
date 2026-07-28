@@ -128,9 +128,9 @@ public final class KotlinJvmSourceNavigator {
   private static SourceRange findMember(
       List<KotlinJvmSyntaxParser.MemberSyntax> members, Element element, boolean requireJvmStatic) {
     final String javaName = element.getSimpleName().toString();
-    final int parameterCount = element instanceof ExecutableElement
-        ? ((ExecutableElement) element).getParameters().size()
-        : -1;
+    final ExecutableElement executable = element instanceof ExecutableElement
+        ? (ExecutableElement) element
+        : null;
     SourceRange match = null;
     int matches = 0;
     for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
@@ -142,7 +142,7 @@ public final class KotlinJvmSourceNavigator {
       }
       final String jvmMemberName = member.jvmName == null ? member.name : member.jvmName;
       final boolean matchesElement = member.function()
-          ? javaName.equals(jvmMemberName) && functionArityMatches(member, parameterCount)
+          ? javaName.equals(jvmMemberName) && functionSignatureMatches(member, executable)
           : propertyJavaNameMatches(member, javaName, element.getKind());
       if (matchesElement) {
         match = new SourceRange(member.nameOffset, member.nameLength);
@@ -152,21 +152,37 @@ public final class KotlinJvmSourceNavigator {
     return matches == 1 ? match : null;
   }
 
-  private static boolean functionArityMatches(
-      KotlinJvmSyntaxParser.MemberSyntax member, int parameterCount) {
-    final int fullCount = member.parameterList.size();
-    if (parameterCount == fullCount) {
-      return true;
-    }
-    if (!member.jvmOverloads || parameterCount < 0 || parameterCount >= fullCount) {
+  private static boolean functionSignatureMatches(
+      KotlinJvmSyntaxParser.MemberSyntax member, ExecutableElement executable) {
+    if (executable == null) {
       return false;
     }
-    int firstOmittable = fullCount;
-    for (int index = fullCount - 1;
-        index >= 0 && member.parameterList.get(index).defaultValue; index--) {
-      firstOmittable = index;
+    final int receiverCount = member.receiverType == null ? 0 : 1;
+    final int parameterCount = executable.getParameters().size();
+    final int kotlinParameterCount = parameterCount - receiverCount;
+    final int fullCount = member.parameterList.size();
+    if (kotlinParameterCount < 0
+        || kotlinParameterCount != fullCount
+            && (!member.jvmOverloads
+                || kotlinParameterCount < trailingDefaultStart(member.parameterList)
+                || kotlinParameterCount >= fullCount)) {
+      return false;
     }
-    return parameterCount >= firstOmittable;
+    if (receiverCount == 1
+        && !functionParameterTypeCompatible(
+            member.receiverType, false, executable.getParameters().get(0).asType().toString())) {
+      return false;
+    }
+    for (int index = 0; index < kotlinParameterCount; index++) {
+      final KotlinJvmSyntaxParser.ParameterSyntax parameter = member.parameterList.get(index);
+      if (!functionParameterTypeCompatible(
+          parameter.type,
+          parameter.vararg && index == member.parameterList.size() - 1,
+          executable.getParameters().get(index + receiverCount).asType().toString())) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private static boolean propertyJavaNameMatches(
@@ -267,6 +283,14 @@ public final class KotlinJvmSourceNavigator {
       index--;
     }
     return index;
+  }
+
+  private static boolean functionParameterTypeCompatible(
+      String kotlinType, boolean vararg, String javaType) {
+    // Unknown complex Kotlin types cannot safely disprove a candidate. They remain compatible here;
+    // findMember still refuses navigation when more than one source declaration survives.
+    return navigationJavaType(kotlinType) == null
+        || parameterTypeMatches(kotlinType, vararg, javaType);
   }
 
   private static boolean parameterTypeMatches(

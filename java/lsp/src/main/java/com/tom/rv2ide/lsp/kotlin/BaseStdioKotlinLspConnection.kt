@@ -19,8 +19,10 @@ package com.tom.rv2ide.lsp.kotlin
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.tom.rv2ide.lsp.models.DiagnosticResult
+import java.io.BufferedInputStream
 import java.io.BufferedReader
 import java.io.BufferedWriter
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
@@ -44,7 +46,7 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
   private val gson = Gson()
   private var process: Process? = null
   private var writer: BufferedWriter? = null
-  private var reader: BufferedReader? = null
+  private var input: BufferedInputStream? = null
   private val nextId = AtomicInteger(1)
   private val pendingRequests = ConcurrentHashMap<Int, (JsonObject?) -> Unit>()
   private val notificationHandler = KotlinNotificationHandler()
@@ -83,11 +85,7 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
               OutputStreamWriter(startedProcess.outputStream, StandardCharsets.UTF_8),
               BUFFER_SIZE,
           )
-      reader =
-          BufferedReader(
-              InputStreamReader(startedProcess.inputStream, StandardCharsets.UTF_8),
-              BUFFER_SIZE,
-          )
+      input = BufferedInputStream(startedProcess.inputStream, BUFFER_SIZE)
 
       startReaderThread()
       startErrorReaderThread(startedProcess)
@@ -175,14 +173,14 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
   }
 
   private fun startReaderThread() {
-    val r = reader ?: return
+    val stream = input ?: return
     Thread(
             {
               try {
                 while (true) {
                   var contentLength = -1
                   while (true) {
-                    val line = r.readLine() ?: return@Thread
+                    val line = readAsciiHeaderLine(stream) ?: return@Thread
                     if (line.isEmpty()) break
                     if (line.startsWith("Content-Length:", ignoreCase = true)) {
                       contentLength = line.substringAfter(":").trim().toIntOrNull() ?: -1
@@ -194,15 +192,23 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
                     continue
                   }
 
-                  val buffer = CharArray(contentLength)
+                  val payload = ByteArray(contentLength)
                   var totalRead = 0
                   while (totalRead < contentLength) {
-                    val read = r.read(buffer, totalRead, contentLength - totalRead)
+                    val read = stream.read(payload, totalRead, contentLength - totalRead)
                     if (read < 0) break
                     totalRead += read
                   }
+                  if (totalRead != contentLength) {
+                    KslLogs.warn(
+                        "Incomplete JSON-RPC payload: expected={}, actual={}",
+                        contentLength,
+                        totalRead,
+                    )
+                    return@Thread
+                  }
 
-                  val json = String(buffer, 0, totalRead)
+                  val json = String(payload, StandardCharsets.UTF_8)
                   executorService.submit { handleMessage(json) }
                 }
               } catch (e: Exception) {
@@ -215,6 +221,19 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
         .start()
   }
 
+  private fun readAsciiHeaderLine(stream: InputStream): String? {
+    val line = StringBuilder()
+    while (true) {
+      val next = stream.read()
+      if (next < 0) return if (line.isEmpty()) null else line.toString()
+      when (next) {
+        '\n'.code -> return line.toString()
+        '\r'.code -> Unit
+        else -> line.append(next.toChar())
+      }
+    }
+  }
+
   private fun processId(process: Process): String = Integer.toHexString(System.identityHashCode(process))
 
   private fun startExitWatcher(startedProcess: Process) {
@@ -225,7 +244,7 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
                 if (process === startedProcess) {
                   process = null
                   writer = null
-                  reader = null
+                  input = null
                   pendingRequests.clear()
                 }
                 KslLogs.error(
@@ -332,7 +351,7 @@ abstract class BaseStdioKotlinLspConnection : KotlinLspConnection {
       writer?.close()
     } catch (_: Exception) {}
     try {
-      reader?.close()
+      input?.close()
     } catch (_: Exception) {}
     try {
       process?.destroy()
