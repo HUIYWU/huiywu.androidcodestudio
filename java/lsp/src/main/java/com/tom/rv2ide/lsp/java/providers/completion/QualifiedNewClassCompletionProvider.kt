@@ -59,8 +59,9 @@ class QualifiedNewClassCompletionProvider(
       }
       val completion = item(task, member, matchLevel)
       if (!endsWithParen) {
-        val leadingSpace = if (partial.isEmpty() && !hasWhitespaceBeforeCursor(path)) " " else ""
-        completion.insertText = leadingSpace + member.simpleName.toString() + "($0)"
+        val insertionPrefix =
+            if (partial.isEmpty() && !hasWhitespaceBeforeCursor(path)) "new " else ""
+        completion.insertText = insertionPrefix + member.simpleName.toString() + "($0)"
         completion.insertTextFormat = SNIPPET
         completion.command = Command("Trigger Parameter Hints", Command.TRIGGER_PARAMETER_HINTS)
         completion.snippetDescription =

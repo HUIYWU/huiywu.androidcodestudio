@@ -64,6 +64,8 @@ dependencies {
     implementation(libs.composite.jdt)
     
     implementation(libs.google.material)
+    implementation(libs.common.markwon.core)
+    implementation(libs.common.markwon.extStrikethrough)
 
     implementation(projects.annotation.annotations)
     implementation(projects.core.actions)

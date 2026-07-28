@@ -1,0 +1,189 @@
+package com.tom.rv2ide.editor.ui
+
+import android.content.Context
+import android.graphics.Color
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.BackgroundColorSpan
+import android.text.style.BulletSpan
+import android.text.style.ForegroundColorSpan
+import android.text.style.QuoteSpan
+import android.text.style.StrikethroughSpan
+import android.text.style.StyleSpan
+import android.text.style.TypefaceSpan
+import com.tom.rv2ide.lsp.models.MarkupContent
+import com.tom.rv2ide.lsp.models.MarkupKind
+import com.tom.rv2ide.resources.R
+import com.tom.rv2ide.utils.resolveAttr
+import io.noties.markwon.AbstractMarkwonPlugin
+import io.noties.markwon.Markwon
+import io.noties.markwon.MarkwonSpansFactory
+import io.noties.markwon.MarkwonVisitor
+import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import org.commonmark.ext.gfm.strikethrough.Strikethrough
+import org.commonmark.node.BlockQuote
+import org.commonmark.node.Code
+import org.commonmark.node.Emphasis
+import org.commonmark.node.FencedCodeBlock
+import org.commonmark.node.ListItem
+import org.commonmark.node.StrongEmphasis
+
+/** Renders LSP hover markup using Markwon and editor-theme-aware code highlighting. */
+class HoverMarkdownRenderer(private val context: Context) {
+
+  companion object {
+    private const val MAX_HOVER_LENGTH = 8_000
+    private const val MIN_TEXT_CONTRAST = 3.2
+  }
+
+  private val backgroundColor = context.resolveAttr(R.attr.colorSurface)
+  private val textColor = context.resolveAttr(R.attr.colorOnPrimaryContainer)
+  private val outlineColor = context.resolveAttr(R.attr.colorOutline)
+  private val inlineCodeBackground = blend(backgroundColor, textColor, 0.10f)
+
+  private val markwon: Markwon =
+      Markwon.builder(context)
+          .usePlugin(StrikethroughPlugin.create())
+          .usePlugin(
+              object : AbstractMarkwonPlugin() {
+                override fun configureVisitor(builder: MarkwonVisitor.Builder) {
+                  builder.on(FencedCodeBlock::class.java) { visitor, block ->
+                    val code = block.literal.trimEnd()
+                    visitor.builder().append(highlightCode(block.info, code))
+                  }
+                }
+
+                override fun configureSpansFactory(builder: MarkwonSpansFactory.Builder) {
+                  builder
+                      .setFactory(Emphasis::class.java) { _, _ -> StyleSpan(android.graphics.Typeface.ITALIC) }
+                      .setFactory(StrongEmphasis::class.java) { _, _ -> StyleSpan(android.graphics.Typeface.BOLD) }
+                      .setFactory(BlockQuote::class.java) { _, _ -> QuoteSpan(outlineColor) }
+                      .setFactory(Strikethrough::class.java) { _, _ -> StrikethroughSpan() }
+                      .setFactory(Code::class.java) { _, _ ->
+                        arrayOf(BackgroundColorSpan(inlineCodeBackground), TypefaceSpan("monospace"))
+                      }
+                      .setFactory(ListItem::class.java) { _, _ -> BulletSpan() }
+                }
+              }
+          )
+          .build()
+
+  fun render(content: MarkupContent): CharSequence {
+    val normalized = content.value.replace("\r\n", "\n").trim().take(MAX_HOVER_LENGTH)
+    if (normalized.isBlank()) return ""
+
+    return when (content.kind) {
+      MarkupKind.MARKDOWN -> markwon.toMarkdown(normalized)
+      MarkupKind.PLAIN -> normalized
+    }
+  }
+
+  private fun highlightCode(language: String?, code: String): CharSequence {
+    val builder = SpannableStringBuilder(code)
+    if (code.isEmpty()) return builder
+
+    builder.setSpan(TypefaceSpan("monospace"), 0, builder.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    builder.setSpan(
+        BackgroundColorSpan(inlineCodeBackground),
+        0,
+        builder.length,
+        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+    )
+
+    val normalizedLanguage = language?.trim()?.lowercase().orEmpty()
+    if (normalizedLanguage !in setOf("", "kotlin", "kt", "kts")) {
+      return builder
+    }
+
+    val darkTheme = isDarkTheme()
+    val keywordColor = readableAccent(if (darkTheme) 0xFF82B1FF.toInt() else 0xFF0D47A1.toInt())
+    val typeColor = readableAccent(if (darkTheme) 0xFFFFCC80.toInt() else 0xFFE65100.toInt())
+    val stringColor = readableAccent(if (darkTheme) 0xFFA5D6A7.toInt() else 0xFF1B5E20.toInt())
+    val commentColor = readableMuted(if (darkTheme) 0xFFB0BEC5.toInt() else 0xFF546E7A.toInt())
+    val functionColor = readableAccent(if (darkTheme) 0xFF80CBC4.toInt() else 0xFF00695C.toInt())
+    val annotationColor = readableAccent(if (darkTheme) 0xFFE1BEE7.toInt() else 0xFF6A1B9A.toInt())
+    val numberColor = readableAccent(if (darkTheme) 0xFFFFAB91.toInt() else 0xFFBF360C.toInt())
+    val symbolColor = readableMuted(if (darkTheme) 0xFFCFD8DC.toInt() else 0xFF455A64.toInt())
+    val occupied = BooleanArray(code.length)
+
+    fun applyColor(pattern: Regex, color: Int) {
+      pattern.findAll(code).forEach { match ->
+        val start = match.range.first
+        val endExclusive = match.range.last + 1
+        if (start < 0 || endExclusive > code.length || (start until endExclusive).any { occupied[it] }) {
+          return@forEach
+        }
+        builder.setSpan(
+            ForegroundColorSpan(color),
+            start,
+            endExclusive,
+            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+        for (index in start until endExclusive) occupied[index] = true
+      }
+    }
+
+    applyColor(Regex("""//.*?$|/\*.*?\*/""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.MULTILINE)), commentColor)
+    applyColor(Regex("""\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"""), stringColor)
+    applyColor(Regex("""@[A-Za-z_][A-Za-z0-9_]*"""), annotationColor)
+    applyColor(
+        Regex("""\b(fun|val|var|class|interface|object|return|if|else|for|while|when|in|is|as|private|protected|public|internal|override|suspend|inline|data|sealed|enum|companion|constructor|init|by|where|null|true|false)\b"""),
+        keywordColor,
+    )
+    applyColor(Regex("""\b\d+(?:_\d+)*(?:\.\d+)?(?:[eE][+-]?\d+)?[fFdDlL]?\b"""), numberColor)
+    applyColor(Regex("""\b([A-Z][A-Za-z0-9_]*)\b"""), typeColor)
+    applyColor(Regex("""\b([a-zA-Z_][A-Za-z0-9_]*)\s*(?=\()"""), functionColor)
+    applyColor(Regex("""[<>?:=!,.|&+\-*/%]+"""), symbolColor)
+    return builder
+  }
+
+  private fun readableMuted(candidate: Int): Int =
+      if (contrastRatio(candidate, backgroundColor) >= MIN_TEXT_CONTRAST) candidate else textColor
+
+  private fun readableAccent(candidate: Int): Int {
+    if (contrastRatio(candidate, backgroundColor) >= MIN_TEXT_CONTRAST) return candidate
+    val shifted = shiftTowards(candidate, if (isDarkTheme()) 0.18f else -0.18f)
+    return if (contrastRatio(shifted, backgroundColor) >= MIN_TEXT_CONTRAST) shifted else textColor
+  }
+
+  private fun shiftTowards(color: Int, factor: Float): Int {
+    val clamped = factor.coerceIn(-1f, 1f)
+    fun channel(value: Int): Int {
+      val target = if (clamped >= 0f) 255 else 0
+      return (value + ((target - value) * kotlin.math.abs(clamped))).toInt().coerceIn(0, 255)
+    }
+    return Color.argb(255, channel(Color.red(color)), channel(Color.green(color)), channel(Color.blue(color)))
+  }
+
+  private fun contrastRatio(foreground: Int, background: Int): Double {
+    val lighter = maxOf(relativeLuminance(foreground), relativeLuminance(background))
+    val darker = minOf(relativeLuminance(foreground), relativeLuminance(background))
+    return (lighter + 0.05) / (darker + 0.05)
+  }
+
+  private fun relativeLuminance(color: Int): Double {
+    fun channel(value: Int): Double {
+      val normalized = value / 255.0
+      return if (normalized <= 0.03928) normalized / 12.92
+      else Math.pow((normalized + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * channel(Color.red(color)) +
+        0.7152 * channel(Color.green(color)) +
+        0.0722 * channel(Color.blue(color))
+  }
+
+  private fun isDarkTheme(): Boolean {
+    val mode = context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+    return mode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+  }
+
+  private fun blend(background: Int, foreground: Int, amount: Float): Int {
+    val fraction = amount.coerceIn(0f, 1f)
+    fun channel(bg: Int, fg: Int) = (bg + ((fg - bg) * fraction)).toInt().coerceIn(0, 255)
+    return Color.rgb(
+        channel(Color.red(background), Color.red(foreground)),
+        channel(Color.green(background), Color.green(foreground)),
+        channel(Color.blue(background), Color.blue(foreground)),
+    )
+  }
+}

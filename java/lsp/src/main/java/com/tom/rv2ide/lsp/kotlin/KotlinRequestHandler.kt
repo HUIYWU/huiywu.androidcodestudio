@@ -405,13 +405,22 @@ class KotlinRequestHandler(
         contents == null || contents.isJsonNull -> MarkupContent("", MarkupKind.PLAIN)
         contents.isJsonObject -> {
           val obj = contents.asJsonObject
-          if (obj.has("value")) {
-            MarkupContent(
-                obj.get("value")?.asString ?: "",
-                if (obj.get("kind")?.asString == "markdown") MarkupKind.MARKDOWN else MarkupKind.PLAIN,
-            )
-          } else {
-            MarkupContent(obj.toString(), MarkupKind.PLAIN)
+          when {
+            obj.has("language") && obj.has("value") ->
+                MarkupContent(
+                    "```" +
+                        (obj.get("language")?.asString ?: "") +
+                        "\n" +
+                        (obj.get("value")?.asString ?: "") +
+                        "\n```",
+                    MarkupKind.MARKDOWN,
+                )
+            obj.has("value") ->
+                MarkupContent(
+                    obj.get("value")?.asString ?: "",
+                    if (obj.get("kind")?.asString == "markdown") MarkupKind.MARKDOWN else MarkupKind.PLAIN,
+                )
+            else -> MarkupContent(obj.toString(), MarkupKind.PLAIN)
           }
         }
         contents.isJsonPrimitive -> MarkupContent(contents.asString, MarkupKind.PLAIN)
@@ -423,8 +432,13 @@ class KotlinRequestHandler(
               element.isJsonObject -> {
                 val obj = element.asJsonObject
                 when {
+                  obj.has("language") && obj.has("value") ->
+                      "```" +
+                          (obj.get("language")?.asString ?: "") +
+                          "\n" +
+                          (obj.get("value")?.asString ?: "") +
+                          "\n```"
                   obj.has("value") -> obj.get("value")?.asString ?: ""
-                  obj.has("language") && obj.has("value") -> "```" + (obj.get("language")?.asString ?: "") + "\n" + (obj.get("value")?.asString ?: "") + "\n```"
                   else -> obj.toString()
                 }
               }
