@@ -146,7 +146,7 @@ class XMLLanguageServer : ILanguageServer {
   }
 
   override suspend fun analyze(file: Path): DiagnosticResult {
-    if (!DocumentUtils.isXmlFile(file)) {
+    if (!isWorkspaceXmlFile(file)) {
       return DiagnosticResult.NO_UPDATE
     }
     if (!getSettings().diagnosticsEnabled()) {
@@ -161,7 +161,7 @@ class XMLLanguageServer : ILanguageServer {
 
   @Subscribe(threadMode = ThreadMode.BACKGROUND)
   fun onDocumentChange(event: DocumentChangeEvent) {
-    if (!DocumentUtils.isXmlFile(event.changedFile)) {
+    if (!isWorkspaceXmlFile(event.changedFile)) {
       return
     }
     onContentChange(event)
@@ -171,7 +171,7 @@ class XMLLanguageServer : ILanguageServer {
 
   @Subscribe(threadMode = ThreadMode.BACKGROUND)
   fun onDocumentOpen(event: DocumentOpenEvent) {
-    if (!DocumentUtils.isXmlFile(event.openedFile)) {
+    if (!isWorkspaceXmlFile(event.openedFile)) {
       return
     }
     selectedFile = event.openedFile
@@ -181,10 +181,10 @@ class XMLLanguageServer : ILanguageServer {
   @Subscribe(threadMode = ThreadMode.BACKGROUND)
   fun onDocumentSelected(event: DocumentSelectedEvent) {
     selectedFile = event.selectedFile
-    if (DocumentUtils.isXmlFile(event.selectedFile)) {
+    if (isWorkspaceXmlFile(event.selectedFile)) {
       scheduleDiagnosticAnalysis()
     } else {
-      // Do not allow an already queued XML result to publish after the user leaves XML editing.
+      // Do not allow an already queued XML result to publish after the user leaves editable XML.
       analyzeGeneration.incrementAndGet()
       diagnosticHandler.removeCallbacks(analyzeRunnable)
     }
@@ -204,7 +204,7 @@ class XMLLanguageServer : ILanguageServer {
 
   private fun scheduleDiagnosticAnalysis() {
     val file = selectedFile
-    if (file == null || !DocumentUtils.isXmlFile(file)) {
+    if (file == null || !isWorkspaceXmlFile(file)) {
       return
     }
     analyzeGeneration.incrementAndGet()
@@ -214,7 +214,7 @@ class XMLLanguageServer : ILanguageServer {
 
   private fun analyzeSelected() {
     val fileToAnalyze = selectedFile ?: return
-    if (client == null || !DocumentUtils.isXmlFile(fileToAnalyze)) {
+    if (client == null || !isWorkspaceXmlFile(fileToAnalyze)) {
       return
     }
     val requestedGeneration = analyzeGeneration.get()

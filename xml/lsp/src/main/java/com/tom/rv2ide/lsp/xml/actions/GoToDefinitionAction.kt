@@ -12,7 +12,7 @@ import com.tom.rv2ide.actions.markInvisible
 import com.tom.rv2ide.editor.api.ILspEditor
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.xml.XMLLanguageServer
-import com.tom.rv2ide.utils.DocumentUtils
+import com.tom.rv2ide.lsp.xml.isWorkspaceXmlFile
 import io.github.rosemoe.sora.widget.CodeEditor
 import java.io.File
 
@@ -34,7 +34,7 @@ internal class GoToDefinitionAction : EditorActionItem {
     }
     label = "Go to Definition"
     val file = data[File::class.java]!!
-    visible = DocumentUtils.isXmlFile(file.toPath())
+    visible = isWorkspaceXmlFile(file.toPath())
     enabled = visible && (data[CodeEditor::class.java] is ILspEditor)
   }
 

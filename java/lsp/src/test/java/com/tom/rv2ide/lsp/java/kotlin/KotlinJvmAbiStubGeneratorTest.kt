@@ -211,7 +211,7 @@ class KotlinJvmAbiStubGeneratorTest {
         """
         package sample
 
-        class Outer {
+        class Outer<T> {
           class Nested(val value: String) {
             fun label(): String = value
 
@@ -226,7 +226,7 @@ class KotlinJvmAbiStubGeneratorTest {
             val enabled: Boolean = true
           }
 
-          inner class Entry(val name: String)
+          inner class Entry(val name: T)
           private class Hidden
         }
         """.trimIndent()
@@ -247,7 +247,10 @@ class KotlinJvmAbiStubGeneratorTest {
     assertContains(stub, "public static class Defaults")
     assertContains(stub, "public static final Defaults INSTANCE")
     assertContains(stub, "public boolean getEnabled()")
-    assertFalse(stub.contains("class Entry"))
+    assertContains(stub, "public class Entry")
+    assertFalse(stub.contains("public static class Entry"))
+    assertContains(stub, "public Entry(T name)")
+    assertContains(stub, "public T getName()")
     assertFalse(stub.contains("class Hidden"))
   }
 
@@ -649,7 +652,7 @@ class KotlinJvmAbiStubGeneratorTest {
                 """
                 package sample
 
-                class Outer @JvmOverloads constructor(val id: String, val count: Int = 0) {
+                class Outer<T> @JvmOverloads constructor(val id: String, val count: Int = 0) {
                   constructor(id: Int) : this(id.toString())
 
                   class Nested(val value: String) {
@@ -657,7 +660,7 @@ class KotlinJvmAbiStubGeneratorTest {
                   }
                   interface Listener { fun onChanged(value: Int) }
                   object Defaults { val enabled: Boolean = true }
-                  inner class Entry(val name: String)
+                  inner class Entry(val name: T)
                   private class Hidden
                 }
                 """.trimIndent()))

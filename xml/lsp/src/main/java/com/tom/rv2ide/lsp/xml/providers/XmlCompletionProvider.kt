@@ -34,6 +34,7 @@ import com.tom.rv2ide.lsp.models.CompletionParams
 import com.tom.rv2ide.lsp.models.CompletionResult
 import com.tom.rv2ide.lsp.models.CompletionResult.Companion.EMPTY
 import com.tom.rv2ide.lsp.util.setupLookupForCompletion
+import com.tom.rv2ide.lsp.xml.isWorkspaceXmlFile
 import com.tom.rv2ide.lsp.xml.providers.completion.AttrValueCompletionProvider
 import com.tom.rv2ide.lsp.xml.providers.completion.IXmlCompletionProvider
 import com.tom.rv2ide.lsp.xml.providers.completion.canCompleteManifest
@@ -85,6 +86,9 @@ class XmlCompletionProvider(settings: IServerSettings) :
   }
 
   override fun complete(params: CompletionParams): CompletionResult {
+    if (!isWorkspaceXmlFile(params.file)) {
+      return EMPTY
+    }
     return try {
       runCatching { setupLookupForCompletion(params.file) }
           .onFailure { error ->

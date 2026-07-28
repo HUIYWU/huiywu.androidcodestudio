@@ -223,7 +223,7 @@ private static final Pattern PROPERTY_PATTERN =
   private static void appendNestedTypes(
       StringBuilder out, List<KotlinJvmSyntaxParser.TypeSyntax> nestedTypes) {
     for (KotlinJvmSyntaxParser.TypeSyntax nested : nestedTypes) {
-      if (nested.privateType || nested.innerType || nested.name == null || nested.name.isEmpty()) {
+      if (nested.privateType || nested.name == null || nested.name.isEmpty()) {
         continue;
       }
       final boolean interfaceType = nested.interfaceType;
@@ -240,12 +240,16 @@ private static final Pattern PROPERTY_PATTERN =
       final Set<String> outerVariables = context == null
           ? java.util.Collections.emptySet()
           : new LinkedHashSet<>(context.typeVariables);
-      if (context != null) {
+      if (context != null && !nested.innerType) {
         context.typeVariables.clear();
       }
       registerTypeVariables(nested.typeParameters);
       try {
-        out.append("  public static ").append(interfaceType ? "interface " : "class ")
+        out.append("  public ");
+        if (!nested.innerType) {
+          out.append("static ");
+        }
+        out.append(interfaceType ? "interface " : "class ")
             .append(nested.name).append(javaTypeParameters(nested.typeParameters).trim())
             .append(javaInheritanceClause(nested.superTypes, interfaceType)).append(" {\n");
         if (objectType) {
@@ -346,12 +350,12 @@ private static final Pattern PROPERTY_PATTERN =
     final Matcher declaration = TYPE_PATTERN.matcher(body);
     while (declaration.find()) {
       if (braceDepthAt(body, declaration.start()) != 0
-          || isPrivate(declaration.group(1))
-          || containsModifier(declaration.group(1), "inner")) {
+          || isPrivate(declaration.group(1))) {
         continue;
       }
       final String keyword = declaration.group(2);
       final String name = declaration.group(3);
+      final boolean innerType = containsModifier(declaration.group(1), "inner");
       final boolean objectType = "object".equals(keyword);
       final boolean interfaceType = "interface".equals(keyword);
       if (keyword.startsWith("enum")) {
@@ -364,9 +368,20 @@ private static final Pattern PROPERTY_PATTERN =
       }
       final List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters =
           typeParametersFallback(body, declaration.end(3));
-      final Set<String> variables = registerTypeVariables(typeParameters);
+      final TypeResolutionContext context = TYPE_CONTEXT.get();
+      final Set<String> outerVariables = context == null
+          ? java.util.Collections.emptySet()
+          : new LinkedHashSet<>(context.typeVariables);
+      if (context != null && !innerType) {
+        context.typeVariables.clear();
+      }
+      registerTypeVariables(typeParameters);
       try {
-        out.append("  public static ").append(interfaceType ? "interface " : "class ")
+        out.append("  public ");
+        if (!innerType) {
+          out.append("static ");
+        }
+        out.append(interfaceType ? "interface " : "class ")
             .append(name).append(javaTypeParameters(typeParameters).trim())
             .append(javaInheritanceClause(
                 superTypesFallback(body, declaration.end(3)), interfaceType))
@@ -403,7 +418,10 @@ private static final Pattern PROPERTY_PATTERN =
         }
         out.append("  }\n");
       } finally {
-        unregisterTypeVariables(variables);
+        if (context != null) {
+          context.typeVariables.clear();
+          context.typeVariables.addAll(outerVariables);
+        }
       }
     }
   }
@@ -2095,7 +2113,7 @@ private static final Pattern PROPERTY_PATTERN =
       String ownerName,
       Map<String, String> result) {
     for (KotlinJvmSyntaxParser.TypeSyntax nested : owner.nestedTypes) {
-      if (nested.privateType || nested.innerType || nested.name == null || nested.name.isEmpty()) {
+      if (nested.privateType || nested.name == null || nested.name.isEmpty()) {
         continue;
       }
       final String sourceName = ownerName + "." + nested.name;
