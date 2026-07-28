@@ -640,9 +640,14 @@ final class KotlinJvmSyntaxParser {
     if (parent == null) {
       return null;
     }
-    final TSNode child = parent.getChildByFieldName(fieldName);
-    if (child != null && !child.isNull()) {
-      return child;
+    try {
+      final TSNode child = parent.getChildByFieldName(fieldName);
+      if (child != null && !child.isNull()) {
+        return child;
+      }
+    } catch (Throwable ignored) {
+      // Fields are an accuracy enhancement. Keep parsing with stable node types when a grammar
+      // artifact or its JNI binding cannot resolve a field on this device.
     }
     return fallbackTypes.length == 0 ? null : directChild(parent, fallbackTypes);
   }

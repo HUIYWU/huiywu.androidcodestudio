@@ -752,6 +752,7 @@
   <string name="msg_package_mus_have_dot">The package must have at least one \'.\' separator</string>
 
   <string name="extract">Extract string to strings.xml</string>
+  <string name="action_code_actions">Code actions</string>
   <string name="action_import_classes">Import class(es)</string>
   <string name="action_generate_setters_getters">Generate setters/getters</string>
   <string name="action_add_throws">Add \'throws\'</string>

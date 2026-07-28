@@ -41,6 +41,8 @@ import com.tom.rv2ide.lsp.models.SignatureHelp
 import com.tom.rv2ide.lsp.models.SignatureHelpParams
 import com.tom.rv2ide.lsp.util.NoCompletionsProvider
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticsService
+import com.tom.rv2ide.lsp.util.LSPEditorActions
+import com.tom.rv2ide.lsp.xml.actions.XmlCodeActionsMenu
 import com.tom.rv2ide.lsp.xml.models.XMLServerSettings
 import com.tom.rv2ide.lsp.xml.providers.AdvancedEditProvider.onContentChange
 import com.tom.rv2ide.lsp.xml.providers.CodeFormatProvider
@@ -103,7 +105,9 @@ class XMLLanguageServer : ILanguageServer {
     this.settings = settings
   }
 
-  override fun setupWorkspace(workspace: IWorkspace) {}
+  override fun setupWorkspace(workspace: IWorkspace) {
+    LSPEditorActions.ensureActionsMenuRegistered(XmlCodeActionsMenu)
+  }
 
   override fun complete(params: CompletionParams?): CompletionResult {
     val completionProvider: ICompletionProvider =

@@ -33,7 +33,7 @@ object CodeActionsMenu : ActionMenu {
   override val children: MutableSet<ActionItem> = mutableSetOf()
   override val id: String = ID
 
-  override var label: String = "Code actions"
+  override var label: String = ""
   override var visible = true
   override var enabled: Boolean = true
   override var icon: Drawable? = null
@@ -43,8 +43,10 @@ object CodeActionsMenu : ActionMenu {
 
   override fun prepare(data: ActionData) {
     super.prepare(data)
+    val context = data[Context::class.java]!!
+    label = context.getString(R.string.action_code_actions)
     if (icon == null) {
-      icon = ContextCompat.getDrawable(data[Context::class.java]!!, R.drawable.ic_code)
+      icon = ContextCompat.getDrawable(context, R.drawable.ic_code)
     }
   }
 }

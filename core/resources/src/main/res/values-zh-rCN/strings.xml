@@ -388,6 +388,7 @@
   <string name="msg_package_not_use_digit_first">数字不能是软件包名称中的首字符</string>
   <string name="msg_package_not_valid_char_2">Android 应用的软件包名称中不允许使用字符“%1$s”</string>
   <string name="msg_package_mus_have_dot">软件包名称中必须至少有一个“.”分隔</string>
+  <string name="action_code_actions">代码操作</string>
   <string name="action_import_classes">导入类</string>
   <string name="action_generate_setters_getters">生成 setter/getter</string>
   <string name="action_add_throws">添加“throws”</string>
