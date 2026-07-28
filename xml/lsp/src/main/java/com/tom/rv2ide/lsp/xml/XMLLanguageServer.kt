@@ -35,6 +35,7 @@ import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.models.ExpandSelectionParams
 import com.tom.rv2ide.lsp.models.FormatCodeParams
 import com.tom.rv2ide.lsp.models.LSPFailure
+import com.tom.rv2ide.lsp.models.MarkupContent
 import com.tom.rv2ide.lsp.models.ReferenceParams
 import com.tom.rv2ide.lsp.models.ReferenceResult
 import com.tom.rv2ide.lsp.models.SignatureHelp
@@ -48,6 +49,7 @@ import com.tom.rv2ide.lsp.xml.providers.AdvancedEditProvider.onContentChange
 import com.tom.rv2ide.lsp.xml.providers.CodeFormatProvider
 import com.tom.rv2ide.lsp.xml.providers.XmlCompletionProvider
 import com.tom.rv2ide.lsp.xml.providers.XmlDefinitionProvider
+import com.tom.rv2ide.lsp.xml.providers.XmlHoverProvider
 import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.utils.DocumentUtils
@@ -135,6 +137,13 @@ class XMLLanguageServer : ILanguageServer {
       return DefinitionResult(emptyList())
     }
     return XmlDefinitionProvider().findDefinition(params)
+  }
+
+  override suspend fun hover(params: DefinitionParams): MarkupContent {
+    if (!isWorkspaceXmlFile(params.file)) {
+      return MarkupContent()
+    }
+    return XmlHoverProvider().hover(params)
   }
 
   override suspend fun expandSelection(params: ExpandSelectionParams): Range {

@@ -161,7 +161,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
   @Nullable
   private CompletionResult tryServeBusyFallback(@NonNull final CompletionParams params) {
-    if (this.cache == null) {
+    if (this.cache == null || isQualifiedNewClassPrefix(params.getPrefix())) {
       return null;
     }
 
@@ -180,7 +180,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
   @Nullable
   private CompletionResult tryServeSameFileBusyFallback(@NonNull final CompletionParams params) {
-    if (this.cache == null || this.cache.params == null) {
+    if (this.cache == null || this.cache.params == null
+        || isQualifiedNewClassPrefix(params.getPrefix())) {
       return null;
     }
     if (!DocumentUtils.isSameFile(this.cache.params.getFile(), params.getFile())) {
@@ -233,7 +234,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
     Instant started = Instant.now();
 
-    if (this.cache != null && this.cache.canUseCache(params)) {
+    if (this.cache != null && !isQualifiedNewClassPrefix(params.getPrefix())
+        && this.cache.canUseCache(params)) {
       final String prefix = params.requirePrefix();
       final String partial = partialIdentifier(prefix, prefix.length());
       final CompletionResult result = CompletionResult.mapAndFilter(this.cache.result, partial,
@@ -364,6 +366,11 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     }
 
     return result;
+  }
+
+  private boolean isQualifiedNewClassPrefix(@Nullable String prefix) {
+    return prefix != null
+        && prefix.matches("(?s).*\\.\\s*new(?:\\s+[A-Za-z_$][\\w$]*)?\\s*");
   }
 
   @NonNull

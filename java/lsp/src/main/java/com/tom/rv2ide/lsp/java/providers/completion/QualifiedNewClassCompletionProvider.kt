@@ -7,6 +7,7 @@ import com.tom.rv2ide.lsp.api.IServerSettings
 import com.tom.rv2ide.lsp.api.describeSnippet
 import com.tom.rv2ide.lsp.java.compiler.CompileTask
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
+import com.tom.rv2ide.lsp.models.Command
 import com.tom.rv2ide.lsp.models.CompletionItem
 import com.tom.rv2ide.lsp.models.CompletionResult
 import com.tom.rv2ide.lsp.models.InsertTextFormat.SNIPPET
@@ -58,14 +59,24 @@ class QualifiedNewClassCompletionProvider(
       }
       val completion = item(task, member, matchLevel)
       if (!endsWithParen) {
-        completion.insertText = member.simpleName.toString() + "($0)"
+        val leadingSpace = if (partial.isEmpty() && !hasWhitespaceBeforeCursor(path)) " " else ""
+        completion.insertText = leadingSpace + member.simpleName.toString() + "($0)"
         completion.insertTextFormat = SNIPPET
+        completion.command = Command("Trigger Parameter Hints", Command.TRIGGER_PARAMETER_HINTS)
         completion.snippetDescription =
-            describeSnippet(prefix = partial, allowCommandExecution = false)
+            describeSnippet(prefix = partial, allowCommandExecution = true)
       }
       items.add(completion)
     }
     return CompletionResult(items)
+  }
+
+  private fun hasWhitespaceBeforeCursor(path: TreePath): Boolean {
+    if (cursor <= 0) return false
+    return runCatching {
+      val content = path.compilationUnit.sourceFile.getCharContent(true)
+      cursor <= content.length && content[(cursor - 1).toInt()].isWhitespace()
+    }.getOrDefault(false)
   }
 
   private fun declaredUpperBound(type: jdkx.lang.model.type.TypeMirror?): DeclaredType? {

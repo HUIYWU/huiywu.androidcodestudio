@@ -30,90 +30,69 @@ import com.tom.rv2ide.xml.res.IResourceTable
 import com.tom.rv2ide.xml.res.IResourceTablePackage
 import com.tom.rv2ide.xml.res.ISearchResult
 import junit.framework.TestCase
-import org.eclipse.lemminx.dom.DOMParser
-import org.eclipse.lemminx.uriresolver.URIResolverExtensionManager
 
-class XmlDefinitionProviderTest : TestCase() {
+class XmlHoverProviderTest : TestCase() {
 
-  fun testFindsCompleteReferenceInAttributeValue() {
-    val text =
-        """
-        <TextView xmlns:android="http://schemas.android.com/apk/res/android"
-            android:text="@string/title" />
-        """
-            .trimIndent()
-    val referenceStart = text.indexOf("@string/title")
+  fun testConvertsLineAndColumnToDocumentOffset() {
+    val text = "<View>\n  @string/title\n</View>"
+    val provider = XmlHoverProvider()
 
-    assertThat(referenceAt(text, referenceStart)).isEqualTo("@string/title")
-    assertThat(referenceAt(text, referenceStart + 7)).isEqualTo("@string/title")
-    assertThat(referenceAt(text, referenceStart + "@string/title".length))
-        .isEqualTo("@string/title")
+    assertThat(provider.offsetAt(text, 1, 2)).isEqualTo(text.indexOf("@string/title"))
+    assertThat(provider.offsetAt(text, 1, 15)).isEqualTo(text.indexOf('\n', text.indexOf('\n') + 1))
+    assertThat(provider.offsetAt(text, 1, 16)).isNull()
+    assertThat(provider.offsetAt(text, 9, 0)).isNull()
   }
 
-  fun testFindsDottedStyleReference() {
-    val text = "<TextView textAppearance='@style/TextAppearance.Material3.BodyMedium' />"
-
-    assertThat(referenceAt(text, text.indexOf("Material3")))
-        .isEqualTo("@style/TextAppearance.Material3.BodyMedium")
-    assertThat(XmlResourceReference.parse(referenceAt(text, text.indexOf("BodyMedium"))!!))
-        .isNotNull()
-  }
-
-  fun testFindsThemeAndQualifiedReferences() {
-    val theme = "<View value='?android:attr/colorAccent' />"
-    val qualified = "<View value='@com.example.lib:color/brand' />"
-
-    assertThat(referenceAt(theme, theme.indexOf("colorAccent")))
-        .isEqualTo("?android:attr/colorAccent")
-    assertThat(referenceAt(qualified, qualified.indexOf("brand")))
-        .isEqualTo("@com.example.lib:color/brand")
-  }
-
-  fun testFindsTrimmedPlainTextReference() {
-    val text = "<item>  @color/accent\n</item>"
-
-    assertThat(referenceAt(text, text.indexOf("accent"))).isEqualTo("@color/accent")
-  }
-
-  fun testIgnoresCursorOutsideReferenceValue() {
-    val text = "<View value='@string/title' other='literal' />"
-
-    assertThat(referenceAt(text, text.indexOf("literal"))).isEqualTo("literal")
-    assertThat(referenceAt(text, text.indexOf("View"))).isNull()
-  }
-
-  fun testMapsSourcesWithDefaultFirstAndDeduplicatesLocations() {
+  fun testFindsCandidatesWithDefaultConfigurationFirst() {
     val default = value("/project/res/values/strings.xml", 4, ConfigDescription())
-    val duplicate =
-        value(
-            "/project/res/values/strings.xml",
-            4,
-            ConfigDescription().apply { sdkVersion = 21.toShort() },
-        )
     val versioned =
         value(
             "/project/res/values-v21/strings.xml",
             8,
             ConfigDescription().apply { sdkVersion = 21.toShort() },
         )
-    val empty = value("", null, ConfigDescription())
-    val table = table("com.example", AaptResourceType.STRING, "title", listOf(versioned, empty, duplicate, default))
+    val table = table("com.example", AaptResourceType.STRING, "title", listOf(versioned, default))
     val reference = XmlResourceReference.parse("@string/title")!!
 
-    val locations = XmlDefinitionProvider().locationsFor(reference, listOf(table))
+    val candidates = XmlHoverProvider().candidatesFor(reference, listOf(table))
 
-    assertThat(locations).hasSize(2)
-    assertThat(locations[0].file.toString()).isEqualTo("/project/res/values/strings.xml")
-    assertThat(locations[0].range.start.line).isEqualTo(3)
-    assertThat(locations[1].file.toString()).isEqualTo("/project/res/values-v21/strings.xml")
-    assertThat(locations[1].range.start.line).isEqualTo(7)
+    assertThat(candidates).hasSize(2)
+    assertThat(candidates[0].configuration).isEqualTo("default")
+    assertThat(candidates[0].source).isEqualTo("/project/res/values/strings.xml")
+    assertThat(candidates[0].line).isEqualTo(4)
+    assertThat(candidates[0].valueSummary).isEqualTo("ID")
+    assertThat(candidates[1].configuration).isEqualTo("v21")
   }
 
-  fun testUnqualifiedReferenceDoesNotResolveAndroidPackage() {
+  fun testUnqualifiedReferenceDoesNotUseAndroidPackage() {
     val table = table("android", AaptResourceType.ATTR, "colorAccent", listOf(value("/sdk/attrs.xml", 2)))
     val reference = XmlResourceReference.parse("?attr/colorAccent")!!
 
-    assertThat(XmlDefinitionProvider().locationsFor(reference, listOf(table))).isEmpty()
+    assertThat(XmlHoverProvider().candidatesFor(reference, listOf(table))).isEmpty()
+  }
+
+  fun testFormatsResourceMetadataAndLimitsConfigurations() {
+    val provider = XmlHoverProvider()
+    val reference = XmlResourceReference.parse("@style/TextAppearance.Material3.BodyMedium")!!
+    val candidates =
+        (0 until 6).map { index ->
+          XmlHoverProvider.ResourceHoverCandidate(
+              packageName = "com.example",
+              configuration = if (index == 0) "default" else "v${20 + index}",
+              source = "/project/res/values/styles.xml",
+              line = 4 + index,
+              valueSummary = "parent=style/Parent, 3 items",
+          )
+        }
+
+    val content = provider.formatHover(reference, candidates)
+
+    assertThat(content).contains("@style/TextAppearance.Material3.BodyMedium")
+    assertThat(content).contains("**Type:** `style`")
+    assertThat(content).contains("**Package:** `com.example`")
+    assertThat(content).contains("**Configuration:** `default`")
+    assertThat(content).contains("2 more configurations")
+    assertThat(content).doesNotContain("**Configuration:** `v25`")
   }
 
   private fun value(
@@ -155,15 +134,5 @@ class XmlDefinitionProviderTest : TestCase() {
       override fun findResource(name: ResourceName): ISearchResult? = null
       override fun findPackage(name: String) = resourcePackage.takeIf { name == packageName }
     }
-  }
-
-  private fun referenceAt(text: String, cursor: Int): String? {
-    val document =
-        DOMParser.getInstance().parse(text, ANDROID_NAMESPACE, URIResolverExtensionManager())
-    return XmlDefinitionProvider().referenceAt(document, text, cursor)
-  }
-
-  private companion object {
-    const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
   }
 }

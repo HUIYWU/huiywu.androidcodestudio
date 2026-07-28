@@ -166,7 +166,9 @@ class MemberSelectCompletionProvider(
     abortIfCancelled()
     abortCompletionIfCancelled()
     for (member in task.task.elements.getAllMembers(typeElement)) {
-      if (member.kind == CONSTRUCTOR) {
+      if (member.kind == CONSTRUCTOR || !isStatic && member is TypeElement) {
+        // Member types are selected through a type expression (`Outer.Nested`) or through
+        // qualified creation (`outer.new Inner(...)`), never as ordinary instance members.
         continue
       }
       val matchLevel = matchLevel(member.simpleName, partial)

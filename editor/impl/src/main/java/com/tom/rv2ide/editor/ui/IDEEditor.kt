@@ -423,6 +423,7 @@ constructor(
 
   override fun release() {
     ensureWindowsDismissed()
+    cleanupHoverTooltips()
 
     if (isReleased) {
       return
@@ -722,6 +723,9 @@ constructor(
 
     measureEditorInitStage("createSearcher") {
       searcher = IDEEditorSearcher(this)
+    }
+    measureEditorInitStage("initHoverTooltips") {
+      initHoverTooltips()
     }
     measureEditorInitStage("createColorScheme") {
       colorScheme = SchemeAndroidIDE.newInstance(context)
