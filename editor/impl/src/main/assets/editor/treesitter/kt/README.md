@@ -149,8 +149,9 @@ val/var 构造器参数   -> @property.class
 5. 同一文本若有多条规则，具体语义规则应覆盖普通 `@identifier`；
 6. AndroidCodeStudio 的 `LineSpansGenerator` 会让更窄的嵌套 capture 覆盖父 capture，
    并在子范围结束后恢复父样式；
-7. 完全相同范围的 capture 保留 query 顺序优先级，因此 `@function.builtin` 应先于普通
-   `@function.invocation`，属性/函数/常量等具体规则应先于 `@identifier`；类型上下文
+7. 完全相同范围的 capture 保留 query cursor 返回顺序；具体规则仍应置于普通 fallback 前，
+   因此 `@function.builtin` 应先于普通 `@function.invocation`，属性/函数/常量等具体规则
+   应先于 `@identifier`；类型上下文
    顺序应为注解、构造调用、内建类型、普通类型；
 8. `@identifier` 与普通 `@type` fallback 应集中放在 query 尾部；
 9. 新规则必须同时满足当前 grammar 的 node type 与父子结构，否则 TSQuery 会以
@@ -175,7 +176,7 @@ val/var 构造器参数   -> @property.class
 字符串 escape 由 Kotlin `TreeSitterSpanFactory` 在 `@string` capture 内按源文本切分，
 三引号 raw string 不进行 escape 切分。
 
-完全相同范围的 capture 仍保留 query 顺序优先级。例如正则字符串与普通字符串起点
+完全相同范围的 capture 保留 query cursor 返回顺序。例如正则字符串与普通字符串起点
 和范围相同，应继续将 `@string.regex` 规则放在普通 `@string` fallback 之前。
 
 区间合成会保留 `TsSpanFactory` 为单个 capture 生成的内部 span 边界和扩展属性，
@@ -192,9 +193,24 @@ val/var 构造器参数   -> @property.class
 - 诊断中的 query offset 是拼接后的 UTF-8 字节偏移；
 - 修改 highlights 时也不能忽略 locals 的 AST 兼容性。
 
+## 当前适配基线
+
+本适配当前以 `com.huiywu.androidcs.treesitter:tree-sitter-kotlin:0.1.4` 为运行基线，
+生成器为 Tree-sitter CLI 0.24.4，language ABI 为 14。已验证的关键行为包括：
+
+- adapted query 可加载，Kotlin 文件打开时不会因 `NodeType`/`Structure` 错误崩溃；
+- 显式主构造器 `constructor` 通过 `primary_constructor_keyword` 精确着色；
+- 关键词、函数、顶层/类属性、nullable 标点和内建类型符合本文 capture 契约；
+- 内建类型由 `@type.builtin → @type` 着色，内置 scheme version 14 会刷新持久化配色；
+- 普通字符串 escape、字符 escape、字符串插值及父样式恢复可独立生效；
+- `LineSpansGenerator` 的嵌套 capture 合成与 Hex Color span 扩展属性兼容。
+
+`docs/misc/tree-sitter-kotlin` 是上游参考工作目录；Android 发布产物以
+`docs/misc/android-tree-sitter/grammars/kotlin` 为准，两者的已生成文件不要求同步。
+
 ## 同步流程
 
-升级 `tree-sitter-kotlin` 时：
+后续升级 `tree-sitter-kotlin` 时：
 
 1. 对比 upstream `grammar.js`、`node-types.json` 和 `queries/highlights.scm`；
 2. 识别新增、删除或改名的 query-visible 节点/token；

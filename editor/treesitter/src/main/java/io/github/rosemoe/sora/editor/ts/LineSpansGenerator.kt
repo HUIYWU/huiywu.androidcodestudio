@@ -60,7 +60,7 @@ import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
  *
  * Unlike Sora Editor 0.23.7 and its current main implementation, this integration composes
  * overlapping query captures into non-overlapping output spans. Narrow nested captures override
- * parents while identical ranges preserve query order.
+ * parents while identical ranges preserve query cursor emission order.
  *
  * @author Rosemoe
  */
@@ -132,7 +132,7 @@ class LineSpansGenerator(
       val regionLength = (endIndex - startIndex).coerceAtLeast(0)
       val styledRanges = mutableListOf<StyledRange>()
 
-      // Preserve query order for captures with identical ranges. Nested captures are handled
+      // Preserve cursor emission order for captures with identical ranges. Nested captures are handled
       // separately below so that a narrower child can override its parent and the parent style can
       // be restored after the child ends.
       try {
@@ -226,7 +226,7 @@ class LineSpansGenerator(
               styledRanges
                   .asSequence()
                   .filter { it.start <= segmentStart && it.end >= segmentEnd }
-                  // Narrower captures are more specific. Identical ranges preserve query order.
+                  // Narrower captures are more specific. Identical ranges preserve cursor emission order.
                   .minWithOrNull(compareBy<StyledRange> { it.captureWidth }.thenBy { it.order })
 
           if (!emitted || winner !== previous) {

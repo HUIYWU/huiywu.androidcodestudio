@@ -76,7 +76,7 @@ final class KotlinJvmSyntaxParser {
           if (!"class_declaration".equals(kind) && !"object_declaration".equals(kind)) {
             continue;
           }
-          final TSNode name = directChild(declaration, "type_identifier");
+          final TSNode name = fieldChild(declaration, "name", "type_identifier");
           if (name != null) {
             result.add(new TopLevelTypeSyntax(
                 text(source, name),
@@ -130,7 +130,7 @@ final class KotlinJvmSyntaxParser {
           if (!"class_declaration".equals(nodeType) && !"object_declaration".equals(nodeType)) {
             continue;
           }
-          final TSNode nameNode = directChild(declaration, "type_identifier");
+          final TSNode nameNode = fieldChild(declaration, "name", "type_identifier");
           if (nameNode == null || !simpleName.equals(text(source, nameNode))) {
             continue;
           }
@@ -146,9 +146,9 @@ final class KotlinJvmSyntaxParser {
 
   private static TypeSyntax typeSyntax(String source, TSNode declaration) {
     final String nodeType = declaration.getType();
-    final TSNode nameNode = directChild(declaration, "type_identifier");
+    final TSNode nameNode = fieldChild(declaration, "name", "type_identifier");
     final String name = nameNode == null ? "" : text(source, nameNode);
-    TSNode bodyNode = directChild(declaration, "class_body", "enum_class_body");
+    TSNode bodyNode = fieldChild(declaration, "body", "class_body", "enum_class_body");
     if (bodyNode == null) {
       bodyNode = firstDescendant(declaration, "class_body");
     }
@@ -169,7 +169,7 @@ final class KotlinJvmSyntaxParser {
             ? constructorParametersFallback(parameterFallbackText)
             : parsedConstructorParameters;
     final TSNode companion = bodyNode == null ? null : directChild(bodyNode, "companion_object");
-    final TSNode companionBodyNode = companion == null ? null : directChild(companion, "class_body");
+    final TSNode companionBodyNode = fieldChild(companion, "body", "class_body");
     final List<TypeSyntax> nestedTypes = new ArrayList<>();
     collectDirectNestedTypes(source, bodyNode, nestedTypes);
     return new TypeSyntax(
@@ -181,7 +181,7 @@ final class KotlinJvmSyntaxParser {
         bodyNode == null ? "" : innerBody(text(source, bodyNode)),
         members(source, bodyNode),
         Collections.unmodifiableList(nestedTypes),
-        typeParameters(source, directChild(declaration, "type_parameters")),
+        typeParameters(source, fieldChild(declaration, "type_parameters", "type_parameters")),
         superTypes(source, declaration),
         constructorParameters,
         constructor != null || recoveredConstructorText != null,
@@ -246,8 +246,8 @@ final class KotlinJvmSyntaxParser {
     final List<MemberSyntax> result = new ArrayList<>();
     for (TSNode declaration : declarations) {
       final String kind = declaration.getType();
-      final TSNode modifiers = directChild(declaration, "modifiers");
-      final TSNode functionBody = directChild(declaration, "function_body");
+      final TSNode modifiers = fieldChild(declaration, "modifiers", "modifiers");
+      final TSNode functionBody = fieldChild(declaration, "body", "function_body");
       final int declarationStart = modifiers == null ? startIndex(source, declaration) : endIndex(source, modifiers);
       final int declarationEnd = functionBody == null
           ? endIndex(source, declaration)
@@ -271,12 +271,15 @@ final class KotlinJvmSyntaxParser {
       String declarationText,
       TSNode modifiers,
       String modifierText) {
-    final TSNode name = directChild(declaration, "simple_identifier");
+    final TSNode name = fieldChild(declaration, "name", "simple_identifier");
     final List<TypeParameterSyntax> typeParameters =
-        typeParameters(source, directChild(declaration, "type_parameters"));
-    final TSNode parameters = directChild(declaration, "function_value_parameters");
+        typeParameters(source, fieldChild(declaration, "type_parameters", "type_parameters"));
+    final TSNode parameters =
+        fieldChild(declaration, "parameters", "function_value_parameters");
     final TSNode receiver = extensionReceiver(declaration, name);
-    final TSNode returnType = typeChildAfter(declaration, parameters);
+    final TSNode declaredReturnType = fieldChild(declaration, "return_type");
+    final TSNode returnType =
+        declaredReturnType != null ? declaredReturnType : typeChildAfter(declaration, parameters);
     final List<ParameterSyntax> parameterList = parameters(source, parameters);
     return new MemberSyntax(
         "function_declaration",
@@ -299,7 +302,7 @@ final class KotlinJvmSyntaxParser {
         returnType == null ? null : text(source, returnType),
         false,
         false,
-        directChild(declaration, "function_body") != null);
+        fieldChild(declaration, "body", "function_body") != null);
   }
 
   private static MemberSyntax propertySyntax(
@@ -308,9 +311,14 @@ final class KotlinJvmSyntaxParser {
       String declarationText,
       TSNode modifiers,
       String modifierText) {
-    final TSNode variable = directChild(declaration, "variable_declaration");
-    final TSNode name = variable == null ? null : directChild(variable, "simple_identifier");
-    final TSNode propertyType = variable == null ? null : firstTypeChild(variable);
+    final TSNode variable =
+        fieldChild(declaration, "declaration", "variable_declaration");
+    final TSNode name = fieldChild(variable, "name", "simple_identifier");
+    final TSNode declaredPropertyType = fieldChild(variable, "type");
+    final TSNode propertyType =
+        declaredPropertyType != null
+            ? declaredPropertyType
+            : variable == null ? null : firstTypeChild(variable);
     final TSNode receiver = variable == null ? null : extensionReceiver(declaration, variable);
     return new MemberSyntax(
         "property_declaration",
@@ -390,6 +398,11 @@ final class KotlinJvmSyntaxParser {
 
   private static List<SuperTypeSyntax> superTypes(String source, TSNode declaration) {
     final List<SuperTypeSyntax> result = new ArrayList<>();
+    final TSNode supertypes = fieldChild(declaration, "supertypes");
+    if (supertypes != null) {
+      collectSuperTypes(source, supertypes, result);
+      return Collections.unmodifiableList(result);
+    }
     for (int index = 0; index < declaration.getNamedChildCount(); index++) {
       final TSNode child = declaration.getNamedChild(index);
       if ("class_body".equals(child.getType()) || "enum_class_body".equals(child.getType())) {
@@ -425,8 +438,10 @@ final class KotlinJvmSyntaxParser {
       if (!"type_parameter".equals(parameter.getType())) {
         continue;
       }
-      final TSNode name = directChild(parameter, "type_identifier");
-      final TSNode bound = typeChildAfter(parameter, name);
+      final TSNode name = fieldChild(parameter, "name", "type_identifier");
+      final TSNode declaredBound = fieldChild(parameter, "bound");
+      final TSNode bound =
+          declaredBound != null ? declaredBound : typeChildAfter(parameter, name);
       if (name != null) {
         result.add(new TypeParameterSyntax(
             text(source, name), bound == null ? null : text(source, bound)));
@@ -436,7 +451,7 @@ final class KotlinJvmSyntaxParser {
   }
 
   private static boolean hasJvmOverloads(String source, TSNode constructor) {
-    final TSNode modifiers = constructor == null ? null : directChild(constructor, "modifiers");
+    final TSNode modifiers = fieldChild(constructor, "modifiers", "modifiers");
     return modifiers != null && text(source, modifiers).contains("JvmOverloads");
   }
 
@@ -444,7 +459,7 @@ final class KotlinJvmSyntaxParser {
     if (constructor == null) {
       return "public";
     }
-    final TSNode modifiers = directChild(constructor, "modifiers");
+    final TSNode modifiers = fieldChild(constructor, "modifiers", "modifiers");
     if (containsToken(modifiers, "private")) return "private";
     if (containsToken(modifiers, "protected")) return "protected";
     // Kotlin internal constructors are public in JVM bytecode. Keep that callable ABI surface.
@@ -461,8 +476,9 @@ final class KotlinJvmSyntaxParser {
       if (!"secondary_constructor".equals(declaration.getType())) {
         continue;
       }
-      final TSNode modifiers = directChild(declaration, "modifiers");
-      final TSNode parameterList = directChild(declaration, "function_value_parameters");
+      final TSNode modifiers = fieldChild(declaration, "modifiers", "modifiers");
+      final TSNode parameterList =
+          fieldChild(declaration, "parameters", "function_value_parameters");
       final String visibility = containsToken(modifiers, "private")
           ? "private"
           : containsToken(modifiers, "protected") ? "protected" : "public";
@@ -493,16 +509,23 @@ final class KotlinJvmSyntaxParser {
     final List<TSNode> parameters = new ArrayList<>();
     collectDescendants(constructor, "class_parameter", parameters);
     for (TSNode parameter : parameters) {
-      final TSNode name = directChild(parameter, "simple_identifier");
-      final TSNode type = firstTypeChild(parameter);
+      final TSNode name = fieldChild(parameter, "name", "simple_identifier");
+      final TSNode declaredType = fieldChild(parameter, "type");
+      final TSNode type = declaredType != null ? declaredType : firstTypeChild(parameter);
+      final TSNode propertyKind = fieldChild(parameter, "property_kind", "binding_pattern_kind");
+      final TSNode defaultValue = fieldChild(parameter, "default_value");
       result.add(new ConstructorParameterSyntax(
           name == null ? "arg" + result.size() : text(source, name),
           type == null ? null : text(source, type),
           name == null ? -1 : startIndex(source, name),
           name == null ? 0 : endIndex(source, name) - startIndex(source, name),
-          hasBindingPattern(parameter, "val"),
-          hasBindingPattern(parameter, "var"),
-          hasDefaultValue(source, parameter)));
+          propertyKind != null
+              ? containsToken(propertyKind, "val")
+              : hasBindingPattern(parameter, "val"),
+          propertyKind != null
+              ? containsToken(propertyKind, "var")
+              : hasBindingPattern(parameter, "var"),
+          defaultValue != null || hasDefaultValue(source, parameter)));
     }
     return Collections.unmodifiableList(result);
   }
@@ -529,8 +552,9 @@ final class KotlinJvmSyntaxParser {
     final List<ParameterSyntax> result = new ArrayList<>();
     for (int index = 0; index < nodes.size(); index++) {
       final TSNode parameter = nodes.get(index);
-      final TSNode name = directChild(parameter, "simple_identifier");
-      final TSNode type = firstTypeChild(parameter);
+      final TSNode name = fieldChild(parameter, "name", "simple_identifier");
+      final TSNode declaredType = fieldChild(parameter, "type");
+      final TSNode type = declaredType != null ? declaredType : firstTypeChild(parameter);
       final int suffixEnd = index + 1 < nodes.size()
           ? startIndex(source, nodes.get(index + 1))
           : endIndex(source, container) - 1;
@@ -546,9 +570,9 @@ final class KotlinJvmSyntaxParser {
     return Collections.unmodifiableList(result);
   }
 
-  /** Supports 0.3.6's hidden receiver type and 0.4.0's named receiver_type wrapper. */
+  /** Prefers the field-rich grammar and retains old node-shape recovery for earlier artifacts. */
   private static TSNode extensionReceiver(TSNode declaration, TSNode boundary) {
-    final TSNode receiver = directChild(declaration, "receiver_type");
+    final TSNode receiver = fieldChild(declaration, "receiver", "receiver_type");
     return receiver != null ? receiver : typeChildBefore(declaration, boundary);
   }
 
@@ -586,6 +610,9 @@ final class KotlinJvmSyntaxParser {
   }
 
   private static TSNode firstTypeChild(TSNode parent) {
+    if (parent == null) {
+      return null;
+    }
     for (int index = 0; index < parent.getNamedChildCount(); index++) {
       final TSNode child = parent.getNamedChild(index);
       if (isTypeNode(child.getType())) {
@@ -609,8 +636,21 @@ final class KotlinJvmSyntaxParser {
         && first.getEndByte() == second.getEndByte()
         && first.getType().equals(second.getType());
   }
+  private static TSNode fieldChild(TSNode parent, String fieldName, String... fallbackTypes) {
+    if (parent == null) {
+      return null;
+    }
+    final TSNode child = parent.getChildByFieldName(fieldName);
+    if (child != null && !child.isNull()) {
+      return child;
+    }
+    return fallbackTypes.length == 0 ? null : directChild(parent, fallbackTypes);
+  }
 
   private static TSNode directChild(TSNode parent, String... types) {
+    if (parent == null) {
+      return null;
+    }
     for (int index = 0; index < parent.getNamedChildCount(); index++) {
       final TSNode child = parent.getNamedChild(index);
       final String childType = child.getType();
@@ -622,6 +662,7 @@ final class KotlinJvmSyntaxParser {
     }
     return null;
   }
+
 
   private static String constructorTextFallback(
       String source, TSNode declaration, TSNode name, TSNode body) {
@@ -711,11 +752,12 @@ final class KotlinJvmSyntaxParser {
   }
 
   private static TSNode constructorNode(TSNode declaration) {
-    final TSNode direct = directChild(declaration, "primary_constructor");
-    if (direct != null) {
-      return direct;
+    final TSNode constructor =
+        fieldChild(declaration, "primary_constructor", "primary_constructor");
+    if (constructor != null) {
+      return constructor;
     }
-    final TSNode body = directChild(declaration, "class_body", "enum_class_body");
+    final TSNode body = fieldChild(declaration, "body", "class_body", "enum_class_body");
     final int bodyStart = body == null ? Integer.MAX_VALUE : body.getStartByte();
     for (int index = 0; index < declaration.getNamedChildCount(); index++) {
       final TSNode child = declaration.getNamedChild(index);
@@ -776,7 +818,7 @@ final class KotlinJvmSyntaxParser {
   }
 
   private static boolean hasModifier(TSNode declaration, String modifier) {
-    final TSNode modifiers = directChild(declaration, "modifiers");
+    final TSNode modifiers = fieldChild(declaration, "modifiers", "modifiers");
     return modifiers != null && containsToken(modifiers, modifier);
   }
 
