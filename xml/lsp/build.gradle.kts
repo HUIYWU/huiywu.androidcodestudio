@@ -47,6 +47,7 @@ dependencies {
     
     implementation(projects.core.actions)
     implementation(projects.core.lspApi)
+    implementation(projects.editor.api)
     implementation(projects.editor.lexers)
     implementation(projects.xml.dom)
     implementation(projects.xml.utils)
