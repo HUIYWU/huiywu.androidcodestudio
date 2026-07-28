@@ -83,12 +83,8 @@ class HoverMarkdownRenderer(private val context: Context) {
     if (code.isEmpty()) return builder
 
     builder.setSpan(TypefaceSpan("monospace"), 0, builder.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-    builder.setSpan(
-        BackgroundColorSpan(inlineCodeBackground),
-        0,
-        builder.length,
-        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-    )
+    // Do not paint fenced blocks. KLS wraps most declarations in a fenced code block, so a
+    // full-range background makes most hover text look shadowed. Inline code remains shaded.
 
     val normalizedLanguage = language?.trim()?.lowercase().orEmpty()
     if (normalizedLanguage !in setOf("", "kotlin", "kt", "kts")) {
