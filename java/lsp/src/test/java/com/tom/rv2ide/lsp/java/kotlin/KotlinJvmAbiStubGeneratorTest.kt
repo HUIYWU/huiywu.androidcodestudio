@@ -11,6 +11,43 @@ import org.junit.Test
 class KotlinJvmAbiStubGeneratorTest {
 
   @Test
+  fun mergeGeneratedStubs_prefersStructuredAndRecursivelySupplementsMissingJvmSurface() {
+    val structured =
+        """
+        package sample;
+        public class Outer {
+          public Outer() {}
+          public String load(int value) { return null; }
+          public static class Nested {
+            public String existing() { return null; }
+          }
+        }
+        """.trimIndent() + "\n"
+    val fallback =
+        """
+        package sample;
+        public class Outer {
+          public Outer() {}
+          public Object load(int arg0) { return null; }
+          public boolean enabled() { return false; }
+          public static class Nested {
+            public String existing() { return null; }
+            public int recovered() { return 0; }
+          }
+        }
+        """.trimIndent() + "\n"
+
+    val merged = KotlinJvmAbiStubGenerator.mergeGeneratedStubsForTest(structured, fallback)
+
+    assertEquals(1, Regex("\\bload\\(int ").findAll(merged).count())
+    assertTrue(merged.contains("public String load(int value)"))
+    assertFalse(merged.contains("public Object load(int arg0)"))
+    assertTrue(merged.contains("public boolean enabled()"))
+    assertEquals(1, Regex("\\bexisting\\(\\)").findAll(merged).count())
+    assertTrue(merged.contains("public int recovered()"))
+  }
+
+  @Test
   fun generate_projectsConstructorPropertiesAndMembers() {
     val source =
         """

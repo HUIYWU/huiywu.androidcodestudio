@@ -48,6 +48,8 @@ final class KotlinJvmAbiStubGenerator {
       Pattern.compile("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*");
   private static final ThreadLocal<TypeResolutionContext> TYPE_CONTEXT = new ThreadLocal<>();
   private static final ThreadLocal<GenerationMode> GENERATION_MODE = new ThreadLocal<>();
+  private static final Pattern GENERATED_TYPE_DECLARATION_PATTERN =
+      Pattern.compile("\\b(?:class|interface|enum|@interface)\\s+([A-Za-z_$][\\w$]*)");
   private static final Pattern TYPE_PATTERN =
       Pattern.compile(
           "(?m)^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|inner|value)\\s+)*)"
@@ -156,17 +158,24 @@ private static final Pattern PROPERTY_PATTERN =
               ? KotlinJvmSyntaxParser.findTopLevelType(source, simpleName)
               : null;
       if (syntax != null) {
-        return syntax.privateType ? null : generateType(packageName, simpleName, syntax);
+        if (syntax.privateType) {
+          return null;
+        }
+        final String structured = generateType(packageName, simpleName, syntax);
+        if (generationMode() != GenerationMode.AUTO) {
+          return structured;
+        }
+        final String fallback = generateTypeFallbackIfPresent(
+            packageName, simpleName, source);
+        return fallback == null ? structured : mergeGeneratedStubs(structured, fallback);
       }
 
       // Retain the previous scanner as a compatibility fallback when the native grammar is
       // unavailable or an incomplete edit produces no usable top-level declaration.
       if (fallbackGenerationEnabled()) {
-        final Matcher typeMatcher = TYPE_PATTERN.matcher(source);
-        while (typeMatcher.find()) {
-          if (simpleName.equals(typeMatcher.group(3)) && !isPrivate(typeMatcher.group(1))) {
-            return generateTypeFallback(packageName, simpleName, typeMatcher, source);
-          }
+        final String fallback = generateTypeFallbackIfPresent(packageName, simpleName, source);
+        if (fallback != null) {
+          return fallback;
         }
       }
       return isFacadeName(simpleName, kotlinFileName, source)
@@ -274,6 +283,134 @@ private static final Pattern PROPERTY_PATTERN =
         }
       }
     }
+  }
+
+  static String mergeGeneratedStubsForTest(String structured, String fallback) {
+    return mergeGeneratedStubs(structured, fallback);
+  }
+
+  private static String mergeGeneratedStubs(String structured, String fallback) {
+    final int structuredOpen = structured.indexOf('{');
+    final int fallbackOpen = fallback.indexOf('{');
+    if (structuredOpen < 0 || fallbackOpen < 0) {
+      return structured;
+    }
+    final int structuredClose = matchingBrace(structured, structuredOpen);
+    final int fallbackClose = matchingBrace(fallback, fallbackOpen);
+    if (structuredClose <= structuredOpen || fallbackClose <= fallbackOpen) {
+      return structured;
+    }
+    final String structuredHeader = structured.substring(0, structuredOpen + 1);
+    if (structuredHeader.contains(" enum ") || structuredHeader.contains(" @interface ")) {
+      return structured;
+    }
+    final List<GeneratedMember> primary = generatedMembers(
+        structured.substring(structuredOpen + 1, structuredClose));
+    final List<GeneratedMember> supplemental = generatedMembers(
+        fallback.substring(fallbackOpen + 1, fallbackClose));
+    final Map<String, GeneratedMember> byKey = new LinkedHashMap<>();
+    for (GeneratedMember member : primary) {
+      byKey.putIfAbsent(member.key, member);
+    }
+    boolean changed = false;
+    for (GeneratedMember member : supplemental) {
+      final GeneratedMember existing = byKey.get(member.key);
+      if (existing == null) {
+        primary.add(member);
+        byKey.put(member.key, member);
+        changed = true;
+      } else if (member.typeName != null && existing.typeName != null) {
+        final String merged = mergeGeneratedStubs(existing.text, member.text);
+        if (!merged.equals(existing.text)) {
+          existing.text = merged;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) {
+      return structured;
+    }
+    final StringBuilder out = new StringBuilder(structuredHeader).append('\n');
+    for (GeneratedMember member : primary) {
+      out.append(member.text);
+      if (!member.text.endsWith("\n")) out.append('\n');
+    }
+    return out.append(structured.substring(structuredClose)).toString();
+  }
+
+  private static List<GeneratedMember> generatedMembers(String body) {
+    final List<GeneratedMember> result = new ArrayList<>();
+    int index = 0;
+    while (index < body.length()) {
+      while (index < body.length() && Character.isWhitespace(body.charAt(index))) index++;
+      if (index >= body.length()) break;
+      final int lineEndIndex = body.indexOf('\n', index);
+      final int lineEnd = lineEndIndex < 0 ? body.length() : lineEndIndex;
+      final String line = body.substring(index, lineEnd).trim();
+      final Matcher type = GENERATED_TYPE_DECLARATION_PATTERN.matcher(line);
+      if (type.find()) {
+        final int open = body.indexOf('{', index);
+        if (open >= index && open <= lineEnd) {
+          final int close = matchingBrace(body, open);
+          if (close > open) {
+            final String text = body.substring(index, close + 1).trim() + "\n";
+            result.add(new GeneratedMember("T:" + type.group(1), type.group(1), text));
+            index = close + 1;
+            continue;
+          }
+        }
+      }
+      if (!line.isEmpty()) {
+        result.add(new GeneratedMember(generatedMemberKey(line), null, line + "\n"));
+      }
+      index = lineEndIndex < 0 ? body.length() : lineEndIndex + 1;
+    }
+    return result;
+  }
+
+  private static String generatedMemberKey(String declaration) {
+    final int open = declaration.indexOf('(');
+    final int close = open < 0 ? -1 : declaration.lastIndexOf(')');
+    if (open >= 0 && close > open) {
+      final String before = declaration.substring(0, open).trim();
+      final Matcher name = Pattern.compile("([A-Za-z_$][\\w$]*)$").matcher(before);
+      if (name.find()) {
+        final List<String> parameterTypes = new ArrayList<>();
+        for (String parameter : splitParameters(declaration.substring(open + 1, close))) {
+          final String normalized = parameter.trim().replaceAll(
+              "\\s+[A-Za-z_$][\\w$]*$", "").replaceAll("\\s+", " ");
+          parameterTypes.add(normalized);
+        }
+        return "M:" + name.group(1) + "(" + String.join(",", parameterTypes) + ")";
+      }
+    }
+    final String field = declaration.replaceFirst("\\s*=.*$", "")
+        .replaceFirst(";\\s*$", "").trim();
+    final Matcher name = Pattern.compile("([A-Za-z_$][\\w$]*)$").matcher(field);
+    return name.find() ? "F:" + name.group(1) : "U:" + declaration;
+  }
+
+  private static final class GeneratedMember {
+    final String key;
+    final String typeName;
+    String text;
+
+    GeneratedMember(String key, String typeName, String text) {
+      this.key = key;
+      this.typeName = typeName;
+      this.text = text;
+    }
+  }
+
+  private static String generateTypeFallbackIfPresent(
+      String packageName, String simpleName, String source) {
+    final Matcher typeMatcher = TYPE_PATTERN.matcher(source);
+    while (typeMatcher.find()) {
+      if (simpleName.equals(typeMatcher.group(3)) && !isPrivate(typeMatcher.group(1))) {
+        return generateTypeFallback(packageName, simpleName, typeMatcher, source);
+      }
+    }
+    return null;
   }
 
   private static String generateTypeFallback(
@@ -490,22 +627,35 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static String generateFacade(String packageName, String simpleName, String source) {
-    final StringBuilder out = header(packageName);
-    out.append("public final class ").append(simpleName).append(" {\n");
-    out.append("  private ").append(simpleName).append("() {}\n");
     final List<KotlinJvmSyntaxParser.MemberSyntax> members =
         structuredGenerationEnabled()
             ? KotlinJvmSyntaxParser.findTopLevelMembers(source)
             : null;
     if (members != null) {
-      appendSyntaxMembers(out, members, false, true);
-    } else if (fallbackGenerationEnabled()) {
-      appendMembers(out, source, false, true);
-    } else {
+      final StringBuilder structured = facadeHeader(packageName, simpleName);
+      appendSyntaxMembers(structured, members, false, true);
+      structured.append("}\n");
+      if (generationMode() != GenerationMode.AUTO) {
+        return structured.toString();
+      }
+      final StringBuilder fallback = facadeHeader(packageName, simpleName);
+      appendMembers(fallback, source, false, true);
+      fallback.append("}\n");
+      return mergeGeneratedStubs(structured.toString(), fallback.toString());
+    }
+    if (!fallbackGenerationEnabled()) {
       return null;
     }
-    out.append("}\n");
-    return out.toString();
+    final StringBuilder fallback = facadeHeader(packageName, simpleName);
+    appendMembers(fallback, source, false, true);
+    fallback.append("}\n");
+    return fallback.toString();
+  }
+
+  private static StringBuilder facadeHeader(String packageName, String simpleName) {
+    return header(packageName)
+        .append("public final class ").append(simpleName).append(" {\n")
+        .append("  private ").append(simpleName).append("() {}\n");
   }
 
   private static void appendCompanionMembers(StringBuilder out, String body) {
