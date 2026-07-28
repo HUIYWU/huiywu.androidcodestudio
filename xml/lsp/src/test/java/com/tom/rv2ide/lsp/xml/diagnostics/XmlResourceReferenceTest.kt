@@ -19,6 +19,7 @@ package com.tom.rv2ide.lsp.xml.diagnostics
 import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.ID
 import com.android.aaptcompiler.AaptResourceType.STRING
+import com.android.aaptcompiler.AaptResourceType.STYLE
 import com.google.common.truth.Truth.assertThat
 import junit.framework.TestCase
 
@@ -32,6 +33,18 @@ class XmlResourceReferenceTest : TestCase() {
     assertThat(reference.type).isEqualTo(STRING)
     assertThat(reference.entry).isEqualTo("title")
     assertThat(reference.isThemeAttribute).isFalse()
+  }
+
+  fun testParsesDottedAndHyphenatedResourceEntryNames() {
+    val style = XmlResourceReference.parse("@style/TextAppearance.Material3.BodyMedium")
+    val qualified = XmlResourceReference.parse("@com.example.lib:style/Theme.Material3-DayNight")
+
+    assertThat(style).isNotNull()
+    assertThat(style!!.type).isEqualTo(STYLE)
+    assertThat(style.entry).isEqualTo("TextAppearance.Material3.BodyMedium")
+    assertThat(qualified).isNotNull()
+    assertThat(qualified!!.packageName).isEqualTo("com.example.lib")
+    assertThat(qualified.entry).isEqualTo("Theme.Material3-DayNight")
   }
 
   fun testParsesFrameworkThemeAttributeReference() {

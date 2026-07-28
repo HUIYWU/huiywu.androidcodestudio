@@ -42,6 +42,7 @@ import com.tom.rv2ide.lsp.java.providers.completion.ImportCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.KeywordCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.MemberReferenceCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.MemberSelectCompletionProvider;
+import com.tom.rv2ide.lsp.java.providers.completion.QualifiedNewClassCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.SwitchConstantCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContext;
 import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContextClassifier;
@@ -482,6 +483,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         if (newPartial.endsWith(ASTFixer.IDENT)) {
           newPartial = newPartial.substring(0, newPartial.length() - ASTFixer.IDENT.length());
         }
+      } else if (path.getLeaf().getKind() == Tree.Kind.NEW_CLASS && "new".equals(newPartial)) {
+        // At `qualifier.new|`, `new` is syntax rather than the member-type prefix.
+        newPartial = "";
       }
 
       final var result = doComplete(file, contents, cursor, newPartial, endsWithParen, task, path, tsContextFinal);
@@ -516,6 +520,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         break;
       case MEMBER_SELECT:
         klass = MemberSelectCompletionProvider.class;
+        break;
+      case NEW_CLASS:
+        klass = QualifiedNewClassCompletionProvider.class;
         break;
       case MEMBER_REFERENCE:
         LOG.warn(

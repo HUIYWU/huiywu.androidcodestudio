@@ -85,6 +85,14 @@ public class ASTFixer {
 
     if (nextLine > tokenLine) {
       edits.add(Edit.create(token.endPos, IDENT + ";"));
+    } else if (nextToken.kind == TokenKind.NEW) {
+      final Tokens.Token typeToken = scanner.token(2);
+      if (typeToken.kind != TokenKind.IDENTIFIER) {
+        // A qualified inner-class creation starts with `expression.new Type(...)`.
+        // Keep `new` intact and synthesize only the missing member type so javac can
+        // attribute the qualifier and completion can enumerate its non-static classes.
+        edits.add(Edit.create(nextToken.endPos, " " + IDENT));
+      }
     } else if (!MEMBER_SELECTION_TOKENS.contains(nextToken.kind)) {
       String toInsert = IDENT;
       if (INVALID_SELECTION_SUFFIXES.contains(nextToken.kind)) {

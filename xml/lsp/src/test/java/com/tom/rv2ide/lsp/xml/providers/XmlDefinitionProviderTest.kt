@@ -37,6 +37,15 @@ class XmlDefinitionProviderTest : TestCase() {
         .isEqualTo("@string/title")
   }
 
+  fun testFindsDottedStyleReference() {
+    val text = "<TextView textAppearance='@style/TextAppearance.Material3.BodyMedium' />"
+
+    assertThat(referenceAt(text, text.indexOf("Material3")))
+        .isEqualTo("@style/TextAppearance.Material3.BodyMedium")
+    assertThat(XmlResourceReference.parse(referenceAt(text, text.indexOf("BodyMedium"))!!))
+        .isNotNull()
+  }
+
   fun testFindsThemeAndQualifiedReferences() {
     val theme = "<View value='?android:attr/colorAccent' />"
     val qualified = "<View value='@com.example.lib:color/brand' />"

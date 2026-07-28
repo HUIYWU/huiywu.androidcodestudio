@@ -24,6 +24,7 @@ import openjdk.source.tree.IdentifierTree;
 import openjdk.source.tree.ImportTree;
 import openjdk.source.tree.MemberReferenceTree;
 import openjdk.source.tree.MemberSelectTree;
+import openjdk.source.tree.NewClassTree;
 import openjdk.source.tree.Tree;
 import openjdk.source.util.JavacTask;
 import openjdk.source.util.SourcePositions;
@@ -67,6 +68,19 @@ public class FindCompletionsAt extends TreePathScanner<TreePath, Long> {
       return getCurrentPath();
     }
     return super.visitMemberSelect(t, find);
+  }
+
+  @Override
+  public TreePath visitNewClass(NewClassTree t, Long find) {
+    if (t.getEnclosingExpression() != null) {
+      SourcePositions pos = Trees.instance(task).getSourcePositions();
+      long start = pos.getEndPosition(root, t.getEnclosingExpression()) + 1;
+      long end = pos.getEndPosition(root, t.getIdentifier());
+      if (start <= find && find <= end) {
+        return getCurrentPath();
+      }
+    }
+    return super.visitNewClass(t, find);
   }
 
   @Override

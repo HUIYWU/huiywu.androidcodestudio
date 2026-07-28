@@ -972,6 +972,23 @@ measureEditorInitStage("subscribeSelectionChange") {
     if (regions.isEmpty()) {
       return diagnostics
     }
+    val strongestSeverityByRange = mutableMapOf<Pair<Int, Int>, Short>()
+    for (region in regions) {
+      runCatching {
+        val clazz = region.javaClass
+        val startIndex = clazz.getDeclaredField("startIndex").apply { isAccessible = true }.getInt(region)
+        val endIndex = clazz.getDeclaredField("endIndex").apply { isAccessible = true }.getInt(region)
+        val severity = clazz.getDeclaredField("severity").apply { isAccessible = true }.getShort(region)
+        if (severity.toInt() != 0) {
+          val range = startIndex to endIndex
+          val strongest = strongestSeverityByRange[range]
+          if (strongest == null || severity > strongest) {
+            strongestSeverityByRange[range] = severity
+          }
+        }
+      }
+    }
+
     val filtered = DiagnosticsContainer()
     var changed = false
     for (region in regions) {
@@ -980,7 +997,8 @@ measureEditorInitStage("subscribeSelectionChange") {
         val startIndex = clazz.getDeclaredField("startIndex").apply { isAccessible = true }.getInt(region)
         val endIndex = clazz.getDeclaredField("endIndex").apply { isAccessible = true }.getInt(region)
         val severity = clazz.getDeclaredField("severity").apply { isAccessible = true }.getShort(region)
-        if (severity.toInt() == 0) {
+        if (severity.toInt() == 0 ||
+            strongestSeverityByRange[startIndex to endIndex]?.let { severity < it } == true) {
           changed = true
           null
         } else {
@@ -993,9 +1011,9 @@ measureEditorInitStage("subscribeSelectionChange") {
         filtered.addDiagnostic(copied)
       }
     }
-    // Sora's diagnostic indicator renderer stops iterating when a diagnostic maps to colorId=0.
-    // Severity NONE diagnostics use that color slot, so leaving them in the render container can
-    // suppress later warning/error indicators. Filter them out before handing diagnostics to editor rendering.
+    // Sora's diagnostic indicator renderer stops iterating when a diagnostic maps to colorId=0,
+    // and draws multiple equal-range indicators on top of each other. Remove NONE regions and keep
+    // only the strongest severity for an identical range before handing diagnostics to rendering.
     return if (changed) filtered else diagnostics
   }
 

@@ -115,7 +115,7 @@ internal data class XmlResourceReference(
 ) {
   companion object {
     private val expression =
-        Regex("^([@?])(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_]*)$")
+        Regex("^([@?])(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_.-]*)$")
     private val specialValues = setOf("@", "@null", "@empty")
 
     fun isSpecialValue(value: String): Boolean = value in specialValues
