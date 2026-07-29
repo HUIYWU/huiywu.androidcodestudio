@@ -110,15 +110,17 @@ class XmlHoverProviderTest : TestCase() {
 
     val content = provider.formatHover(reference, candidates, "/project")
 
-    assertThat(content).contains("## Android resource")
-    assertThat(content).contains("```xml\n@style/TextAppearance.Material3.BodyMedium\n```")
-    assertThat(content).contains("- **Type:** `style`")
-    assertThat(content).contains("- **Package:** `com.example`")
-    assertThat(content).contains("### Configuration: `default`")
-    assertThat(content).contains("**Value**\n\n```text")
-    assertThat(content).contains("**Source**\n\n```text\n<root>/res/values/styles.xml:4")
+    assertThat(content).startsWith("@style/TextAppearance.Material3.BodyMedium\n\n")
+    assertThat(content).contains("Package: `com.example`")
+    assertThat(content).contains("Configuration: `default`")
+    assertThat(content).contains("Value: `parent=style/Parent, 3 items`")
+    assertThat(content).contains("Source: `<root>/res/values/styles.xml:4`")
     assertThat(content).contains("2 more configurations are available.")
-    assertThat(content).doesNotContain("### Configuration: `v25`")
+    assertThat(content).doesNotContain("Configuration: `v25`")
+    assertThat(content).doesNotContain("**")
+    assertThat(content).doesNotContain("##")
+    assertThat(content).doesNotContain("- ")
+    assertThat(content).doesNotContain("```")
   }
 
   private fun value(

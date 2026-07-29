@@ -137,35 +137,29 @@ internal class XmlHoverProvider {
   ): String {
     val first = candidates.first()
     return buildString {
-      // Keep this conventional Markdown so Markwon can render it without UI-specific parsing.
-      append("## Android resource\n\n")
-      append("```xml\n")
+      // The first plain-text line is syntax-highlighted by HoverMarkdownRenderer. Keep all metadata
+      // at one visual level so Markwon does not introduce heading, list, or block spacing.
       append(reference.text)
-      append("\n```\n\n")
-      append("- **Type:** `")
-      append(reference.type.tagName)
-      append("`\n")
-      append("- **Package:** `")
-      append(first.packageName.ifBlank { "current" })
-      append("`\n")
-      candidates.take(MAX_CONFIGURATIONS).forEachIndexed { index, candidate ->
-        append("\n### Configuration: `")
-        append(candidate.configuration)
-        append("`\n\n")
+      append("\n\nPackage: `")
+      append(first.packageName.ifBlank { "current" }.escapeInlineCode())
+      append('`')
+      candidates.take(MAX_CONFIGURATIONS).forEach { candidate ->
+        append("\n\nConfiguration: `")
+        append(candidate.configuration.escapeInlineCode())
+        append('`')
         candidate.valueSummary?.let { valueSummary ->
-          append("**Value**\n\n```text\n")
-          append(valueSummary)
-          append("\n```\n\n")
+          append("  \nValue: `")
+          append(valueSummary.escapeInlineCode())
+          append('`')
         }
         if (candidate.source.isNotBlank()) {
-          append("**Source**\n\n```text\n")
-          append(displaySource(candidate.source, candidate.line, projectRoot))
-          append("\n```\n")
+          append("  \nSource: `")
+          append(displaySource(candidate.source, candidate.line, projectRoot).escapeInlineCode())
+          append('`')
         }
-        if (index < candidates.take(MAX_CONFIGURATIONS).lastIndex) append('\n')
       }
       if (candidates.size > MAX_CONFIGURATIONS) {
-        append("\n> ")
+        append("\n\n")
         append(candidates.size - MAX_CONFIGURATIONS)
         append(" more configurations are available.")
       }
@@ -196,6 +190,8 @@ internal class XmlHoverProvider {
   }
 
   private fun String.normalizedPath(): String = replace('\\', '/').trimEnd('/')
+
+  private fun String.escapeInlineCode(): String = replace("`", "\\`")
 
   private fun String.replacePathPrefix(prefix: String?, replacement: String): String? {
     val normalizedPrefix = prefix?.normalizedPath()?.takeIf { it.isNotEmpty() } ?: return null

@@ -34,11 +34,27 @@ class HoverMarkdownRenderer(private val context: Context) {
   companion object {
     private const val MAX_HOVER_LENGTH = 8_000
     private const val MIN_TEXT_CONTRAST = 3.2
+    private val ANDROID_RESOURCE_REFERENCE =
+        Regex(
+            "^([@?])(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?" +
+                "([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_.-]*)$"
+        )
   }
 
   private val backgroundColor = context.resolveAttr(R.attr.colorSurface)
   private val textColor = context.resolveAttr(R.attr.colorOnPrimaryContainer)
   private val outlineColor = context.resolveAttr(R.attr.colorOutline)
+  private val resourceMarkerColor = readableMuted(outlineColor)
+  private val resourcePackageColor = readableAccent(context.resolveAttr(R.attr.colorSecondary))
+  private val resourceTypeColor = readableAccent(context.resolveAttr(R.attr.colorPrimary))
+  private val resourceEntryColor =
+      readableAccent(
+          blend(
+              context.resolveAttr(R.attr.colorPrimary),
+              context.resolveAttr(R.attr.colorSecondary),
+              0.35f,
+          )
+      )
   private val inlineCodeBackground = blend(backgroundColor, textColor, 0.10f)
 
   private val markwon: Markwon =
@@ -73,9 +89,36 @@ class HoverMarkdownRenderer(private val context: Context) {
     if (normalized.isBlank()) return ""
 
     return when (content.kind) {
-      MarkupKind.MARKDOWN -> markwon.toMarkdown(normalized)
+      MarkupKind.MARKDOWN -> highlightAndroidResourceReference(markwon.toMarkdown(normalized), normalized)
       MarkupKind.PLAIN -> normalized
     }
+  }
+
+  private fun highlightAndroidResourceReference(
+      rendered: CharSequence,
+      markdown: String,
+  ): CharSequence {
+    val firstLine = markdown.lineSequence().firstOrNull()?.trim().orEmpty()
+    val match = ANDROID_RESOURCE_REFERENCE.matchEntire(firstLine) ?: return rendered
+    val referenceStart = rendered.toString().indexOf(firstLine)
+    if (referenceStart < 0) return rendered
+
+    val builder = SpannableStringBuilder(rendered)
+    fun color(groupIndex: Int, color: Int) {
+      val group = match.groups[groupIndex] ?: return
+      val start = referenceStart + group.range.first
+      val end = referenceStart + group.range.last + 1
+      if (start < 0 || end > builder.length || start >= end) return
+      builder.setSpan(ForegroundColorSpan(color), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    // Groups are marker, optional package, type, and entry. Use semantic theme colors instead of
+    // embedding UI colors in LSP Markdown.
+    color(1, resourceMarkerColor)
+    color(2, resourcePackageColor)
+    color(3, resourceTypeColor)
+    color(4, resourceEntryColor)
+    return builder
   }
 
   private fun highlightCode(language: String?, code: String): CharSequence {

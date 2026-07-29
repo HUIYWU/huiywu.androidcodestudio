@@ -48,6 +48,36 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsValueClassesAsOpaqueNonConstructibleBoxedTypes() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @JvmInline
+        value class UserId(val raw: String) {
+          fun display(): String = raw
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.UserId", "UserId.kt", source, emptySet(), mode)
+      assertNotNull("Value class generation failed in $mode", stub)
+      assertTrue(stub!!.contains("public final class UserId"))
+      assertTrue(stub.contains("private UserId(String raw)"))
+      assertFalse(stub.contains("public UserId("))
+      assertFalse(stub.contains("protected UserId()"))
+      assertFalse(stub.contains("getRaw()"))
+      assertFalse(stub.contains("display()"))
+      assertFalse(stub.contains("__kotlin_abi_synthetic_constructor__"))
+    }
+  }
+
+  @Test
   fun generate_projectsConstructorPropertiesAndMembers() {
     val source =
         """

@@ -203,6 +203,10 @@ private static final Pattern PROPERTY_PATTERN =
       out.append("public @interface ").append(simpleName).append(" {}\n");
       return out.toString();
     }
+    if (syntax.valueType) {
+      appendStructuredValueClass(out, simpleName, syntax, false);
+      return out.toString();
+    }
     registerTypeVariables(syntax.typeParameters);
     out.append("public ").append(isInterface ? "interface " : "class ")
         .append(simpleName).append(javaTypeParameters(syntax.typeParameters).trim())
@@ -229,6 +233,43 @@ private static final Pattern PROPERTY_PATTERN =
     return out.toString();
   }
 
+  private static void appendStructuredValueClass(
+      StringBuilder out,
+      String simpleName,
+      KotlinJvmSyntaxParser.TypeSyntax syntax,
+      boolean nested) {
+    final TypeResolutionContext context = TYPE_CONTEXT.get();
+    final Set<String> outerVariables = context == null
+        ? java.util.Collections.emptySet()
+        : new LinkedHashSet<>(context.typeVariables);
+    if (context != null && nested) {
+      context.typeVariables.clear();
+    }
+    registerTypeVariables(syntax.typeParameters);
+    try {
+      out.append(nested ? "  public static final class " : "public final class ")
+          .append(simpleName).append(javaTypeParameters(syntax.typeParameters).trim()).append(" {\n");
+      final KotlinJvmSyntaxParser.ConstructorParameterSyntax underlying =
+          syntax.constructorParameters.size() == 1
+              && syntax.constructorParameters.get(0).property
+              ? syntax.constructorParameters.get(0)
+              : null;
+      if (underlying == null) {
+        out.append("  private ").append(simpleName).append("() {}\n");
+      } else {
+        final String type = javaType(underlying.type);
+        out.append("  private ").append(simpleName).append('(').append(type).append(' ')
+            .append(safeName(underlying.name, 0)).append(") {}\n");
+      }
+      out.append(nested ? "  }\n" : "}\n");
+    } finally {
+      if (context != null) {
+        context.typeVariables.clear();
+        context.typeVariables.addAll(outerVariables);
+      }
+    }
+  }
+
   private static void appendNestedTypes(
       StringBuilder out, List<KotlinJvmSyntaxParser.TypeSyntax> nestedTypes) {
     for (KotlinJvmSyntaxParser.TypeSyntax nested : nestedTypes) {
@@ -243,6 +284,10 @@ private static final Pattern PROPERTY_PATTERN =
       }
       if (nested.annotationType) {
         out.append("  public @interface ").append(nested.name).append(" {}\n");
+        continue;
+      }
+      if (nested.valueType) {
+        appendStructuredValueClass(out, nested.name, nested, true);
         continue;
       }
       final TypeResolutionContext context = TYPE_CONTEXT.get();
@@ -420,6 +465,7 @@ private static final Pattern PROPERTY_PATTERN =
     final boolean isInterface = "interface".equals(keyword);
     final boolean isEnum = keyword.startsWith("enum");
     final boolean isAnnotation = keyword.startsWith("annotation");
+    final boolean isValue = containsModifier(declaration.group(1), "value");
     final StringBuilder out = header(packageName);
     if (isEnum) {
       out.append("public enum ").append(simpleName).append(" { ; }\n");
@@ -427,6 +473,10 @@ private static final Pattern PROPERTY_PATTERN =
     }
     if (isAnnotation) {
       out.append("public @interface ").append(simpleName).append(" {}\n");
+      return out.toString();
+    }
+    if (isValue) {
+      appendFallbackValueClass(out, simpleName, source, declaration.end(3), false);
       return out.toString();
     }
     final List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters =
@@ -493,6 +543,7 @@ private static final Pattern PROPERTY_PATTERN =
       final String keyword = declaration.group(2);
       final String name = declaration.group(3);
       final boolean innerType = containsModifier(declaration.group(1), "inner");
+      final boolean valueType = containsModifier(declaration.group(1), "value");
       final boolean objectType = "object".equals(keyword);
       final boolean interfaceType = "interface".equals(keyword);
       if (keyword.startsWith("enum")) {
@@ -501,6 +552,10 @@ private static final Pattern PROPERTY_PATTERN =
       }
       if (keyword.startsWith("annotation")) {
         out.append("  public @interface ").append(name).append(" {}\n");
+        continue;
+      }
+      if (valueType) {
+        appendFallbackValueClass(out, name, body, declaration.end(3), true);
         continue;
       }
       final List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters =
@@ -561,6 +616,29 @@ private static final Pattern PROPERTY_PATTERN =
         }
       }
     }
+  }
+
+  private static void appendFallbackValueClass(
+      StringBuilder out, String name, String source, int declarationNameEnd, boolean nested) {
+    out.append(nested ? "  public static final class " : "public final class ")
+        .append(name).append(" {\n");
+    final String constructor = primaryConstructorText(source, declarationNameEnd);
+    final List<String> parameters = constructor == null || constructor.length() < 2
+        ? java.util.Collections.emptyList()
+        : splitParameters(constructor.substring(1, constructor.length() - 1));
+    if (parameters.size() == 1) {
+      final String raw = parameters.get(0).trim()
+          .replaceFirst("^(?:(?:public|protected|internal|private|val|var|crossinline|noinline|vararg)\\s+)+", "");
+      final int colon = topLevelIndexOf(raw, ':');
+      final String parameterName = colon < 0 ? "value" : raw.substring(0, colon).trim();
+      final String kotlinType = colon < 0 ? null : raw.substring(colon + 1)
+          .replaceFirst("\\s*=.*$", "").trim();
+      out.append("  private ").append(name).append('(').append(javaType(kotlinType)).append(' ')
+          .append(safeName(parameterName, 0)).append(") {}\n");
+    } else {
+      out.append("  private ").append(name).append("() {}\n");
+    }
+    out.append(nested ? "  }\n" : "}\n");
   }
 
   private static boolean containsModifier(String modifiers, String modifier) {

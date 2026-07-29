@@ -194,7 +194,8 @@ final class KotlinJvmSyntaxParser {
         hasDirectToken(declaration, "enum"),
         hasModifier(declaration, "annotation"),
         hasModifier(declaration, "private"),
-        hasModifier(declaration, "inner"));
+        hasModifier(declaration, "inner"),
+        hasModifier(declaration, "value"));
   }
 
   private static void collectDirectNestedTypes(
@@ -917,6 +918,7 @@ final class KotlinJvmSyntaxParser {
     final boolean annotationType;
     final boolean privateType;
     final boolean innerType;
+    final boolean valueType;
 
     TypeSyntax(
         String nodeType,
@@ -940,7 +942,8 @@ final class KotlinJvmSyntaxParser {
         boolean enumType,
         boolean annotationType,
         boolean privateType,
-        boolean innerType) {
+        boolean innerType,
+        boolean valueType) {
       this.nodeType = nodeType;
       this.name = name;
       this.nameOffset = nameOffset;
@@ -963,6 +966,7 @@ final class KotlinJvmSyntaxParser {
       this.annotationType = annotationType;
       this.privateType = privateType;
       this.innerType = innerType;
+      this.valueType = valueType;
     }
 
     boolean objectType() {
