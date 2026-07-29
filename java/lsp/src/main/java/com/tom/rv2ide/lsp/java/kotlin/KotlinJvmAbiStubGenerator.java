@@ -1117,12 +1117,19 @@ private static final Pattern PROPERTY_PATTERN =
 
   private static void appendProperty(
       StringBuilder out, Matcher property, boolean interfaceType, boolean topLevel) {
-    appendProperty(out, property, interfaceType, topLevel, null, null);
+    appendProperty(out, property, interfaceType, topLevel, null, null, false, false);
   }
 
   private static void appendProperty(
       StringBuilder out, Matcher property, boolean interfaceType, boolean topLevel,
       String getterJvmName, String setterJvmName) {
+    appendProperty(out, property, interfaceType, topLevel, getterJvmName, setterJvmName, false, false);
+  }
+
+  private static void appendProperty(
+      StringBuilder out, Matcher property, boolean interfaceType, boolean topLevel,
+      String getterJvmName, String setterJvmName,
+      boolean getterJvmSynthetic, boolean setterJvmSynthetic) {
     final boolean mutable = "var".equals(property.group(2));
     if (!canProjectValueClassProperty(getterJvmName, setterJvmName, mutable, property.group(4))) {
       return;
@@ -1133,15 +1140,17 @@ private static final Pattern PROPERTY_PATTERN =
         ? propertyGetterName(name, property.group(4)) : getterJvmName;
     final String setter = setterJvmName == null
         ? propertySetterName(name, property.group(4)) : setterJvmName;
-    out.append("  public ");
-    if (topLevel) {
-      out.append("static ");
+    if (!getterJvmSynthetic) {
+      out.append("  public ");
+      if (topLevel) {
+        out.append("static ");
+      }
+      out.append(type).append(' ').append(getter).append("()")
+          .append(interfaceType && !topLevel
+              ? ";\n"
+              : " { return " + defaultValue(property.group(4)) + "; }\n");
     }
-    out.append(type).append(' ').append(getter).append("()")
-        .append(interfaceType && !topLevel
-            ? ";\n"
-            : " { return " + defaultValue(property.group(4)) + "; }\n");
-    if ("var".equals(property.group(2))) {
+    if ("var".equals(property.group(2)) && !setterJvmSynthetic) {
       out.append("  public ");
       if (topLevel) {
         out.append("static ");
@@ -1586,12 +1595,18 @@ private static final Pattern PROPERTY_PATTERN =
     int depth = 0;
     boolean jvmOverloads = false;
     boolean pendingJvmSynthetic = false;
+    boolean pendingGetterJvmSynthetic = false;
+    boolean pendingSetterJvmSynthetic = false;
     String pendingJvmName = null;
     String pendingGetterJvmName = null;
     String pendingSetterJvmName = null;
     for (String line : source.split("\\R")) {
       if (depth == 0) {
         final boolean hasJvmOverloads = line.contains("@JvmOverloads");
+        final boolean hasGetterJvmSynthetic = line.contains("@get:JvmSynthetic");
+        final boolean hasSetterJvmSynthetic = line.contains("@set:JvmSynthetic");
+        pendingGetterJvmSynthetic |= hasGetterJvmSynthetic;
+        pendingSetterJvmSynthetic |= hasSetterJvmSynthetic;
         if (line.matches(".*@JvmSynthetic(?:\\s|\\(|$).*")) {
           pendingJvmSynthetic = true;
         }
@@ -1611,7 +1626,7 @@ private static final Pattern PROPERTY_PATTERN =
           pendingSetterJvmName = setterJvmNameMatcher.group(1);
         }
         final String declarationLine = line.replace("@JvmOverloads", "")
-            .replaceAll("@JvmSynthetic(?:\\s*\\([^)]*\\))?", "")
+            .replaceAll("@(?:get:|set:)?JvmSynthetic(?:\\s*\\([^)]*\\))?", "")
             .replaceAll("@(?:get:|set:)?JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)", "")
             .trim();
         if (hasJvmOverloads) {
@@ -1664,9 +1679,12 @@ private static final Pattern PROPERTY_PATTERN =
             if (!pendingJvmSynthetic) {
               appendProperty(
                   out, property, interfaceType, topLevel,
-                  pendingGetterJvmName, pendingSetterJvmName);
+                  pendingGetterJvmName, pendingSetterJvmName,
+                  pendingGetterJvmSynthetic, pendingSetterJvmSynthetic);
             }
             pendingJvmSynthetic = false;
+            pendingGetterJvmSynthetic = false;
+            pendingSetterJvmSynthetic = false;
             pendingJvmName = null;
             pendingGetterJvmName = null;
             pendingSetterJvmName = null;

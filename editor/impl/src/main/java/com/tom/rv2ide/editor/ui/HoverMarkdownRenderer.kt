@@ -57,6 +57,8 @@ class HoverMarkdownRenderer(private val context: Context) {
                 "([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_.-]*)$"
         )
     private val FIRST_XML_CODE_BLOCK = Regex("```xml\\s*\\n(.*?)\\n```", RegexOption.DOT_MATCHES_ALL)
+    private val ANDROID_ATTRIBUTE = Regex("^(android:)([A-Za-z_][A-Za-z0-9_]*)$")
+    private val XML_WIDGET_NAME = Regex("^[A-Za-z_][A-Za-z0-9_.]*$")
   }
 
   private val backgroundColor = context.resolveAttr(R.attr.colorSurface)
@@ -106,39 +108,60 @@ class HoverMarkdownRenderer(private val context: Context) {
     if (normalized.isBlank()) return ""
 
     return when (content.kind) {
-      MarkupKind.MARKDOWN -> highlightAndroidResourceReference(markwon.toMarkdown(normalized), normalized)
+      MarkupKind.MARKDOWN -> highlightXmlHoverSymbol(markwon.toMarkdown(normalized), normalized)
       MarkupKind.PLAIN -> normalized
     }
   }
 
-  private fun highlightAndroidResourceReference(
-      rendered: CharSequence,
-      markdown: String,
-  ): CharSequence {
-    val reference =
+  private fun highlightXmlHoverSymbol(rendered: CharSequence, markdown: String): CharSequence {
+    val symbol =
         FIRST_XML_CODE_BLOCK.find(markdown)?.groupValues?.getOrNull(1)?.trim()
             ?: markdown.lineSequence().firstOrNull()?.trim()
             ?: return rendered
-    val match = ANDROID_RESOURCE_REFERENCE.matchEntire(reference) ?: return rendered
-    val referenceStart = rendered.toString().indexOf(reference)
-    if (referenceStart < 0) return rendered
-
+    val symbolStart = rendered.toString().indexOf(symbol)
+    if (symbolStart < 0) return rendered
     val builder = SpannableStringBuilder(rendered)
-    fun color(groupIndex: Int, color: Int) {
-      val group = match.groups[groupIndex] ?: return
-      val start = referenceStart + group.range.first
-      val end = referenceStart + group.range.last + 1
-      if (start < 0 || end > builder.length || start >= end) return
-      builder.setSpan(ForegroundColorSpan(color), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+    ANDROID_RESOURCE_REFERENCE.matchEntire(symbol)?.let { match ->
+      // Groups are marker, optional package, type, and entry.
+      colorMatchGroup(builder, symbolStart, match, 1, resourceMarkerColor)
+      colorMatchGroup(builder, symbolStart, match, 2, resourcePackageColor)
+      colorMatchGroup(builder, symbolStart, match, 3, resourceTypeColor)
+      colorMatchGroup(builder, symbolStart, match, 4, resourceEntryColor)
+      return builder
     }
 
-    // Groups are marker, optional package, type, and entry. Use semantic theme colors instead of
-    // embedding UI colors in LSP Markdown.
-    color(1, resourceMarkerColor)
-    color(2, resourcePackageColor)
-    color(3, resourceTypeColor)
-    color(4, resourceEntryColor)
+    ANDROID_ATTRIBUTE.matchEntire(symbol)?.let { match ->
+      // Framework attributes have the same package/name visual vocabulary as qualified resources.
+      colorMatchGroup(builder, symbolStart, match, 1, resourcePackageColor)
+      colorMatchGroup(builder, symbolStart, match, 2, resourceEntryColor)
+      return builder
+    }
+
+    if (XML_WIDGET_NAME.matches(symbol)) {
+      // API hover only emits a widget after WidgetTable has validated it as a framework layout tag.
+      builder.setSpan(
+          ForegroundColorSpan(resourceTypeColor),
+          symbolStart,
+          symbolStart + symbol.length,
+          Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+      )
+    }
     return builder
+  }
+
+  private fun colorMatchGroup(
+      builder: SpannableStringBuilder,
+      symbolStart: Int,
+      match: MatchResult,
+      groupIndex: Int,
+      color: Int,
+  ) {
+    val group = match.groups[groupIndex] ?: return
+    val start = symbolStart + group.range.first
+    val end = symbolStart + group.range.last + 1
+    if (start < 0 || end > builder.length || start >= end) return
+    builder.setSpan(ForegroundColorSpan(color), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
   }
 
   private fun highlightCode(language: String?, code: String): CharSequence {
