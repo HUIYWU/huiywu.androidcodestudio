@@ -39,6 +39,7 @@ class HoverMarkdownRenderer(private val context: Context) {
             "^([@?])(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?" +
                 "([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_.-]*)$"
         )
+    private val FIRST_XML_CODE_BLOCK = Regex("```xml\\s*\\n(.*?)\\n```", RegexOption.DOT_MATCHES_ALL)
   }
 
   private val backgroundColor = context.resolveAttr(R.attr.colorSurface)
@@ -97,9 +98,12 @@ class HoverMarkdownRenderer(private val context: Context) {
       rendered: CharSequence,
       markdown: String,
   ): CharSequence {
-    val firstLine = markdown.lineSequence().firstOrNull()?.trim().orEmpty()
-    val match = ANDROID_RESOURCE_REFERENCE.matchEntire(firstLine) ?: return rendered
-    val referenceStart = rendered.toString().indexOf(firstLine)
+    val reference =
+        FIRST_XML_CODE_BLOCK.find(markdown)?.groupValues?.getOrNull(1)?.trim()
+            ?: markdown.lineSequence().firstOrNull()?.trim()
+            ?: return rendered
+    val match = ANDROID_RESOURCE_REFERENCE.matchEntire(reference) ?: return rendered
+    val referenceStart = rendered.toString().indexOf(reference)
     if (referenceStart < 0) return rendered
 
     val builder = SpannableStringBuilder(rendered)

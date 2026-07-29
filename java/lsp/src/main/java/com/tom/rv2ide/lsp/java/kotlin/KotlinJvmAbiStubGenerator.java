@@ -60,6 +60,8 @@ final class KotlinJvmAbiStubGenerator {
           "(?s)\\bvalue\\s+class\\s+([A-Za-z_][\\w]*)\\s*"
               + "(?:<[^>{}()]*>\\s*)?\\(\\s*(?:val|var)\\s+[A-Za-z_][\\w]*\\s*:\\s*"
               + "([^,)=]+)\\s*\\)");
+  private static final Pattern TYPE_ALIAS_PATTERN =
+      Pattern.compile("(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
   private static final Pattern SECONDARY_CONSTRUCTOR_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private)\\s+)*)constructor\\s*\\((.*?)\\)\\s*(?::.*)?$");
@@ -2175,6 +2177,13 @@ private static final Pattern PROPERTY_PATTERN =
     if (nullable) {
       type = type.substring(0, type.length() - 1).trim();
     }
+    final TypeResolutionContext context = TYPE_CONTEXT.get();
+    if (context != null) {
+      final String expandedAlias = context.typeAliases.get(type);
+      if (expandedAlias != null) {
+        type = expandedAlias;
+      }
+    }
 
     final String primitive = javaPrimitiveType(type);
     if (primitive != null) {
@@ -2365,17 +2374,20 @@ private static final Pattern PROPERTY_PATTERN =
     final Map<String, String> declaredTypes;
     final Map<String, String> knownSimpleTypes;
     final Map<String, String> valueClassUnderlyingTypes;
+    final Map<String, String> typeAliases;
     final Set<String> typeVariables = new LinkedHashSet<>();
 
     private TypeResolutionContext(
         Map<String, String> imports,
         Map<String, String> declaredTypes,
         Map<String, String> knownSimpleTypes,
-        Map<String, String> valueClassUnderlyingTypes) {
+        Map<String, String> valueClassUnderlyingTypes,
+        Map<String, String> typeAliases) {
       this.imports = imports;
       this.declaredTypes = declaredTypes;
       this.knownSimpleTypes = knownSimpleTypes;
       this.valueClassUnderlyingTypes = valueClassUnderlyingTypes;
+      this.typeAliases = typeAliases;
     }
 
     static TypeResolutionContext create(
@@ -2436,9 +2448,34 @@ private static final Pattern PROPERTY_PATTERN =
       while (valueClass.find()) {
         valueClassUnderlyingTypes.put(valueClass.group(1), valueClass.group(2).trim());
       }
+      final Map<String, String> typeAliases = collectSimpleTypeAliases(source, valueClassUnderlyingTypes);
       return new TypeResolutionContext(
-          imports, declaredTypes, knownSimpleTypes, valueClassUnderlyingTypes);
+          imports, declaredTypes, knownSimpleTypes, valueClassUnderlyingTypes, typeAliases);
     }
+  }
+
+  private static Map<String, String> collectSimpleTypeAliases(
+      String source, Map<String, String> valueClassUnderlyingTypes) {
+    final Map<String, String> aliases = new LinkedHashMap<>();
+    final Matcher alias = TYPE_ALIAS_PATTERN.matcher(source);
+    while (alias.find()) {
+      final String name = alias.group(1);
+      final String target = alias.group(2).trim();
+      // Generic declarations, function types and nullable targets are intentionally not expanded:
+      // their JVM representation needs variance/boxing rules beyond this source-only projector.
+      if (target.endsWith("?") || target.indexOf("->") >= 0 || target.indexOf('&') >= 0
+          || target.indexOf('|') >= 0 || target.indexOf('(') >= 0 || target.indexOf(')') >= 0
+          || valueClassUnderlyingTypes.containsKey(target)) {
+        continue;
+      }
+      aliases.put(name, target);
+    }
+    // Do not recursively chase aliases: cycles and alias-specific generic substitutions must remain
+    // conservative. Removing all targets that are aliases leaves only direct, stable expansions.
+    for (String target : new ArrayList<>(aliases.values())) {
+      aliases.values().removeIf(value -> aliases.containsKey(value));
+    }
+    return aliases;
   }
 
   private static final class TypeApplication {

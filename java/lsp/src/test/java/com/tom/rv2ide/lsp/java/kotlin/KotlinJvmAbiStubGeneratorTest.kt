@@ -130,6 +130,36 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_expandsOnlyDirectSameFileTypeAliases() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        typealias UserName = String
+        typealias Scores = List<Int>
+        typealias IndirectName = UserName
+        typealias Callback = (String) -> Unit
+
+        fun greet(name: UserName): UserName = name
+        fun scores(): Scores = emptyList()
+        fun indirect(name: IndirectName): IndirectName = name
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.AliasesKt", "Aliases.kt", source, emptySet(), mode)
+      assertNotNull("Typealias facade generation failed in $mode", stub)
+      assertContains(stub!!, "String greet(String name)")
+      assertContains(stub, "java.util.List<Integer> scores()")
+      assertContains(stub, "Object indirect(Object name)")
+    }
+  }
+
+  @Test
   fun generate_omitsSuspendFunctionsRatherThanFakingContinuationAbi() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

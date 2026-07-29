@@ -138,10 +138,11 @@ internal class XmlHoverProvider {
   ): String {
     val first = candidates.first()
     return buildString {
-      // The first plain-text line is syntax-highlighted by HoverMarkdownRenderer. Keep all metadata
-      // at one visual level so Markwon does not introduce heading, list, or block spacing.
+      // HoverMarkdownRenderer extracts and syntax-highlights this first XML code block. Keep the
+      // following metadata at one visual level so Markwon does not introduce extra hierarchy.
+      append("```xml\n")
       append(reference.text)
-      // A single newline keeps the separator visually close without making `---` a Setext heading.
+      append("\n```")
       append("\n- - -\n\nPackage: `")
       append(first.packageName.ifBlank { "current" }.escapeInlineCode())
       append('`')
