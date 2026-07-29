@@ -10,7 +10,11 @@ import com.tom.rv2ide.models.Range;
 import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.projects.ModuleProject;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
 import jdkx.lang.model.element.ExecutableElement;
@@ -18,6 +22,10 @@ import jdkx.lang.model.element.TypeElement;
 
 /** Maps javac elements from Kotlin ABI stubs back to real Kotlin source declarations. */
 public final class KotlinJvmSourceNavigator {
+
+  private static final Pattern TYPE_ALIAS_PATTERN =
+      Pattern.compile("(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
+  private static final ThreadLocal<Map<String, String>> TYPE_ALIASES = new ThreadLocal<>();
 
   private KotlinJvmSourceNavigator() {}
 
@@ -39,27 +47,37 @@ public final class KotlinJvmSourceNavigator {
       return null;
     }
     final String source = FileManager.INSTANCE.getDocumentContents(declaration.file).toString();
-    final KotlinJvmSyntaxParser.TypeSyntax topLevelType =
-        KotlinJvmSyntaxParser.findTopLevelType(source, topLevelOwner.getSimpleName().toString());
-    final KotlinJvmSyntaxParser.TypeSyntax type =
-        nestedType(topLevelType, owner, topLevelOwner);
-    if (element instanceof TypeElement && type != null && type.nameOffset >= 0) {
-      return location(declaration.file, source, type.nameOffset, type.nameLength);
+    final Map<String, String> previousAliases = TYPE_ALIASES.get();
+    TYPE_ALIASES.set(collectSimpleTypeAliases(source));
+    try {
+      final KotlinJvmSyntaxParser.TypeSyntax topLevelType =
+          KotlinJvmSyntaxParser.findTopLevelType(source, topLevelOwner.getSimpleName().toString());
+      final KotlinJvmSyntaxParser.TypeSyntax type =
+          nestedType(topLevelType, owner, topLevelOwner);
+      if (element instanceof TypeElement && type != null && type.nameOffset >= 0) {
+        return location(declaration.file, source, type.nameOffset, type.nameLength);
+      }
+      if (element instanceof TypeElement) {
+        return location(declaration.file, source, declaration.offset, declaration.length);
+      }
+      final SourceRange range = type == null
+          ? findFacadeMember(source, element)
+          : companionOwner
+              ? findMember(type.companionMembers, element, false)
+              : findTypeMember(type, declaration, element);
+      if (range != null) {
+        return location(declaration.file, source, range.offset, range.length);
+      }
+      return type != null && type.nameOffset >= 0
+          ? location(declaration.file, source, type.nameOffset, type.nameLength)
+          : location(declaration.file, source, declaration.offset, declaration.length);
+    } finally {
+      if (previousAliases == null) {
+        TYPE_ALIASES.remove();
+      } else {
+        TYPE_ALIASES.set(previousAliases);
+      }
     }
-    if (element instanceof TypeElement) {
-      return location(declaration.file, source, declaration.offset, declaration.length);
-    }
-    final SourceRange range = type == null
-        ? findFacadeMember(source, element)
-        : companionOwner
-            ? findMember(type.companionMembers, element, false)
-            : findTypeMember(type, declaration, element);
-    if (range != null) {
-      return location(declaration.file, source, range.offset, range.length);
-    }
-    return type != null && type.nameOffset >= 0
-        ? location(declaration.file, source, type.nameOffset, type.nameLength)
-        : location(declaration.file, source, declaration.offset, declaration.length);
   }
 
   private static SourceRange findTypeMember(
@@ -309,6 +327,13 @@ public final class KotlinJvmSourceNavigator {
     String type = kotlinType.trim();
     final boolean nullable = type.endsWith("?");
     if (nullable) type = type.substring(0, type.length() - 1).trim();
+    final Map<String, String> aliases = TYPE_ALIASES.get();
+    if (aliases != null) {
+      final String expandedAlias = aliases.get(type);
+      if (expandedAlias != null) {
+        type = expandedAlias;
+      }
+    }
     switch (type) {
       case "Byte": case "kotlin.Byte": return nullable ? "java.lang.Byte" : "byte";
       case "Short": case "kotlin.Short": return nullable ? "java.lang.Short" : "short";
@@ -338,6 +363,22 @@ public final class KotlinJvmSourceNavigator {
         }
         return null;
     }
+  }
+
+  private static Map<String, String> collectSimpleTypeAliases(String source) {
+    final Map<String, String> aliases = new LinkedHashMap<>();
+    final Matcher matcher = TYPE_ALIAS_PATTERN.matcher(source);
+    while (matcher.find()) {
+      final String name = matcher.group(1);
+      final String target = matcher.group(2).trim();
+      if (target.endsWith("?") || target.indexOf("->") >= 0 || target.indexOf('&') >= 0
+          || target.indexOf('|') >= 0 || target.indexOf('(') >= 0 || target.indexOf(')') >= 0) {
+        continue;
+      }
+      aliases.put(name, target);
+    }
+    aliases.values().removeIf(aliases::containsKey);
+    return aliases;
   }
 
   private static TypeElement topLevelOwner(TypeElement owner) {

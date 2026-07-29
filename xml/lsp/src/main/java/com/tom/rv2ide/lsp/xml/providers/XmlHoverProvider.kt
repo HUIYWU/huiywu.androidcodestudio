@@ -71,14 +71,21 @@ internal class XmlHoverProvider {
             }
 
     params.cancelChecker.abortIfCancelled()
-    val rawReference =
-        XmlDefinitionProvider().referenceAt(document, text, offset) ?: return MarkupContent()
-    val reference = XmlResourceReference.parse(rawReference) ?: return MarkupContent()
-    val candidates = candidatesFor(reference, resourceTables(reference.packageName)) {
-      params.cancelChecker.abortIfCancelled()
+    val reference =
+        XmlDefinitionProvider().referenceAt(document, text, offset)?.let(XmlResourceReference::parse)
+    if (reference != null) {
+      val candidates = candidatesFor(reference, resourceTables(reference.packageName)) {
+        params.cancelChecker.abortIfCancelled()
+      }
+      if (candidates.isNotEmpty()) {
+        return MarkupContent(formatHover(reference, candidates), MarkupKind.MARKDOWN)
+      }
     }
-    if (candidates.isEmpty()) return MarkupContent()
-    return MarkupContent(formatHover(reference, candidates), MarkupKind.MARKDOWN)
+
+    // Resource metadata remains the primary hover. API metadata is a fallback for framework XML
+    // symbols that are not resource references, so a resource value cannot be replaced by a tag hint.
+    return XmlApiHoverProvider().hover(document, text, offset)?.let { MarkupContent(it, MarkupKind.MARKDOWN) }
+        ?: MarkupContent()
   }
 
   internal fun candidatesFor(
