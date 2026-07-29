@@ -792,7 +792,7 @@ private static final Pattern PROPERTY_PATTERN =
       boolean interfaceType,
       boolean topLevel) {
     for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
-      if (member.privateMember || member.declarationText.isEmpty()
+      if (member.privateMember || member.declarationText.isEmpty() || member.jvmSynthetic
           || member.function() && member.suspendFunction) {
         continue;
       }
@@ -814,7 +814,7 @@ private static final Pattern PROPERTY_PATTERN =
     out.append("  }\n");
     out.append("  public static final Companion Companion = null;\n");
     for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
-      if (member.privateMember || member.declarationText.isEmpty()
+      if (member.privateMember || member.declarationText.isEmpty() || member.jvmSynthetic
           || member.function() && member.suspendFunction) {
         continue;
       }
@@ -928,15 +928,17 @@ private static final Pattern PROPERTY_PATTERN =
     final String setter = property.setterJvmName == null
         ? propertySetterName(property.name, property.declaredType)
         : property.setterJvmName;
-    out.append("  public ");
-    if (topLevel) {
-      out.append("static ");
+    if (!property.getterJvmSynthetic) {
+      out.append("  public ");
+      if (topLevel) {
+        out.append("static ");
+      }
+      out.append(type).append(' ').append(getter).append("()")
+          .append(interfaceType && !topLevel
+              ? ";\n"
+              : " { return " + defaultValue(property.declaredType) + "; }\n");
     }
-    out.append(type).append(' ').append(getter).append("()")
-        .append(interfaceType && !topLevel
-            ? ";\n"
-            : " { return " + defaultValue(property.declaredType) + "; }\n");
-    if (property.mutableProperty) {
+    if (property.mutableProperty && !property.setterJvmSynthetic) {
       out.append("  public ");
       if (topLevel) {
         out.append("static ");
@@ -1583,12 +1585,16 @@ private static final Pattern PROPERTY_PATTERN =
       StringBuilder out, String source, boolean interfaceType, boolean topLevel) {
     int depth = 0;
     boolean jvmOverloads = false;
+    boolean pendingJvmSynthetic = false;
     String pendingJvmName = null;
     String pendingGetterJvmName = null;
     String pendingSetterJvmName = null;
     for (String line : source.split("\\R")) {
       if (depth == 0) {
         final boolean hasJvmOverloads = line.contains("@JvmOverloads");
+        if (line.matches(".*@JvmSynthetic(?:\\s|\\(|$).*")) {
+          pendingJvmSynthetic = true;
+        }
         final Matcher jvmNameMatcher = Pattern.compile("@JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)")
             .matcher(line);
         if (jvmNameMatcher.find()) {
@@ -1605,6 +1611,7 @@ private static final Pattern PROPERTY_PATTERN =
           pendingSetterJvmName = setterJvmNameMatcher.group(1);
         }
         final String declarationLine = line.replace("@JvmOverloads", "")
+            .replaceAll("@JvmSynthetic(?:\\s*\\([^)]*\\))?", "")
             .replaceAll("@(?:get:|set:)?JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)", "")
             .trim();
         if (hasJvmOverloads) {
@@ -1612,24 +1619,30 @@ private static final Pattern PROPERTY_PATTERN =
         }
         final Matcher extensionFunction = EXTENSION_FUNCTION_PATTERN.matcher(declarationLine);
         if (extensionFunction.matches() && !isPrivate(extensionFunction.group(1))) {
-          appendExtensionFunction(
-              out, extensionFunction, interfaceType, topLevel, pendingJvmName);
+          if (!pendingJvmSynthetic) {
+            appendExtensionFunction(
+                out, extensionFunction, interfaceType, topLevel, pendingJvmName);
+          }
           jvmOverloads = false;
+          pendingJvmSynthetic = false;
           pendingJvmName = null;
           pendingGetterJvmName = null;
           pendingSetterJvmName = null;
         } else {
           final Matcher function = FUNCTION_PATTERN.matcher(declarationLine);
           if (function.matches() && !isPrivate(function.group(1))) {
-            final List<KotlinJvmSyntaxParser.TypeParameterSyntax> functionTypeParameters =
-                functionTypeParametersFallback(declarationLine);
-            appendFunction(
-                out, function, interfaceType, topLevel, functionTypeParameters, pendingJvmName);
-            if (jvmOverloads) {
-              appendFunctionOverloads(
+            if (!pendingJvmSynthetic) {
+              final List<KotlinJvmSyntaxParser.TypeParameterSyntax> functionTypeParameters =
+                  functionTypeParametersFallback(declarationLine);
+              appendFunction(
                   out, function, interfaceType, topLevel, functionTypeParameters, pendingJvmName);
+              if (jvmOverloads) {
+                appendFunctionOverloads(
+                    out, function, interfaceType, topLevel, functionTypeParameters, pendingJvmName);
+              }
             }
             jvmOverloads = false;
+            pendingJvmSynthetic = false;
             pendingJvmName = null;
             pendingGetterJvmName = null;
             pendingSetterJvmName = null;
@@ -1648,9 +1661,12 @@ private static final Pattern PROPERTY_PATTERN =
           final Matcher property = PROPERTY_PATTERN.matcher(declarationLine);
           if (property.matches() && !isPrivate(property.group(1))) {
             jvmOverloads = false;
-            appendProperty(
-                out, property, interfaceType, topLevel,
-                pendingGetterJvmName, pendingSetterJvmName);
+            if (!pendingJvmSynthetic) {
+              appendProperty(
+                  out, property, interfaceType, topLevel,
+                  pendingGetterJvmName, pendingSetterJvmName);
+            }
+            pendingJvmSynthetic = false;
             pendingJvmName = null;
             pendingGetterJvmName = null;
             pendingSetterJvmName = null;

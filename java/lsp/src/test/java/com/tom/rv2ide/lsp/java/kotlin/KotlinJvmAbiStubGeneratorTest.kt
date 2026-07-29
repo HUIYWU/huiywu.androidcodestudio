@@ -130,6 +130,57 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_omitsJvmSyntheticJvmSurfaces() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @JvmSynthetic
+        fun hiddenTop(value: String): String = value
+        fun publicTop(value: String): String = value
+
+        @JvmSynthetic
+        val hiddenProperty: String = "hidden"
+        val publicProperty: String = "public"
+
+        @JvmSynthetic
+        fun String.hiddenExtension(): String = this
+
+        class Api {
+          @JvmSynthetic fun hiddenMember(): String = "hidden"
+          fun publicMember(): String = "public"
+
+          companion object {
+            @JvmStatic @JvmSynthetic fun hiddenStatic(): Api = Api()
+            @JvmStatic fun publicStatic(): Api = Api()
+          }
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val facade = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.SyntheticApiKt", "SyntheticApi.kt", source, emptySet(), mode)
+      val api = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.Api", "SyntheticApi.kt", source, emptySet(), mode)
+      assertNotNull("Synthetic facade generation failed in $mode", facade)
+      assertNotNull("Synthetic type generation failed in $mode", api)
+      assertFalse("Synthetic facade member leaked in $mode:\n$facade", facade!!.contains("hiddenTop("))
+      assertFalse("Synthetic property leaked in $mode:\n$facade", facade.contains("getHiddenProperty"))
+      assertFalse("Synthetic extension leaked in $mode:\n$facade", facade.contains("hiddenExtension"))
+      assertContains(facade, "String publicTop(String value)")
+      assertContains(facade, "String getPublicProperty()")
+      assertFalse("Synthetic class member leaked in $mode:\n$api", api!!.contains("hiddenMember("))
+      assertFalse("Synthetic static member leaked in $mode:\n$api", api.contains("hiddenStatic("))
+      assertContains(api, "String publicMember()")
+      assertContains(api, "static Api publicStatic()")
+    }
+  }
+
+  @Test
   fun generate_expandsOnlyDirectSameFileTypeAliases() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

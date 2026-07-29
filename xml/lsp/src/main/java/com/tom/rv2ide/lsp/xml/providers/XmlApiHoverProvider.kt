@@ -16,8 +16,11 @@
  */
 package com.tom.rv2ide.lsp.xml.providers
 
+import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.xml.resolver.StyleableResolver
+import com.tom.rv2ide.xml.resources.ResourceTableRegistry
+import com.tom.rv2ide.xml.versions.ApiVersion
 import com.tom.rv2ide.xml.versions.ApiVersions
 import com.tom.rv2ide.xml.widgets.WidgetTable
 
@@ -28,8 +31,13 @@ internal class XmlApiHoverProvider {
     val versions = Lookup.getDefault().lookup(ApiVersions.COMPLETION_LOOKUP_KEY) ?: return null
 
     symbolAt(ANDROID_ATTRIBUTE, text, offset)?.let { attributeName ->
-      val since = versions.memberInfo(ANDROID_R_ATTR_CLASS, attributeName.removePrefix(ANDROID_PREFIX))?.since
-      return since?.let { format(attributeName, it) }
+      val localName = attributeName.removePrefix(ANDROID_PREFIX)
+      val version = versions.memberInfo(ANDROID_R_ATTR_CLASS, localName)
+      // A missing compact version entry means API 1 only after the framework attr table confirms
+      // that the name is real. This prevents unknown android:* names from receiving a false API 1.
+      if (version != null || isFrameworkAttribute(localName)) {
+        return format(attributeName, version ?: ApiVersion(API_LEVEL_ONE))
+      }
     }
 
     val tagName = tagNameAt(text, offset) ?: return null
@@ -38,8 +46,7 @@ internal class XmlApiHoverProvider {
     // ApiVersions intentionally omits classes that existed from API 1 with no later lifecycle
     // change. WidgetTable has already established that this is a framework layout widget, so API 1
     // is a safe and useful fallback rather than treating the absent compact entry as unknown.
-    val since = versions.classInfo(widget.qualifiedName)?.since ?: API_LEVEL_ONE
-    return format(tagName, since)
+    return format(tagName, versions.classInfo(widget.qualifiedName) ?: ApiVersion(API_LEVEL_ONE))
   }
 
   /**
@@ -57,8 +64,33 @@ internal class XmlApiHoverProvider {
         ?.get(1)
   }
 
-  internal fun format(symbol: String, sinceApi: Int): String =
-      "```xml\n$symbol\n```\n- - -\n\nSince API: `$sinceApi`"
+  private fun isFrameworkAttribute(name: String): Boolean {
+    val frameworkTable =
+        Lookup.getDefault().lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES) ?: return false
+    return frameworkTable
+        .findPackage(ResourceTableRegistry.PCK_ANDROID)
+        ?.findGroup(ATTR)
+        ?.findEntry(name) != null
+  }
+
+  internal fun format(symbol: String, version: ApiVersion): String =
+      buildString {
+        append("```xml\n")
+        append(symbol)
+        append("\n```\n- - -\n\nSince API: `")
+        append(version.since)
+        append('`')
+        if (version.deprecatedIn > 0) {
+          append("  \nDeprecated since API: `")
+          append(version.deprecatedIn)
+          append('`')
+        }
+        if (version.removedIn > 0) {
+          append("  \nRemoved in API: `")
+          append(version.removedIn)
+          append('`')
+        }
+      }
 
   private companion object {
     const val ANDROID_PREFIX = "android:"

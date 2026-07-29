@@ -291,8 +291,12 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
         containsToken(modifiers, "suspend"),
-        jvmName(leadingAnnotations(source, declaration) + " "
+        hasJvmSynthetic(leadingAnnotations(source, declaration) + " "
             + modifierText + " " + text(source, declaration)),
+        false,
+        false,
+        jvmName(leadingAnnotations(source, declaration) + " "
+            + modifierText + " " + text(source, declaration)), 
         null,
         null,
         name == null ? null : text(source, name),
@@ -331,6 +335,12 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
         false,
+        hasJvmSynthetic(leadingAnnotations(source, declaration) + " "
+            + modifierText + " " + text(source, declaration)),
+        hasAccessorJvmSynthetic(leadingAnnotations(source, declaration) + " "
+            + modifierText + " " + text(source, declaration), "get"),
+        hasAccessorJvmSynthetic(leadingAnnotations(source, declaration) + " "
+            + modifierText + " " + text(source, declaration), "set"),
         null,
         accessorJvmName(leadingAnnotations(source, declaration) + " "
             + modifierText + " " + text(source, declaration), "get"),
@@ -378,6 +388,17 @@ final class KotlinJvmSyntaxParser {
       cursor = previousStart;
     }
     return annotations.toString();
+  }
+
+  private static boolean hasJvmSynthetic(String declarationText) {
+    return declarationText != null
+        && java.util.regex.Pattern.compile("@JvmSynthetic(?:\\s|\\(|$)").matcher(declarationText).find();
+  }
+
+  private static boolean hasAccessorJvmSynthetic(String declarationText, String useSite) {
+    return declarationText != null
+        && java.util.regex.Pattern.compile("@" + useSite + ":JvmSynthetic(?:\\s|\\(|$)")
+            .matcher(declarationText).find();
   }
 
   private static String jvmName(String declarationText) {
@@ -1017,6 +1038,9 @@ final class KotlinJvmSyntaxParser {
     final boolean jvmField;
     final boolean jvmOverloads;
     final boolean suspendFunction;
+    final boolean jvmSynthetic;
+    final boolean getterJvmSynthetic;
+    final boolean setterJvmSynthetic;
     final String jvmName;
     final String getterJvmName;
     final String setterJvmName;
@@ -1040,6 +1064,9 @@ final class KotlinJvmSyntaxParser {
         boolean jvmField,
         boolean jvmOverloads,
         boolean suspendFunction,
+        boolean jvmSynthetic,
+        boolean getterJvmSynthetic,
+        boolean setterJvmSynthetic,
         String jvmName,
         String getterJvmName,
         String setterJvmName,
@@ -1061,6 +1088,9 @@ final class KotlinJvmSyntaxParser {
       this.jvmField = jvmField;
       this.jvmOverloads = jvmOverloads;
       this.suspendFunction = suspendFunction;
+      this.jvmSynthetic = jvmSynthetic;
+      this.getterJvmSynthetic = getterJvmSynthetic;
+      this.setterJvmSynthetic = setterJvmSynthetic;
       this.jvmName = jvmName;
       this.getterJvmName = getterJvmName;
       this.setterJvmName = setterJvmName;
