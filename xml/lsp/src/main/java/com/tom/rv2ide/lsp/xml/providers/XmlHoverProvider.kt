@@ -39,6 +39,7 @@ import com.tom.rv2ide.lsp.models.MarkupKind
 import com.tom.rv2ide.lsp.util.setupLookupForCompletion
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlResourceReference
 import com.tom.rv2ide.projects.FileManager
+import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.xml.res.IResourceTable
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import org.eclipse.lemminx.dom.DOMParser
@@ -132,35 +133,71 @@ internal class XmlHoverProvider {
   internal fun formatHover(
       reference: XmlResourceReference,
       candidates: List<ResourceHoverCandidate>,
+      projectRoot: String? = workspaceProjectRoot(),
   ): String {
     val first = candidates.first()
     return buildString {
+      // Keep this conventional Markdown so Markwon can render it without UI-specific parsing.
+      append("## Android resource\n\n")
       append("```xml\n")
       append(reference.text)
       append("\n```\n\n")
-      append("**Type:** `${reference.type.tagName}`  \n")
-      append("**Package:** `${first.packageName.ifBlank { "current" }}`")
-      candidates.take(MAX_CONFIGURATIONS).forEach { candidate ->
-        append("\n\n---\n\n")
-        append("**Configuration:** `${candidate.configuration}`")
-        if (candidate.valueSummary != null) {
-          append("  \n**Value:** `")
-          append(candidate.valueSummary.escapeMarkdownCode())
-          append('`')
+      append("- **Type:** `")
+      append(reference.type.tagName)
+      append("`\n")
+      append("- **Package:** `")
+      append(first.packageName.ifBlank { "current" })
+      append("`\n")
+      candidates.take(MAX_CONFIGURATIONS).forEachIndexed { index, candidate ->
+        append("\n### Configuration: `")
+        append(candidate.configuration)
+        append("`\n\n")
+        candidate.valueSummary?.let { valueSummary ->
+          append("**Value**\n\n```text\n")
+          append(valueSummary)
+          append("\n```\n\n")
         }
         if (candidate.source.isNotBlank()) {
-          append("  \n**Source:** `")
-          append(candidate.source.escapeMarkdownCode())
-          candidate.line?.let { append(":$it") }
-          append('`')
+          append("**Source**\n\n```text\n")
+          append(displaySource(candidate.source, candidate.line, projectRoot))
+          append("\n```\n")
         }
+        if (index < candidates.take(MAX_CONFIGURATIONS).lastIndex) append('\n')
       }
       if (candidates.size > MAX_CONFIGURATIONS) {
-        append("\n\n_")
+        append("\n> ")
         append(candidates.size - MAX_CONFIGURATIONS)
-        append(" more configurations_")
+        append(" more configurations are available.")
       }
     }
+  }
+
+  /**
+   * Keeps dependency paths useful without exposing a long, device-specific application sandbox
+   * prefix. Paths outside the project and IDE home intentionally remain unchanged for debugging.
+   */
+  internal fun displaySource(source: String, line: Int?, projectRoot: String? = workspaceProjectRoot()): String {
+    val normalizedSource = source.normalizedPath()
+    val displayPath =
+        normalizedSource.replacePathPrefix(projectRoot, PROJECT_ROOT_LABEL)
+            ?: normalizedSource.replacePathPrefix(IDE_HOME_DIRECTORY, IDE_HOME_LABEL)
+            ?: normalizedSource
+    return line?.let { "$displayPath:$it" } ?: displayPath
+  }
+
+  private fun workspaceProjectRoot(): String? {
+    return runCatching { IProjectManager.getInstance().getWorkspace()?.getProjectDir()?.path }
+        .getOrNull()
+  }
+
+  private fun String.normalizedPath(): String = replace('\\', '/').trimEnd('/')
+
+  private fun String.replacePathPrefix(prefix: String?, replacement: String): String? {
+    val normalizedPrefix = prefix?.normalizedPath()?.takeIf { it.isNotEmpty() } ?: return null
+    if (this == normalizedPrefix) return replacement
+    return takeIf { startsWith("$normalizedPrefix/") }
+        ?.removePrefix(normalizedPrefix)
+        ?.let { "$replacement$it" }
   }
 
   private fun resourceTables(packageName: String?): Set<IResourceTable> {
@@ -209,8 +246,6 @@ internal class XmlHoverProvider {
     return (offset + column).takeIf { it <= lineEnd }
   }
 
-  private fun String.escapeMarkdownCode(): String = replace("`", "\\`")
-
   internal data class ResourceHoverCandidate(
       val packageName: String,
       val configuration: String,
@@ -221,6 +256,9 @@ internal class XmlHoverProvider {
 
   private companion object {
     const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
+    const val PROJECT_ROOT_LABEL = "<root>"
+    const val IDE_HOME_DIRECTORY = "/data/user/0/com.tom.rv2ide/files/home"
+    const val IDE_HOME_LABEL = "\$HOME"
     const val MAX_CONFIGURATIONS = 4
     const val MAX_SUMMARY_LENGTH = 160
     val log = LoggerFactory.getLogger(XmlHoverProvider::class.java)

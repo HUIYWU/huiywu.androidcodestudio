@@ -71,6 +71,29 @@ class XmlHoverProviderTest : TestCase() {
     assertThat(XmlHoverProvider().candidatesFor(reference, listOf(table))).isEmpty()
   }
 
+  fun testShortensProjectAndIdeHomeSourcePaths() {
+    val provider = XmlHoverProvider()
+
+    assertThat(
+            provider.displaySource(
+                "/storage/emulated/0/AndroidIDEProjects/MyBasicActivity/app/src/main/res/values/strings.xml",
+                2,
+                "/storage/emulated/0/AndroidIDEProjects/MyBasicActivity",
+            )
+        )
+        .isEqualTo("<root>/app/src/main/res/values/strings.xml:2")
+    assertThat(
+            provider.displaySource(
+                "/data/user/0/com.tom.rv2ide/files/home/.gradle/caches/9.0.0/transforms/hash/transformed/appcompat-1.7.1/res/values/values.xml",
+                2114,
+                "/storage/emulated/0/AndroidIDEProjects/MyBasicActivity",
+            )
+        )
+        .isEqualTo("\$HOME/.gradle/caches/9.0.0/transforms/hash/transformed/appcompat-1.7.1/res/values/values.xml:2114")
+    assertThat(provider.displaySource("/opt/android-sdk/platforms/android-35/data/res/values/strings.xml", null, null))
+        .isEqualTo("/opt/android-sdk/platforms/android-35/data/res/values/strings.xml")
+  }
+
   fun testFormatsResourceMetadataAndLimitsConfigurations() {
     val provider = XmlHoverProvider()
     val reference = XmlResourceReference.parse("@style/TextAppearance.Material3.BodyMedium")!!
@@ -85,14 +108,17 @@ class XmlHoverProviderTest : TestCase() {
           )
         }
 
-    val content = provider.formatHover(reference, candidates)
+    val content = provider.formatHover(reference, candidates, "/project")
 
-    assertThat(content).contains("@style/TextAppearance.Material3.BodyMedium")
-    assertThat(content).contains("**Type:** `style`")
-    assertThat(content).contains("**Package:** `com.example`")
-    assertThat(content).contains("**Configuration:** `default`")
-    assertThat(content).contains("2 more configurations")
-    assertThat(content).doesNotContain("**Configuration:** `v25`")
+    assertThat(content).contains("## Android resource")
+    assertThat(content).contains("```xml\n@style/TextAppearance.Material3.BodyMedium\n```")
+    assertThat(content).contains("- **Type:** `style`")
+    assertThat(content).contains("- **Package:** `com.example`")
+    assertThat(content).contains("### Configuration: `default`")
+    assertThat(content).contains("**Value**\n\n```text")
+    assertThat(content).contains("**Source**\n\n```text\n<root>/res/values/styles.xml:4")
+    assertThat(content).contains("2 more configurations are available.")
+    assertThat(content).doesNotContain("### Configuration: `v25`")
   }
 
   private fun value(
