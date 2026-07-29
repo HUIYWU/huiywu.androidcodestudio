@@ -121,6 +121,7 @@ internal class XmlHoverProvider {
                         source = source.path,
                         line = source.line,
                         valueSummary = summary(value),
+                        valueSummaryIsFilePath = value is FileReference,
                     )
                 )
               }
@@ -140,7 +141,8 @@ internal class XmlHoverProvider {
       // The first plain-text line is syntax-highlighted by HoverMarkdownRenderer. Keep all metadata
       // at one visual level so Markwon does not introduce heading, list, or block spacing.
       append(reference.text)
-      append("\n\n---\n\nPackage: `")
+      // A single newline keeps the separator visually close without making `---` a Setext heading.
+      append("\n- - -\n\nPackage: `")
       append(first.packageName.ifBlank { "current" }.escapeInlineCode())
       append('`')
       candidates.take(MAX_CONFIGURATIONS).forEach { candidate ->
@@ -149,7 +151,14 @@ internal class XmlHoverProvider {
         append('`')
         candidate.valueSummary?.let { valueSummary ->
           append("  \nValue: `")
-          append(valueSummary.escapeInlineCode())
+          append(
+              (if (candidate.valueSummaryIsFilePath) {
+                    displaySource(valueSummary, line = null, projectRoot = projectRoot)
+                  } else {
+                    valueSummary
+                  })
+                  .escapeInlineCode()
+          )
           append('`')
         }
         if (candidate.source.isNotBlank()) {
@@ -253,6 +262,7 @@ internal class XmlHoverProvider {
       val source: String,
       val line: Int?,
       val valueSummary: String?,
+      val valueSummaryIsFilePath: Boolean = false,
   )
 
   private companion object {

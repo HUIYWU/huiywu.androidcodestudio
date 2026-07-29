@@ -130,6 +130,48 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_omitsSuspendFunctionsRatherThanFakingContinuationAbi() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        suspend fun fetch(id: Int): String = id.toString()
+        fun regular(id: Int): String = id.toString()
+        suspend fun String.render(): String = this
+
+        class Service {
+          suspend fun load(): String = "value"
+          fun available(): Boolean = true
+
+          companion object {
+            @JvmStatic suspend fun create(): Service = Service()
+            @JvmStatic fun plain(): Service = Service()
+          }
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val facade = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.SuspendApiKt", "SuspendApi.kt", source, emptySet(), mode)
+      val service = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.Service", "SuspendApi.kt", source, emptySet(), mode)
+      assertNotNull("Suspend facade generation failed in $mode", facade)
+      assertNotNull("Suspend type generation failed in $mode", service)
+      assertFalse("Suspend facade function leaked in $mode:\n$facade", facade!!.contains("fetch("))
+      assertFalse("Suspend extension leaked in $mode:\n$facade", facade.contains("render("))
+      assertContains(facade, "String regular(int id)")
+      assertFalse("Suspend member leaked in $mode:\n$service", service!!.contains("load("))
+      assertFalse("Suspend @JvmStatic leaked in $mode:\n$service", service.contains("create("))
+      assertContains(service, "boolean available()")
+      assertContains(service, "static Service plain()")
+    }
+  }
+
+  @Test
   fun generate_projectsConstructorPropertiesAndMembers() {
     val source =
         """

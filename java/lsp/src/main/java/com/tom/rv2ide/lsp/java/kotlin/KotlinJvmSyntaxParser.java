@@ -290,6 +290,7 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmStatic"),
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
+        containsToken(modifiers, "suspend"),
         jvmName(leadingAnnotations(source, declaration) + " "
             + modifierText + " " + text(source, declaration)),
         null,
@@ -329,6 +330,7 @@ final class KotlinJvmSyntaxParser {
         modifierText.contains("JvmStatic"),
         modifierText.contains("JvmField"),
         modifierText.contains("JvmOverloads"),
+        false,
         null,
         accessorJvmName(leadingAnnotations(source, declaration) + " "
             + modifierText + " " + text(source, declaration), "get"),
@@ -1014,6 +1016,7 @@ final class KotlinJvmSyntaxParser {
     final boolean jvmStatic;
     final boolean jvmField;
     final boolean jvmOverloads;
+    final boolean suspendFunction;
     final String jvmName;
     final String getterJvmName;
     final String setterJvmName;
@@ -1036,6 +1039,7 @@ final class KotlinJvmSyntaxParser {
         boolean jvmStatic,
         boolean jvmField,
         boolean jvmOverloads,
+        boolean suspendFunction,
         String jvmName,
         String getterJvmName,
         String setterJvmName,
@@ -1056,6 +1060,7 @@ final class KotlinJvmSyntaxParser {
       this.jvmStatic = jvmStatic;
       this.jvmField = jvmField;
       this.jvmOverloads = jvmOverloads;
+      this.suspendFunction = suspendFunction;
       this.jvmName = jvmName;
       this.getterJvmName = getterJvmName;
       this.setterJvmName = setterJvmName;

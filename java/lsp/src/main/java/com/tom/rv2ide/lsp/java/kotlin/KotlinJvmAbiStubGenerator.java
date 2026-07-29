@@ -790,7 +790,8 @@ private static final Pattern PROPERTY_PATTERN =
       boolean interfaceType,
       boolean topLevel) {
     for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
-      if (member.privateMember || member.declarationText.isEmpty()) {
+      if (member.privateMember || member.declarationText.isEmpty()
+          || member.function() && member.suspendFunction) {
         continue;
       }
       if (member.function()) {
@@ -811,7 +812,8 @@ private static final Pattern PROPERTY_PATTERN =
     out.append("  }\n");
     out.append("  public static final Companion Companion = null;\n");
     for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
-      if (member.privateMember || member.declarationText.isEmpty()) {
+      if (member.privateMember || member.declarationText.isEmpty()
+          || member.function() && member.suspendFunction) {
         continue;
       }
       if (member.function() && member.jvmStatic) {
@@ -958,6 +960,9 @@ private static final Pattern PROPERTY_PATTERN =
   private static void appendExtensionFunction(
       StringBuilder out, Matcher extension, boolean interfaceType, boolean topLevel,
       String jvmName) {
+    if (isSuspendModifier(extension.group(1))) {
+      return;
+    }
     final List<String> rawParameters = splitParameters(extension.group(4));
     if (!canProjectFallbackValueClassFunction(jvmName, extension.group(2), rawParameters, extension.group(5))) {
       return;
@@ -996,6 +1001,9 @@ private static final Pattern PROPERTY_PATTERN =
       boolean topLevel,
       List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters,
       String jvmName) {
+    if (isSuspendModifier(function.group(1))) {
+      return;
+    }
     final List<String> parameters = splitParameters(function.group(3));
     if (!canProjectFallbackValueClassFunction(jvmName, null, parameters, function.group(4))) {
       return;
@@ -1034,6 +1042,9 @@ private static final Pattern PROPERTY_PATTERN =
       boolean topLevel,
       List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters,
       String jvmName) {
+    if (isSuspendModifier(function.group(1))) {
+      return;
+    }
     final List<String> parameters = splitParameters(function.group(3));
     if (!canProjectFallbackValueClassFunction(jvmName, null, parameters, function.group(4))) {
       return;
@@ -1070,6 +1081,9 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static void appendStaticFunction(StringBuilder out, Matcher function) {
+    if (isSuspendModifier(function.group(1))) {
+      return;
+    }
     final Matcher jvmNameMatcher = Pattern.compile(
         "@JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(function.group());
     final String jvmName = jvmNameMatcher.find() ? jvmNameMatcher.group(1) : null;
@@ -2443,6 +2457,11 @@ private static final Pattern PROPERTY_PATTERN =
             && interfaceType && !topLevel && !bodyPresent
         ? "Unit"
         : declaredType;
+  }
+
+  private static boolean isSuspendModifier(String modifiers) {
+    return modifiers != null
+        && Pattern.compile("(?:^|\\s)suspend(?:\\s|$)").matcher(modifiers).find();
   }
 
   private static boolean fallbackFunctionBodyPresent(String declaration) {

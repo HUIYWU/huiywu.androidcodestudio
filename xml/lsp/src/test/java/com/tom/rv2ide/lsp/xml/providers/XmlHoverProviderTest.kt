@@ -94,6 +94,24 @@ class XmlHoverProviderTest : TestCase() {
         .isEqualTo("/opt/android-sdk/platforms/android-35/data/res/values/strings.xml")
   }
 
+  fun testShortensFileResourceValuePaths() {
+    val provider = XmlHoverProvider()
+    val reference = XmlResourceReference.parse("@drawable/launcher")!!
+    val candidate =
+        XmlHoverProvider.ResourceHoverCandidate(
+            packageName = "com.example",
+            configuration = "default",
+            source = "/project/res/drawable/launcher.xml",
+            line = null,
+            valueSummary = "/project/res/drawable/launcher.webp",
+            valueSummaryIsFilePath = true,
+        )
+
+    val content = provider.formatHover(reference, listOf(candidate), "/project")
+
+    assertThat(content).contains("Value: `<root>/res/drawable/launcher.webp`")
+  }
+
   fun testFormatsResourceMetadataAndLimitsConfigurations() {
     val provider = XmlHoverProvider()
     val reference = XmlResourceReference.parse("@style/TextAppearance.Material3.BodyMedium")!!
@@ -110,7 +128,7 @@ class XmlHoverProviderTest : TestCase() {
 
     val content = provider.formatHover(reference, candidates, "/project")
 
-    assertThat(content).startsWith("@style/TextAppearance.Material3.BodyMedium\n\n---\n\n")
+    assertThat(content).startsWith("@style/TextAppearance.Material3.BodyMedium\n- - -\n\n")
     assertThat(content).contains("Package: `com.example`")
     assertThat(content).contains("Configuration: `default`")
     assertThat(content).contains("Value: `parent=style/Parent, 3 items`")

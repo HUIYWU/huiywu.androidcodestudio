@@ -10,8 +10,9 @@ class HoverWindow(editor: IDEEditor) : BaseEditorWindow(editor) {
   private lateinit var scrollView: ScrollView
   private val resizeRunnable = Runnable {
     if (isShowing) {
-      // IME animations resize the editor after the popup has already been measured. Re-measure
-      // against the latest editor viewport instead of retaining a stale, partially clipped size.
+      // Only shrinking the viewport can clip a currently visible Hover. Expanding it when the
+      // IME closes cannot hide content, and repeatedly calling displayWindow() during that
+      // animation causes PopupWindow.update() to visibly jump/flicker.
       displayWindow()
     }
   }
@@ -23,9 +24,17 @@ class HoverWindow(editor: IDEEditor) : BaseEditorWindow(editor) {
     text.maxLines = Int.MAX_VALUE
     text.ellipsize = null
 
-    editor.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-      editor.removeCallbacks(resizeRunnable)
-      editor.post(resizeRunnable)
+    editor.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+      val width = right - left
+      val height = bottom - top
+      val oldWidth = oldRight - oldLeft
+      val oldHeight = oldBottom - oldTop
+      val viewportShrank = width < oldWidth || height < oldHeight
+
+      if (viewportShrank && isShowing) {
+        editor.removeCallbacks(resizeRunnable)
+        editor.post(resizeRunnable)
+      }
     }
   }
 
