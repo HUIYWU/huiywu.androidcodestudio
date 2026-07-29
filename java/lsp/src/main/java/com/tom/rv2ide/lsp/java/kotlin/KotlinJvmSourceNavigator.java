@@ -318,8 +318,17 @@ public final class KotlinJvmSourceNavigator {
       return false;
     }
     final String expected = vararg ? normalized + "[]" : normalized;
-    return expected.equals(javaType)
-        || (expected.indexOf('.') < 0 && javaType.endsWith("." + expected));
+    if (expected.equals(javaType)
+        || (expected.indexOf('.') < 0 && javaType.endsWith("." + expected))) {
+      return true;
+    }
+    // javac/rendering variants may use `String` where the navigator normalized an alias to
+    // `java.lang.String` (or vice versa). Compare simple names as a final exact JVM-type check.
+    final int expectedSeparator = expected.lastIndexOf('.');
+    final int actualSeparator = javaType.lastIndexOf('.');
+    final String expectedSimple = expectedSeparator < 0 ? expected : expected.substring(expectedSeparator + 1);
+    final String actualSimple = actualSeparator < 0 ? javaType : javaType.substring(actualSeparator + 1);
+    return expectedSimple.equals(actualSimple);
   }
 
   private static String navigationJavaType(String kotlinType) {

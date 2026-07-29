@@ -84,7 +84,7 @@ internal class XmlHoverProvider {
 
     // Resource metadata remains the primary hover. API metadata is a fallback for framework XML
     // symbols that are not resource references, so a resource value cannot be replaced by a tag hint.
-    return XmlApiHoverProvider().hover(document, text, offset)?.let { MarkupContent(it, MarkupKind.MARKDOWN) }
+    return XmlApiHoverProvider().hover(text, offset)?.let { MarkupContent(it, MarkupKind.MARKDOWN) }
         ?: MarkupContent()
   }
 
