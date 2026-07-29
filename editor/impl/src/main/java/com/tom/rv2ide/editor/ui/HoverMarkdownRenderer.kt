@@ -44,17 +44,16 @@ class HoverMarkdownRenderer(private val context: Context) {
   private val backgroundColor = context.resolveAttr(R.attr.colorSurface)
   private val textColor = context.resolveAttr(R.attr.colorOnPrimaryContainer)
   private val outlineColor = context.resolveAttr(R.attr.colorOutline)
-  private val resourceMarkerColor = readableMuted(outlineColor)
-  private val resourcePackageColor = readableAccent(context.resolveAttr(R.attr.colorSecondary))
-  private val resourceTypeColor = readableAccent(context.resolveAttr(R.attr.colorPrimary))
+  // Deliberately use separated hues here. Material primary/secondary colors are often too similar
+  // to make the four resource-reference components distinguishable at a glance.
+  private val resourceMarkerColor =
+      readableAccent(if (isDarkTheme()) 0xFFE1BEE7.toInt() else 0xFF7B1FA2.toInt())
+  private val resourcePackageColor =
+      readableAccent(if (isDarkTheme()) 0xFF80CBC4.toInt() else 0xFF00695C.toInt())
+  private val resourceTypeColor =
+      readableAccent(if (isDarkTheme()) 0xFFFFCC80.toInt() else 0xFFE65100.toInt())
   private val resourceEntryColor =
-      readableAccent(
-          blend(
-              context.resolveAttr(R.attr.colorPrimary),
-              context.resolveAttr(R.attr.colorSecondary),
-              0.35f,
-          )
-      )
+      readableAccent(if (isDarkTheme()) 0xFF82B1FF.toInt() else 0xFF0D47A1.toInt())
   private val inlineCodeBackground = blend(backgroundColor, textColor, 0.10f)
 
   private val markwon: Markwon =

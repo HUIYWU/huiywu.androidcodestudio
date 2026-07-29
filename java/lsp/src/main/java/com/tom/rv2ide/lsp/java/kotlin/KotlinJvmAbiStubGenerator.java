@@ -55,6 +55,11 @@ final class KotlinJvmAbiStubGenerator {
           "(?m)^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|inner|value)\\s+)*)"
               + "((?:enum\\s+class)|annotation\\s+class|class|interface|object)"
               + "\\s+([A-Za-z_][\\w]*)(?:\\s*<[^>{}()]*>)?");
+  private static final Pattern VALUE_CLASS_UNDERLYING_PATTERN =
+      Pattern.compile(
+          "(?s)\\bvalue\\s+class\\s+([A-Za-z_][\\w]*)\\s*"
+              + "(?:<[^>{}()]*>\\s*)?\\(\\s*(?:val|var)\\s+[A-Za-z_][\\w]*\\s*:\\s*"
+              + "([^,)=]+)\\s*\\)");
   private static final Pattern SECONDARY_CONSTRUCTOR_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private)\\s+)*)constructor\\s*\\((.*?)\\)\\s*(?::.*)?$");
@@ -830,7 +835,9 @@ private static final Pattern PROPERTY_PATTERN =
       boolean interfaceType,
       boolean topLevel) {
     if (function.name == null || function.name.isEmpty()
-        || function.receiverType != null && !topLevel) {
+        || function.receiverType != null && !topLevel
+        || !canProjectValueClassFunction(
+            function.jvmName, function.receiverType, function.parameterList, function.declaredType)) {
       return;
     }
     final Set<String> methodVariables = registerTypeVariables(function.typeParameters);
@@ -842,16 +849,16 @@ private static final Pattern PROPERTY_PATTERN =
       out.append(javaTypeParameters(function.typeParameters));
       final List<String> parameters = new ArrayList<>();
       if (function.receiverType != null) {
-        parameters.add(javaType(function.receiverType) + " receiver");
+        parameters.add(javaAbiType(function.receiverType) + " receiver");
       }
       for (int index = 0; index < function.parameterList.size(); index++) {
         final KotlinJvmSyntaxParser.ParameterSyntax parameter = function.parameterList.get(index);
-        parameters.add(javaSyntaxParameter(
+        parameters.add(javaAbiSyntaxParameter(
             parameter, index, index == function.parameterList.size() - 1));
       }
       final String returnType = functionReturnType(
           function.declaredType, interfaceType, topLevel, function.functionBodyPresent);
-      out.append(javaType(returnType)).append(' ')
+      out.append(javaAbiType(returnType)).append(' ')
           .append(function.jvmName == null ? function.name : function.jvmName)
           .append('(').append(String.join(", ", parameters)).append(')')
           .append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
@@ -865,7 +872,9 @@ private static final Pattern PROPERTY_PATTERN =
       KotlinJvmSyntaxParser.MemberSyntax function,
       boolean interfaceType,
       boolean topLevel) {
-    if (function.name == null || function.receiverType != null) {
+    if (function.name == null || function.receiverType != null
+        || !canProjectValueClassFunction(
+            function.jvmName, function.receiverType, function.parameterList, function.declaredType)) {
       return;
     }
     final List<KotlinJvmSyntaxParser.ParameterSyntax> parameters = function.parameterList;
@@ -887,9 +896,9 @@ private static final Pattern PROPERTY_PATTERN =
         final String returnType = functionReturnType(
             function.declaredType, interfaceType, topLevel, function.functionBodyPresent);
         out.append(javaTypeParameters(function.typeParameters))
-            .append(javaType(returnType)).append(' ')
+            .append(javaAbiType(returnType)).append(' ')
             .append(function.jvmName == null ? function.name : function.jvmName)
-            .append(javaSyntaxParameterList(
+            .append(javaAbiSyntaxParameterList(
                 parameters.subList(0, count), count == parameters.size()))
             .append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
       }
@@ -903,10 +912,12 @@ private static final Pattern PROPERTY_PATTERN =
       KotlinJvmSyntaxParser.MemberSyntax property,
       boolean interfaceType,
       boolean topLevel) {
-    if (property.name == null || property.receiverType != null) {
+    if (property.name == null || property.receiverType != null
+        || !canProjectValueClassProperty(
+            property.getterJvmName, property.setterJvmName, property.mutableProperty, property.declaredType)) {
       return;
     }
-    final String type = javaType(property.declaredType);
+    final String type = javaAbiType(property.declaredType);
     final String getter = property.getterJvmName == null
         ? propertyGetterName(property.name, property.declaredType)
         : property.getterJvmName;
@@ -947,19 +958,23 @@ private static final Pattern PROPERTY_PATTERN =
   private static void appendExtensionFunction(
       StringBuilder out, Matcher extension, boolean interfaceType, boolean topLevel,
       String jvmName) {
+    final List<String> rawParameters = splitParameters(extension.group(4));
+    if (!canProjectFallbackValueClassFunction(jvmName, extension.group(2), rawParameters, extension.group(5))) {
+      return;
+    }
     out.append("  public ");
     if (topLevel) {
       out.append("static ");
     }
     final List<String> parameters = new ArrayList<>();
-    parameters.add(javaType(extension.group(2)) + " receiver");
-    final String ordinaryParameters = javaParameterList(splitParameters(extension.group(4)));
+    parameters.add(javaAbiType(extension.group(2)) + " receiver");
+    final String ordinaryParameters = javaAbiParameterList(rawParameters);
     if (ordinaryParameters.length() > 2) {
       parameters.add(ordinaryParameters.substring(1, ordinaryParameters.length() - 1));
     }
     final String returnType = functionReturnType(
         extension.group(5), interfaceType, topLevel, fallbackFunctionBodyPresent(extension.group()));
-    out.append(javaType(returnType)).append(' ')
+    out.append(javaAbiType(returnType)).append(' ')
         .append(jvmName == null ? extension.group(3) : jvmName)
         .append("(").append(String.join(", ", parameters)).append(")");
     out.append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
@@ -981,6 +996,10 @@ private static final Pattern PROPERTY_PATTERN =
       boolean topLevel,
       List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters,
       String jvmName) {
+    final List<String> parameters = splitParameters(function.group(3));
+    if (!canProjectFallbackValueClassFunction(jvmName, null, parameters, function.group(4))) {
+      return;
+    }
     final Set<String> methodVariables = registerTypeVariables(typeParameters);
     try {
       out.append("  public ");
@@ -990,9 +1009,9 @@ private static final Pattern PROPERTY_PATTERN =
       final String returnType = functionReturnType(
           function.group(4), interfaceType, topLevel, fallbackFunctionBodyPresent(function.group()));
       out.append(javaTypeParameters(typeParameters))
-          .append(javaType(returnType)).append(' ')
+          .append(javaAbiType(returnType)).append(' ')
           .append(jvmName == null ? function.group(2) : jvmName)
-          .append(parameterList("(" + function.group(3) + ")"));
+          .append(javaAbiParameterList(parameters));
       out.append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
     } finally {
       unregisterTypeVariables(methodVariables);
@@ -1016,6 +1035,9 @@ private static final Pattern PROPERTY_PATTERN =
       List<KotlinJvmSyntaxParser.TypeParameterSyntax> typeParameters,
       String jvmName) {
     final List<String> parameters = splitParameters(function.group(3));
+    if (!canProjectFallbackValueClassFunction(jvmName, null, parameters, function.group(4))) {
+      return;
+    }
     int firstOmittable = parameters.size();
     for (int index = parameters.size() - 1;
         index >= 0 && hasDefaultValue(parameters.get(index));
@@ -1037,9 +1059,9 @@ private static final Pattern PROPERTY_PATTERN =
         final String returnType = functionReturnType(
             function.group(4), interfaceType, topLevel, fallbackFunctionBodyPresent(function.group()));
         out.append(javaTypeParameters(typeParameters))
-            .append(javaType(returnType)).append(' ')
+            .append(javaAbiType(returnType)).append(' ')
             .append(jvmName == null ? function.group(2) : jvmName)
-            .append(javaParameterList(parameters.subList(0, count), false));
+            .append(javaAbiParameterList(parameters.subList(0, count), false));
         out.append(interfaceType && !topLevel ? ";\n" : methodBody(returnType));
       }
     } finally {
@@ -1050,9 +1072,14 @@ private static final Pattern PROPERTY_PATTERN =
   private static void appendStaticFunction(StringBuilder out, Matcher function) {
     final Matcher jvmNameMatcher = Pattern.compile(
         "@JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(function.group());
-    final String name = jvmNameMatcher.find() ? jvmNameMatcher.group(1) : function.group(2);
-    out.append("  public static ").append(javaType(function.group(4))).append(' ')
-        .append(name).append(parameterList("(" + function.group(3) + ")"))
+    final String jvmName = jvmNameMatcher.find() ? jvmNameMatcher.group(1) : null;
+    final List<String> parameters = splitParameters(function.group(3));
+    if (!canProjectFallbackValueClassFunction(jvmName, null, parameters, function.group(4))) {
+      return;
+    }
+    final String name = jvmName == null ? function.group(2) : jvmName;
+    out.append("  public static ").append(javaAbiType(function.group(4))).append(' ')
+        .append(name).append(javaAbiParameterList(parameters))
         .append(methodBody(function.group(4)));
   }
 
@@ -1078,7 +1105,11 @@ private static final Pattern PROPERTY_PATTERN =
   private static void appendProperty(
       StringBuilder out, Matcher property, boolean interfaceType, boolean topLevel,
       String getterJvmName, String setterJvmName) {
-    final String type = javaType(property.group(4));
+    final boolean mutable = "var".equals(property.group(2));
+    if (!canProjectValueClassProperty(getterJvmName, setterJvmName, mutable, property.group(4))) {
+      return;
+    }
+    final String type = javaAbiType(property.group(4));
     final String name = property.group(3);
     final String getter = getterJvmName == null
         ? propertyGetterName(name, property.group(4)) : getterJvmName;
@@ -1103,16 +1134,22 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static void appendStaticProperty(StringBuilder out, Matcher property) {
-    final String type = javaType(property.group(4));
     final String name = property.group(3);
     final Matcher getterJvmNameMatcher = Pattern.compile(
         "@get:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(property.group());
     final Matcher setterJvmNameMatcher = Pattern.compile(
         "@set:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(property.group());
-    final String getter = getterJvmNameMatcher.find()
-        ? getterJvmNameMatcher.group(1) : propertyGetterName(name, property.group(4));
-    final String setter = setterJvmNameMatcher.find()
-        ? setterJvmNameMatcher.group(1) : propertySetterName(name, property.group(4));
+    final String getterJvmName = getterJvmNameMatcher.find() ? getterJvmNameMatcher.group(1) : null;
+    final String setterJvmName = setterJvmNameMatcher.find() ? setterJvmNameMatcher.group(1) : null;
+    final boolean mutable = "var".equals(property.group(2));
+    if (!canProjectValueClassProperty(getterJvmName, setterJvmName, mutable, property.group(4))) {
+      return;
+    }
+    final String type = javaAbiType(property.group(4));
+    final String getter = getterJvmName == null
+        ? propertyGetterName(name, property.group(4)) : getterJvmName;
+    final String setter = setterJvmName == null
+        ? propertySetterName(name, property.group(4)) : setterJvmName;
     out.append("  public static ").append(type).append(' ').append(getter).append("()")
         .append(" { return ").append(defaultValue(property.group(4))).append("; }\n");
     if ("var".equals(property.group(2))) {
@@ -1820,16 +1857,38 @@ private static final Pattern PROPERTY_PATTERN =
     final List<String> parameters = new ArrayList<>();
     for (int index = 0; index < kotlinParameters.size(); index++) {
       parameters.add(javaSyntaxParameter(
-          kotlinParameters.get(index),
-          index,
-          allowTrailingVarargs && index == kotlinParameters.size() - 1));
+          kotlinParameters.get(index), index, allowTrailingVarargs && index == kotlinParameters.size() - 1));
+    }
+    return "(" + String.join(", ", parameters) + ")";
+  }
+
+  private static String javaAbiSyntaxParameterList(
+      List<KotlinJvmSyntaxParser.ParameterSyntax> kotlinParameters,
+      boolean allowTrailingVarargs) {
+    final List<String> parameters = new ArrayList<>();
+    for (int index = 0; index < kotlinParameters.size(); index++) {
+      parameters.add(javaAbiSyntaxParameter(
+          kotlinParameters.get(index), index, allowTrailingVarargs && index == kotlinParameters.size() - 1));
     }
     return "(" + String.join(", ", parameters) + ")";
   }
 
   private static String javaSyntaxParameter(
       KotlinJvmSyntaxParser.ParameterSyntax parameter, int index, boolean lastParameter) {
-    final String elementType = javaType(parameter.type);
+    return javaSyntaxParameter(parameter, index, lastParameter, false);
+  }
+
+  private static String javaAbiSyntaxParameter(
+      KotlinJvmSyntaxParser.ParameterSyntax parameter, int index, boolean lastParameter) {
+    return javaSyntaxParameter(parameter, index, lastParameter, true);
+  }
+
+  private static String javaSyntaxParameter(
+      KotlinJvmSyntaxParser.ParameterSyntax parameter,
+      int index,
+      boolean lastParameter,
+      boolean valueClassAbi) {
+    final String elementType = valueClassAbi ? javaAbiType(parameter.type) : javaType(parameter.type);
     final String javaParameterType = parameter.vararg
         ? varargJavaType(elementType, lastParameter)
         : elementType;
@@ -1845,6 +1904,28 @@ private static final Pattern PROPERTY_PATTERN =
 
   private static String javaParameterList(List<String> kotlinParameters) {
     return javaParameterList(kotlinParameters, true);
+  }
+
+  private static String javaAbiParameterList(List<String> kotlinParameters) {
+    return javaAbiParameterList(kotlinParameters, true);
+  }
+
+  private static String javaAbiParameterList(
+      List<String> kotlinParameters, boolean allowTrailingVarargs) {
+    final List<String> parameters = new ArrayList<>();
+    for (int index = 0; index < kotlinParameters.size(); index++) {
+      final String rawPart = kotlinParameters.get(index).trim();
+      final boolean vararg = rawPart.matches("(?s)^(?:(?:val|var|crossinline|noinline)\\s+)*vararg\\b.*");
+      final String part = rawPart.replaceAll(
+          "^(?:(?:val|var|crossinline|noinline|vararg)\\s+)+", "");
+      final int colon = part.indexOf(':');
+      final String name = colon < 0 ? "arg" + index : part.substring(0, colon).trim();
+      final String elementType = colon < 0 ? "Object" : javaAbiType(part.substring(colon + 1));
+      parameters.add((vararg
+          ? varargJavaType(elementType, allowTrailingVarargs && index == kotlinParameters.size() - 1)
+          : elementType) + " " + safeName(name, index));
+    }
+    return "(" + String.join(", ", parameters) + ")";
   }
 
   private static String javaParameterList(
@@ -1992,6 +2073,83 @@ private static final Pattern PROPERTY_PATTERN =
           + ("Object".equals(bound) || "void".equals(bound) ? "" : " extends " + bound));
     }
     return declarations.isEmpty() ? "" : "<" + String.join(", ", declarations) + "> ";
+  }
+
+  private static boolean canProjectValueClassProperty(
+      String getterJvmName, String setterJvmName, boolean mutable, String type) {
+    if (!containsValueClassType(type)) {
+      return true;
+    }
+    return getterJvmName != null && (!mutable || setterJvmName != null);
+  }
+
+  private static boolean canProjectValueClassFunction(
+      String jvmName,
+      String receiverType,
+      List<KotlinJvmSyntaxParser.ParameterSyntax> parameters,
+      String returnType) {
+    boolean usesValueClass = containsValueClassType(receiverType) || containsValueClassType(returnType);
+    if (parameters != null) {
+      for (KotlinJvmSyntaxParser.ParameterSyntax parameter : parameters) {
+        usesValueClass |= containsValueClassType(parameter.type);
+      }
+    }
+    return !usesValueClass || jvmName != null;
+  }
+
+  private static boolean canProjectFallbackValueClassFunction(
+      String jvmName, String receiverType, List<String> parameters, String returnType) {
+    boolean usesValueClass = containsValueClassType(receiverType) || containsValueClassType(returnType);
+    if (parameters != null) {
+      for (String parameter : parameters) {
+        final int colon = topLevelIndexOf(parameter, ':');
+        usesValueClass |= colon >= 0 && containsValueClassType(parameter.substring(colon + 1));
+      }
+    }
+    return !usesValueClass || jvmName != null;
+  }
+
+  private static boolean containsValueClassType(String kotlinType) {
+    if (kotlinType == null) {
+      return false;
+    }
+    final TypeResolutionContext context = TYPE_CONTEXT.get();
+    if (context == null || context.valueClassUnderlyingTypes.isEmpty()) {
+      return false;
+    }
+    final String type = stripDefaultValue(kotlinType);
+    for (String valueClass : context.valueClassUnderlyingTypes.keySet()) {
+      if (Pattern.compile("(?:^|[^A-Za-z0-9_$.])" + Pattern.quote(valueClass)
+          + "(?:$|[^A-Za-z0-9_$])").matcher(type).find()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Returns true only for a non-null, non-generic direct value-class occurrence. */
+  private static boolean isDirectValueClassType(String kotlinType) {
+    if (kotlinType == null) {
+      return false;
+    }
+    final String type = stripDefaultValue(kotlinType.trim());
+    if (type.endsWith("?") || type.indexOf('<') >= 0 || type.indexOf('>') >= 0
+        || type.indexOf('(') >= 0 || type.indexOf(')') >= 0 || type.indexOf('[') >= 0) {
+      return false;
+    }
+    final TypeResolutionContext context = TYPE_CONTEXT.get();
+    return context != null && context.valueClassUnderlyingTypes.containsKey(type);
+  }
+
+  /** Maps only the direct non-null value-class use proven safe by canProjectValueClassFunction. */
+  private static String javaAbiType(String kotlinType) {
+    if (isDirectValueClassType(kotlinType)) {
+      final String underlying = TYPE_CONTEXT.get().valueClassUnderlyingTypes.get(kotlinType.trim());
+      if (underlying != null) {
+        return javaType(underlying);
+      }
+    }
+    return javaType(kotlinType);
   }
 
   private static String javaType(String kotlinType) {
@@ -2192,15 +2350,18 @@ private static final Pattern PROPERTY_PATTERN =
     final Map<String, String> imports;
     final Map<String, String> declaredTypes;
     final Map<String, String> knownSimpleTypes;
+    final Map<String, String> valueClassUnderlyingTypes;
     final Set<String> typeVariables = new LinkedHashSet<>();
 
     private TypeResolutionContext(
         Map<String, String> imports,
         Map<String, String> declaredTypes,
-        Map<String, String> knownSimpleTypes) {
+        Map<String, String> knownSimpleTypes,
+        Map<String, String> valueClassUnderlyingTypes) {
       this.imports = imports;
       this.declaredTypes = declaredTypes;
       this.knownSimpleTypes = knownSimpleTypes;
+      this.valueClassUnderlyingTypes = valueClassUnderlyingTypes;
     }
 
     static TypeResolutionContext create(
@@ -2256,7 +2417,13 @@ private static final Pattern PROPERTY_PATTERN =
           }
         }
       }
-      return new TypeResolutionContext(imports, declaredTypes, knownSimpleTypes);
+      final Map<String, String> valueClassUnderlyingTypes = new LinkedHashMap<>();
+      final Matcher valueClass = VALUE_CLASS_UNDERLYING_PATTERN.matcher(source);
+      while (valueClass.find()) {
+        valueClassUnderlyingTypes.put(valueClass.group(1), valueClass.group(2).trim());
+      }
+      return new TypeResolutionContext(
+          imports, declaredTypes, knownSimpleTypes, valueClassUnderlyingTypes);
     }
   }
 

@@ -80,6 +80,56 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsValueClassUsesOnlyWithExplicitJvmNames() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @JvmInline
+        value class UserId(val raw: String)
+
+        fun hidden(id: UserId): UserId = id
+
+        @JvmName("findRaw")
+        fun find(id: UserId): UserId = id
+
+        @JvmName("nullableRaw")
+        fun nullable(id: UserId?): UserId? = id
+
+        @JvmName("boxedList")
+        fun list(ids: List<UserId>): List<UserId> = ids
+
+        fun UserId.hiddenExtension(): UserId = this
+
+        @JvmName("renderRaw")
+        fun UserId.render(): UserId = this
+
+        val hiddenProperty: UserId = UserId("hidden")
+
+        @get:JvmName("readRaw")
+        val exposedProperty: UserId = UserId("exposed")
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.ValueUsesKt", "ValueUses.kt", source, emptySet(), mode)
+      assertNotNull("Value-class facade generation failed in $mode", stub)
+      assertFalse("Mangled function leaked in $mode:\n$stub", stub!!.contains(" hidden("))
+      assertFalse("Mangled extension leaked in $mode:\n$stub", stub.contains("hiddenExtension"))
+      assertFalse("Mangled property leaked in $mode:\n$stub", stub.contains("getHiddenProperty"))
+      assertContains(stub, "String findRaw(String id)")
+      assertContains(stub, "UserId nullableRaw(UserId id)")
+      assertContains(stub, "java.util.List<UserId> boxedList(java.util.List<UserId> ids)")
+      assertContains(stub, "String renderRaw(String receiver)")
+      assertContains(stub, "String readRaw()")
+    }
+  }
+
+  @Test
   fun generate_projectsConstructorPropertiesAndMembers() {
     val source =
         """

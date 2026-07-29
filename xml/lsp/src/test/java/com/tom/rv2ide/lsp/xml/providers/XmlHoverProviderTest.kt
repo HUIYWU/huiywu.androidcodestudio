@@ -110,7 +110,7 @@ class XmlHoverProviderTest : TestCase() {
 
     val content = provider.formatHover(reference, candidates, "/project")
 
-    assertThat(content).startsWith("@style/TextAppearance.Material3.BodyMedium\n\n")
+    assertThat(content).startsWith("@style/TextAppearance.Material3.BodyMedium\n\n---\n\n")
     assertThat(content).contains("Package: `com.example`")
     assertThat(content).contains("Configuration: `default`")
     assertThat(content).contains("Value: `parent=style/Parent, 3 items`")

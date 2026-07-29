@@ -140,7 +140,7 @@ internal class XmlHoverProvider {
       // The first plain-text line is syntax-highlighted by HoverMarkdownRenderer. Keep all metadata
       // at one visual level so Markwon does not introduce heading, list, or block spacing.
       append(reference.text)
-      append("\n\nPackage: `")
+      append("\n\n---\n\nPackage: `")
       append(first.packageName.ifBlank { "current" }.escapeInlineCode())
       append('`')
       candidates.take(MAX_CONFIGURATIONS).forEach { candidate ->
