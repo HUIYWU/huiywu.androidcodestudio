@@ -67,8 +67,10 @@ class KotlinJvmAbiStubGeneratorTest {
       val stub = KotlinJvmAbiStubGenerator.generateForTest(
           "sample.UserId", "UserId.kt", source, emptySet(), mode)
       assertNotNull("Value class generation failed in $mode", stub)
-      assertTrue(stub!!.contains("public final class UserId"))
-      assertTrue(stub.contains("private UserId(String raw)"))
+      assertTrue("Unexpected value class declaration in $mode:\n$stub",
+          stub!!.contains("public final class UserId"))
+      assertTrue("Unexpected value class constructor in $mode:\n$stub",
+          stub.contains("private UserId(String raw)"))
       assertFalse(stub.contains("public UserId("))
       assertFalse(stub.contains("protected UserId()"))
       assertFalse(stub.contains("getRaw()"))

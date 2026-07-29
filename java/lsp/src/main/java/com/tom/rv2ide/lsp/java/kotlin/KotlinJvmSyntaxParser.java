@@ -22,6 +22,7 @@ import com.itsaky.androidide.treesitter.kotlin.TSLanguageKotlin;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /** Extracts declaration boundaries from Kotlin source without performing semantic resolution. */
 final class KotlinJvmSyntaxParser {
@@ -82,7 +83,7 @@ final class KotlinJvmSyntaxParser {
                 text(source, name),
                 startIndex(source, name),
                 endIndex(source, name) - startIndex(source, name),
-                hasModifier(declaration, "private")));
+                hasModifier(source, declaration, "private")));
           }
         }
         return Collections.unmodifiableList(result);
@@ -192,10 +193,10 @@ final class KotlinJvmSyntaxParser {
         members(source, companionBodyNode),
         hasDirectToken(declaration, "interface"),
         hasDirectToken(declaration, "enum"),
-        hasModifier(declaration, "annotation"),
-        hasModifier(declaration, "private"),
-        hasModifier(declaration, "inner"),
-        hasModifier(declaration, "value"));
+        hasClassModifier(source, declaration, "annotation"),
+        hasModifier(source, declaration, "private"),
+        hasClassModifier(source, declaration, "inner"),
+        hasClassModifier(source, declaration, "value"));
   }
 
   private static void collectDirectNestedTypes(
@@ -823,9 +824,41 @@ final class KotlinJvmSyntaxParser {
     return bindingPattern != null && containsToken(bindingPattern, token);
   }
 
-  private static boolean hasModifier(TSNode declaration, String modifier) {
+  private static boolean hasClassModifier(
+      String source, TSNode declaration, String modifier) {
     final TSNode modifiers = fieldChild(declaration, "modifiers", "modifiers");
-    return modifiers != null && containsToken(modifiers, modifier);
+    return hasWrappedModifier(source, modifiers, "class_modifier", modifier);
+  }
+
+  private static boolean hasWrappedModifier(
+      String source, TSNode node, String wrapperType, String modifier) {
+    if (node == null) {
+      return false;
+    }
+    if (wrapperType.equals(node.getType())) {
+      return modifier.equals(text(source, node).trim());
+    }
+    for (int index = 0; index < node.getChildCount(); index++) {
+      if (hasWrappedModifier(source, node.getChild(index), wrapperType, modifier)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasModifier(String source, TSNode declaration, String modifier) {
+    final TSNode modifiers = fieldChild(declaration, "modifiers", "modifiers");
+    if (modifiers == null) {
+      return false;
+    }
+    if (containsToken(modifiers, modifier)) {
+      return true;
+    }
+    // Restrict textual recovery to the modifiers node range so identifiers, comments and
+    // declaration bodies cannot create false modifier matches.
+    final String modifierText = text(source, modifiers);
+    return Pattern.compile("(?:^|\\s)" + Pattern.quote(modifier) + "(?:\\s|$)")
+        .matcher(modifierText).find();
   }
 
   private static boolean containsToken(TSNode node, String token) {
