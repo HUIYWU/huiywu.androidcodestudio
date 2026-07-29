@@ -35,7 +35,10 @@ internal class XmlApiHoverProvider {
     val tagName = tagNameAt(text, offset) ?: return null
     val widgets = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return null
     val widget = StyleableResolver.widgetFor(tagName, widgets) ?: return null
-    val since = versions.classInfo(widget.qualifiedName)?.since ?: return null
+    // ApiVersions intentionally omits classes that existed from API 1 with no later lifecycle
+    // change. WidgetTable has already established that this is a framework layout widget, so API 1
+    // is a safe and useful fallback rather than treating the absent compact entry as unknown.
+    val since = versions.classInfo(widget.qualifiedName)?.since ?: API_LEVEL_ONE
     return format(tagName, since)
   }
 
@@ -60,6 +63,7 @@ internal class XmlApiHoverProvider {
   private companion object {
     const val ANDROID_PREFIX = "android:"
     const val ANDROID_R_ATTR_CLASS = "android.R\$attr"
+    const val API_LEVEL_ONE = 1
     val ANDROID_ATTRIBUTE = Regex("\\bandroid:[A-Za-z_][A-Za-z0-9_]*")
     val TAG_NAME = Regex("<([A-Za-z_][A-Za-z0-9_.]*)")
   }
