@@ -117,7 +117,7 @@ internal class XmlHoverProvider {
                 result.add(
                     ResourceHoverCandidate(
                         packageName = resourcePackage.name,
-                        configuration = configured.config.toString().ifBlank { "default" },
+                        configuration = configurationLabel(configured.config),
                         source = source.path,
                         line = source.line,
                         valueSummary = summary(value),
@@ -183,6 +183,11 @@ internal class XmlHoverProvider {
             ?: normalizedSource.replacePathPrefix(IDE_HOME_DIRECTORY, IDE_HOME_LABEL)
             ?: normalizedSource
     return line?.let { "$displayPath:$it" } ?: displayPath
+  }
+
+  private fun configurationLabel(config: ConfigDescription): String {
+    return config.toString().takeUnless { it.isBlank() || it.equals("DEFAULT", ignoreCase = true) }
+        ?: "default"
   }
 
   private fun workspaceProjectRoot(): String? {
