@@ -801,15 +801,15 @@ public class XML11NSDocumentScannerImpl extends XML11DocumentScannerImpl {
         // Scan the complete actual name before comparing it to the element stack. skipString(expected)
         // classifies an actual name with the expected name as a prefix as ETagUnterminated,
         // although it is a name mismatch and IDE consumers need both names explicitly.
-        boolean hasActualName = fEntityScanner.scanQName(fElementQName);
+        boolean hasActualName = fEntityScanner.scanQName(fEndElementQName);
         if (!hasActualName) {
              reportFatalError(
                 "ETagRequired",
                 new Object[] { endElementName.rawname });
-        } else if (!endElementName.rawname.equals(fElementQName.rawname)) {
+        } else if (!endElementName.rawname.equals(fEndElementQName.rawname)) {
              reportFatalError(
                 "ETagNameMismatch",
-                new Object[] { endElementName.rawname, fElementQName.rawname });
+                new Object[] { endElementName.rawname, fEndElementQName.rawname });
         }
 
         // end

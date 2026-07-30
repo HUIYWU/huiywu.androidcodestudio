@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
 import jdkx.lang.model.element.ExecutableElement;
@@ -23,6 +25,7 @@ import jdkx.lang.model.element.TypeElement;
 /** Maps javac elements from Kotlin ABI stubs back to real Kotlin source declarations. */
 public final class KotlinJvmSourceNavigator {
 
+  private static final Logger LOG = LoggerFactory.getLogger(KotlinJvmSourceNavigator.class);
   private static final Pattern TYPE_ALIAS_PATTERN =
       Pattern.compile("(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
   private static final ThreadLocal<Map<String, String>> TYPE_ALIASES = new ThreadLocal<>();
@@ -183,9 +186,21 @@ public final class KotlinJvmSourceNavigator {
         continue;
       }
       final String jvmMemberName = member.jvmName == null ? member.name : member.jvmName;
+      final boolean nameMatches = javaName.equals(jvmMemberName);
       final boolean matchesElement = member.function()
-          ? javaName.equals(jvmMemberName) && functionSignatureMatches(member, executable)
+          ? nameMatches && functionSignatureMatches(member, executable)
           : propertyJavaNameMatches(member, javaName, element.getKind());
+      if (member.function() && nameMatches && LOG.isWarnEnabled()) {
+        LOG.warn(
+            "Kotlin navigation function candidate: javaElement={}, member={}, parameters={}, returnType={}, "
+                + "match={}, aliases={}",
+            executable,
+            member.name,
+            member.parameterList,
+            member.declaredType,
+            matchesElement,
+            TYPE_ALIASES.get());
+      }
       if (matchesElement) {
         match = new SourceRange(member.nameOffset, member.nameLength);
         matches++;
@@ -208,6 +223,11 @@ public final class KotlinJvmSourceNavigator {
             && (!member.jvmOverloads
                 || kotlinParameterCount < trailingDefaultStart(member.parameterList)
                 || kotlinParameterCount >= fullCount)) {
+      if (LOG.isWarnEnabled()) {
+        LOG.warn(
+            "Kotlin navigation function arity mismatch: member={}, javacParameters={}, kotlinParameters={}, receiverType={}",
+            member.name, parameterCount, fullCount, member.receiverType);
+      }
       return false;
     }
     if (receiverCount == 1
@@ -217,10 +237,23 @@ public final class KotlinJvmSourceNavigator {
     }
     for (int index = 0; index < kotlinParameterCount; index++) {
       final KotlinJvmSyntaxParser.ParameterSyntax parameter = member.parameterList.get(index);
-      if (!functionParameterTypeCompatible(
-          parameter.type,
-          parameter.vararg && index == member.parameterList.size() - 1,
-          executable.getParameters().get(index + receiverCount).asType().toString())) {
+      final boolean vararg = parameter.vararg && index == member.parameterList.size() - 1;
+      final String javacType = executable.getParameters().get(index + receiverCount).asType().toString();
+      final boolean compatible = functionParameterTypeCompatible(parameter.type, vararg, javacType);
+      if (LOG.isWarnEnabled()) {
+        LOG.warn(
+            "Kotlin navigation function parameter: member={}, index={}, kotlinType={}, normalized={}, "
+                + "vararg={}, javacType={}, compatible={}, aliases={}",
+            member.name,
+            index,
+            parameter.type,
+            navigationJavaType(parameter.type),
+            vararg,
+            javacType,
+            compatible,
+            TYPE_ALIASES.get());
+      }
+      if (!compatible) {
         return false;
       }
     }

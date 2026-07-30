@@ -85,6 +85,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   companion object {
 
     private val log = LoggerFactory.getLogger(DefaultResourceTableRegistry::class.java)
+    private const val MATERIAL_PACKAGE = "com.google.android.material"
   }
   override var isLoggingEnabled: Boolean = IdeLogConfig.shouldLogDebug()
 
@@ -339,7 +340,38 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     val table = createTable(*validResDirs.toTypedArray()) ?: return null
     table.packages.firstOrNull()?.name = name
     validResDirs.forEach { resDir -> addFileReferences(table, name, resDir) }
+    logMaterialTableBuild(name, validResDirs, table)
     return table
+  }
+
+  private fun logMaterialTableBuild(
+    packageName: String,
+    resDirs: List<File>,
+    table: ResourceTable,
+  ) {
+    if (packageName != MATERIAL_PACKAGE) {
+      return
+    }
+    val valuesFiles =
+      resDirs.sumOf { resDir ->
+        File(resDir, "values").listFiles()?.count { it.isFile && it.extension == "xml" } ?: 0
+      }
+    val groups = table.packages.firstOrNull()?.let { resourcePackage ->
+      AaptResourceType.values().filter { resourcePackage.findGroup(it) != null }
+        .joinToString { it.tagName }
+    }.orEmpty()
+    val styleCount =
+      table.packages.firstOrNull()
+        ?.findGroup(AaptResourceType.STYLE)
+        ?.findEntries { true }
+        ?.size ?: 0
+    log.warn(
+      "Material resource table build probe; resDirs={}, valuesXmlFiles={}, groups={}, styleCount={}",
+      resDirs.joinToString { it.path },
+      valuesFiles,
+      groups,
+      styleCount,
+    )
   }
 
   private fun createTable(vararg resDirs: File): ResourceTable? {

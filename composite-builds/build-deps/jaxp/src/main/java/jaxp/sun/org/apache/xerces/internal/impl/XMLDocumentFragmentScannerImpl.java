@@ -352,6 +352,15 @@ public class XMLDocumentFragmentScannerImpl
     /** Element QName. */
     protected QName fElementQName = new QName();
 
+    /**
+     * Temporary QName used only while scanning an end-tag name.
+     *
+     * fElementQName is sometimes an ElementStack-owned object (see scanStartElement()).
+     * Scanning an actual closing name into it would then overwrite the stack entry that is
+     * reused by the StAX event/element-skipping path.
+     */
+    protected QName fEndElementQName = new QName();
+
     /** Attribute QName. */
     protected QName fAttributeQName = new QName();
 
@@ -1757,16 +1766,16 @@ public class XMLDocumentFragmentScannerImpl
         // although it is a name mismatch and IDE consumers need both names explicitly.
         boolean hasActualName;
         if (fNamespaces) {
-            hasActualName = fEntityScanner.scanQName(fElementQName);
+            hasActualName = fEntityScanner.scanQName(fEndElementQName);
         } else {
             String actualName = fEntityScanner.scanName();
             hasActualName = actualName != null;
-            fElementQName.setValues(null, actualName, actualName, null);
+            fEndElementQName.setValues(null, actualName, actualName, null);
         }
         if (!hasActualName) {
             reportFatalError("ETagRequired", new Object[]{rawname});
-        } else if (!rawname.equals(fElementQName.rawname)) {
-            reportFatalError("ETagNameMismatch", new Object[]{rawname, fElementQName.rawname});
+        } else if (!rawname.equals(fEndElementQName.rawname)) {
+            reportFatalError("ETagNameMismatch", new Object[]{rawname, fEndElementQName.rawname});
         }
 
         // end
