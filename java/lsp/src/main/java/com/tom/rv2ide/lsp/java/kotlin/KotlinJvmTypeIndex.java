@@ -51,6 +51,8 @@ public final class KotlinJvmTypeIndex {
       Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_][\\w]*(?:\\.[A-Za-z_][\\w]*)*)");
   private static final Pattern FILE_JVM_NAME_PATTERN =
       Pattern.compile("(?m)^\\s*@file:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)");
+  private static final Pattern FILE_JVM_MULTIFILE_PATTERN =
+      Pattern.compile("(?m)^\\s*@file:JvmMultifileClass(?:\\s|$)");
   private static final Pattern TYPE_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|enum|"
@@ -99,6 +101,35 @@ public final class KotlinJvmTypeIndex {
    * This is intentionally used only by explicit navigation requests; completion continues to use
    * the cached name-only index above.
    */
+  public static List<KotlinTypeDeclaration> findMultifileDeclarations(
+      ModuleProject module, String qualifiedName) {
+    if (module == null || qualifiedName == null || qualifiedName.isEmpty()) {
+      return Collections.emptyList();
+    }
+    final java.util.ArrayList<KotlinTypeDeclaration> result = new java.util.ArrayList<>();
+    for (java.io.File root : module.getCompileSourceDirectories()) {
+      if (root == null || !root.isDirectory()) {
+        continue;
+      }
+      try (Stream<Path> paths = Files.walk(root.toPath())) {
+        final java.util.Iterator<Path> iterator = paths
+            .filter(DocumentUtils::isKotlinFile)
+            .filter(path -> path.getFileName().toString().endsWith(".kt"))
+            .iterator();
+        while (iterator.hasNext()) {
+          final Path path = iterator.next();
+          final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
+          if (isMultifileFacade(source, path, qualifiedName)) {
+            result.add(new KotlinTypeDeclaration(path, fileJvmNameOffset(source), facadeName(source, path).length()));
+          }
+        }
+      } catch (IOException error) {
+        LOG.debug("Unable to scan Kotlin multifile sources for {}", qualifiedName, error);
+      }
+    }
+    return result.isEmpty() ? Collections.emptyList() : Collections.unmodifiableList(result);
+  }
+
   public static KotlinTypeDeclaration findDeclaration(ModuleProject module, String qualifiedName) {
     if (module == null || qualifiedName == null || qualifiedName.isEmpty()) {
       return null;
@@ -218,6 +249,27 @@ public final class KotlinJvmTypeIndex {
       this.offset = offset;
       this.length = length;
     }
+  }
+
+  private static boolean isMultifileFacade(String source, Path path, String qualifiedName) {
+    if (!FILE_JVM_MULTIFILE_PATTERN.matcher(source).find()) {
+      return false;
+    }
+    final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
+    final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
+    return qualifiedName.equals(qualifiedName(packageName, facadeName(source, path)));
+  }
+
+  private static String facadeName(String source, Path path) {
+    final Matcher jvmNameMatcher = FILE_JVM_NAME_PATTERN.matcher(source);
+    return jvmNameMatcher.find()
+        ? jvmNameMatcher.group(1)
+        : path.getFileName().toString().substring(0, path.getFileName().toString().length() - 3) + "Kt";
+  }
+
+  private static int fileJvmNameOffset(String source) {
+    final Matcher matcher = FILE_JVM_NAME_PATTERN.matcher(source);
+    return matcher.find() ? matcher.start(1) : 0;
   }
 
   private static boolean hasPublicTopLevelMember(

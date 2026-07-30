@@ -51,6 +51,16 @@ class CorrectAttributeNameActionTest : TestCase() {
         .isNull()
   }
 
+  fun testSharedSuggestionSelectionSupportsWidgetNames() {
+    assertThat(
+            CorrectAttributeNameAction.findUniqueSuggestion(
+                "TextVeiw",
+                setOf("TextView", "ImageView", "LinearLayout"),
+            )
+        )
+        .isEqualTo("TextView")
+  }
+
   fun testExtractsOnlyFrameworkAttributeDiagnosticMessage() {
     assertThat(
             CorrectAttributeNameAction.attributeNameFromDiagnostic(

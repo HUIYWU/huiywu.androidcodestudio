@@ -341,7 +341,7 @@ private static final Pattern PROPERTY_PATTERN =
     return mergeGeneratedStubs(structured, fallback);
   }
 
-  private static String mergeGeneratedStubs(String structured, String fallback) {
+  static String mergeGeneratedStubs(String structured, String fallback) {
     final int structuredOpen = structured.indexOf('{');
     final int fallbackOpen = fallback.indexOf('{');
     if (structuredOpen < 0 || fallbackOpen < 0) {

@@ -130,6 +130,47 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_mergesMultifileFacadePartsIntoOneStableJvmSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val firstPart =
+        """
+        @file:JvmName("Api")
+        @file:JvmMultifileClass
+        package sample
+
+        fun load(id: Int): String = id.toString()
+        """.trimIndent()
+    val secondPart =
+        """
+        @file:JvmName("Api")
+        @file:JvmMultifileClass
+        package sample
+
+        fun save(value: String): Boolean = value.isNotEmpty()
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val firstStub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.Api", "ApiOne.kt", firstPart, emptySet(), mode)
+      val secondStub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.Api", "ApiTwo.kt", secondPart, emptySet(), mode)
+      assertNotNull("First multifile part failed in $mode", firstStub)
+      assertNotNull("Second multifile part failed in $mode", secondStub)
+      val merged = KotlinJvmAbiStubGenerator.mergeGeneratedStubs(firstStub!!, secondStub!!)
+      assertContains(merged, "public final class Api")
+      assertContains(merged, "String load(int id)")
+      assertContains(merged, "boolean save(String value)")
+      assertEquals(1, Regex("\\bload\\(int id\\)").findAll(merged).count())
+      assertEquals(1, Regex("\\bsave\\(String value\\)").findAll(merged).count())
+      assertFalse(merged.contains("Api__ApiOneKt"))
+      assertFalse(merged.contains("Api__ApiTwoKt"))
+    }
+  }
+
+  @Test
   fun generate_omitsJvmSyntheticJvmSurfaces() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

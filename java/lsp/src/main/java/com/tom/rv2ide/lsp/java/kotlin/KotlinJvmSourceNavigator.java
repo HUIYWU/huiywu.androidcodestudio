@@ -41,8 +41,32 @@ public final class KotlinJvmSourceNavigator {
     }
     final TypeElement topLevelOwner = topLevelOwner(owner);
     final String qualifiedName = topLevelOwner.getQualifiedName().toString();
-    final KotlinTypeDeclaration declaration =
-        KotlinJvmTypeIndex.findDeclaration(module, qualifiedName);
+    final List<KotlinTypeDeclaration> multifileDeclarations =
+        KotlinJvmTypeIndex.findMultifileDeclarations(module, qualifiedName);
+    if (!(element instanceof TypeElement) && !multifileDeclarations.isEmpty()) {
+      for (KotlinTypeDeclaration multifileDeclaration : multifileDeclarations) {
+        final String multifileSource =
+            FileManager.INSTANCE.getDocumentContents(multifileDeclaration.file).toString();
+        final Map<String, String> previousAliases = TYPE_ALIASES.get();
+        TYPE_ALIASES.set(collectSimpleTypeAliases(multifileSource));
+        try {
+          final SourceRange multifileRange = findFacadeMember(multifileSource, element);
+          if (multifileRange != null) {
+            return location(
+                multifileDeclaration.file, multifileSource, multifileRange.offset, multifileRange.length);
+          }
+        } finally {
+          if (previousAliases == null) {
+            TYPE_ALIASES.remove();
+          } else {
+            TYPE_ALIASES.set(previousAliases);
+          }
+        }
+      }
+    }
+    final KotlinTypeDeclaration declaration = multifileDeclarations.isEmpty()
+        ? KotlinJvmTypeIndex.findDeclaration(module, qualifiedName)
+        : multifileDeclarations.get(0);
     if (declaration == null) {
       return null;
     }

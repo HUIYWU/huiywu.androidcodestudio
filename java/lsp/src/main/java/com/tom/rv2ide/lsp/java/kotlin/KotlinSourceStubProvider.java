@@ -81,12 +81,17 @@ public final class KotlinSourceStubProvider {
           || classOutputTypes.contains(imported)) {
         continue;
       }
-      final KotlinJvmTypeIndex.KotlinTypeDeclaration declaration =
-          KotlinJvmTypeIndex.findDeclaration(module, imported);
+      final List<KotlinJvmTypeIndex.KotlinTypeDeclaration> multifileDeclarations =
+          KotlinJvmTypeIndex.findMultifileDeclarations(module, imported);
+      final KotlinJvmTypeIndex.KotlinTypeDeclaration declaration = multifileDeclarations.isEmpty()
+          ? KotlinJvmTypeIndex.findDeclaration(module, imported)
+          : multifileDeclarations.get(0);
       if (declaration == null) {
         continue;
       }
-      final String stub = generateStub(imported, declaration.file, sourceTypes);
+      final String stub = multifileDeclarations.isEmpty()
+          ? generateStub(imported, declaration.file, sourceTypes)
+          : generateMultifileStub(imported, multifileDeclarations, sourceTypes);
       if (stub != null) {
         stubs.add(new KotlinAbiStubJavaFileObject(imported, stub, module.getSourceIndexVersion()));
         addReferencedKotlinTypes(imported, stub, sourceTypes, generated, pending);
@@ -168,6 +173,21 @@ public final class KotlinSourceStubProvider {
         pending.add(candidate);
       }
     }
+  }
+
+  private static String generateMultifileStub(
+      String qualifiedName,
+      List<KotlinJvmTypeIndex.KotlinTypeDeclaration> declarations,
+      Set<String> knownTypes) {
+    String merged = null;
+    for (KotlinJvmTypeIndex.KotlinTypeDeclaration declaration : declarations) {
+      final String stub = generateStub(qualifiedName, declaration.file, knownTypes);
+      if (stub == null) {
+        continue;
+      }
+      merged = merged == null ? stub : KotlinJvmAbiStubGenerator.mergeGeneratedStubs(merged, stub);
+    }
+    return merged;
   }
 
   private static String generateStub(
