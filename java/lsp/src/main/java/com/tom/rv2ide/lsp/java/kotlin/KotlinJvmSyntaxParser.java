@@ -381,7 +381,8 @@ final class KotlinJvmSyntaxParser {
         previousStart--;
       }
       final String line = source.substring(previousStart, previousEnd).trim();
-      if (!line.startsWith("@") || line.startsWith("@file:")) {
+      if (line.startsWith("@file:")
+          || !line.matches("@(?:[A-Za-z_][\\w]*(?::[A-Za-z_][\\w]*)?)(?:\\s*\\([^)]*\\))?\\s*")) {
         break;
       }
       annotations.insert(0, line + " ");
