@@ -90,8 +90,8 @@ public final class KotlinSourceStubProvider {
         continue;
       }
       final String stub = multifileDeclarations.isEmpty()
-          ? generateStub(imported, declaration.file, sourceTypes)
-          : generateMultifileStub(imported, multifileDeclarations, sourceTypes);
+          ? generateStub(module, imported, declaration.file, sourceTypes)
+          : generateMultifileStub(module, imported, multifileDeclarations, sourceTypes);
       if (stub != null) {
         stubs.add(new KotlinAbiStubJavaFileObject(imported, stub, module.getSourceIndexVersion()));
         addReferencedKotlinTypes(imported, stub, sourceTypes, generated, pending);
@@ -176,12 +176,13 @@ public final class KotlinSourceStubProvider {
   }
 
   private static String generateMultifileStub(
+      ModuleProject module,
       String qualifiedName,
       List<KotlinJvmTypeIndex.KotlinTypeDeclaration> declarations,
       Set<String> knownTypes) {
     String merged = null;
     for (KotlinJvmTypeIndex.KotlinTypeDeclaration declaration : declarations) {
-      final String stub = generateStub(qualifiedName, declaration.file, knownTypes);
+      final String stub = generateStub(module, qualifiedName, declaration.file, knownTypes);
       if (stub == null) {
         continue;
       }
@@ -191,9 +192,13 @@ public final class KotlinSourceStubProvider {
   }
 
   private static String generateStub(
-      String qualifiedName, Path kotlinFile, Set<String> knownTypes) {
+      ModuleProject module, String qualifiedName, Path kotlinFile, Set<String> knownTypes) {
     final String source = FileManager.INSTANCE.getDocumentContents(kotlinFile).toString();
     return KotlinJvmAbiStubGenerator.generate(
-        qualifiedName, kotlinFile.getFileName().toString(), source, knownTypes);
+        qualifiedName,
+        kotlinFile.getFileName().toString(),
+        source,
+        knownTypes,
+        KotlinJvmTypeIndex.visibleDirectTypeAliases(module, kotlinFile));
   }
 }

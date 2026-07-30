@@ -54,6 +54,7 @@ import com.tom.rv2ide.utils.FlashbarUtilsKt;
 import com.tom.rv2ide.utils.LSPUtils;
 import io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer;
 import io.github.rosemoe.sora.text.Content;
+import io.github.rosemoe.sora.widget.component.EditorAutoCompletion;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -464,10 +465,25 @@ public class IDELanguageClientImpl implements ILanguageClient {
               final int startCol = range.getStart().getColumn();
               final int endLine = range.getEnd().getLine();
               final int endCol = range.getEnd().getColumn();
-              if (startLine == endLine && startCol == endCol) {
-                editor.getText().insert(startLine, startCol, edit.getNewText());
-              } else {
-                editor.getText().replace(startLine, startCol, endLine, endCol, edit.getNewText());
+              final EditorAutoCompletion completion =
+                  editor.getComponent(EditorAutoCompletion.class);
+              final boolean completionWasEnabled = completion != null && completion.isEnabled();
+              if (completionWasEnabled) {
+                // A CodeAction replacement is not user typing. Disable completion for this synchronous
+                // content mutation so Sora does not open an unrelated completion window after a fix.
+                completion.cancelCompletion();
+                completion.setEnabled(false);
+              }
+              try {
+                if (startLine == endLine && startCol == endCol) {
+                  editor.getText().insert(startLine, startCol, edit.getNewText());
+                } else {
+                  editor.getText().replace(startLine, startCol, endLine, endCol, edit.getNewText());
+                }
+              } finally {
+                if (completionWasEnabled) {
+                  completion.setEnabled(true);
+                }
               }
             });
   }

@@ -147,6 +147,15 @@ private static final Pattern PROPERTY_PATTERN =
 
   static String generate(
       String qualifiedName, String kotlinFileName, String source, Set<String> knownTypes) {
+    return generate(qualifiedName, kotlinFileName, source, knownTypes, java.util.Collections.emptyMap());
+  }
+
+  static String generate(
+      String qualifiedName,
+      String kotlinFileName,
+      String source,
+      Set<String> knownTypes,
+      Map<String, String> visibleTypeAliases) {
     final int separator = qualifiedName.lastIndexOf('.');
     final String packageName = separator < 0 ? "" : qualifiedName.substring(0, separator);
     final String simpleName = separator < 0 ? qualifiedName : qualifiedName.substring(separator + 1);
@@ -158,7 +167,8 @@ private static final Pattern PROPERTY_PATTERN =
 
     final TypeResolutionContext previous = TYPE_CONTEXT.get();
     TYPE_CONTEXT.set(
-        TypeResolutionContext.create(sourcePackage, simpleName, source, knownTypes));
+        TypeResolutionContext.create(
+            sourcePackage, simpleName, source, knownTypes, visibleTypeAliases));
     try {
       final KotlinJvmSyntaxParser.TypeSyntax syntax =
           structuredGenerationEnabled()
@@ -2425,7 +2435,11 @@ private static final Pattern PROPERTY_PATTERN =
     }
 
     static TypeResolutionContext create(
-        String packageName, String generatedSimpleName, String source, Set<String> knownTypes) {
+        String packageName,
+        String generatedSimpleName,
+        String source,
+        Set<String> knownTypes,
+        Map<String, String> visibleTypeAliases) {
       final Map<String, String> imports = new LinkedHashMap<>();
       final Matcher importMatcher = KOTLIN_IMPORT_PATTERN.matcher(source);
       while (importMatcher.find()) {
@@ -2483,6 +2497,11 @@ private static final Pattern PROPERTY_PATTERN =
         valueClassUnderlyingTypes.put(valueClass.group(1), valueClass.group(2).trim());
       }
       final Map<String, String> typeAliases = collectSimpleTypeAliases(source, valueClassUnderlyingTypes);
+      if (visibleTypeAliases != null) {
+        for (Map.Entry<String, String> alias : visibleTypeAliases.entrySet()) {
+          typeAliases.putIfAbsent(alias.getKey(), alias.getValue());
+        }
+      }
       return new TypeResolutionContext(
           imports, declaredTypes, knownSimpleTypes, valueClassUnderlyingTypes, typeAliases);
     }

@@ -53,6 +53,10 @@ public final class KotlinJvmTypeIndex {
       Pattern.compile("(?m)^\\s*@file:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)");
   private static final Pattern FILE_JVM_MULTIFILE_PATTERN =
       Pattern.compile("(?m)^\\s*@file:JvmMultifileClass(?:\\s|$)");
+  private static final Pattern IMPORT_PATTERN = Pattern.compile(
+      "(?m)^\\s*import\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)(?:\\s+as\\s+[A-Za-z_$][\\w$]*)?\\s*$");
+  private static final Pattern TYPE_ALIAS_PATTERN = Pattern.compile(
+      "(?m)^\\s*((?:(?:public|internal|private)\\s+)*)typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
   private static final Pattern TYPE_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|enum|"
@@ -130,6 +134,33 @@ public final class KotlinJvmTypeIndex {
     return result.isEmpty() ? Collections.emptyList() : Collections.unmodifiableList(result);
   }
 
+  public static java.util.Map<String, String> visibleDirectTypeAliases(
+      ModuleProject module, Path consumerFile) {
+    if (module == null || consumerFile == null) {
+      return Collections.emptyMap();
+    }
+    final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
+    final Matcher packageMatcher = PACKAGE_PATTERN.matcher(consumerSource);
+    final String consumerPackage = packageMatcher.find() ? packageMatcher.group(1) : "";
+    final Set<String> explicitlyImported = new LinkedHashSet<>();
+    final Matcher importMatcher = IMPORT_PATTERN.matcher(consumerSource);
+    while (importMatcher.find()) {
+      explicitlyImported.add(importMatcher.group(1));
+    }
+    final java.util.Map<String, String> aliases = new java.util.LinkedHashMap<>();
+    for (java.io.File root : module.getCompileSourceDirectories()) {
+      if (root == null || !root.isDirectory()) continue;
+      try (Stream<Path> paths = Files.walk(root.toPath())) {
+        paths.filter(DocumentUtils::isKotlinFile).filter(path -> !path.equals(consumerFile))
+            .forEach(path -> collectVisibleAliases(path, consumerPackage, explicitlyImported, aliases));
+      } catch (IOException error) {
+        LOG.debug("Unable to scan Kotlin typealiases for {}", consumerFile, error);
+      }
+    }
+    aliases.values().removeIf(aliases::containsKey);
+    return aliases.isEmpty() ? Collections.emptyMap() : Collections.unmodifiableMap(aliases);
+  }
+
   public static KotlinTypeDeclaration findDeclaration(ModuleProject module, String qualifiedName) {
     if (module == null || qualifiedName == null || qualifiedName.isEmpty()) {
       return null;
@@ -197,6 +228,34 @@ public final class KotlinJvmTypeIndex {
           : path.getFileName().toString().substring(0, path.getFileName().toString().length() - 3) + "Kt";
       result.add(qualifiedName(packageName, facade));
     }
+  }
+
+  private static void collectVisibleAliases(
+      Path path,
+      String consumerPackage,
+      Set<String> explicitlyImported,
+      java.util.Map<String, String> result) {
+    final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
+    final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
+    final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
+    final Matcher aliasMatcher = TYPE_ALIAS_PATTERN.matcher(source);
+    while (aliasMatcher.find()) {
+      final String modifiers = aliasMatcher.group(1);
+      final String name = aliasMatcher.group(2);
+      final String target = aliasMatcher.group(3).trim();
+      final String qualifiedAlias = qualifiedName(packageName, name);
+      if (modifiers.contains("private") || modifiers.contains("internal") || result.containsKey(name)
+          || !(packageName.equals(consumerPackage) || explicitlyImported.contains(qualifiedAlias))
+          || result.containsKey(target) || !isDirectAliasTarget(target)) {
+        continue;
+      }
+      result.put(name, target);
+    }
+  }
+
+  private static boolean isDirectAliasTarget(String target) {
+    return !target.endsWith("?") && target.indexOf("->") < 0 && target.indexOf('&') < 0
+        && target.indexOf('|') < 0 && target.indexOf('(') < 0 && target.indexOf(')') < 0;
   }
 
   private static KotlinTypeDeclaration findDeclarationInFile(Path path, String qualifiedName) {

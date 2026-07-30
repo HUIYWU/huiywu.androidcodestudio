@@ -48,7 +48,7 @@ public final class KotlinJvmSourceNavigator {
         final String multifileSource =
             FileManager.INSTANCE.getDocumentContents(multifileDeclaration.file).toString();
         final Map<String, String> previousAliases = TYPE_ALIASES.get();
-        TYPE_ALIASES.set(collectSimpleTypeAliases(multifileSource));
+        TYPE_ALIASES.set(visibleTypeAliases(module, multifileDeclaration.file, multifileSource));
         try {
           final SourceRange multifileRange = findFacadeMember(multifileSource, element);
           if (multifileRange != null) {
@@ -72,7 +72,7 @@ public final class KotlinJvmSourceNavigator {
     }
     final String source = FileManager.INSTANCE.getDocumentContents(declaration.file).toString();
     final Map<String, String> previousAliases = TYPE_ALIASES.get();
-    TYPE_ALIASES.set(collectSimpleTypeAliases(source));
+    TYPE_ALIASES.set(visibleTypeAliases(module, declaration.file, source));
     try {
       final KotlinJvmSyntaxParser.TypeSyntax topLevelType =
           KotlinJvmSyntaxParser.findTopLevelType(source, topLevelOwner.getSimpleName().toString());
@@ -396,6 +396,16 @@ public final class KotlinJvmSourceNavigator {
         }
         return null;
     }
+  }
+
+  private static Map<String, String> visibleTypeAliases(
+      ModuleProject module, Path consumerFile, String source) {
+    final Map<String, String> aliases = new LinkedHashMap<>(collectSimpleTypeAliases(source));
+    for (Map.Entry<String, String> alias :
+        KotlinJvmTypeIndex.visibleDirectTypeAliases(module, consumerFile).entrySet()) {
+      aliases.putIfAbsent(alias.getKey(), alias.getValue());
+    }
+    return aliases;
   }
 
   private static Map<String, String> collectSimpleTypeAliases(String source) {

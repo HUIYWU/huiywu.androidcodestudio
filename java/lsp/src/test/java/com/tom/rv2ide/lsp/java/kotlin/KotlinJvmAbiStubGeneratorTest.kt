@@ -130,6 +130,31 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_expandsVisibleCrossFileDirectTypeAliases() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        fun greet(name: UserName): UserName = name
+        fun scores(): Scores = emptyList()
+        fun indirect(value: IndirectName): IndirectName = value
+        """.trimIndent()
+    val visibleAliases = linkedMapOf(
+        "UserName" to "String",
+        "Scores" to "List<Int>"
+    )
+
+    val stub = KotlinJvmAbiStubGenerator.generate(
+        "sample.ApiKt", "Api.kt", source, emptySet(), visibleAliases)
+    assertNotNull("Cross-file typealias facade generation failed", stub)
+    assertContains(stub!!, "String greet(String name)")
+    assertContains(stub, "java.util.List<Integer> scores()")
+    assertContains(stub, "Object indirect(Object value)")
+  }
+
+  @Test
   fun generate_mergesMultifileFacadePartsIntoOneStableJvmSurface() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
