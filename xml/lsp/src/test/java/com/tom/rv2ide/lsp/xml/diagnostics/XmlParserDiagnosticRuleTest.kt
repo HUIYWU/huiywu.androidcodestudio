@@ -153,6 +153,20 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnostic.range.end.column).isEqualTo(38)
   }
 
+  fun testReportsPrefixMismatchReportedByXercesAsUnterminatedEndTag() {
+    val diagnostic = diagnose("<LinearLayou></LinearLayout>").single()
+
+    assertThat(diagnostic.code).isEqualTo("XML005")
+    assertThat(diagnostic.message)
+        .isEqualTo(
+            "Closing tag '</LinearLayout>' does not match opening tag '<LinearLayou>'"
+        )
+    assertThat(diagnostic.range.start.line).isEqualTo(0)
+    assertThat(diagnostic.range.start.column).isEqualTo(15)
+    assertThat(diagnostic.range.end.line).isEqualTo(0)
+    assertThat(diagnostic.range.end.column).isEqualTo(27)
+  }
+
   fun testRuleIsRegisteredBeforeSemanticDocumentRules() {
     assertThat(XmlDiagnosticRuleRegistry.documentRules.first())
         .isSameInstanceAs(XmlParserDiagnosticRule)

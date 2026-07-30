@@ -63,12 +63,15 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       collector: XmlDiagnosticCollector,
   ) {
     errors.forEach { error ->
-      if (error.key in ERRORS_COVERED_BY_TOLERANT_DOM) {
-        return@forEach
-      }
       val offset = errorOffset(error, context.text)
       val endTagMismatch =
-          if (error.key == E_TAG_REQUIRED) findEndTagMismatch(context.text, offset) else null
+          if (error.key in END_TAG_NAME_ERROR_KEYS) findEndTagMismatch(context.text, offset) else null
+      // Xerces uses ETagUnterminated when the actual closing name starts with the expected
+      // name (for example </LinearLayout> for <LinearLayou>). Surface it only when source
+      // reconstruction proves it is the same name-mismatch condition, not a missing `>`.
+      if (error.key in ERRORS_COVERED_BY_TOLERANT_DOM && endTagMismatch == null) {
+        return@forEach
+      }
       val range = endTagMismatch?.actualNameRange ?: parserErrorRange(error.key, offset, context.text)
       collector.errorRange(
           code = CODE_XML_PARSER_SYNTAX,
@@ -494,6 +497,8 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
 
   private const val CODE_XML_PARSER_SYNTAX = "XML005"
   private const val E_TAG_REQUIRED = "ETagRequired"
+  private const val E_TAG_UNTERMINATED = "ETagUnterminated"
+  private val END_TAG_NAME_ERROR_KEYS = setOf(E_TAG_REQUIRED, E_TAG_UNTERMINATED)
   private const val MAX_PARSER_ERRORS = 20
   private const val MAX_ATTRIBUTE_LOOKBACK_TAGS = 4
   private const val MAX_ATTRIBUTE_LOOKBACK_CHARS = 4096

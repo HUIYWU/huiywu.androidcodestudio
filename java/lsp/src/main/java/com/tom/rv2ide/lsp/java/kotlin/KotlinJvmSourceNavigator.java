@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
 import jdkx.lang.model.element.ExecutableElement;
@@ -23,6 +25,7 @@ import jdkx.lang.model.element.TypeElement;
 /** Maps javac elements from Kotlin ABI stubs back to real Kotlin source declarations. */
 public final class KotlinJvmSourceNavigator {
 
+  private static final Logger LOG = LoggerFactory.getLogger(KotlinJvmSourceNavigator.class);
   private static final Pattern TYPE_ALIAS_PATTERN =
       Pattern.compile("(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
   private static final ThreadLocal<Map<String, String>> TYPE_ALIASES = new ThreadLocal<>();
@@ -191,6 +194,15 @@ public final class KotlinJvmSourceNavigator {
         matches++;
       }
     }
+    if (matches != 1 && LOG.isWarnEnabled()) {
+      LOG.warn(
+          "Kotlin navigation member mismatch: javaName={}, kind={}, candidates={}, owner={}, aliases={}",
+          javaName,
+          element.getKind(),
+          matches,
+          element.getEnclosingElement(),
+          TYPE_ALIASES.get());
+    }
     return matches == 1 ? match : null;
   }
 
@@ -213,6 +225,8 @@ public final class KotlinJvmSourceNavigator {
     if (receiverCount == 1
         && !functionParameterTypeCompatible(
             member.receiverType, false, executable.getParameters().get(0).asType().toString())) {
+      logParameterMismatch(member, -1, member.receiverType, false,
+          executable.getParameters().get(0).asType().toString());
       return false;
     }
     for (int index = 0; index < kotlinParameterCount; index++) {
@@ -221,6 +235,9 @@ public final class KotlinJvmSourceNavigator {
           parameter.type,
           parameter.vararg && index == member.parameterList.size() - 1,
           executable.getParameters().get(index + receiverCount).asType().toString())) {
+        logParameterMismatch(member, index, parameter.type,
+            parameter.vararg && index == member.parameterList.size() - 1,
+            executable.getParameters().get(index + receiverCount).asType().toString());
         return false;
       }
     }
@@ -331,30 +348,34 @@ public final class KotlinJvmSourceNavigator {
       String kotlinType, boolean vararg, String javaType) {
     // Unknown complex Kotlin types cannot safely disprove a candidate. They remain compatible here;
     // findMember still refuses navigation when more than one source declaration survives.
-    if (navigationJavaType(kotlinType) == null || parameterTypeMatches(kotlinType, vararg, javaType)) {
-      return true;
-    }
-    // A direct alias has already been selected by Kotlin visibility rules and expanded by the stub
-    // generator. javac may still render its attributed parameter with a device-specific spelling
-    // which cannot be reliably compared here. Do not let that spelling reject the only matching
-    // source declaration; findMember will still reject ambiguous same-name overloads.
-    return isVisibleDirectAlias(kotlinType);
+    return navigationJavaType(kotlinType) == null
+        || parameterTypeMatches(kotlinType, vararg, javaType);
   }
 
-  private static boolean isVisibleDirectAlias(String kotlinType) {
-    if (kotlinType == null) {
-      return false;
-    }
-    String type = kotlinType.trim();
-    if (type.endsWith("?")) {
-      return false;
-    }
-    if (type.indexOf('<') >= 0 || type.indexOf('>') >= 0 || type.indexOf('(') >= 0
-        || type.indexOf(')') >= 0 || type.indexOf('[') >= 0) {
-      return false;
+  private static void logParameterMismatch(
+      KotlinJvmSyntaxParser.MemberSyntax member,
+      int parameterIndex,
+      String kotlinType,
+      boolean vararg,
+      String javaType) {
+    if (!LOG.isWarnEnabled()) {
+      return;
     }
     final Map<String, String> aliases = TYPE_ALIASES.get();
-    return aliases != null && aliases.containsKey(type);
+    final String rawType = kotlinType == null ? null : kotlinType.trim();
+    final String expandedAlias = aliases == null || rawType == null ? null : aliases.get(rawType);
+    LOG.warn(
+        "Kotlin navigation parameter mismatch: member={}, jvmName={}, index={}, kotlinType={}, "
+            + "aliasTarget={}, normalized={}, vararg={}, javacType={}, aliases={}",
+        member.name,
+        member.jvmName == null ? member.name : member.jvmName,
+        parameterIndex,
+        kotlinType,
+        expandedAlias,
+        navigationJavaType(kotlinType),
+        vararg,
+        javaType,
+        aliases);
   }
 
   private static boolean parameterTypeMatches(
