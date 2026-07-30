@@ -109,6 +109,10 @@ internal class XmlDiagnosticCollector(private val text: String) {
         )
   }
 
+  fun hasMessage(code: String, messagePrefix: String): Boolean {
+    return diagnostics.any { it.code == code && it.message.startsWith(messagePrefix) }
+  }
+
   fun build(): List<DiagnosticItem> = diagnostics.sortedWith(DiagnosticItem.START_COMPARATOR)
 
   private fun offsetToPosition(offset: Int): Position {

@@ -331,8 +331,30 @@ public final class KotlinJvmSourceNavigator {
       String kotlinType, boolean vararg, String javaType) {
     // Unknown complex Kotlin types cannot safely disprove a candidate. They remain compatible here;
     // findMember still refuses navigation when more than one source declaration survives.
-    return navigationJavaType(kotlinType) == null
-        || parameterTypeMatches(kotlinType, vararg, javaType);
+    if (navigationJavaType(kotlinType) == null || parameterTypeMatches(kotlinType, vararg, javaType)) {
+      return true;
+    }
+    // A direct alias has already been selected by Kotlin visibility rules and expanded by the stub
+    // generator. javac may still render its attributed parameter with a device-specific spelling
+    // which cannot be reliably compared here. Do not let that spelling reject the only matching
+    // source declaration; findMember will still reject ambiguous same-name overloads.
+    return isVisibleDirectAlias(kotlinType);
+  }
+
+  private static boolean isVisibleDirectAlias(String kotlinType) {
+    if (kotlinType == null) {
+      return false;
+    }
+    String type = kotlinType.trim();
+    if (type.endsWith("?")) {
+      return false;
+    }
+    if (type.indexOf('<') >= 0 || type.indexOf('>') >= 0 || type.indexOf('(') >= 0
+        || type.indexOf(')') >= 0 || type.indexOf('[') >= 0) {
+      return false;
+    }
+    final Map<String, String> aliases = TYPE_ALIASES.get();
+    return aliases != null && aliases.containsKey(type);
   }
 
   private static boolean parameterTypeMatches(
