@@ -62,6 +62,9 @@ final class KotlinJvmAbiStubGenerator {
               + "([^,)=]+)\\s*\\)");
   private static final Pattern TYPE_ALIAS_PATTERN =
       Pattern.compile("(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
+  private static final Pattern GENERIC_TYPE_ALIAS_PATTERN =
+      Pattern.compile(
+          "(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*<([^<>]+)>\\s*=\\s*([^\\r\\n]+?)\\s*$");
   private static final Pattern SECONDARY_CONSTRUCTOR_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private)\\s+)*)constructor\\s*\\((.*?)\\)\\s*(?::.*)?$");
@@ -2254,6 +2257,10 @@ private static final Pattern PROPERTY_PATTERN =
     if (application == null) {
       return javaUserType(type);
     }
+    final String expandedGenericAlias = expandGenericTypeAlias(application, context);
+    if (expandedGenericAlias != null) {
+      return javaType(expandedGenericAlias);
+    }
     final String rawJavaType = javaCollectionType(application.rawType);
     if ("Array".equals(application.rawType) || "kotlin.Array".equals(application.rawType)) {
       return application.arguments.size() == 1
@@ -2403,6 +2410,29 @@ private static final Pattern PROPERTY_PATTERN =
     return "void".equals(elementType) || elementType.contains("?") ? "Object[]" : elementType + "[]";
   }
 
+  private static String expandGenericTypeAlias(
+      TypeApplication application, TypeResolutionContext context) {
+    if (context == null || application.rawType.indexOf('.') >= 0) {
+      return null;
+    }
+    final GenericTypeAlias alias = context.genericTypeAliases.get(application.rawType);
+    if (alias == null || alias.parameters.size() != application.arguments.size()) {
+      return null;
+    }
+    for (String argument : application.arguments) {
+      if (!JAVA_TYPE_NAME_PATTERN.matcher(argument.trim()).matches()) {
+        return null;
+      }
+    }
+    String expanded = alias.target;
+    for (int index = 0; index < alias.parameters.size(); index++) {
+      expanded = expanded.replaceAll(
+          "\\b" + Pattern.quote(alias.parameters.get(index)) + "\\b",
+          Matcher.quoteReplacement(application.arguments.get(index).trim()));
+    }
+    return expanded;
+  }
+
   private static TypeApplication parseTypeApplication(String type) {
     final int open = type.indexOf('<');
     if (open < 1 || !type.endsWith(">")) {
@@ -2419,6 +2449,7 @@ private static final Pattern PROPERTY_PATTERN =
     final Map<String, String> knownSimpleTypes;
     final Map<String, String> valueClassUnderlyingTypes;
     final Map<String, String> typeAliases;
+    final Map<String, GenericTypeAlias> genericTypeAliases;
     final Set<String> typeVariables = new LinkedHashSet<>();
 
     private TypeResolutionContext(
@@ -2426,12 +2457,14 @@ private static final Pattern PROPERTY_PATTERN =
         Map<String, String> declaredTypes,
         Map<String, String> knownSimpleTypes,
         Map<String, String> valueClassUnderlyingTypes,
-        Map<String, String> typeAliases) {
+        Map<String, String> typeAliases,
+        Map<String, GenericTypeAlias> genericTypeAliases) {
       this.imports = imports;
       this.declaredTypes = declaredTypes;
       this.knownSimpleTypes = knownSimpleTypes;
       this.valueClassUnderlyingTypes = valueClassUnderlyingTypes;
       this.typeAliases = typeAliases;
+      this.genericTypeAliases = genericTypeAliases;
     }
 
     static TypeResolutionContext create(
@@ -2497,14 +2530,56 @@ private static final Pattern PROPERTY_PATTERN =
         valueClassUnderlyingTypes.put(valueClass.group(1), valueClass.group(2).trim());
       }
       final Map<String, String> typeAliases = collectSimpleTypeAliases(source, valueClassUnderlyingTypes);
+      final Map<String, GenericTypeAlias> genericTypeAliases = collectGenericTypeAliases(source);
       if (visibleTypeAliases != null) {
         for (Map.Entry<String, String> alias : visibleTypeAliases.entrySet()) {
           typeAliases.putIfAbsent(alias.getKey(), alias.getValue());
         }
       }
       return new TypeResolutionContext(
-          imports, declaredTypes, knownSimpleTypes, valueClassUnderlyingTypes, typeAliases);
+          imports,
+          declaredTypes,
+          knownSimpleTypes,
+          valueClassUnderlyingTypes,
+          typeAliases,
+          genericTypeAliases);
     }
+  }
+
+  private static Map<String, GenericTypeAlias> collectGenericTypeAliases(String source) {
+    final Map<String, GenericTypeAlias> aliases = new LinkedHashMap<>();
+    final Matcher matcher = GENERIC_TYPE_ALIAS_PATTERN.matcher(source);
+    while (matcher.find()) {
+      final String name = matcher.group(1);
+      final List<String> parameters = new ArrayList<>();
+      for (String parameter : splitParameters(matcher.group(2))) {
+        parameters.add(parameter.trim());
+      }
+      final String target = matcher.group(3).trim();
+      final TypeApplication targetApplication = parseTypeApplication(target);
+      if (parameters.isEmpty() || targetApplication == null || target.endsWith("?")
+          || target.indexOf("->") >= 0 || target.indexOf('&') >= 0 || target.indexOf('|') >= 0
+          || targetApplication.rawType.indexOf('.') >= 0) {
+        continue;
+      }
+      boolean valid = true;
+      for (String parameter : parameters) {
+        if (!JAVA_TYPE_NAME_PATTERN.matcher(parameter).matches()) {
+          valid = false;
+          break;
+        }
+      }
+      for (String argument : targetApplication.arguments) {
+        if (!JAVA_TYPE_NAME_PATTERN.matcher(argument.trim()).matches()) {
+          valid = false;
+          break;
+        }
+      }
+      if (valid && !aliases.containsKey(name)) {
+        aliases.put(name, new GenericTypeAlias(parameters, target));
+      }
+    }
+    return aliases;
   }
 
   private static Map<String, String> collectSimpleTypeAliases(
@@ -2529,6 +2604,16 @@ private static final Pattern PROPERTY_PATTERN =
       aliases.values().removeIf(value -> aliases.containsKey(value));
     }
     return aliases;
+  }
+
+  private static final class GenericTypeAlias {
+    final List<String> parameters;
+    final String target;
+
+    GenericTypeAlias(List<String> parameters, String target) {
+      this.parameters = new ArrayList<>(parameters);
+      this.target = target;
+    }
   }
 
   private static final class TypeApplication {

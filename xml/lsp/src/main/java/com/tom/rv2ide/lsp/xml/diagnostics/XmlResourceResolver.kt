@@ -17,6 +17,7 @@
 package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.android.aaptcompiler.AaptResourceType
+import com.android.aaptcompiler.AaptResourceType.STYLE
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.xml.res.IResourceTable
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
@@ -53,6 +54,7 @@ internal class XmlResourceResolver {
             table.packages.joinToString(prefix = "[", postfix = "]") { it.name ?: "<unnamed>" }
           },
       )
+      logMaterialStyleTable(reference, tables.orEmpty())
     }
     return resolution
   }
@@ -95,6 +97,28 @@ internal class XmlResourceResolver {
     return matchingTables.ifEmpty { null }
   }
 
+  private fun logMaterialStyleTable(
+      reference: XmlResourceReference,
+      tables: Set<IResourceTable>,
+  ) {
+    if (reference.type != STYLE || !reference.entry.startsWith(MATERIAL3_TEXT_APPEARANCE_PREFIX)) {
+      return
+    }
+    tables.forEach { table ->
+      val materialPackage = table.findPackage(MATERIAL_PACKAGE) ?: return@forEach
+      val styleEntries = materialPackage.findGroup(STYLE)?.findEntries { true }.orEmpty()
+      val material3Entries =
+          styleEntries.map { it.name }.filter { it.startsWith(MATERIAL3_TEXT_APPEARANCE_PREFIX) }
+      log.warn(
+          "Material style table probe; target={}, styleCount={}, targetPresent={}, material3Entries={}",
+          reference.entry,
+          styleEntries.size,
+          styleEntries.any { it.name == reference.entry },
+          material3Entries.joinToString(),
+      )
+    }
+  }
+
   private fun IResourceTable.contains(reference: XmlResourceReference): Boolean {
     return packages.any { resourcePackage ->
       if (reference.packageName != null && resourcePackage.name != reference.packageName) {
@@ -106,6 +130,8 @@ internal class XmlResourceResolver {
 
   private companion object {
     private val log = LoggerFactory.getLogger(XmlResourceResolver::class.java)
+    private const val MATERIAL_PACKAGE = "com.google.android.material"
+    private const val MATERIAL3_TEXT_APPEARANCE_PREFIX = "TextAppearance.Material3."
   }
 
   internal sealed interface Resolution {

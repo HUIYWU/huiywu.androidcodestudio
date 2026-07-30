@@ -247,7 +247,44 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
-  fun generate_expandsOnlyDirectSameFileTypeAliases() {
+fun generate_projectsRestrictedSameFileGenericTypeAliases() {
+TreeSitter.loadLibrary()
+System.loadLibrary("tree-sitter-kotlin")
+val source =
+"""
+package sample
+
+typealias Box<T> = List<T>
+typealias PairBox<K, V> = Map<K, V>
+typealias NullableBox<T> = List<T>?
+typealias NestedBox<T> = List<List<T>>
+typealias Callback<T> = (T) -> Unit
+
+fun names(): Box<String> = emptyList()
+fun accept(value: Box<Int>): Unit {}
+fun lookup(value: PairBox<String, Long>): PairBox<String, Long> = emptyMap()
+fun nullable(value: NullableBox<String>) = value
+fun nested(value: NestedBox<String>) = value
+fun callback(value: Callback<String>) = value
+""".trimIndent()
+
+for (mode in listOf(
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+val stub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.GenericAliasesKt", "GenericAliases.kt", source, emptySet(), mode)
+assertNotNull("Generic typealias facade generation failed in $mode", stub)
+assertContains(stub!!, "java.util.List<String> names()")
+assertContains(stub, "void accept(java.util.List<Integer> value)")
+assertContains(stub, "java.util.Map<String, Long> lookup(java.util.Map<String, Long> value)")
+assertContains(stub, "Object nullable(Object value)")
+assertContains(stub, "Object nested(Object value)")
+assertContains(stub, "Object callback(Object value)")
+}
+}
+
+@Test
+fun generate_expandsOnlyDirectSameFileTypeAliases() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
     val source =
