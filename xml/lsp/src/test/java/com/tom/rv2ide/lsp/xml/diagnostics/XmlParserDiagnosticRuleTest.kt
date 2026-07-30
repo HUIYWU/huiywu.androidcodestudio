@@ -167,6 +167,24 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnostic.range.end.column).isEqualTo(27)
   }
 
+  fun testFindsFirstMismatchIndependentlyOfLargeFormattedPrefix() {
+    val text =
+        buildString {
+          append("<Root>\n")
+          repeat(600) { append("  <Item index=\"$it\" />\n") }
+          append("  <LinearLayou>\n    </LinearLayout>\n")
+          append("</Root>")
+        }
+
+    val diagnostic = diagnose(text).single()
+
+    assertThat(diagnostic.code).isEqualTo("XML005")
+    assertThat(diagnostic.message)
+        .isEqualTo(
+            "Closing tag '</LinearLayout>' does not match opening tag '<LinearLayou>'"
+        )
+  }
+
   fun testRuleIsRegisteredBeforeSemanticDocumentRules() {
     assertThat(XmlDiagnosticRuleRegistry.documentRules.first())
         .isSameInstanceAs(XmlParserDiagnosticRule)

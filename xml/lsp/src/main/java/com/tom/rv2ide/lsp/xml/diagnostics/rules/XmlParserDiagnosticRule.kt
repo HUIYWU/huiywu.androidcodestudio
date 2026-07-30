@@ -65,7 +65,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     errors.forEach { error ->
       val offset = errorOffset(error, context.text)
       val endTagMismatch =
-          if (error.key in END_TAG_NAME_ERROR_KEYS) findEndTagMismatch(context.text, offset) else null
+          if (error.key in END_TAG_NAME_ERROR_KEYS) findFirstEndTagMismatch(context.text) else null
       // Xerces uses ETagUnterminated when the actual closing name starts with the expected
       // name (for example </LinearLayout> for <LinearLayou>). Surface it only when source
       // reconstruction proves it is the same name-mismatch condition, not a missing `>`.
@@ -334,14 +334,14 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   }
 
   /**
-   * Reconstructs the element stack only up to Xerces' fatal location. ETagRequired is emitted
-   * while scanning a closing tag, so its top stack entry is the expected opening tag.
+   * Replays well-formed tag boundaries from the document start and returns the first closing name
+   * that differs from the stack top. Xerces stops on that same first mismatch, while its reported
+   * character offset is not stable across line wrapping and formatted documents.
    */
-  private fun findEndTagMismatch(text: String, parserOffset: Int): EndTagMismatch? {
-    val target = findClosingTagNear(text, parserOffset) ?: return null
+  private fun findFirstEndTagMismatch(text: String): EndTagMismatch? {
     val stack = ArrayDeque<String>()
     var index = 0
-    while (index < target.tagStart) {
+    while (index < text.length) {
       if (text[index] != '<') {
         index++
         continue
@@ -349,32 +349,43 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       when {
         text.startsWith("<!--", index) -> {
           val end = text.indexOf("-->", index + 4)
-          index = if (end < 0) target.tagStart else end + 3
+          if (end < 0) return null
+          index = end + 3
         }
         text.startsWith("<![CDATA[", index) -> {
           val end = text.indexOf("]]>", index + 9)
-          index = if (end < 0) target.tagStart else end + 3
+          if (end < 0) return null
+          index = end + 3
         }
         text.startsWith("<?", index) -> {
           val end = text.indexOf("?>", index + 2)
-          index = if (end < 0) target.tagStart else end + 2
+          if (end < 0) return null
+          index = end + 2
         }
         text.startsWith("</", index) -> {
-          val end = text.indexOf('>', index + 2)
-          if (end < 0) return null
-          if (stack.isNotEmpty()) stack.removeLast()
-          index = end + 1
+          val closingTag = readClosingTag(text, index) ?: return null
+          val expectedName = stack.lastOrNull() ?: return null
+          if (expectedName != closingTag.name) {
+            return EndTagMismatch(
+                expectedName,
+                closingTag.name,
+                closingTag.nameStart until closingTag.nameEnd,
+            )
+          }
+          stack.removeLast()
+          index = closingTag.tagEnd + 1
         }
         text.startsWith("<!", index) -> {
           val end = text.indexOf('>', index + 2)
-          index = if (end < 0) target.tagStart else end + 1
+          if (end < 0) return null
+          index = end + 1
         }
         else -> {
           val nameStart = index + 1
           var nameEnd = nameStart
           while (nameEnd < text.length && isXmlNameCharacter(text[nameEnd])) nameEnd++
           val end = findStartTagEnd(text, index)
-          if (nameEnd == nameStart || end < 0 || end > target.tagStart) return null
+          if (nameEnd == nameStart || end < 0) return null
           if (text.substring(index + 1, end).trimEnd().endsWith('/').not()) {
             stack.addLast(text.substring(nameStart, nameEnd))
           }
@@ -382,29 +393,17 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
         }
       }
     }
-    val expectedName = stack.lastOrNull() ?: return null
-    return EndTagMismatch(expectedName, target.name, target.nameStart until target.nameEnd)
-        .takeIf { it.expectedName != it.actualName }
+    return null
   }
 
-  private fun findClosingTagNear(text: String, parserOffset: Int): ClosingTag? {
-    val safeOffset = parserOffset.coerceIn(0, text.length)
-    val searchStart = (safeOffset - MAX_END_TAG_OFFSET_DISTANCE).coerceAtLeast(0)
-    val searchEnd = (safeOffset + MAX_END_TAG_OFFSET_DISTANCE).coerceAtMost(text.length)
-    var tagStart = text.indexOf("</", searchStart)
-    while (tagStart >= 0 && tagStart < searchEnd) {
-      val nameStart = tagStart + 2
-      var nameEnd = nameStart
-      while (nameEnd < text.length && isXmlNameCharacter(text[nameEnd])) nameEnd++
-      val tagEnd = text.indexOf('>', nameEnd)
-      if (nameEnd > nameStart && tagEnd >= 0 && tagEnd < searchEnd) {
-        if (safeOffset in tagStart..tagEnd || tagStart >= safeOffset) {
-          return ClosingTag(tagStart, nameStart, nameEnd, text.substring(nameStart, nameEnd))
-        }
-      }
-      tagStart = text.indexOf("</", tagStart + 2)
-    }
-    return null
+  private fun readClosingTag(text: String, tagStart: Int): ClosingTag? {
+    val nameStart = tagStart + 2
+    var nameEnd = nameStart
+    while (nameEnd < text.length && isXmlNameCharacter(text[nameEnd])) nameEnd++
+    var tagEnd = nameEnd
+    while (tagEnd < text.length && text[tagEnd].isWhitespace()) tagEnd++
+    if (nameEnd == nameStart || tagEnd >= text.length || text[tagEnd] != '>') return null
+    return ClosingTag(nameStart, nameEnd, tagEnd, text.substring(nameStart, nameEnd))
   }
 
   private fun isXmlNameCharacter(character: Char): Boolean {
@@ -483,9 +482,9 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   )
 
   private data class ClosingTag(
-      val tagStart: Int,
       val nameStart: Int,
       val nameEnd: Int,
+      val tagEnd: Int,
       val name: String,
   )
 
@@ -502,7 +501,6 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   private const val MAX_PARSER_ERRORS = 20
   private const val MAX_ATTRIBUTE_LOOKBACK_TAGS = 4
   private const val MAX_ATTRIBUTE_LOOKBACK_CHARS = 4096
-  private const val MAX_END_TAG_OFFSET_DISTANCE = 4096
   private const val QUOTES = "\"'"
   private const val PROPERTY_ERROR_REPORTER =
       "http://apache.org/xml/properties/internal/error-reporter"

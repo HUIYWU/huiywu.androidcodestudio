@@ -34,7 +34,15 @@ public final class KotlinJvmSourceNavigator {
 
   public static Location find(ModuleProject module, Element element) {
     TypeElement owner = ownerType(element);
+    LOG.warn(
+        "Kotlin navigation entered: element={}, kind={}, type={}, owner={}, modulePresent={}",
+        element,
+        element == null ? null : element.getKind(),
+        element == null ? null : element.asType(),
+        owner,
+        module != null);
     if (module == null || owner == null) {
+      LOG.warn("Kotlin navigation skipped: missing module or owner; element={}", element);
       return null;
     }
     final boolean companionOwner = "Companion".contentEquals(owner.getSimpleName())
@@ -46,6 +54,13 @@ public final class KotlinJvmSourceNavigator {
     final String qualifiedName = topLevelOwner.getQualifiedName().toString();
     final List<KotlinTypeDeclaration> multifileDeclarations =
         KotlinJvmTypeIndex.findMultifileDeclarations(module, qualifiedName);
+    LOG.warn(
+        "Kotlin navigation owner resolved: qualifiedName={}, owner={}, topLevelOwner={}, companion={}, multifileParts={}",
+        qualifiedName,
+        owner.getQualifiedName(),
+        topLevelOwner.getQualifiedName(),
+        companionOwner,
+        multifileDeclarations.size());
     if (!(element instanceof TypeElement) && !multifileDeclarations.isEmpty()) {
       for (KotlinTypeDeclaration multifileDeclaration : multifileDeclarations) {
         final String multifileSource =
@@ -71,8 +86,15 @@ public final class KotlinJvmSourceNavigator {
         ? KotlinJvmTypeIndex.findDeclaration(module, qualifiedName)
         : multifileDeclarations.get(0);
     if (declaration == null) {
+      LOG.warn("Kotlin navigation declaration not found: qualifiedName={}, element={}", qualifiedName, element);
       return null;
     }
+    LOG.warn(
+        "Kotlin navigation declaration selected: qualifiedName={}, kotlinFile={}, offset={}, length={}",
+        qualifiedName,
+        declaration.file,
+        declaration.offset,
+        declaration.length);
     final String source = FileManager.INSTANCE.getDocumentContents(declaration.file).toString();
     final Map<String, String> previousAliases = TYPE_ALIASES.get();
     TYPE_ALIASES.set(visibleTypeAliases(module, declaration.file, source));
@@ -93,8 +115,14 @@ public final class KotlinJvmSourceNavigator {
               ? findMember(type.companionMembers, element, false)
               : findTypeMember(type, declaration, element);
       if (range != null) {
+        LOG.warn(
+            "Kotlin navigation member resolved: element={}, kotlinFile={}, offset={}, length={}, aliases={}",
+            element, declaration.file, range.offset, range.length, TYPE_ALIASES.get());
         return location(declaration.file, source, range.offset, range.length);
       }
+      LOG.warn(
+          "Kotlin navigation fell back to declaration range: element={}, kotlinFile={}, typeFound={}, aliases={}",
+          element, declaration.file, type != null, TYPE_ALIASES.get());
       return type != null && type.nameOffset >= 0
           ? location(declaration.file, source, type.nameOffset, type.nameLength)
           : location(declaration.file, source, declaration.offset, declaration.length);

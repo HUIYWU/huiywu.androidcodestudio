@@ -86,14 +86,20 @@ public class DefinitionProvider extends CancelableServiceProvider {
         compile.get(task -> NavigationHelper.findElement(task, file, line, column, this));
 
     if (element == null) {
-      LOG.debug("Cannot find javac element at line: {} and column: {}; trying Kotlin fallback", line, column);
+      LOG.warn("Definition navigation has no javac element: file={}, line={}, column={}; using Kotlin fallback",
+          file, line, column);
       return KotlinDefinitionFallback.find(compiler, file, line - 1, column - 1);
     }
 
+    LOG.warn("Definition navigation invoking Kotlin JVM navigator: file={}, line={}, column={}, element={}, kind={}, type={}",
+        file, line, column, element, element.getKind(), element.asType());
     final Location kotlinLocation = KotlinJvmSourceNavigator.find(compiler.getModule(), element);
     if (kotlinLocation != null) {
+      LOG.warn("Definition navigation resolved by Kotlin JVM navigator: element={}, location={}",
+          element, kotlinLocation);
       return Collections.singletonList(kotlinLocation);
     }
+    LOG.warn("Definition navigation not resolved by Kotlin JVM navigator: element={}", element);
 
     IJavaDefinitionProvider provider = null;
 
