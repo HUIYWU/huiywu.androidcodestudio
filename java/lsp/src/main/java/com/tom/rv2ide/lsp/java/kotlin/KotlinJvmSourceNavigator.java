@@ -176,7 +176,7 @@ public final class KotlinJvmSourceNavigator {
     SourceRange match = null;
     int matches = 0;
     for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
-      if (member.name == null || member.nameOffset < 0 || member.privateMember) {
+      if (member.name == null || member.nameOffset < 0 || member.privateMember || member.jvmSynthetic) {
         continue;
       }
       if (requireJvmStatic && !member.jvmStatic && !member.jvmField) {
@@ -241,8 +241,8 @@ public final class KotlinJvmSourceNavigator {
     final String setter = member.setterJvmName == null
         ? propertySetterName(member.name, member.declaredType)
         : member.setterJvmName;
-    return javaName.equals(getter)
-        || (member.mutableProperty && javaName.equals(setter));
+    return (!member.getterJvmSynthetic && javaName.equals(getter))
+        || (member.mutableProperty && !member.setterJvmSynthetic && javaName.equals(setter));
   }
 
   private static String propertyGetterName(String name, String kotlinType) {
@@ -334,8 +334,6 @@ public final class KotlinJvmSourceNavigator {
     return navigationJavaType(kotlinType) == null
         || parameterTypeMatches(kotlinType, vararg, javaType);
   }
-
-  // Intentionally empty: navigation diagnostics are not retained in production.
 
   private static boolean parameterTypeMatches(
       String kotlinType, boolean vararg, String javaType) {

@@ -20,6 +20,7 @@ import com.android.aaptcompiler.AaptResourceType
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.xml.res.IResourceTable
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
+import org.slf4j.LoggerFactory
 
 /**
  * Resolves resource references against the same resource-table snapshots consumed by XML
@@ -40,7 +41,20 @@ internal class XmlResourceResolver {
         (reference.type != AaptResourceType.ID || reference.packageName != null)) {
       return Resolution.Unavailable
     }
-    return resolutionForMissingReference(reference, moduleIds)
+    val resolution = resolutionForMissingReference(reference, moduleIds)
+    if (resolution == Resolution.NotFound) {
+      log.warn(
+          "XML resource reference '{}' was not found; package={}, type={}, entry={}, tables={}",
+          reference.text,
+          reference.packageName ?: "<unqualified>",
+          reference.type.tagName,
+          reference.entry,
+          tables.orEmpty().joinToString { table ->
+            table.packages.joinToString(prefix = "[", postfix = "]") { it.name ?: "<unnamed>" }
+          },
+      )
+    }
+    return resolution
   }
 
   internal fun resolutionForMissingReference(
@@ -88,6 +102,10 @@ internal class XmlResourceResolver {
       }
       resourcePackage.findGroup(reference.type)?.findEntry(reference.entry) != null
     }
+  }
+
+  private companion object {
+    private val log = LoggerFactory.getLogger(XmlResourceResolver::class.java)
   }
 
   internal sealed interface Resolution {
