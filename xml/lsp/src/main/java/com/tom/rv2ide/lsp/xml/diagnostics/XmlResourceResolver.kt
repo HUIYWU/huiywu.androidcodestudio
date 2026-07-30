@@ -17,11 +17,9 @@
 package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.android.aaptcompiler.AaptResourceType
-import com.android.aaptcompiler.AaptResourceType.STYLE
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.xml.res.IResourceTable
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
-import org.slf4j.LoggerFactory
 
 /**
  * Resolves resource references against the same resource-table snapshots consumed by XML
@@ -42,21 +40,7 @@ internal class XmlResourceResolver {
         (reference.type != AaptResourceType.ID || reference.packageName != null)) {
       return Resolution.Unavailable
     }
-    val resolution = resolutionForMissingReference(reference, moduleIds)
-    if (resolution == Resolution.NotFound) {
-      log.warn(
-          "XML resource reference '{}' was not found; package={}, type={}, entry={}, tables={}",
-          reference.text,
-          reference.packageName ?: "<unqualified>",
-          reference.type.tagName,
-          reference.entry,
-          tables.orEmpty().joinToString { table ->
-            table.packages.joinToString(prefix = "[", postfix = "]") { it.name ?: "<unnamed>" }
-          },
-      )
-      logMaterialStyleTable(reference, tables.orEmpty())
-    }
-    return resolution
+    return resolutionForMissingReference(reference, moduleIds)
   }
 
   internal fun resolutionForMissingReference(
@@ -97,28 +81,6 @@ internal class XmlResourceResolver {
     return matchingTables.ifEmpty { null }
   }
 
-  private fun logMaterialStyleTable(
-      reference: XmlResourceReference,
-      tables: Set<IResourceTable>,
-  ) {
-    if (reference.type != STYLE || !reference.entry.startsWith(MATERIAL3_TEXT_APPEARANCE_PREFIX)) {
-      return
-    }
-    tables.forEach { table ->
-      val materialPackage = table.findPackage(MATERIAL_PACKAGE) ?: return@forEach
-      val styleEntries = materialPackage.findGroup(STYLE)?.findEntries { true }.orEmpty()
-      val material3Entries =
-          styleEntries.map { it.name }.filter { it.startsWith(MATERIAL3_TEXT_APPEARANCE_PREFIX) }
-      log.warn(
-          "Material style table probe; target={}, styleCount={}, targetPresent={}, material3Entries={}",
-          reference.entry,
-          styleEntries.size,
-          styleEntries.any { it.name == reference.entry },
-          material3Entries.joinToString(),
-      )
-    }
-  }
-
   private fun IResourceTable.contains(reference: XmlResourceReference): Boolean {
     return packages.any { resourcePackage ->
       if (reference.packageName != null && resourcePackage.name != reference.packageName) {
@@ -126,12 +88,6 @@ internal class XmlResourceResolver {
       }
       resourcePackage.findGroup(reference.type)?.findEntry(reference.entry) != null
     }
-  }
-
-  private companion object {
-    private val log = LoggerFactory.getLogger(XmlResourceResolver::class.java)
-    private const val MATERIAL_PACKAGE = "com.google.android.material"
-    private const val MATERIAL3_TEXT_APPEARANCE_PREFIX = "TextAppearance.Material3."
   }
 
   internal sealed interface Resolution {

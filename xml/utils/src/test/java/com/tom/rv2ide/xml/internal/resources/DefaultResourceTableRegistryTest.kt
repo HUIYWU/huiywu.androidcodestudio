@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.xml.internal.resources
 
+import com.android.aaptcompiler.AaptResourceType.STYLE
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.file.Files
@@ -39,6 +40,27 @@ class DefaultResourceTableRegistryTest {
   fun tearDown() {
     registry.clear()
     root.deleteRecursively()
+  }
+
+  @Test
+  fun buildsStyleEntriesFromValuesXml() {
+    val resDir = File(root, "res").apply { mkdirs() }
+    val valuesDir = File(resDir, "values").apply { mkdirs() }
+    File(valuesDir, "styles.xml").writeText(
+      """
+      <resources>
+        <style name="TextAppearance.Material3.BodyMedium"
+            parent="TextAppearance.M3.Sys.Typescale.BodyMedium" />
+      </resources>
+      """.trimIndent(),
+    )
+
+    val table = registry.forPackage("com.google.android.material", resDir)
+
+    assertThat(table).isNotNull()
+    assertThat(table!!.findPackage("com.google.android.material")?.findGroup(STYLE)
+      ?.findEntry("TextAppearance.Material3.BodyMedium"))
+      .isNotNull()
   }
 
   @Test

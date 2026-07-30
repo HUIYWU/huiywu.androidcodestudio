@@ -10,13 +10,12 @@ import com.tom.rv2ide.models.Range;
 import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.projects.ModuleProject;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
 import jdkx.lang.model.element.ExecutableElement;
@@ -25,10 +24,16 @@ import jdkx.lang.model.element.TypeElement;
 /** Maps javac elements from Kotlin ABI stubs back to real Kotlin source declarations. */
 public final class KotlinJvmSourceNavigator {
 
-  private static final Logger LOG = LoggerFactory.getLogger(KotlinJvmSourceNavigator.class);
   private static final Pattern TYPE_ALIAS_PATTERN =
       Pattern.compile("(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
+  private static final Pattern GENERIC_TYPE_ALIAS_PATTERN =
+      Pattern.compile(
+          "(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*<([^<>]+)>\\s*=\\s*([^\\r\\n]+?)\\s*$");
+  private static final Pattern TYPE_NAME_PATTERN =
+      Pattern.compile("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*");
   private static final ThreadLocal<Map<String, String>> TYPE_ALIASES = new ThreadLocal<>();
+  private static final ThreadLocal<Map<String, GenericTypeAlias>> GENERIC_TYPE_ALIASES =
+      new ThreadLocal<>();
 
   private KotlinJvmSourceNavigator() {}
 
@@ -51,7 +56,9 @@ public final class KotlinJvmSourceNavigator {
         final String multifileSource =
             FileManager.INSTANCE.getDocumentContents(multifileDeclaration.file).toString();
         final Map<String, String> previousAliases = TYPE_ALIASES.get();
+        final Map<String, GenericTypeAlias> previousGenericAliases = GENERIC_TYPE_ALIASES.get();
         TYPE_ALIASES.set(visibleTypeAliases(module, multifileDeclaration.file, multifileSource));
+        GENERIC_TYPE_ALIASES.set(collectGenericTypeAliases(multifileSource));
         try {
           final SourceRange multifileRange = findFacadeMember(multifileSource, element);
           if (multifileRange != null) {
@@ -64,6 +71,11 @@ public final class KotlinJvmSourceNavigator {
           } else {
             TYPE_ALIASES.set(previousAliases);
           }
+          if (previousGenericAliases == null) {
+            GENERIC_TYPE_ALIASES.remove();
+          } else {
+            GENERIC_TYPE_ALIASES.set(previousGenericAliases);
+          }
         }
       }
     }
@@ -75,7 +87,9 @@ public final class KotlinJvmSourceNavigator {
     }
     final String source = FileManager.INSTANCE.getDocumentContents(declaration.file).toString();
     final Map<String, String> previousAliases = TYPE_ALIASES.get();
+    final Map<String, GenericTypeAlias> previousGenericAliases = GENERIC_TYPE_ALIASES.get();
     TYPE_ALIASES.set(visibleTypeAliases(module, declaration.file, source));
+    GENERIC_TYPE_ALIASES.set(collectGenericTypeAliases(source));
     try {
       final KotlinJvmSyntaxParser.TypeSyntax topLevelType =
           KotlinJvmSyntaxParser.findTopLevelType(source, topLevelOwner.getSimpleName().toString());
@@ -103,6 +117,11 @@ public final class KotlinJvmSourceNavigator {
         TYPE_ALIASES.remove();
       } else {
         TYPE_ALIASES.set(previousAliases);
+      }
+      if (previousGenericAliases == null) {
+        GENERIC_TYPE_ALIASES.remove();
+      } else {
+        GENERIC_TYPE_ALIASES.set(previousGenericAliases);
       }
     }
   }
@@ -190,17 +209,6 @@ public final class KotlinJvmSourceNavigator {
       final boolean matchesElement = member.function()
           ? nameMatches && functionSignatureMatches(member, executable)
           : propertyJavaNameMatches(member, javaName, element.getKind());
-      if (member.function() && nameMatches && LOG.isWarnEnabled()) {
-        LOG.warn(
-            "Kotlin navigation function candidate: javaElement={}, member={}, parameters={}, returnType={}, "
-                + "match={}, aliases={}",
-            executable,
-            member.name,
-            member.parameterList,
-            member.declaredType,
-            matchesElement,
-            TYPE_ALIASES.get());
-      }
       if (matchesElement) {
         match = new SourceRange(member.nameOffset, member.nameLength);
         matches++;
@@ -223,11 +231,6 @@ public final class KotlinJvmSourceNavigator {
             && (!member.jvmOverloads
                 || kotlinParameterCount < trailingDefaultStart(member.parameterList)
                 || kotlinParameterCount >= fullCount)) {
-      if (LOG.isWarnEnabled()) {
-        LOG.warn(
-            "Kotlin navigation function arity mismatch: member={}, javacParameters={}, kotlinParameters={}, receiverType={}",
-            member.name, parameterCount, fullCount, member.receiverType);
-      }
       return false;
     }
     if (receiverCount == 1
@@ -239,21 +242,7 @@ public final class KotlinJvmSourceNavigator {
       final KotlinJvmSyntaxParser.ParameterSyntax parameter = member.parameterList.get(index);
       final boolean vararg = parameter.vararg && index == member.parameterList.size() - 1;
       final String javacType = executable.getParameters().get(index + receiverCount).asType().toString();
-      final boolean compatible = functionParameterTypeCompatible(parameter.type, vararg, javacType);
-      if (LOG.isWarnEnabled()) {
-        LOG.warn(
-            "Kotlin navigation function parameter: member={}, index={}, kotlinType={}, normalized={}, "
-                + "vararg={}, javacType={}, compatible={}, aliases={}",
-            member.name,
-            index,
-            parameter.type,
-            navigationJavaType(parameter.type),
-            vararg,
-            javacType,
-            compatible,
-            TYPE_ALIASES.get());
-      }
-      if (!compatible) {
+      if (!functionParameterTypeCompatible(parameter.type, vararg, javacType)) {
         return false;
       }
     }
@@ -400,6 +389,26 @@ public final class KotlinJvmSourceNavigator {
         type = expandedAlias;
       }
     }
+    final TypeApplication application = parseTypeApplication(type);
+    if (application != null) {
+      final String expandedAlias = expandGenericTypeAlias(application);
+      if (expandedAlias != null) {
+        return navigationJavaType(expandedAlias);
+      }
+      final String rawType = navigationCollectionType(application.rawType);
+      if (rawType == null || application.arguments.isEmpty()) {
+        return null;
+      }
+      final List<String> arguments = new ArrayList<>();
+      for (String argument : application.arguments) {
+        final String javaArgument = navigationJavaType(argument);
+        if (javaArgument == null) {
+          return null;
+        }
+        arguments.add(boxedNavigationType(javaArgument));
+      }
+      return rawType + "<" + String.join(",", arguments) + ">";
+    }
     switch (type) {
       case "Byte": case "kotlin.Byte": return nullable ? "java.lang.Byte" : "byte";
       case "Short": case "kotlin.Short": return nullable ? "java.lang.Short" : "short";
@@ -431,12 +440,136 @@ public final class KotlinJvmSourceNavigator {
     }
   }
 
+  private static String expandGenericTypeAlias(TypeApplication application) {
+    if (application.rawType.indexOf('.') >= 0) {
+      return null;
+    }
+    final Map<String, GenericTypeAlias> aliases = GENERIC_TYPE_ALIASES.get();
+    final GenericTypeAlias alias = aliases == null ? null : aliases.get(application.rawType);
+    if (alias == null || alias.parameters.size() != application.arguments.size()) {
+      return null;
+    }
+    for (String argument : application.arguments) {
+      if (!TYPE_NAME_PATTERN.matcher(argument.trim()).matches()) {
+        return null;
+      }
+    }
+    String expanded = alias.target;
+    for (int index = 0; index < alias.parameters.size(); index++) {
+      expanded = expanded.replaceAll(
+          "\\b" + Pattern.quote(alias.parameters.get(index)) + "\\b",
+          Matcher.quoteReplacement(application.arguments.get(index).trim()));
+    }
+    return expanded;
+  }
+
+  private static String navigationCollectionType(String kotlinType) {
+    switch (kotlinType) {
+      case "List":
+      case "kotlin.List":
+      case "MutableList":
+      case "kotlin.MutableList":
+        return "java.util.List";
+      case "Set":
+      case "kotlin.Set":
+      case "MutableSet":
+      case "kotlin.MutableSet":
+        return "java.util.Set";
+      case "Map":
+      case "kotlin.Map":
+      case "MutableMap":
+      case "kotlin.MutableMap":
+        return "java.util.Map";
+      case "Collection":
+      case "kotlin.Collection":
+      case "MutableCollection":
+      case "kotlin.MutableCollection":
+        return "java.util.Collection";
+      default:
+        return null;
+    }
+  }
+
+  private static String boxedNavigationType(String type) {
+    switch (type) {
+      case "byte": return "java.lang.Byte";
+      case "short": return "java.lang.Short";
+      case "int": return "java.lang.Integer";
+      case "long": return "java.lang.Long";
+      case "float": return "java.lang.Float";
+      case "double": return "java.lang.Double";
+      case "boolean": return "java.lang.Boolean";
+      case "char": return "java.lang.Character";
+      default: return type;
+    }
+  }
+
+  private static TypeApplication parseTypeApplication(String type) {
+    final int open = type.indexOf('<');
+    if (open < 1 || !type.endsWith(">")) {
+      return null;
+    }
+    return new TypeApplication(
+        type.substring(0, open).trim(), splitTypeArguments(type.substring(open + 1, type.length() - 1)));
+  }
+
+  private static List<String> splitTypeArguments(String text) {
+    final List<String> result = new ArrayList<>();
+    int start = 0;
+    int nesting = 0;
+    for (int index = 0; index < text.length(); index++) {
+      final char current = text.charAt(index);
+      if (current == '<') nesting++;
+      else if (current == '>') nesting--;
+      else if (current == ',' && nesting == 0) {
+        result.add(text.substring(start, index));
+        start = index + 1;
+      }
+    }
+    result.add(text.substring(start));
+    return result;
+  }
+
   private static Map<String, String> visibleTypeAliases(
       ModuleProject module, Path consumerFile, String source) {
     final Map<String, String> aliases = new LinkedHashMap<>(collectSimpleTypeAliases(source));
     for (Map.Entry<String, String> alias :
         KotlinJvmTypeIndex.visibleDirectTypeAliases(module, consumerFile).entrySet()) {
       aliases.putIfAbsent(alias.getKey(), alias.getValue());
+    }
+    return aliases;
+  }
+
+  private static Map<String, GenericTypeAlias> collectGenericTypeAliases(String source) {
+    final Map<String, GenericTypeAlias> aliases = new LinkedHashMap<>();
+    final Matcher matcher = GENERIC_TYPE_ALIAS_PATTERN.matcher(source);
+    while (matcher.find()) {
+      final List<String> parameters = new ArrayList<>();
+      for (String parameter : splitTypeArguments(matcher.group(2))) {
+        final String trimmed = parameter.trim();
+        if (!TYPE_NAME_PATTERN.matcher(trimmed).matches()) {
+          parameters.clear();
+          break;
+        }
+        parameters.add(trimmed);
+      }
+      final String target = matcher.group(3).trim();
+      final TypeApplication targetApplication = parseTypeApplication(target);
+      if (parameters.isEmpty() || targetApplication == null || target.endsWith("?")
+          || target.indexOf("->") >= 0 || target.indexOf('&') >= 0 || target.indexOf('|') >= 0
+          || targetApplication.rawType.indexOf('.') >= 0) {
+        continue;
+      }
+      boolean valid = true;
+      for (String argument : targetApplication.arguments) {
+        if (!TYPE_NAME_PATTERN.matcher(argument.trim()).matches()) {
+          valid = false;
+          break;
+        }
+      }
+      if (valid) {
+        aliases.putIfAbsent(matcher.group(1), new GenericTypeAlias(parameters, target));
+      }
     }
     return aliases;
   }
@@ -455,6 +588,26 @@ public final class KotlinJvmSourceNavigator {
     }
     aliases.values().removeIf(aliases::containsKey);
     return aliases;
+  }
+
+  private static final class GenericTypeAlias {
+    final List<String> parameters;
+    final String target;
+
+    GenericTypeAlias(List<String> parameters, String target) {
+      this.parameters = new ArrayList<>(parameters);
+      this.target = target;
+    }
+  }
+
+  private static final class TypeApplication {
+    final String rawType;
+    final List<String> arguments;
+
+    TypeApplication(String rawType, List<String> arguments) {
+      this.rawType = rawType;
+      this.arguments = arguments;
+    }
   }
 
   private static TypeElement topLevelOwner(TypeElement owner) {
