@@ -319,9 +319,10 @@ abstract class IJavaCompletionProvider(
       val indentation = indentationString(indent)
       this.insertTextFormat = SNIPPET
       this.insertText =
-          snippet.body.joinToString(separator = "\n").also {
-            it.replace("\t", indentationString).replace("\n", "\n${indentation}")
-          }
+          snippet.body
+              .joinToString(separator = "\n")
+              .replace("\t", indentationString)
+              .replace("\n", "\n${indentation}")
     }
   }
 

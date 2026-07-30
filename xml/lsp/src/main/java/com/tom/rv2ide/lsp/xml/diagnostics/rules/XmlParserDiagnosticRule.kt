@@ -65,19 +65,25 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     errors.forEach { error ->
       val offset = errorOffset(error, context.text)
       val endTagMismatch =
-          if (error.key in END_TAG_NAME_ERROR_KEYS) findFirstEndTagMismatch(context.text) else null
-      // Xerces uses ETagUnterminated when the actual closing name starts with the expected
-      // name (for example </LinearLayout> for <LinearLayou>). Surface it only when source
-      // reconstruction proves it is the same name-mismatch condition, not a missing `>`.
+          if (error.key == E_TAG_NAME_MISMATCH) {
+            error.toEndTagMismatch(context.text) ?: findFirstEndTagMismatch(context.text)
+          } else if (error.key in END_TAG_NAME_ERROR_KEYS) {
+            findFirstEndTagMismatch(context.text)
+          } else {
+            null
+          }
+      // Older parser builds use ETagUnterminated when the actual closing name starts with the
+      // expected name (for example </LinearLayout> for <LinearLayou>). Preserve that fallback
+      // only when source reconstruction proves it is a mismatch rather than a missing `>`. Newer
+      // AndroidCodeStudio Xerces builds emit ETagNameMismatch with expected/actual arguments.
       if (error.key in ERRORS_COVERED_BY_TOLERANT_DOM && endTagMismatch == null) {
         return@forEach
       }
       val range = endTagMismatch?.actualNameRange ?: parserErrorRange(error.key, offset, context.text)
       collector.errorRange(
           code = CODE_XML_PARSER_SYNTAX,
-          // Do not expose Xerces' localized message here: XMLParseException does not retain its
-          // formatting arguments, while this source-derived pair is stable and highlights the name
-          // that must be changed.
+          // Do not expose Xerces' localized message here. The parser now retains structured
+          // arguments, while the source scan supplies the exact closing-name range to highlight.
           message =
               endTagMismatch?.let {
                 "Closing tag '</${it.actualName}>' does not match opening tag '<${it.expectedName}>'"
@@ -168,6 +174,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
             key = key.orEmpty(),
             // Composite Xerces formats this message with Locale.getDefault() and its i18n bundles.
             message = exception.message ?: "Invalid XML syntax",
+            arguments = exception.arguments?.toList().orEmpty(),
             characterOffset = exception.characterOffset,
             line = exception.lineNumber,
             column = exception.columnNumber,
@@ -338,7 +345,21 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
    * that differs from the stack top. Xerces stops on that same first mismatch, while its reported
    * character offset is not stable across line wrapping and formatted documents.
    */
+  private fun ParserError.toEndTagMismatch(text: String): EndTagMismatch? {
+    val expectedName = arguments.getOrNull(0)?.toString() ?: return null
+    val actualName = arguments.getOrNull(1)?.toString() ?: return null
+    return findFirstEndTagMismatchFor(text, expectedName, actualName)
+  }
+
   private fun findFirstEndTagMismatch(text: String): EndTagMismatch? {
+    return findFirstEndTagMismatchFor(text, expectedName = null, actualName = null)
+  }
+
+  private fun findFirstEndTagMismatchFor(
+      text: String,
+      expectedName: String?,
+      actualName: String?,
+  ): EndTagMismatch? {
     val stack = ArrayDeque<String>()
     var index = 0
     while (index < text.length) {
@@ -364,13 +385,17 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
         }
         text.startsWith("</", index) -> {
           val closingTag = readClosingTag(text, index) ?: return null
-          val expectedName = stack.lastOrNull() ?: return null
-          if (expectedName != closingTag.name) {
-            return EndTagMismatch(
-                expectedName,
-                closingTag.name,
-                closingTag.nameStart until closingTag.nameEnd,
-            )
+          val stackExpectedName = stack.lastOrNull() ?: return null
+          if (stackExpectedName != closingTag.name) {
+            if ((expectedName == null || expectedName == stackExpectedName) &&
+                (actualName == null || actualName == closingTag.name)) {
+              return EndTagMismatch(
+                  stackExpectedName,
+                  closingTag.name,
+                  closingTag.nameStart until closingTag.nameEnd,
+              )
+            }
+            return null
           }
           stack.removeLast()
           index = closingTag.tagEnd + 1
@@ -476,6 +501,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   private data class ParserError(
       val key: String,
       val message: String,
+      val arguments: List<Any?>,
       val characterOffset: Int,
       val line: Int,
       val column: Int,
@@ -496,6 +522,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
 
   private const val CODE_XML_PARSER_SYNTAX = "XML005"
   private const val E_TAG_REQUIRED = "ETagRequired"
+  private const val E_TAG_NAME_MISMATCH = "ETagNameMismatch"
   private const val E_TAG_UNTERMINATED = "ETagUnterminated"
   private val END_TAG_NAME_ERROR_KEYS = setOf(E_TAG_REQUIRED, E_TAG_UNTERMINATED)
   private const val MAX_PARSER_ERRORS = 20

@@ -1752,11 +1752,21 @@ public class XMLDocumentFragmentScannerImpl
 
         // this should work both for namespace processing true or false...
 
-        //REVISIT: if the string is not the same as expected.. we need to do better error handling..
-        //We can skip this for now... In any case if the string doesn't match -- document is not well formed.
-
-        if (!fEntityScanner.skipString(endElementName.rawname)) {
-             reportFatalError("ETagRequired", new Object[]{rawname});
+        // Scan the complete actual name before comparing it to the element stack. skipString(expected)
+        // classifies an actual name with the expected name as a prefix as ETagUnterminated,
+        // although it is a name mismatch and IDE consumers need both names explicitly.
+        boolean hasActualName;
+        if (fNamespaces) {
+            hasActualName = fEntityScanner.scanQName(fElementQName);
+        } else {
+            String actualName = fEntityScanner.scanName();
+            hasActualName = actualName != null;
+            fElementQName.setValues(null, actualName, actualName, null);
+        }
+        if (!hasActualName) {
+            reportFatalError("ETagRequired", new Object[]{rawname});
+        } else if (!rawname.equals(fElementQName.rawname)) {
+            reportFatalError("ETagNameMismatch", new Object[]{rawname, fElementQName.rawname});
         }
 
         // end

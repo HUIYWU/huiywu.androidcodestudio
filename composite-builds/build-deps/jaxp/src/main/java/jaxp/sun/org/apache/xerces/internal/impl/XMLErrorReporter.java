@@ -431,9 +431,10 @@ public class XMLErrorReporter
             }
             message = str.toString();
         }
-        XMLParseException parseException = (exception != null) ?
-            new XMLParseException(location, message, exception) :
-            new XMLParseException(location, message);
+        // Preserve raw arguments alongside the localized message so consumers that need structured
+        // diagnostics do not have to parse text whose language depends on the active Locale.
+        XMLParseException parseException =
+            new XMLParseException(location, message, exception, arguments);
 
         // get error handler
         XMLErrorHandler errorHandler = fErrorHandler;

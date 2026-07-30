@@ -79,6 +79,12 @@ public class XMLParseException
     /** Character offset. */
     protected int fCharacterOffset = -1;
 
+    /**
+     * Unformatted message arguments supplied by the error reporter. Keeping these separately
+     * lets IDE clients consume stable parser facts without reverse-engineering localized text.
+     */
+    protected Object[] fArguments;
+
     //
     // Constructors
     //
@@ -100,7 +106,13 @@ public class XMLParseException
     /** Constructs a parse exception. */
     public XMLParseException(XMLLocator locator,
                              String message, Exception exception) {
+        this(locator, message, exception, null);
+    } // <init>(XMLLocator,String,Exception)
+
+    /** Constructs a parse exception with a nested exception and unformatted arguments. */
+    public XMLParseException(XMLLocator locator, String message, Exception exception, Object[] arguments) {
         super(message, exception);
+        fArguments = arguments != null ? (Object[]) arguments.clone() : null;
         if (locator != null) {
             fPublicId = locator.getPublicId();
             fLiteralSystemId = locator.getLiteralSystemId();
@@ -150,6 +162,14 @@ public class XMLParseException
     public int getCharacterOffset() {
         return fCharacterOffset;
     } // getCharacterOffset():int
+
+    /**
+     * Returns a defensive copy of the unformatted error arguments, or null when this exception
+     * did not originate from an XMLErrorReporter call with arguments.
+     */
+    public Object[] getArguments() {
+        return fArguments != null ? (Object[]) fArguments.clone() : null;
+    } // getArguments():Object[]
 
     //
     // Object methods

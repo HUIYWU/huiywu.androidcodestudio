@@ -15,8 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
 import jdkx.lang.model.element.ExecutableElement;
@@ -25,7 +23,6 @@ import jdkx.lang.model.element.TypeElement;
 /** Maps javac elements from Kotlin ABI stubs back to real Kotlin source declarations. */
 public final class KotlinJvmSourceNavigator {
 
-  private static final Logger LOG = LoggerFactory.getLogger(KotlinJvmSourceNavigator.class);
   private static final Pattern TYPE_ALIAS_PATTERN =
       Pattern.compile("(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
   private static final ThreadLocal<Map<String, String>> TYPE_ALIASES = new ThreadLocal<>();
@@ -34,15 +31,7 @@ public final class KotlinJvmSourceNavigator {
 
   public static Location find(ModuleProject module, Element element) {
     TypeElement owner = ownerType(element);
-    LOG.warn(
-        "Kotlin navigation entered: element={}, kind={}, type={}, owner={}, modulePresent={}",
-        element,
-        element == null ? null : element.getKind(),
-        element == null ? null : element.asType(),
-        owner,
-        module != null);
     if (module == null || owner == null) {
-      LOG.warn("Kotlin navigation skipped: missing module or owner; element={}", element);
       return null;
     }
     final boolean companionOwner = "Companion".contentEquals(owner.getSimpleName())
@@ -54,13 +43,6 @@ public final class KotlinJvmSourceNavigator {
     final String qualifiedName = topLevelOwner.getQualifiedName().toString();
     final List<KotlinTypeDeclaration> multifileDeclarations =
         KotlinJvmTypeIndex.findMultifileDeclarations(module, qualifiedName);
-    LOG.warn(
-        "Kotlin navigation owner resolved: qualifiedName={}, owner={}, topLevelOwner={}, companion={}, multifileParts={}",
-        qualifiedName,
-        owner.getQualifiedName(),
-        topLevelOwner.getQualifiedName(),
-        companionOwner,
-        multifileDeclarations.size());
     if (!(element instanceof TypeElement) && !multifileDeclarations.isEmpty()) {
       for (KotlinTypeDeclaration multifileDeclaration : multifileDeclarations) {
         final String multifileSource =
@@ -86,15 +68,8 @@ public final class KotlinJvmSourceNavigator {
         ? KotlinJvmTypeIndex.findDeclaration(module, qualifiedName)
         : multifileDeclarations.get(0);
     if (declaration == null) {
-      LOG.warn("Kotlin navigation declaration not found: qualifiedName={}, element={}", qualifiedName, element);
       return null;
     }
-    LOG.warn(
-        "Kotlin navigation declaration selected: qualifiedName={}, kotlinFile={}, offset={}, length={}",
-        qualifiedName,
-        declaration.file,
-        declaration.offset,
-        declaration.length);
     final String source = FileManager.INSTANCE.getDocumentContents(declaration.file).toString();
     final Map<String, String> previousAliases = TYPE_ALIASES.get();
     TYPE_ALIASES.set(visibleTypeAliases(module, declaration.file, source));
@@ -115,14 +90,8 @@ public final class KotlinJvmSourceNavigator {
               ? findMember(type.companionMembers, element, false)
               : findTypeMember(type, declaration, element);
       if (range != null) {
-        LOG.warn(
-            "Kotlin navigation member resolved: element={}, kotlinFile={}, offset={}, length={}, aliases={}",
-            element, declaration.file, range.offset, range.length, TYPE_ALIASES.get());
         return location(declaration.file, source, range.offset, range.length);
       }
-      LOG.warn(
-          "Kotlin navigation fell back to declaration range: element={}, kotlinFile={}, typeFound={}, aliases={}",
-          element, declaration.file, type != null, TYPE_ALIASES.get());
       return type != null && type.nameOffset >= 0
           ? location(declaration.file, source, type.nameOffset, type.nameLength)
           : location(declaration.file, source, declaration.offset, declaration.length);
@@ -222,15 +191,6 @@ public final class KotlinJvmSourceNavigator {
         matches++;
       }
     }
-    if (matches != 1 && LOG.isWarnEnabled()) {
-      LOG.warn(
-          "Kotlin navigation member mismatch: javaName={}, kind={}, candidates={}, owner={}, aliases={}",
-          javaName,
-          element.getKind(),
-          matches,
-          element.getEnclosingElement(),
-          TYPE_ALIASES.get());
-    }
     return matches == 1 ? match : null;
   }
 
@@ -253,8 +213,6 @@ public final class KotlinJvmSourceNavigator {
     if (receiverCount == 1
         && !functionParameterTypeCompatible(
             member.receiverType, false, executable.getParameters().get(0).asType().toString())) {
-      logParameterMismatch(member, -1, member.receiverType, false,
-          executable.getParameters().get(0).asType().toString());
       return false;
     }
     for (int index = 0; index < kotlinParameterCount; index++) {
@@ -263,9 +221,6 @@ public final class KotlinJvmSourceNavigator {
           parameter.type,
           parameter.vararg && index == member.parameterList.size() - 1,
           executable.getParameters().get(index + receiverCount).asType().toString())) {
-        logParameterMismatch(member, index, parameter.type,
-            parameter.vararg && index == member.parameterList.size() - 1,
-            executable.getParameters().get(index + receiverCount).asType().toString());
         return false;
       }
     }
@@ -380,31 +335,7 @@ public final class KotlinJvmSourceNavigator {
         || parameterTypeMatches(kotlinType, vararg, javaType);
   }
 
-  private static void logParameterMismatch(
-      KotlinJvmSyntaxParser.MemberSyntax member,
-      int parameterIndex,
-      String kotlinType,
-      boolean vararg,
-      String javaType) {
-    if (!LOG.isWarnEnabled()) {
-      return;
-    }
-    final Map<String, String> aliases = TYPE_ALIASES.get();
-    final String rawType = kotlinType == null ? null : kotlinType.trim();
-    final String expandedAlias = aliases == null || rawType == null ? null : aliases.get(rawType);
-    LOG.warn(
-        "Kotlin navigation parameter mismatch: member={}, jvmName={}, index={}, kotlinType={}, "
-            + "aliasTarget={}, normalized={}, vararg={}, javacType={}, aliases={}",
-        member.name,
-        member.jvmName == null ? member.name : member.jvmName,
-        parameterIndex,
-        kotlinType,
-        expandedAlias,
-        navigationJavaType(kotlinType),
-        vararg,
-        javaType,
-        aliases);
-  }
+  // Intentionally empty: navigation diagnostics are not retained in production.
 
   private static boolean parameterTypeMatches(
       String kotlinType, boolean vararg, String javaType) {
