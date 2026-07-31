@@ -16,6 +16,7 @@
  */
 package com.tom.rv2ide.lsp.xml.diagnostics.rules
 
+import com.tom.rv2ide.lsp.xml.diagnostics.ClosingTagMismatchDiagnosticData
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticCollector
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlElementDiagnosticRule
@@ -37,7 +38,7 @@ internal object CommonXmlElementDiagnosticRule :
     val tagName = element.tagName
     // Xerces has already identified the first unmatched closing name precisely. LemMinX's
     // recovered tree cannot preserve that stack relation and otherwise emits cascade XML001s.
-    if (collector.hasMessage(CODE_XML_PARSER_SYNTAX, CLOSING_TAG_MISMATCH_PREFIX)) {
+    if (collector.hasExtra(CODE_XML_PARSER_SYNTAX, ClosingTagMismatchDiagnosticData::class.java)) {
       return true
     }
     if (element.isOrphanEndTag) {
@@ -159,7 +160,6 @@ internal object CommonXmlElementDiagnosticRule :
 
   private const val CODE_XML_SYNTAX = "XML001"
   private const val CODE_XML_PARSER_SYNTAX = "XML005"
-  private const val CLOSING_TAG_MISMATCH_PREFIX = "Closing tag '</"
   private const val CODE_DUPLICATE_ATTRIBUTE = "XML002"
   private const val CODE_UNDECLARED_NAMESPACE = "XML003"
   private const val CODE_INVALID_ANDROID_NAMESPACE = "XML004"

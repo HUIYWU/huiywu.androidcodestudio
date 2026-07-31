@@ -16,8 +16,10 @@
  */
 package com.tom.rv2ide.lsp.xml.diagnostics.rules
 
+import com.tom.rv2ide.lsp.xml.diagnostics.ClosingTagMismatchDiagnosticData
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticCollector
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
+import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticMessages
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticRule
 import java.io.StringReader
 import java.util.ArrayDeque
@@ -82,14 +84,17 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       val range = endTagMismatch?.actualNameRange ?: parserErrorRange(error.key, offset, context.text)
       collector.errorRange(
           code = CODE_XML_PARSER_SYNTAX,
-          // Do not expose Xerces' localized message here. The parser now retains structured
-          // arguments, while the source scan supplies the exact closing-name range to highlight.
+          // Keep display text localized and attach stable facts separately for editor actions.
           message =
               endTagMismatch?.let {
-                "Closing tag '</${it.actualName}>' does not match opening tag '<${it.expectedName}>'"
+                XmlDiagnosticMessages.closingTagMismatch(it.actualName, it.expectedName)
               } ?: error.message,
           start = range.first,
           end = range.last + 1,
+          extra =
+              endTagMismatch?.let {
+                ClosingTagMismatchDiagnosticData(it.actualName, it.expectedName)
+              } ?: Any(),
       )
     }
   }

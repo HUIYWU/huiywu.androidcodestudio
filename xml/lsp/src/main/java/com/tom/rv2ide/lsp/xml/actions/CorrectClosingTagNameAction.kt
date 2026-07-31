@@ -22,6 +22,8 @@ import com.tom.rv2ide.lsp.models.DocumentChange
 import com.tom.rv2ide.lsp.models.PerformCodeActionParams
 import com.tom.rv2ide.lsp.models.TextEdit
 import com.tom.rv2ide.lsp.xml.XMLLanguageServer
+import com.tom.rv2ide.lsp.xml.diagnostics.ClosingTagMismatchDiagnosticData
+import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticMessages
 import com.tom.rv2ide.lsp.xml.isWorkspaceXmlFile
 import java.io.File
 
@@ -50,12 +52,12 @@ internal class CorrectClosingTagNameAction : EditorActionItem {
       markInvisible()
       return
     }
-    val names = mismatchNamesFromDiagnostic(diagnostic.message) ?: run {
+    val mismatch = diagnostic.extra as? ClosingTagMismatchDiagnosticData ?: run {
       markInvisible()
       return
     }
-    replacement = names.expectedName
-    label = "Change closing tag to </${names.expectedName}>"
+    replacement = mismatch.expectedName
+    label = XmlDiagnosticMessages.fixClosingTag()
     visible = true
     enabled = true
   }
@@ -78,16 +80,7 @@ internal class CorrectClosingTagNameAction : EditorActionItem {
     return true
   }
 
-  internal data class MismatchNames(val actualName: String, val expectedName: String)
-
   internal companion object {
     const val CODE_XML_PARSER_SYNTAX = "XML005"
-    private val MESSAGE =
-        Regex("^Closing tag '</([A-Za-z_][A-Za-z0-9_.:-]*)>' does not match opening tag '<([A-Za-z_][A-Za-z0-9_.:-]*)>'$")
-
-    internal fun mismatchNamesFromDiagnostic(message: String): MismatchNames? {
-      val match = MESSAGE.matchEntire(message) ?: return null
-      return MismatchNames(match.groupValues[1], match.groupValues[2])
-    }
   }
 }

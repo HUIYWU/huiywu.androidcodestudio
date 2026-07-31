@@ -8,31 +8,31 @@
 package com.tom.rv2ide.lsp.xml.actions
 
 import com.google.common.truth.Truth.assertThat
+import com.tom.rv2ide.lsp.xml.diagnostics.ClosingTagMismatchDiagnosticData
+import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticMessages
+import java.util.Locale
 import junit.framework.TestCase
 
 class CorrectClosingTagNameActionTest : TestCase() {
 
-  fun testExtractsExpectedAndActualNames() {
-    assertThat(
-        CorrectClosingTagNameAction.mismatchNamesFromDiagnostic(
-            "Closing tag '</LinearLayou>' does not match opening tag '<LinearLayout>'"
-        )
-    ).isEqualTo(CorrectClosingTagNameAction.MismatchNames("LinearLayou", "LinearLayout"))
+  fun testUsesStructuredMismatchDataContract() {
+    val data = ClosingTagMismatchDiagnosticData("LinearLayou", "LinearLayout")
+
+    assertThat(data.actualName).isEqualTo("LinearLayou")
+    assertThat(data.expectedName).isEqualTo("LinearLayout")
   }
 
-  fun testRejectsOtherDiagnosticMessages() {
-    assertThat(
-        CorrectClosingTagNameAction.mismatchNamesFromDiagnostic(
-            "Element 'LinearLayout' is missing an end tag"
-        )
-    ).isNull()
+  fun testUsesShortLocalizedActionLabels() {
+    assertThat(XmlDiagnosticMessages.fixClosingTag(Locale.ENGLISH)).isEqualTo("Fix closing tag")
+    assertThat(XmlDiagnosticMessages.fixClosingTag(Locale.CHINESE)).isEqualTo("修正结束标签")
   }
 
-  fun testAcceptsQualifiedTagNames() {
+  fun testDiagnosticMessagesAreLocalizedWithoutChangingData() {
     assertThat(
-        CorrectClosingTagNameAction.mismatchNamesFromDiagnostic(
-            "Closing tag '</androidx.cardview.widget.CardView>' does not match opening tag '<com.google.android.material.card.MaterialCardView>'"
-        )?.expectedName
-    ).isEqualTo("com.google.android.material.card.MaterialCardView")
+        XmlDiagnosticMessages.closingTagMismatch("LinearLayou", "LinearLayout", Locale.ENGLISH)
+    ).isEqualTo("Closing tag '</LinearLayou>' does not match opening tag '<LinearLayout>'")
+    assertThat(
+        XmlDiagnosticMessages.closingTagMismatch("LinearLayou", "LinearLayout", Locale.CHINESE)
+    ).isEqualTo("结束标签 '</LinearLayou>' 与开始标签 '<LinearLayout>' 不匹配")
   }
 }

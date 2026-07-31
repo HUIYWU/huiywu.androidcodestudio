@@ -58,10 +58,10 @@ internal class XmlDiagnosticCollector(private val text: String) {
     add(code, message, severity, start, end)
   }
 
-  fun errorRange(code: String, message: String, start: Int, end: Int) {
+  fun errorRange(code: String, message: String, start: Int, end: Int, extra: Any = Any()) {
     val safeStart = start.coerceIn(0, text.length)
     val safeEnd = end.coerceIn(safeStart, text.length)
-    add(code, message, ERROR, safeStart, safeEnd)
+    add(code, message, ERROR, safeStart, safeEnd, extra)
   }
 
   fun errorValue(code: String, message: String, attribute: DOMAttr) {
@@ -93,6 +93,7 @@ internal class XmlDiagnosticCollector(private val text: String) {
       severity: DiagnosticSeverity,
       start: Int,
       end: Int,
+      extra: Any = Any(),
   ) {
     val key = "$code:$start:$end"
     if (key in keys || diagnostics.size >= MAX_DIAGNOSTICS_PER_FILE) {
@@ -106,11 +107,11 @@ internal class XmlDiagnosticCollector(private val text: String) {
             range = Range(offsetToPosition(start), offsetToPosition(end)),
             source = XmlDiagnosticsService.SOURCE,
             severity = severity,
-        )
+        ).also { it.extra = extra }
   }
 
-  fun hasMessage(code: String, messagePrefix: String): Boolean {
-    return diagnostics.any { it.code == code && it.message.startsWith(messagePrefix) }
+  fun hasExtra<T : Any>(code: String, type: Class<T>): Boolean {
+    return diagnostics.any { it.code == code && type.isInstance(it.extra) }
   }
 
   fun build(): List<DiagnosticItem> = diagnostics.sortedWith(DiagnosticItem.START_COMPARATOR)

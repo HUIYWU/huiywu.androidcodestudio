@@ -138,8 +138,10 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnostic.range.start.column).isEqualTo(16)
     assertThat(diagnostic.range.end.line).isEqualTo(0)
     assertThat(diagnostic.range.end.column).isEqualTo(27)
+    assertThat(diagnostic.extra)
+        .isEqualTo(ClosingTagMismatchDiagnosticData("LinearLayou", "LinearLayout"))
   }
-
+ 
   fun testReportsNestedMismatchAgainstInnermostOpeningTag() {
     val text = "<LinearLayout><TextView></LinearLayout></TextView>"
     val diagnostic = diagnose(text).single()
