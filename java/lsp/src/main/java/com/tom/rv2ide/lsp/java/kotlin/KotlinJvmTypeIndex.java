@@ -141,7 +141,15 @@ public final class KotlinJvmTypeIndex {
 
   public static java.util.Map<String, GenericTypeAlias> visibleGenericTypeAliases(
       ModuleProject module, Path consumerFile) {
-    if (module == null || consumerFile == null) {
+    if (module == null) {
+      return Collections.emptyMap();
+    }
+    return visibleGenericTypeAliases(module.getCompileSourceDirectories(), consumerFile);
+  }
+
+  static java.util.Map<String, GenericTypeAlias> visibleGenericTypeAliases(
+      Iterable<java.io.File> sourceRoots, Path consumerFile) {
+    if (sourceRoots == null || consumerFile == null) {
       return Collections.emptyMap();
     }
     final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
@@ -151,7 +159,7 @@ public final class KotlinJvmTypeIndex {
     final Matcher importMatcher = IMPORT_PATTERN.matcher(consumerSource);
     while (importMatcher.find()) explicitlyImported.add(importMatcher.group(1));
     final java.util.Map<String, GenericTypeAlias> aliases = new java.util.LinkedHashMap<>();
-    for (java.io.File root : module.getCompileSourceDirectories()) {
+    for (java.io.File root : sourceRoots) {
       if (root == null || !root.isDirectory()) continue;
       try (Stream<Path> paths = Files.walk(root.toPath())) {
         paths.filter(DocumentUtils::isKotlinFile).filter(path -> !path.equals(consumerFile))
