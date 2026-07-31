@@ -15,11 +15,6 @@ internal data class ClosingTagMismatchDiagnosticData(
   val expectedName: String,
 )
 
-/** Machine-readable payload for an element that remains open at end of document. */
-internal data class UnclosedElementDiagnosticData(
-  val elementName: String,
-)
-
 /**
  * XML LSP diagnostic messages. The key and argument order are the stable contract;
  * the returned string is only a localized presentation value.
@@ -28,7 +23,6 @@ internal object XmlDiagnosticMessages {
   private const val BUNDLE_BASE_NAME =
     "com.tom.rv2ide.lsp.xml.diagnostics.messages.XmlDiagnostics"
   private const val CLOSING_TAG_MISMATCH_KEY = "xml.diagnostic.closingTagMismatch"
-  private const val UNCLOSED_ELEMENT_KEY = "xml.diagnostic.unclosedElement"
 
   fun closingTagMismatch(
     actualName: String,
@@ -37,12 +31,6 @@ internal object XmlDiagnosticMessages {
   ): String = format(
     key = CLOSING_TAG_MISMATCH_KEY,
     arguments = arrayOf<Any>(actualName, expectedName),
-    locale = locale,
-  )
-
-  fun unclosedElement(elementName: String, locale: Locale = Locale.getDefault()): String = format(
-    key = UNCLOSED_ELEMENT_KEY,
-    arguments = arrayOf<Any>(elementName),
     locale = locale,
   )
 

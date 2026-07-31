@@ -3269,15 +3269,11 @@ public class XMLDocumentFragmentScannerImpl
         protected void endOfFileHook(EOFException e)
         throws IOException, XNIException {
 
-            // Markup depth returns to zero after a complete start tag, even though the
-            // element stack still contains the unclosed element. Use the element stack here.
-            if (fElementStack.fDepth > 0 &&
-                        fElementStack.fElements[fElementStack.fDepth - 1].rawname != null) {
-                    reportFatalError("ETagRequired",
-                            new Object[]{fElementStack.fElements[fElementStack.fDepth - 1].rawname});
-                } else {
-                    reportFatalError("PrematureEOF", null);
-                }
+            // NOTE: An end of file is only only an error if we were
+            //       in the middle of scanning some markup. -Ac
+            if (fMarkupDepth != 0) {
+                reportFatalError("PrematureEOF", null);
+            }
         } // endOfFileHook()
     } // class FragmentContentDriver
 

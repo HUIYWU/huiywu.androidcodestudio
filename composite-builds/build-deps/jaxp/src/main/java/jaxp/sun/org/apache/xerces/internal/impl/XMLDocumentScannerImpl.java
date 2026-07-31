@@ -584,22 +584,13 @@ public class XMLDocumentScannerImpl
             //and driver is fTrailingMiscDriver (which
             //handles end of document in normal case)
             //set the scanner state of SCANNER_STATE_TERMINATED
-            if(fMarkupDepth == 0 && fDriver == fTrailingMiscDriver && fElementStack.fDepth == 0){
-                // The document ended normally only when both the markup depth and element
-                // stack are empty.
+            if(fMarkupDepth == 0 && fDriver == fTrailingMiscDriver){
+                //set the scanner set to SCANNER_STATE_TERMINATED
                 setScannerState(SCANNER_STATE_TERMINATED) ;
             } else{
-                // EOF is delivered from the document entity here before the fragment driver's
-                // endOfFileHook. Report the structural fact at this boundary instead of throwing
-                // EOFException, otherwise the XNI error handler never receives it.
-                if (fElementStack.fDepth > 0 &&
-                        fElementStack.fElements[fElementStack.fDepth - 1].rawname != null) {
-                    reportFatalError("ETagRequired",
-                            new Object[]{fElementStack.fElements[fElementStack.fDepth - 1].rawname});
-                } else {
-                    reportFatalError("PrematureEOF", null);
-                }
-                setScannerState(SCANNER_STATE_TERMINATED);
+                //else we have reached the end of document prematurely
+                //so throw EOFException.
+                throw new java.io.EOFException();
             }
 
             //this is taken care in wrapper which generates XNI callbacks, There are no next events
@@ -1459,14 +1450,6 @@ public class XMLDocumentScannerImpl
                     case SCANNER_STATE_CONTENT: {
                     int ch = fEntityScanner.peekChar();
                     if (ch == -1) {
-                        // A complete start tag leaves markup depth at zero, but an
-                        // unclosed element remains on the parser element stack. Do not
-                        // silently treat that state as a normal document end.
-                        if (fElementStack.fDepth > 0 &&
-                                fElementStack.fElements[fElementStack.fDepth - 1].rawname != null) {
-                            reportFatalError("ETagRequired",
-                                    new Object[]{fElementStack.fElements[fElementStack.fDepth - 1].rawname});
-                        }
                         setScannerState(SCANNER_STATE_TERMINATED);
                         return XMLEvent.END_DOCUMENT ;
                     } else{

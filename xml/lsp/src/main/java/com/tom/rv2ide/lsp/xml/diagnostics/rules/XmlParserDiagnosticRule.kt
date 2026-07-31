@@ -17,7 +17,6 @@
 package com.tom.rv2ide.lsp.xml.diagnostics.rules
 
 import com.tom.rv2ide.lsp.xml.diagnostics.ClosingTagMismatchDiagnosticData
-import com.tom.rv2ide.lsp.xml.diagnostics.UnclosedElementDiagnosticData
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticCollector
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticMessages
@@ -79,27 +78,16 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       // expected name (for example </LinearLayout> for <LinearLayou>). Preserve that fallback
       // only when source reconstruction proves it is a mismatch rather than a missing `>`. Newer
       // AndroidCodeStudio Xerces builds emit ETagNameMismatch with expected/actual arguments.
-      val unclosedElement =
-          if (error.key in UNCLOSED_ELEMENT_ERROR_KEYS) {
-            error.arguments.firstOrNull()?.toString()?.takeIf { it.isNotEmpty() }?.let {
-              UnclosedElement(it, findElementNameRange(context.text, it, offset))
-            }
-          } else null
-      if (error.key in ERRORS_COVERED_BY_TOLERANT_DOM &&
-          endTagMismatch == null && unclosedElement == null) {
+      if (error.key in ERRORS_COVERED_BY_TOLERANT_DOM && endTagMismatch == null) {
         return@forEach
       }
-      val range =
-          endTagMismatch?.actualNameRange
-              ?: unclosedElement?.nameRange
-              ?: parserErrorRange(error.key, offset, context.text)
+      val range = endTagMismatch?.actualNameRange ?: parserErrorRange(error.key, offset, context.text)
       collector.errorRange(
           code = CODE_XML_PARSER_SYNTAX,
           message = when {
             endTagMismatch != null ->
                 XmlDiagnosticMessages.closingTagMismatch(
                     endTagMismatch.actualName, endTagMismatch.expectedName)
-            unclosedElement != null -> XmlDiagnosticMessages.unclosedElement(unclosedElement.name)
             else -> error.message
           },
           start = range.first,
@@ -108,7 +96,6 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
             endTagMismatch != null ->
                 ClosingTagMismatchDiagnosticData(
                     endTagMismatch.actualName, endTagMismatch.expectedName)
-            unclosedElement != null -> UnclosedElementDiagnosticData(unclosedElement.name)
             else -> Any()
           },
       )
@@ -217,16 +204,6 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       }
     }
     return (offset + error.column - 1).coerceIn(0, text.length)
-  }
-
-  private fun findElementNameRange(text: String, name: String, offset: Int): IntRange {
-    val safeOffset = offset.coerceIn(0, text.length)
-    val tagStart = text.lastIndexOf("<$name", (safeOffset - 1).coerceAtLeast(0))
-    return if (tagStart >= 0) {
-      (tagStart + 1) until (tagStart + 1 + name.length)
-    } else {
-      safeOffset..safeOffset
-    }
   }
 
   private fun parserErrorRange(key: String, offset: Int, text: String): IntRange {
@@ -551,14 +528,11 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       val actualNameRange: IntRange,
   )
 
-  private data class UnclosedElement(val name: String, val nameRange: IntRange)
-
   private const val CODE_XML_PARSER_SYNTAX = "XML005"
   private const val E_TAG_REQUIRED = "ETagRequired"
   private const val E_TAG_NAME_MISMATCH = "ETagNameMismatch"
   private const val E_TAG_UNTERMINATED = "ETagUnterminated"
   private val END_TAG_NAME_ERROR_KEYS = setOf(E_TAG_REQUIRED, E_TAG_UNTERMINATED)
-  private val UNCLOSED_ELEMENT_ERROR_KEYS = setOf("ETagRequired")
   private const val MAX_PARSER_ERRORS = 20
   private const val MAX_ATTRIBUTE_LOOKBACK_TAGS = 4
   private const val MAX_ATTRIBUTE_LOOKBACK_CHARS = 4096
