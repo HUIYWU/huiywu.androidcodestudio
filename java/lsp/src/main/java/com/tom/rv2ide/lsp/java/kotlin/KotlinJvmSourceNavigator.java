@@ -11,6 +11,7 @@ import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.projects.ModuleProject;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -265,13 +266,40 @@ public final class KotlinJvmSourceNavigator {
    * so cross-file visibility continues to come from {@link KotlinJvmTypeIndex}.
    */
   static Location findFacadeMemberLocation(Path file, String source, Element element) {
+    return findFacadeMemberLocation(
+        file, source, element, Collections.emptyMap(), Collections.emptyMap());
+  }
+
+  /** Resolves a facade member with aliases supplied by the cross-file visibility index. */
+  static Location findFacadeMemberLocation(
+      Path file,
+      String source,
+      Element element,
+      Map<String, String> visibleDirectAliases,
+      Map<String, KotlinJvmTypeIndex.GenericTypeAlias> visibleGenericAliases) {
     if (file == null || source == null || element == null) {
       return null;
     }
+    final Map<String, String> directAliases = collectSimpleTypeAliases(source);
+    if (visibleDirectAliases != null) {
+      for (Map.Entry<String, String> entry : visibleDirectAliases.entrySet()) {
+        directAliases.putIfAbsent(entry.getKey(), entry.getValue());
+      }
+    }
+    final Map<String, GenericTypeAlias> genericAliases = collectGenericTypeAliases(source);
+    if (visibleGenericAliases != null) {
+      for (Map.Entry<String, KotlinJvmTypeIndex.GenericTypeAlias> entry
+          : visibleGenericAliases.entrySet()) {
+        final KotlinJvmTypeIndex.GenericTypeAlias alias = entry.getValue();
+        genericAliases.putIfAbsent(entry.getKey(), new GenericTypeAlias(
+            alias.parameters,
+            alias.targetRawType + "<" + String.join(", ", alias.targetArguments) + ">"));
+      }
+    }
     final Map<String, String> previousAliases = TYPE_ALIASES.get();
     final Map<String, GenericTypeAlias> previousGenericAliases = GENERIC_TYPE_ALIASES.get();
-    TYPE_ALIASES.set(collectSimpleTypeAliases(source));
-    GENERIC_TYPE_ALIASES.set(collectGenericTypeAliases(source));
+    TYPE_ALIASES.set(directAliases);
+    GENERIC_TYPE_ALIASES.set(genericAliases);
     try {
       final SourceRange range = findFacadeMember(source, element);
       return range == null ? null : location(file, source, range.offset, range.length);

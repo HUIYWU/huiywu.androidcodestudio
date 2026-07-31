@@ -2,6 +2,8 @@ package com.tom.rv2ide.lsp.java.kotlin
 
 import com.itsaky.androidide.treesitter.TreeSitter
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.Paths
 import jdkx.lang.model.element.ExecutableElement
 import jdkx.lang.model.element.TypeElement
@@ -13,6 +15,7 @@ import openjdk.tools.javac.api.JavacTool
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.BeforeClass
 import org.junit.Test
 
@@ -451,6 +454,90 @@ class KotlinJvmSourceNavigatorTest {
     assertEquals("aliasNavigation", sourceTextAt(secondSource, location))
   }
 
+  @Test
+  fun crossFileAliasVisibility_drivesFacadeNavigation() {
+    val root = Files.createTempDirectory("kotlin-navigation-alias")
+    try {
+      val shared = root.resolve("shared").also { Files.createDirectories(it) }
+      val consumer = root.resolve("consumer").also { Files.createDirectories(it) }
+      writeSource(shared.resolve("Aliases.kt"), """
+        package shared
+        typealias ImportedNavigationAlias<T> = List<T>
+      """.trimIndent())
+      val consumerFile = consumer.resolve("NavigationApi.kt")
+      val consumerSource =
+        """
+        package consumer
+        import shared.ImportedNavigationAlias
+
+        fun crossFileNavigation(value: ImportedNavigationAlias<String>): Unit {}
+        fun crossFileNavigation(value: ImportedNavigationAlias<Int>): Unit {}
+        """.trimIndent()
+      writeSource(consumerFile, consumerSource)
+      val aliases = KotlinJvmTypeIndex.visibleGenericTypeAliases(
+        listOf(root.toFile()), consumerFile)
+      val method = compileMethod(
+        """
+        package consumer;
+        abstract class NavigationApiKt {
+          abstract void crossFileNavigation(java.util.List<java.lang.Integer> value);
+        }
+        """.trimIndent(),
+        "consumer.NavigationApiKt",
+        "crossFileNavigation",
+      )
+
+      val location = KotlinJvmSourceNavigator.findFacadeMemberLocation(
+        consumerFile, consumerSource, method, emptyMap(), aliases)
+
+      assertNotNull(location)
+      assertEquals("crossFileNavigation", sourceTextAt(consumerSource, location!!))
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
+  fun wildcardAliasVisibility_doesNotEnableAmbiguousNavigation() {
+    val root = Files.createTempDirectory("kotlin-navigation-wildcard-alias")
+    try {
+      val shared = root.resolve("shared").also { Files.createDirectories(it) }
+      val consumer = root.resolve("consumer").also { Files.createDirectories(it) }
+      writeSource(shared.resolve("Aliases.kt"), """
+        package shared
+        typealias WildcardNavigationAlias<T> = List<T>
+      """.trimIndent())
+      val consumerFile = consumer.resolve("NavigationApi.kt")
+      val consumerSource =
+        """
+        package consumer
+        import shared.*
+
+        fun wildcardNavigation(value: WildcardNavigationAlias<String>): Unit {}
+        fun wildcardNavigation(value: WildcardNavigationAlias<Int>): Unit {}
+        """.trimIndent()
+      writeSource(consumerFile, consumerSource)
+      val aliases = KotlinJvmTypeIndex.visibleGenericTypeAliases(
+        listOf(root.toFile()), consumerFile)
+      val method = compileMethod(
+        """
+        package consumer;
+        abstract class NavigationApiKt {
+          abstract void wildcardNavigation(java.util.List<java.lang.Integer> value);
+        }
+        """.trimIndent(),
+        "consumer.NavigationApiKt",
+        "wildcardNavigation",
+      )
+
+      assertTrue(aliases.isEmpty())
+      assertNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(
+        consumerFile, consumerSource, method, emptyMap(), aliases))
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
   private fun compileMethod(
     source: String,
     qualifiedOwner: String,
@@ -472,6 +559,10 @@ class KotlinJvmSourceNavigatorTest {
     return owner.enclosedElements
       .filterIsInstance<ExecutableElement>()
       .single { it.simpleName.contentEquals(methodName) }
+  }
+
+  private fun writeSource(path: Path, source: String) {
+    Files.write(path, source.toByteArray(Charsets.UTF_8))
   }
 
   private fun sourceTextAt(source: String, location: com.tom.rv2ide.models.Location): String {

@@ -46,6 +46,8 @@ public final class KotlinJvmTypeIndex {
   private static final Logger LOG = LoggerFactory.getLogger(KotlinJvmTypeIndex.class);
   private static final ConcurrentHashMap<ModuleProject, CachedTypes> CACHE =
       new ConcurrentHashMap<>();
+  private static final ConcurrentHashMap<ModuleProject, CachedAliases> ALIAS_CACHE =
+      new ConcurrentHashMap<>();
 
   private static final Pattern PACKAGE_PATTERN =
       Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_][\\w]*(?:\\.[A-Za-z_][\\w]*)*)");
@@ -141,10 +143,20 @@ public final class KotlinJvmTypeIndex {
 
   public static java.util.Map<String, GenericTypeAlias> visibleGenericTypeAliases(
       ModuleProject module, Path consumerFile) {
-    if (module == null) {
+    if (module == null || consumerFile == null) {
       return Collections.emptyMap();
     }
-    return visibleGenericTypeAliases(module.getCompileSourceDirectories(), consumerFile);
+    final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
+    final CachedAliases cached = aliasCacheForRevision(module);
+    final java.util.Map<String, GenericTypeAlias> existing =
+        cached.genericAliases.get(consumerFile, consumerSource);
+    if (existing != null) {
+      return existing;
+    }
+    final java.util.Map<String, GenericTypeAlias> indexed =
+        visibleGenericTypeAliases(module.getCompileSourceDirectories(), consumerFile);
+    cached.genericAliases.put(consumerFile, consumerSource, indexed);
+    return indexed;
   }
 
   static java.util.Map<String, GenericTypeAlias> visibleGenericTypeAliases(
@@ -178,6 +190,23 @@ public final class KotlinJvmTypeIndex {
       return Collections.emptyMap();
     }
     final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
+    final CachedAliases cached = aliasCacheForRevision(module);
+    final java.util.Map<String, String> existing =
+        cached.directAliases.get(consumerFile, consumerSource);
+    if (existing != null) {
+      return existing;
+    }
+    final java.util.Map<String, String> indexed =
+        visibleDirectTypeAliases(module.getCompileSourceDirectories(), consumerFile, consumerSource);
+    cached.directAliases.put(consumerFile, consumerSource, indexed);
+    return indexed;
+  }
+
+  static java.util.Map<String, String> visibleDirectTypeAliases(
+      Iterable<java.io.File> sourceRoots, Path consumerFile, String consumerSource) {
+    if (sourceRoots == null || consumerFile == null || consumerSource == null) {
+      return Collections.emptyMap();
+    }
     final Matcher packageMatcher = PACKAGE_PATTERN.matcher(consumerSource);
     final String consumerPackage = packageMatcher.find() ? packageMatcher.group(1) : "";
     final Set<String> explicitlyImported = new LinkedHashSet<>();
@@ -186,7 +215,7 @@ public final class KotlinJvmTypeIndex {
       explicitlyImported.add(importMatcher.group(1));
     }
     final java.util.Map<String, String> aliases = new java.util.LinkedHashMap<>();
-    for (java.io.File root : module.getCompileSourceDirectories()) {
+    for (java.io.File root : sourceRoots) {
       if (root == null || !root.isDirectory()) continue;
       try (Stream<Path> paths = Files.walk(root.toPath())) {
         paths.filter(DocumentUtils::isKotlinFile).filter(path -> !path.equals(consumerFile))
@@ -225,15 +254,28 @@ public final class KotlinJvmTypeIndex {
     return null;
   }
 
-  /** Removes cached Kotlin source symbols for a module, e.g. after a source-root change. */
+  private static CachedAliases aliasCacheForRevision(ModuleProject module) {
+    final long revision = module.getSourceIndexVersion();
+    final CachedAliases existing = ALIAS_CACHE.get(module);
+    if (existing != null && existing.revision == revision) {
+      return existing;
+    }
+    final CachedAliases replacement = new CachedAliases(revision);
+    ALIAS_CACHE.put(module, replacement);
+    return replacement;
+  }
+
+  /** Removes cached Kotlin source symbols and alias visibility results for a module. */
   public static void invalidate(ModuleProject module) {
     if (module != null) {
       CACHE.remove(module);
+      ALIAS_CACHE.remove(module);
     }
   }
 
   public static void clear() {
     CACHE.clear();
+    ALIAS_CACHE.clear();
   }
 
   private static void indexFile(Path path, Set<String> result) {
@@ -537,6 +579,49 @@ public final class KotlinJvmTypeIndex {
       }
     }
     return delta;
+  }
+
+  private static Path normalizedPath(Path file) {
+    return file.toAbsolutePath().normalize();
+  }
+
+  static final class ConsumerAliasCache<T> {
+    private final ConcurrentHashMap<Path, CachedAliasResult<T>> results = new ConcurrentHashMap<>();
+
+    java.util.Map<String, T> get(Path file, String consumerSource) {
+      if (file == null || consumerSource == null) return null;
+      final CachedAliasResult<T> result = results.get(normalizedPath(file));
+      return result != null && result.consumerSource.equals(consumerSource) ? result.aliases : null;
+    }
+
+    void put(Path file, String consumerSource, java.util.Map<String, T> aliases) {
+      if (file == null || consumerSource == null || aliases == null) return;
+      results.put(normalizedPath(file), new CachedAliasResult<>(consumerSource, aliases));
+    }
+
+    int size() {
+      return results.size();
+    }
+  }
+
+  private static final class CachedAliasResult<T> {
+    final String consumerSource;
+    final java.util.Map<String, T> aliases;
+
+    CachedAliasResult(String consumerSource, java.util.Map<String, T> aliases) {
+      this.consumerSource = consumerSource;
+      this.aliases = aliases;
+    }
+  }
+
+  private static final class CachedAliases {
+    final long revision;
+    final ConsumerAliasCache<String> directAliases = new ConsumerAliasCache<>();
+    final ConsumerAliasCache<GenericTypeAlias> genericAliases = new ConsumerAliasCache<>();
+
+    CachedAliases(long revision) {
+      this.revision = revision;
+    }
   }
 
   private static final class CachedTypes {

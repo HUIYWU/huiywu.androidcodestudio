@@ -122,12 +122,27 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnose("<custom:View />").map { it.code }).containsExactly("XML005")
   }
 
-  fun testReportsBareLessThanMarkupForOffsetInvestigation() {
-    assertThat(diagnose("<Root>\n  <\n\n</Root>")).isNotEmpty()
+  fun testAnchorsBareLessThanMarkupOnItsSourceCharacter() {
+    val diagnostic = diagnose("<Root>\n  <\n\n</Root>").single()
+
+    assertThat(diagnostic.code).isEqualTo("XML005")
+    assertThat(diagnostic.range.start.line).isEqualTo(1)
+    assertThat(diagnostic.range.end.line).isEqualTo(1)
+    assertThat(diagnostic.range.start.column).isEqualTo(2)
+    assertThat(diagnostic.range.end.column).isEqualTo(3)
   }
 
-  fun testReportsEmptyAngleBracketsMarkupForOffsetInvestigation() {
-    assertThat(diagnose("<Root>\n  <>\n\n</Root>")).isNotEmpty()
+  fun testAnchorsEmptyAngleBracketsOnTheirSourceRangeDespiteFollowingBlankLines() {
+    listOf(0, 1, 2, 3).forEach { blankLineCount ->
+      val text = "<Root>\n  <>\n" + "\n".repeat(blankLineCount) + "  <Child />\n</Root>"
+      val diagnostic = diagnose(text).single()
+
+      assertThat(diagnostic.code).isEqualTo("XML005")
+      assertThat(diagnostic.range.start.line).isEqualTo(1)
+      assertThat(diagnostic.range.end.line).isEqualTo(1)
+      assertThat(diagnostic.range.start.column).isEqualTo(2)
+      assertThat(diagnostic.range.end.column).isEqualTo(4)
+    }
   }
 
   fun testReportsMismatchedClosingTagOnItsName() {

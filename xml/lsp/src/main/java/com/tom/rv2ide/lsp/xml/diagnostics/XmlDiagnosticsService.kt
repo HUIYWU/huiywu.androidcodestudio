@@ -16,7 +16,6 @@
  */
 package com.tom.rv2ide.lsp.xml.diagnostics
 
-import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.util.setupLookupForCompletion
 import com.tom.rv2ide.projects.FileManager
@@ -64,7 +63,6 @@ internal class XmlDiagnosticsService {
               return DiagnosticResult(file, emptyList(), CHANNEL)
             }
     val context = XmlDiagnosticContext.create(file, text, document)
-    logTransientMarkupDomState(context)
     val collector = XmlDiagnosticCollector(context.text)
     XmlDiagnosticRuleRegistry.documentRules.forEach { rule ->
       if (rule.supports(context)) {
@@ -82,58 +80,7 @@ internal class XmlDiagnosticsService {
     val textRules = XmlDiagnosticRuleRegistry.textRules.filter { it.supports(context) }
     visit(context.document, collector, context, elementRecoveryRules, elementRules, textRules)
 
-    val diagnostics = collector.build()
-    logTransientMarkupDiagnostics(context, diagnostics)
-    return DiagnosticResult(context.file, diagnostics, CHANNEL)
-  }
-
-  private fun logTransientMarkupDiagnostics(
-      context: XmlDiagnosticContext,
-      diagnostics: List<DiagnosticItem>,
-  ) {
-    if (!hasTransientMarkup(context.text)) return
-    log.warn(
-        "XML transient-markup published diagnostics file={} diagnostics={}",
-        context.file,
-        diagnostics.map { diagnostic ->
-          "${diagnostic.code}@${diagnostic.range.start.line}:${diagnostic.range.start.column}-" +
-              "${diagnostic.range.end.line}:${diagnostic.range.end.column}:" +
-              diagnostic.message.replace("\n", "\\n")
-        },
-    )
-  }
-
-  private fun hasTransientMarkup(text: String): Boolean =
-      text.lineSequence().any { line -> line.trim() == "<" || line.trim() == "<>" }
-
-  private fun logTransientMarkupDomState(context: XmlDiagnosticContext) {
-    val markers =
-        context.text.lineSequence().withIndex().filter { (_, line) ->
-          line.trim() == "<" || line.trim() == "<>"
-        }.toList()
-    if (markers.isEmpty()) return
-
-    val nodes = mutableListOf<String>()
-    fun collect(node: DOMNode) {
-      if (nodes.size >= MAX_DOM_TRACE_NODES) return
-      if (node is DOMElement) {
-        nodes +=
-            "${node.tagName}@${node.start}..${node.end}" +
-                "[startClosed=${node.isStartTagClosed},closed=${node.isClosed}," +
-                "orphanEnd=${node.isOrphanEndTag}]"
-      } else if (node is DOMText && node.isText) {
-        nodes += "#text@${node.start}..${node.end}"
-      }
-      node.children.forEach(::collect)
-    }
-    collect(context.document)
-    log.warn(
-        "XML transient-markup DOM trace file={} markers={} textLength={} nodes={}",
-        context.file,
-        markers.map { (index, line) -> "${index + 1}:${line.replace("\t", "\\t")}" },
-        context.text.length,
-        nodes,
-    )
+    return DiagnosticResult(context.file, collector.build(), CHANNEL)
   }
 
   private fun visit(
@@ -187,7 +134,6 @@ internal class XmlDiagnosticsService {
 
   companion object {
     private val log = LoggerFactory.getLogger(XmlDiagnosticsService::class.java)
-    private const val MAX_DOM_TRACE_NODES = 40
 
     const val CHANNEL = "xml-lsp"
     const val SOURCE = "xml-lsp"

@@ -76,7 +76,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
             null
           }
       val range = endTagMismatch?.actualNameRange ?: parserErrorRange(error.key, offset, context.text)
-      if (hasOffsetProbeMarkup(context.text)) {
+      if (error.key == MARKUP_NOT_RECOGNIZED_IN_CONTENT && hasOffsetProbeMarkup(context.text)) {
         logMarkupOffset(
             error = error,
             text = context.text,
@@ -200,6 +200,12 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   }
 
   private fun errorOffset(error: ParserError, text: String): Int {
+    // In this relocated Xerces branch MarkupNotRecognizedInContent can retain a stale absolute
+    // character offset after the entity scanner has read ahead. Its line/column locator still
+    // tracks the malformed markup correctly, so prefer that source only for this parser fact.
+    if (error.key == MARKUP_NOT_RECOGNIZED_IN_CONTENT) {
+      lineColumnOffset(error.line, error.column, text)?.let { return it }
+    }
     if (error.characterOffset > 0) {
       return (error.characterOffset - 1).coerceIn(0, text.length)
     }
@@ -273,8 +279,24 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       "LessthanInAttValue" -> safeOffset..safeOffset
       "DashDashInComment" ->
           (safeOffset - 1).coerceAtLeast(0)..(safeOffset + 1).coerceAtMost(text.lastIndex)
+      MARKUP_NOT_RECOGNIZED_IN_CONTENT -> findMalformedMarkupRange(text, safeOffset)
       else -> safeOffset..safeOffset
     }
+  }
+
+  private fun findMalformedMarkupRange(text: String, locatorOffset: Int): IntRange {
+    val lineStart = text.lastIndexOf('\n', (locatorOffset - 1).coerceAtLeast(0)) + 1
+    val lineEnd = text.indexOf('\n', locatorOffset).let { if (it < 0) text.length else it }
+    val lessThan = text.indexOf('<', lineStart).takeIf { it in lineStart until lineEnd }
+    if (lessThan != null) {
+      val greaterThan = text.indexOf('>', lessThan + 1)
+      return if (greaterThan in (lessThan + 1) until lineEnd) {
+        lessThan..greaterThan
+      } else {
+        lessThan..lessThan
+      }
+    }
+    return locatorOffset..locatorOffset
   }
 
   private fun findMalformedAttributeName(
@@ -583,6 +605,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   private const val E_TAG_REQUIRED = "ETagRequired"
   private const val E_TAG_NAME_MISMATCH = "ETagNameMismatch"
   private const val E_TAG_UNTERMINATED = "ETagUnterminated"
+  private const val MARKUP_NOT_RECOGNIZED_IN_CONTENT = "MarkupNotRecognizedInContent"
   // Offset probe logs every parser fact emitted for a document containing an isolated '<'/'<>'.
 
   private val END_TAG_NAME_ERROR_KEYS = setOf(E_TAG_REQUIRED, E_TAG_UNTERMINATED)
