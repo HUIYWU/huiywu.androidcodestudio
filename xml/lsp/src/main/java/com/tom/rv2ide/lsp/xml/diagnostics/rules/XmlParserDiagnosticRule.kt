@@ -80,8 +80,11 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       // only when source reconstruction proves it is a mismatch rather than a missing `>`. Newer
       // AndroidCodeStudio Xerces builds emit ETagNameMismatch with expected/actual arguments.
       val unclosedElement =
-          if (error.key in UNCLOSED_ELEMENT_ERROR_KEYS) findFirstUnclosedElement(context.text)
-          else null
+          if (error.key in UNCLOSED_ELEMENT_ERROR_KEYS) {
+            error.arguments.firstOrNull()?.toString()?.takeIf { it.isNotEmpty() }?.let {
+              UnclosedElement(it, findElementNameRange(context.text, it, offset))
+            }
+          } else null
       if (error.key in ERRORS_COVERED_BY_TOLERANT_DOM &&
           endTagMismatch == null && unclosedElement == null) {
         return@forEach
@@ -214,6 +217,16 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       }
     }
     return (offset + error.column - 1).coerceIn(0, text.length)
+  }
+
+  private fun findElementNameRange(text: String, name: String, offset: Int): IntRange {
+    val safeOffset = offset.coerceIn(0, text.length)
+    val tagStart = text.lastIndexOf("<$name", (safeOffset - 1).coerceAtLeast(0))
+    return if (tagStart >= 0) {
+      (tagStart + 1) until (tagStart + 1 + name.length)
+    } else {
+      safeOffset..safeOffset
+    }
   }
 
   private fun parserErrorRange(key: String, offset: Int, text: String): IntRange {
@@ -371,57 +384,6 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
 
   private fun findFirstEndTagMismatch(text: String): EndTagMismatch? {
     return findFirstEndTagMismatchFor(text, expectedName = null, actualName = null)
-  }
-
-  /** Replays tag boundaries and returns the innermost element left open at EOF. */
-  private fun findFirstUnclosedElement(text: String): UnclosedElement? {
-    val stack = ArrayDeque<OpenElement>()
-    var index = 0
-    while (index < text.length) {
-      if (text[index] != '<') {
-        index++
-        continue
-      }
-      when {
-        text.startsWith("<!--", index) -> {
-          val end = text.indexOf("-->", index + 4)
-          if (end < 0) return stack.lastOrNull()?.toUnclosed()
-          index = end + 3
-        }
-        text.startsWith("<![CDATA[", index) -> {
-          val end = text.indexOf("]]>", index + 9)
-          if (end < 0) return stack.lastOrNull()?.toUnclosed()
-          index = end + 3
-        }
-        text.startsWith("<?", index) -> {
-          val end = text.indexOf("?>", index + 2)
-          if (end < 0) return stack.lastOrNull()?.toUnclosed()
-          index = end + 2
-        }
-        text.startsWith("</", index) -> {
-          val closing = readClosingTag(text, index) ?: return stack.lastOrNull()?.toUnclosed()
-          if (stack.lastOrNull()?.name == closing.name) stack.removeLast()
-          index = closing.tagEnd + 1
-        }
-        text.startsWith("<!", index) -> {
-          val end = text.indexOf('>', index + 2)
-          if (end < 0) return stack.lastOrNull()?.toUnclosed()
-          index = end + 1
-        }
-        else -> {
-          val nameStart = index + 1
-          var nameEnd = nameStart
-          while (nameEnd < text.length && isXmlNameCharacter(text[nameEnd])) nameEnd++
-          val end = findStartTagEnd(text, index)
-          if (nameEnd == nameStart || end < 0) return stack.lastOrNull()?.toUnclosed()
-          if (!text.substring(index + 1, end).trimEnd().endsWith('/')) {
-            stack.addLast(OpenElement(text.substring(nameStart, nameEnd), nameStart until nameEnd))
-          }
-          index = end + 1
-        }
-      }
-    }
-    return stack.lastOrNull()?.toUnclosed()
   }
 
   private fun findFirstEndTagMismatchFor(
@@ -589,10 +551,6 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       val actualNameRange: IntRange,
   )
 
-  private data class OpenElement(val name: String, val nameRange: IntRange) {
-    fun toUnclosed() = UnclosedElement(name, nameRange)
-  }
-
   private data class UnclosedElement(val name: String, val nameRange: IntRange)
 
   private const val CODE_XML_PARSER_SYNTAX = "XML005"
@@ -600,7 +558,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   private const val E_TAG_NAME_MISMATCH = "ETagNameMismatch"
   private const val E_TAG_UNTERMINATED = "ETagUnterminated"
   private val END_TAG_NAME_ERROR_KEYS = setOf(E_TAG_REQUIRED, E_TAG_UNTERMINATED)
-  private val UNCLOSED_ELEMENT_ERROR_KEYS = setOf("ETagRequired", "ElementUnterminated", "PrematureEOF")
+  private val UNCLOSED_ELEMENT_ERROR_KEYS = setOf("ETagRequired")
   private const val MAX_PARSER_ERRORS = 20
   private const val MAX_ATTRIBUTE_LOOKBACK_TAGS = 4
   private const val MAX_ATTRIBUTE_LOOKBACK_CHARS = 4096
