@@ -66,6 +66,14 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   ) {
     errors.forEach { error ->
       val offset = errorOffset(error, context.text)
+      // A bare '<' or '<>' on its own line is a transient editor state. Xerces reports
+      // MarkupNotRecognizedInContent and may anchor it on following blank lines, which makes the
+      // diagnostic appear to jump while the user is starting a tag. Suppress only that exact
+      // parser fact and source shape; all named tags and other syntax errors remain visible.
+      if (error.key == MARKUP_NOT_RECOGNIZED_IN_CONTENT &&
+          isTransientEmptyMarkup(context.text, offset)) {
+        return@forEach
+      }
       val endTagMismatch =
           if (error.key == E_TAG_NAME_MISMATCH) {
             error.toEndTagMismatch(context.text) ?: findFirstEndTagMismatch(context.text)
@@ -204,6 +212,27 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       }
     }
     return (offset + error.column - 1).coerceIn(0, text.length)
+  }
+
+  private fun isTransientEmptyMarkup(text: String, parserOffset: Int): Boolean {
+    if (text.isEmpty()) return false
+
+    // The Xerces offset can point after the malformed token, including a later blank line. Search
+    // only the current and two preceding lines, matching the observed bounded offset drift.
+    val safeParserOffset = parserOffset.coerceIn(0, text.length)
+    var searchFrom = safeParserOffset
+    repeat(MAX_TRANSIENT_MARKUP_LINE_LOOKBACK + 1) {
+      val lineStart = if (searchFrom > 0) text.lastIndexOf('\n', searchFrom - 1) + 1 else 0
+      val lineEnd = text.indexOf('\n', lineStart).let { if (it < 0) text.length else it }
+      val content = text.substring(lineStart, lineEnd).trim()
+      if ((content == "<" || content == "<>") &&
+          text.substring(lineEnd.coerceAtMost(safeParserOffset), safeParserOffset).isBlank()) {
+        return true
+      }
+      if (lineStart == 0) return false
+      searchFrom = lineStart - 1
+    }
+    return false
   }
 
   private fun parserErrorRange(key: String, offset: Int, text: String): IntRange {
@@ -532,8 +561,10 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   private const val E_TAG_REQUIRED = "ETagRequired"
   private const val E_TAG_NAME_MISMATCH = "ETagNameMismatch"
   private const val E_TAG_UNTERMINATED = "ETagUnterminated"
+  private const val MARKUP_NOT_RECOGNIZED_IN_CONTENT = "MarkupNotRecognizedInContent"
   private val END_TAG_NAME_ERROR_KEYS = setOf(E_TAG_REQUIRED, E_TAG_UNTERMINATED)
   private const val MAX_PARSER_ERRORS = 20
+  private const val MAX_TRANSIENT_MARKUP_LINE_LOOKBACK = 2
   private const val MAX_ATTRIBUTE_LOOKBACK_TAGS = 4
   private const val MAX_ATTRIBUTE_LOOKBACK_CHARS = 4096
   private const val QUOTES = "\"'"

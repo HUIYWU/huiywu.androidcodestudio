@@ -54,7 +54,7 @@ internal class CorrectClosingTagNameAction : EditorActionItem {
       markInvisible()
       return
     }
-    val mismatch = diagnostic.extra as? ClosingTagMismatchDiagnosticData ?: run {
+    val expectedName = replacementFor(diagnostic) ?: run {
       markInvisible()
       return
     }
@@ -62,7 +62,7 @@ internal class CorrectClosingTagNameAction : EditorActionItem {
       markInvisible()
       return
     }
-    replacement = mismatch.expectedName
+    replacement = expectedName
     label = context.getString(R.string.action_fix_closing_tag)
     visible = true
     enabled = true
@@ -88,5 +88,10 @@ internal class CorrectClosingTagNameAction : EditorActionItem {
 
   internal companion object {
     const val CODE_XML_PARSER_SYNTAX = "XML005"
+
+    internal fun replacementFor(diagnostic: DiagnosticItem): String? {
+      if (diagnostic.code != CODE_XML_PARSER_SYNTAX) return null
+      return (diagnostic.extra as? ClosingTagMismatchDiagnosticData)?.expectedName
+    }
   }
 }

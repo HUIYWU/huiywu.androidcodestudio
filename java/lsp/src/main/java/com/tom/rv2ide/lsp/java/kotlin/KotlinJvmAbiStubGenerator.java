@@ -2265,7 +2265,8 @@ private static final Pattern PROPERTY_PATTERN =
       return primitiveArray;
     }
 
-    final TypeApplication application = parseTypeApplication(type);
+    final KotlinJvmTypeProjection.TypeApplication application =
+        KotlinJvmTypeProjection.parseTypeApplication(type);
     if (application == null) {
       return javaUserType(type);
     }
@@ -2281,7 +2282,7 @@ private static final Pattern PROPERTY_PATTERN =
         && !context.genericTypeAliases.containsKey(application.rawType)) {
       return "Object";
     }
-    final String rawJavaType = javaCollectionType(application.rawType);
+    final String rawJavaType = KotlinJvmTypeProjection.javaCollectionType(application.rawType);
     if ("Array".equals(application.rawType) || "kotlin.Array".equals(application.rawType)) {
       return application.arguments.size() == 1
           ? javaReferenceArrayType(application.arguments.get(0))
@@ -2382,20 +2383,7 @@ private static final Pattern PROPERTY_PATTERN =
     return "Object";
   }
 
-  private static String javaCollectionType(String type) {
-    switch (type) {
-      case "List": case "MutableList": case "kotlin.collections.List":
-      case "kotlin.collections.MutableList": return "java.util.List";
-      case "Set": case "MutableSet": case "kotlin.collections.Set":
-      case "kotlin.collections.MutableSet": return "java.util.Set";
-      case "Map": case "MutableMap": case "kotlin.collections.Map":
-      case "kotlin.collections.MutableMap": return "java.util.Map";
-      case "Collection": case "MutableCollection": case "kotlin.collections.Collection":
-      case "kotlin.collections.MutableCollection": return "java.util.Collection";
-      case "Iterable": case "kotlin.collections.Iterable": return "java.lang.Iterable";
-      default: return null;
-    }
-  }
+  // Collection-name normalization is shared with source navigation.
 
   private static String javaTypeArgument(String kotlinArgument) {
     String argument = kotlinArgument.trim();
@@ -2431,37 +2419,14 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static String expandGenericTypeAlias(
-      TypeApplication application, TypeResolutionContext context) {
-    if (context == null || application.rawType.indexOf('.') >= 0) {
-      return null;
-    }
+      KotlinJvmTypeProjection.TypeApplication application, TypeResolutionContext context) {
+    if (context == null) return null;
     final GenericTypeAlias alias = context.genericTypeAliases.get(application.rawType);
-    if (alias == null || alias.parameters.size() != application.arguments.size()) {
-      return null;
-    }
-    for (String argument : application.arguments) {
-      if (!JAVA_TYPE_NAME_PATTERN.matcher(argument.trim()).matches()) {
-        return null;
-      }
-    }
-    String expanded = alias.target;
-    for (int index = 0; index < alias.parameters.size(); index++) {
-      expanded = expanded.replaceAll(
-          "\\b" + Pattern.quote(alias.parameters.get(index)) + "\\b",
-          Matcher.quoteReplacement(application.arguments.get(index).trim()));
-    }
-    return expanded;
+    return alias == null ? null : KotlinJvmTypeProjection.expandGenericAlias(
+        application, alias.parameters, alias.target, JAVA_TYPE_NAME_PATTERN);
   }
 
-  private static TypeApplication parseTypeApplication(String type) {
-    final int open = type.indexOf('<');
-    if (open < 1 || !type.endsWith(">")) {
-      return null;
-    }
-    final String rawType = type.substring(0, open).trim();
-    final String argumentText = type.substring(open + 1, type.length() - 1);
-    return new TypeApplication(rawType, splitParameters(argumentText));
-  }
+  // Type-application parsing is shared with source navigation.
 
   private static final class TypeResolutionContext {
     final Map<String, String> imports;
@@ -2586,7 +2551,8 @@ private static final Pattern PROPERTY_PATTERN =
         parameters.add(parameter.trim());
       }
       final String target = matcher.group(3).trim();
-      final TypeApplication targetApplication = parseTypeApplication(target);
+      final KotlinJvmTypeProjection.TypeApplication targetApplication =
+          KotlinJvmTypeProjection.parseTypeApplication(target);
       if (parameters.isEmpty() || targetApplication == null || target.endsWith("?")
           || target.indexOf("->") >= 0 || target.indexOf('&') >= 0 || target.indexOf('|') >= 0
           || targetApplication.rawType.indexOf('.') >= 0) {
@@ -2646,15 +2612,7 @@ private static final Pattern PROPERTY_PATTERN =
     }
   }
 
-  private static final class TypeApplication {
-    final String rawType;
-    final List<String> arguments;
-
-    TypeApplication(String rawType, List<String> arguments) {
-      this.rawType = rawType;
-      this.arguments = arguments;
-    }
-  }
+  // TypeApplication is defined by KotlinJvmTypeProjection.
 
   private static String functionReturnType(
       String declaredType, boolean interfaceType, boolean topLevel, boolean bodyPresent) {

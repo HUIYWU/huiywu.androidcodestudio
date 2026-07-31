@@ -291,7 +291,7 @@ public final class KotlinJvmTypeIndex {
       }
       final java.util.ArrayList<String> parameters = new java.util.ArrayList<>();
       boolean valid = true;
-      for (String parameter : splitTypeArguments(matcher.group(3))) {
+      for (String parameter : KotlinJvmTypeProjection.splitTopLevelArguments(matcher.group(3))) {
         final String trimmed = parameter.trim();
         if (!TYPE_NAME_PATTERN.matcher(trimmed).matches()) { valid = false; break; }
         parameters.add(trimmed);
@@ -301,7 +301,8 @@ public final class KotlinJvmTypeIndex {
       final String raw = target.substring(0, open).trim();
       if (raw.indexOf('.') >= 0) continue;
       final java.util.ArrayList<String> arguments = new java.util.ArrayList<>();
-      for (String argument : splitTypeArguments(target.substring(open + 1, target.length() - 1))) {
+      for (String argument : KotlinJvmTypeProjection.splitTopLevelArguments(
+          target.substring(open + 1, target.length() - 1))) {
         final String trimmed = argument.trim();
         if (!TYPE_NAME_PATTERN.matcher(trimmed).matches()) { valid = false; break; }
         arguments.add(trimmed);
@@ -310,17 +311,7 @@ public final class KotlinJvmTypeIndex {
     }
   }
 
-  private static java.util.List<String> splitTypeArguments(String text) {
-    final java.util.ArrayList<String> result = new java.util.ArrayList<>();
-    int start = 0, nesting = 0;
-    for (int i = 0; i < text.length(); i++) {
-      char c = text.charAt(i);
-      if (c == '<') nesting++; else if (c == '>') nesting--;
-      else if (c == ',' && nesting == 0) { result.add(text.substring(start, i)); start = i + 1; }
-    }
-    result.add(text.substring(start));
-    return result;
-  }
+  // Generic argument splitting is shared with generation and navigation.
 
   private static void collectVisibleAliases(
       Path path,

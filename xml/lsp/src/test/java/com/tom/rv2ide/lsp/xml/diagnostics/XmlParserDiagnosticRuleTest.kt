@@ -122,6 +122,18 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnose("<custom:View />").map { it.code }).containsExactly("XML005")
   }
 
+  fun testSuppressesBareLessThanTransientMarkup() {
+    assertThat(diagnose("<Root>\n  <\n\n</Root>")).isEmpty()
+  }
+
+  fun testSuppressesEmptyAngleBracketsTransientMarkup() {
+    assertThat(diagnose("<Root>\n  <>\n\n</Root>")).isEmpty()
+  }
+
+  fun testDoesNotSuppressOtherMalformedMarkupWithTheSameParserError() {
+    assertThat(diagnose("<Root>\n  <<\n</Root>")).isNotEmpty()
+  }
+
   fun testReportsMismatchedClosingTagOnItsName() {
     val diagnostic = diagnose("<LinearLayout></LinearLayou>").single()
 
@@ -149,6 +161,35 @@ class XmlParserDiagnosticRuleTest : TestCase() {
         )
     assertThat(diagnostic.range.start.column).isEqualTo(26)
     assertThat(diagnostic.range.end.column).isEqualTo(38)
+    assertThat(diagnostic.extra)
+        .isEqualTo(ClosingTagMismatchDiagnosticData("LinearLayout", "TextView"))
+  }
+
+  fun testNestedFormattedMismatchContractAndQuickFixReplacement() {
+    val text =
+        """
+        <LinearLayout>
+          <View>
+            <LinearLayout>
+              <LinearLayout>
+              </LinearLayout>
+            </LinearLayout>
+          </LinearLayout>
+        </LinearLayout>
+        """.trimIndent()
+
+    val diagnostic = diagnose(text).single()
+
+    assertThat(diagnostic.code).isEqualTo("XML005")
+    assertThat(diagnostic.range.start.line).isEqualTo(6)
+    assertThat(diagnostic.range.end.line).isEqualTo(6)
+    assertThat(diagnostic.range.start.column).isEqualTo(4)
+    assertThat(diagnostic.range.end.column).isEqualTo(16)
+    val mismatch = diagnostic.extra as ClosingTagMismatchDiagnosticData
+    assertThat(mismatch.actualName).isEqualTo("LinearLayout")
+    assertThat(mismatch.expectedName).isEqualTo("View")
+    assertThat(applyDiagnosticReplacement(text, diagnostic, mismatch.expectedName))
+        .contains("\n  </View>\n</LinearLayout>")
   }
 
   fun testReportsPrefixMismatchReportedByXercesAsUnterminatedEndTag() {
@@ -206,6 +247,19 @@ class XmlParserDiagnosticRuleTest : TestCase() {
         XmlParserDiagnosticRule.diagnoseStrictForTest(context(text), collector)
         collector.build()
       }
+
+  private fun applyDiagnosticReplacement(
+      text: String,
+      diagnostic: com.tom.rv2ide.lsp.models.DiagnosticItem,
+      replacement: String,
+  ): String {
+    val lines = text.split('\n')
+    fun offset(line: Int, column: Int): Int =
+        lines.take(line).sumOf { it.length + 1 } + column
+    val start = offset(diagnostic.range.start.line, diagnostic.range.start.column)
+    val end = offset(diagnostic.range.end.line, diagnostic.range.end.column)
+    return text.replaceRange(start, end, replacement)
+  }
 
   private fun context(text: String): XmlDiagnosticContext {
     val document =

@@ -183,12 +183,44 @@ public final class KotlinJvmSourceNavigator {
     }
     return null;
   }
+  /**
+   * Resolves a facade member inside one Kotlin source file.
+   *
+   * <p>This package-private entry point keeps signature matching independently testable without a
+   * {@link ModuleProject}. Production navigation still uses {@link #find(ModuleProject, Element)}
+   * so cross-file visibility continues to come from {@link KotlinJvmTypeIndex}.
+   */
+  static Location findFacadeMemberLocation(Path file, String source, Element element) {
+    if (file == null || source == null || element == null) {
+      return null;
+    }
+    final Map<String, String> previousAliases = TYPE_ALIASES.get();
+    final Map<String, GenericTypeAlias> previousGenericAliases = GENERIC_TYPE_ALIASES.get();
+    TYPE_ALIASES.set(collectSimpleTypeAliases(source));
+    GENERIC_TYPE_ALIASES.set(collectGenericTypeAliases(source));
+    try {
+      final SourceRange range = findFacadeMember(source, element);
+      return range == null ? null : location(file, source, range.offset, range.length);
+    } finally {
+      if (previousAliases == null) {
+        TYPE_ALIASES.remove();
+      } else {
+        TYPE_ALIASES.set(previousAliases);
+      }
+      if (previousGenericAliases == null) {
+        GENERIC_TYPE_ALIASES.remove();
+      } else {
+        GENERIC_TYPE_ALIASES.set(previousGenericAliases);
+      }
+    }
+  }
 
   private static SourceRange findFacadeMember(String source, Element element) {
     final List<KotlinJvmSyntaxParser.MemberSyntax> members =
         KotlinJvmSyntaxParser.findTopLevelMembers(source);
     return members == null ? null : findMember(members, element, false);
   }
+
 
   private static SourceRange findMember(
       List<KotlinJvmSyntaxParser.MemberSyntax> members, Element element, boolean requireJvmStatic) {
@@ -390,13 +422,14 @@ public final class KotlinJvmSourceNavigator {
         type = expandedAlias;
       }
     }
-    final TypeApplication application = parseTypeApplication(type);
+    final KotlinJvmTypeProjection.TypeApplication application =
+        KotlinJvmTypeProjection.parseTypeApplication(type);
     if (application != null) {
       final String expandedAlias = expandGenericTypeAlias(application);
       if (expandedAlias != null) {
         return navigationJavaType(expandedAlias);
       }
-      final String rawType = navigationCollectionType(application.rawType);
+      final String rawType = KotlinJvmTypeProjection.javaCollectionType(application.rawType);
       if (rawType == null || application.arguments.isEmpty()) {
         return null;
       }
@@ -441,55 +474,15 @@ public final class KotlinJvmSourceNavigator {
     }
   }
 
-  private static String expandGenericTypeAlias(TypeApplication application) {
-    if (application.rawType.indexOf('.') >= 0) {
-      return null;
-    }
+  private static String expandGenericTypeAlias(
+      KotlinJvmTypeProjection.TypeApplication application) {
     final Map<String, GenericTypeAlias> aliases = GENERIC_TYPE_ALIASES.get();
     final GenericTypeAlias alias = aliases == null ? null : aliases.get(application.rawType);
-    if (alias == null || alias.parameters.size() != application.arguments.size()) {
-      return null;
-    }
-    for (String argument : application.arguments) {
-      if (!TYPE_NAME_PATTERN.matcher(argument.trim()).matches()) {
-        return null;
-      }
-    }
-    String expanded = alias.target;
-    for (int index = 0; index < alias.parameters.size(); index++) {
-      expanded = expanded.replaceAll(
-          "\\b" + Pattern.quote(alias.parameters.get(index)) + "\\b",
-          Matcher.quoteReplacement(application.arguments.get(index).trim()));
-    }
-    return expanded;
+    return alias == null ? null : KotlinJvmTypeProjection.expandGenericAlias(
+        application, alias.parameters, alias.target, TYPE_NAME_PATTERN);
   }
 
-  private static String navigationCollectionType(String kotlinType) {
-    switch (kotlinType) {
-      case "List":
-      case "kotlin.List":
-      case "MutableList":
-      case "kotlin.MutableList":
-        return "java.util.List";
-      case "Set":
-      case "kotlin.Set":
-      case "MutableSet":
-      case "kotlin.MutableSet":
-        return "java.util.Set";
-      case "Map":
-      case "kotlin.Map":
-      case "MutableMap":
-      case "kotlin.MutableMap":
-        return "java.util.Map";
-      case "Collection":
-      case "kotlin.Collection":
-      case "MutableCollection":
-      case "kotlin.MutableCollection":
-        return "java.util.Collection";
-      default:
-        return null;
-    }
-  }
+  // Collection-name normalization is shared with the ABI generator.
 
   private static String boxedNavigationType(String type) {
     switch (type) {
@@ -505,31 +498,9 @@ public final class KotlinJvmSourceNavigator {
     }
   }
 
-  private static TypeApplication parseTypeApplication(String type) {
-    final int open = type.indexOf('<');
-    if (open < 1 || !type.endsWith(">")) {
-      return null;
-    }
-    return new TypeApplication(
-        type.substring(0, open).trim(), splitTypeArguments(type.substring(open + 1, type.length() - 1)));
-  }
+  // Type-application parsing is shared with the ABI generator.
 
-  private static List<String> splitTypeArguments(String text) {
-    final List<String> result = new ArrayList<>();
-    int start = 0;
-    int nesting = 0;
-    for (int index = 0; index < text.length(); index++) {
-      final char current = text.charAt(index);
-      if (current == '<') nesting++;
-      else if (current == '>') nesting--;
-      else if (current == ',' && nesting == 0) {
-        result.add(text.substring(start, index));
-        start = index + 1;
-      }
-    }
-    result.add(text.substring(start));
-    return result;
-  }
+  // Generic argument splitting is shared with generation and indexing.
 
   private static Map<String, String> visibleTypeAliases(
       ModuleProject module, Path consumerFile, String source) {
@@ -559,7 +530,7 @@ public final class KotlinJvmSourceNavigator {
     final Matcher matcher = GENERIC_TYPE_ALIAS_PATTERN.matcher(source);
     while (matcher.find()) {
       final List<String> parameters = new ArrayList<>();
-      for (String parameter : splitTypeArguments(matcher.group(2))) {
+      for (String parameter : KotlinJvmTypeProjection.splitTopLevelArguments(matcher.group(2))) {
         final String trimmed = parameter.trim();
         if (!TYPE_NAME_PATTERN.matcher(trimmed).matches()) {
           parameters.clear();
@@ -568,7 +539,8 @@ public final class KotlinJvmSourceNavigator {
         parameters.add(trimmed);
       }
       final String target = matcher.group(3).trim();
-      final TypeApplication targetApplication = parseTypeApplication(target);
+      final KotlinJvmTypeProjection.TypeApplication targetApplication =
+          KotlinJvmTypeProjection.parseTypeApplication(target);
       if (parameters.isEmpty() || targetApplication == null || target.endsWith("?")
           || target.indexOf("->") >= 0 || target.indexOf('&') >= 0 || target.indexOf('|') >= 0
           || targetApplication.rawType.indexOf('.') >= 0) {
@@ -614,15 +586,7 @@ public final class KotlinJvmSourceNavigator {
     }
   }
 
-  private static final class TypeApplication {
-    final String rawType;
-    final List<String> arguments;
-
-    TypeApplication(String rawType, List<String> arguments) {
-      this.rawType = rawType;
-      this.arguments = arguments;
-    }
-  }
+  // TypeApplication is defined by KotlinJvmTypeProjection.
 
   private static TypeElement topLevelOwner(TypeElement owner) {
     TypeElement current = owner;
