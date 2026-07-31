@@ -122,16 +122,12 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnose("<custom:View />").map { it.code }).containsExactly("XML005")
   }
 
-  fun testSuppressesBareLessThanTransientMarkup() {
-    assertThat(diagnose("<Root>\n  <\n\n</Root>")).isEmpty()
+  fun testReportsBareLessThanMarkupForOffsetInvestigation() {
+    assertThat(diagnose("<Root>\n  <\n\n</Root>")).isNotEmpty()
   }
 
-  fun testSuppressesEmptyAngleBracketsTransientMarkup() {
-    assertThat(diagnose("<Root>\n  <>\n\n</Root>")).isEmpty()
-  }
-
-  fun testDoesNotSuppressOtherMalformedMarkupWithTheSameParserError() {
-    assertThat(diagnose("<Root>\n  <<\n</Root>")).isNotEmpty()
+  fun testReportsEmptyAngleBracketsMarkupForOffsetInvestigation() {
+    assertThat(diagnose("<Root>\n  <>\n\n</Root>")).isNotEmpty()
   }
 
   fun testReportsMismatchedClosingTagOnItsName() {

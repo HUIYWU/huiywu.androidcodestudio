@@ -184,6 +184,80 @@ public final class KotlinJvmSourceNavigator {
     return null;
   }
   /**
+   * Resolves a type, constructor, or type member inside one Kotlin source file.
+   *
+   * <p>This package-private entry point exercises the same nested-type, constructor, property, and
+   * companion matching used by production navigation, without requiring a module source index.
+   */
+  static Location findTypeMemberLocation(Path file, String source, Element element) {
+    if (file == null || source == null || element == null) {
+      return null;
+    }
+    TypeElement owner = ownerType(element);
+    if (owner == null) {
+      return null;
+    }
+    final boolean companionOwner = "Companion".contentEquals(owner.getSimpleName())
+        && owner.getEnclosingElement() instanceof TypeElement;
+    if (companionOwner) {
+      owner = (TypeElement) owner.getEnclosingElement();
+    }
+    final TypeElement topLevelOwner = topLevelOwner(owner);
+    final KotlinJvmSyntaxParser.TypeSyntax topLevelType =
+        KotlinJvmSyntaxParser.findTopLevelType(source, topLevelOwner.getSimpleName().toString());
+    final KotlinJvmSyntaxParser.TypeSyntax type = nestedType(topLevelType, owner, topLevelOwner);
+    if (type == null) {
+      return null;
+    }
+    final Map<String, String> previousAliases = TYPE_ALIASES.get();
+    final Map<String, GenericTypeAlias> previousGenericAliases = GENERIC_TYPE_ALIASES.get();
+    TYPE_ALIASES.set(collectSimpleTypeAliases(source));
+    GENERIC_TYPE_ALIASES.set(collectGenericTypeAliases(source));
+    try {
+      if (element instanceof TypeElement && type.nameOffset >= 0) {
+        return location(file, source, type.nameOffset, type.nameLength);
+      }
+      final KotlinTypeDeclaration declaration = new KotlinTypeDeclaration(
+          file, Math.max(0, type.nameOffset), Math.max(1, type.nameLength));
+      final SourceRange range = companionOwner
+          ? findMember(type.companionMembers, element, false)
+          : findTypeMember(type, declaration, element);
+      return range == null ? null : location(file, source, range.offset, range.length);
+    } finally {
+      if (previousAliases == null) {
+        TYPE_ALIASES.remove();
+      } else {
+        TYPE_ALIASES.set(previousAliases);
+      }
+      if (previousGenericAliases == null) {
+        GENERIC_TYPE_ALIASES.remove();
+      } else {
+        GENERIC_TYPE_ALIASES.set(previousGenericAliases);
+      }
+    }
+  }
+
+  /**
+   * Resolves one Java facade member across Kotlin multifile facade parts.
+   *
+   * <p>Each source part gets an isolated same-file alias context, matching production behavior. A
+   * source part only contributes a result when its own declarations identify one unique signature.
+   */
+  static Location findMultifileFacadeMemberLocation(
+      List<Path> files, List<String> sources, Element element) {
+    if (files == null || sources == null || element == null || files.size() != sources.size()) {
+      return null;
+    }
+    for (int index = 0; index < files.size(); index++) {
+      final Location location = findFacadeMemberLocation(files.get(index), sources.get(index), element);
+      if (location != null) {
+        return location;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Resolves a facade member inside one Kotlin source file.
    *
    * <p>This package-private entry point keeps signature matching independently testable without a

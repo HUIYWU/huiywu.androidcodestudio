@@ -37,6 +37,7 @@ import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLEntityResolver
 import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLErrorHandler
 import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLInputSource
 import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLParseException
+import org.slf4j.LoggerFactory
 
 /** XML005: relocated composite Xerces errors not already covered by XML001-XML003. */
 internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
@@ -66,14 +67,6 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   ) {
     errors.forEach { error ->
       val offset = errorOffset(error, context.text)
-      // A bare '<' or '<>' on its own line is a transient editor state. Xerces reports
-      // MarkupNotRecognizedInContent and may anchor it on following blank lines, which makes the
-      // diagnostic appear to jump while the user is starting a tag. Suppress only that exact
-      // parser fact and source shape; all named tags and other syntax errors remain visible.
-      if (error.key == MARKUP_NOT_RECOGNIZED_IN_CONTENT &&
-          isTransientEmptyMarkup(context.text, offset)) {
-        return@forEach
-      }
       val endTagMismatch =
           if (error.key == E_TAG_NAME_MISMATCH) {
             error.toEndTagMismatch(context.text) ?: findFirstEndTagMismatch(context.text)
@@ -82,6 +75,16 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
           } else {
             null
           }
+      val range = endTagMismatch?.actualNameRange ?: parserErrorRange(error.key, offset, context.text)
+      if (hasOffsetProbeMarkup(context.text)) {
+        logMarkupOffset(
+            error = error,
+            text = context.text,
+            resolvedOffset = offset,
+            diagnosticRange = range,
+            file = context.file.toString(),
+        )
+      }
       // Older parser builds use ETagUnterminated when the actual closing name starts with the
       // expected name (for example </LinearLayout> for <LinearLayou>). Preserve that fallback
       // only when source reconstruction proves it is a mismatch rather than a missing `>`. Newer
@@ -89,7 +92,6 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       if (error.key in ERRORS_COVERED_BY_TOLERANT_DOM && endTagMismatch == null) {
         return@forEach
       }
-      val range = endTagMismatch?.actualNameRange ?: parserErrorRange(error.key, offset, context.text)
       collector.errorRange(
           code = CODE_XML_PARSER_SYNTAX,
           message = when {
@@ -201,38 +203,58 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     if (error.characterOffset > 0) {
       return (error.characterOffset - 1).coerceIn(0, text.length)
     }
-    if (error.line <= 0 || error.column <= 0) {
-      return 0
-    }
-    var line = 1
-    var offset = 0
-    while (offset < text.length && line < error.line) {
-      if (text[offset++] == '\n') {
-        line++
-      }
-    }
-    return (offset + error.column - 1).coerceIn(0, text.length)
+    return lineColumnOffset(error.line, error.column, text) ?: 0
   }
 
-  private fun isTransientEmptyMarkup(text: String, parserOffset: Int): Boolean {
-    if (text.isEmpty()) return false
+  private fun hasOffsetProbeMarkup(text: String): Boolean =
+      text.lineSequence().any { line -> line.trim() == "<" || line.trim() == "<>" }
 
-    // The Xerces offset can point after the malformed token, including a later blank line. Search
-    // only the current and two preceding lines, matching the observed bounded offset drift.
-    val safeParserOffset = parserOffset.coerceIn(0, text.length)
-    var searchFrom = safeParserOffset
-    repeat(MAX_TRANSIENT_MARKUP_LINE_LOOKBACK + 1) {
-      val lineStart = if (searchFrom > 0) text.lastIndexOf('\n', searchFrom - 1) + 1 else 0
-      val lineEnd = text.indexOf('\n', lineStart).let { if (it < 0) text.length else it }
-      val content = text.substring(lineStart, lineEnd).trim()
-      if ((content == "<" || content == "<>") &&
-          text.substring(lineEnd.coerceAtMost(safeParserOffset), safeParserOffset).isBlank()) {
-        return true
-      }
-      if (lineStart == 0) return false
-      searchFrom = lineStart - 1
+  private fun logMarkupOffset(
+      error: ParserError,
+      text: String,
+      resolvedOffset: Int,
+      diagnosticRange: IntRange,
+      file: String,
+  ) {
+    val characterCandidate = (error.characterOffset - 1).takeIf { error.characterOffset > 0 }
+    val lineColumnCandidate = lineColumnOffset(error.line, error.column, text)
+    val previousLessThan = text.lastIndexOf('<', resolvedOffset.coerceAtMost(text.length) - 1)
+    log.warn(
+        "XML005 markup offset trace file={} key={} arguments={} rawCharOffset={} rawLine={} " +
+            "rawColumn={} charCandidate={} lineColumnCandidate={} resolvedOffset={} " +
+            "diagnosticRange={}..{} previousLessThan={} resolvedContext='{}' lessThanContext='{}'",
+        file,
+        error.key,
+        error.arguments,
+        error.characterOffset,
+        error.line,
+        error.column,
+        characterCandidate,
+        lineColumnCandidate,
+        resolvedOffset,
+        diagnosticRange.first,
+        diagnosticRange.last,
+        previousLessThan,
+        escapedContext(text, resolvedOffset),
+        escapedContext(text, previousLessThan),
+    )
+  }
+
+  private fun lineColumnOffset(lineNumber: Int, columnNumber: Int, text: String): Int? {
+    if (lineNumber <= 0 || columnNumber <= 0) return null
+    var line = 1
+    var offset = 0
+    while (offset < text.length && line < lineNumber) {
+      if (text[offset++] == '\n') line++
     }
-    return false
+    return (offset + columnNumber - 1).coerceIn(0, text.length)
+  }
+
+  private fun escapedContext(text: String, center: Int): String {
+    if (center !in 0..text.length) return "<unavailable>"
+    val start = (center - LOG_CONTEXT_RADIUS).coerceAtLeast(0)
+    val end = (center + LOG_CONTEXT_RADIUS).coerceAtMost(text.length)
+    return text.substring(start, end).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
   }
 
   private fun parserErrorRange(key: String, offset: Int, text: String): IntRange {
@@ -561,10 +583,11 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   private const val E_TAG_REQUIRED = "ETagRequired"
   private const val E_TAG_NAME_MISMATCH = "ETagNameMismatch"
   private const val E_TAG_UNTERMINATED = "ETagUnterminated"
-  private const val MARKUP_NOT_RECOGNIZED_IN_CONTENT = "MarkupNotRecognizedInContent"
+  // Offset probe logs every parser fact emitted for a document containing an isolated '<'/'<>'.
+
   private val END_TAG_NAME_ERROR_KEYS = setOf(E_TAG_REQUIRED, E_TAG_UNTERMINATED)
   private const val MAX_PARSER_ERRORS = 20
-  private const val MAX_TRANSIENT_MARKUP_LINE_LOOKBACK = 2
+  private const val LOG_CONTEXT_RADIUS = 24
   private const val MAX_ATTRIBUTE_LOOKBACK_TAGS = 4
   private const val MAX_ATTRIBUTE_LOOKBACK_CHARS = 4096
   private const val QUOTES = "\"'"
@@ -588,6 +611,8 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       "http://apache.org/xml/features/disallow-doctype-decl"
   private const val FEATURE_CONTINUE_AFTER_FATAL_ERROR =
       "http://apache.org/xml/features/continue-after-fatal-error"
+
+  private val log = LoggerFactory.getLogger(XmlParserDiagnosticRule::class.java)
 
   private val ERRORS_COVERED_BY_TOLERANT_DOM =
       setOf(
