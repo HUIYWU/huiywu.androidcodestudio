@@ -2273,6 +2273,14 @@ private static final Pattern PROPERTY_PATTERN =
     if (expandedGenericAlias != null) {
       return javaType(expandedGenericAlias);
     }
+    // An imported generic name that is not in the supported alias map may be a Kotlin typealias
+    // whose JVM surface is intentionally opaque (nullable, nested, function type, etc.). Do not
+    // emit the alias spelling into Java; it is not a JVM class and would become javac ErrorType.
+    if (context != null
+        && context.imports.containsKey(application.rawType)
+        && !context.genericTypeAliases.containsKey(application.rawType)) {
+      return "Object";
+    }
     final String rawJavaType = javaCollectionType(application.rawType);
     if ("Array".equals(application.rawType) || "kotlin.Array".equals(application.rawType)) {
       return application.arguments.size() == 1

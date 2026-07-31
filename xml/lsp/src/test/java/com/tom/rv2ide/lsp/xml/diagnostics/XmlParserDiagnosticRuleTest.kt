@@ -122,9 +122,22 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnose("<custom:View />").map { it.code }).containsExactly("XML005")
   }
 
-  fun testDoesNotDuplicateExistingRecoveryDiagnostics() {
-    assertThat(diagnose("<View>")).isEmpty()
-  }
+  fun testReportsUnclosedElementAtEndOfDocument() {
+val diagnostic = diagnose("<View>").single()
+
+assertThat(diagnostic.code).isEqualTo("XML005")
+assertThat(diagnostic.message).isEqualTo("Element '<View>' is not closed")
+assertThat(diagnostic.extra).isEqualTo(UnclosedElementDiagnosticData("View"))
+assertThat(diagnostic.range.start.column).isEqualTo(1)
+assertThat(diagnostic.range.end.column).isEqualTo(5)
+}
+
+fun testReportsInnermostUnclosedElementAtEndOfDocument() {
+val diagnostic = diagnose("<Root><View>").single()
+
+assertThat(diagnostic.message).isEqualTo("Element '<View>' is not closed")
+assertThat(diagnostic.extra).isEqualTo(UnclosedElementDiagnosticData("View"))
+}
 
   fun testReportsMismatchedClosingTagOnItsName() {
     val diagnostic = diagnose("<LinearLayout></LinearLayou>").single()

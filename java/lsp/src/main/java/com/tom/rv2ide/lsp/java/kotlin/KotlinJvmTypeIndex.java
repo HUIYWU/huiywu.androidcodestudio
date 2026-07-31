@@ -274,8 +274,13 @@ public final class KotlinJvmTypeIndex {
       final String name = matcher.group(2);
       final String qualifiedAlias = qualifiedName(packageName, name);
       final String target = matcher.group(4).trim();
-      if (!isVisibleGenericAlias(modifiers, packageName, consumerPackage,
-          explicitlyImported, qualifiedAlias, target, result.containsKey(name))) continue;
+      if (modifiers.contains("private") || modifiers.contains("internal")
+          || result.containsKey(name)
+          || !(packageName.equals(consumerPackage) || explicitlyImported.contains(qualifiedAlias))
+          || target.endsWith("?") || target.indexOf("->") >= 0 || target.indexOf('&') >= 0
+          || target.indexOf('|') >= 0) {
+        continue;
+      }
       final java.util.ArrayList<String> parameters = new java.util.ArrayList<>();
       boolean valid = true;
       for (String parameter : splitTypeArguments(matcher.group(3))) {
