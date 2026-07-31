@@ -274,11 +274,8 @@ public final class KotlinJvmTypeIndex {
       final String name = matcher.group(2);
       final String qualifiedAlias = qualifiedName(packageName, name);
       final String target = matcher.group(4).trim();
-      if (modifiers.contains("private") || modifiers.contains("internal")
-          || result.containsKey(name)
-          || !(packageName.equals(consumerPackage) || explicitlyImported.contains(qualifiedAlias))
-          || target.endsWith("?") || target.indexOf("->") >= 0 || target.indexOf('&') >= 0
-          || target.indexOf('|') >= 0) continue;
+      if (!isVisibleGenericAlias(modifiers, packageName, consumerPackage,
+          explicitlyImported, qualifiedAlias, target, result.containsKey(name))) continue;
       final java.util.ArrayList<String> parameters = new java.util.ArrayList<>();
       boolean valid = true;
       for (String parameter : splitTypeArguments(matcher.group(3))) {
@@ -333,6 +330,20 @@ public final class KotlinJvmTypeIndex {
       }
       result.put(name, target);
     }
+  }
+
+  private static boolean isVisibleGenericAlias(
+      String modifiers,
+      String packageName,
+      String consumerPackage,
+      Set<String> explicitlyImported,
+      String qualifiedAlias,
+      String target,
+      boolean duplicate) {
+    return !modifiers.contains("private") && !modifiers.contains("internal") && !duplicate
+        && (packageName.equals(consumerPackage) || explicitlyImported.contains(qualifiedAlias))
+        && !target.endsWith("?") && target.indexOf("->") < 0
+        && target.indexOf('&') < 0 && target.indexOf('|') < 0;
   }
 
   private static boolean isDirectAliasTarget(String target) {

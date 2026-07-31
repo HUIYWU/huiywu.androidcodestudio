@@ -46,6 +46,7 @@ dependencies {
     implementation(libs.androidide.ts.xml)
     
     implementation(projects.core.actions)
+    implementation(projects.core.resources)
     implementation(projects.core.lspApi)
     implementation(projects.editor.api)
     implementation(projects.editor.lexers)

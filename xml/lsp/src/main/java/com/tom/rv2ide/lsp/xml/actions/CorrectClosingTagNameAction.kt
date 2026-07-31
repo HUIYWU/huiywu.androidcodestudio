@@ -14,6 +14,8 @@ import com.tom.rv2ide.actions.ActionItem
 import com.tom.rv2ide.actions.EditorActionItem
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
+import com.tom.rv2ide.actions.getContext
+
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.models.CodeActionItem
 import com.tom.rv2ide.lsp.models.CodeActionKind
@@ -23,8 +25,8 @@ import com.tom.rv2ide.lsp.models.PerformCodeActionParams
 import com.tom.rv2ide.lsp.models.TextEdit
 import com.tom.rv2ide.lsp.xml.XMLLanguageServer
 import com.tom.rv2ide.lsp.xml.diagnostics.ClosingTagMismatchDiagnosticData
-import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticMessages
 import com.tom.rv2ide.lsp.xml.isWorkspaceXmlFile
+import com.tom.rv2ide.resources.R
 import java.io.File
 
 /** Offers a conservative fix for an XML005 closing-tag name mismatch. */
@@ -56,8 +58,12 @@ internal class CorrectClosingTagNameAction : EditorActionItem {
       markInvisible()
       return
     }
+    val context = data.getContext() ?: run {
+      markInvisible()
+      return
+    }
     replacement = mismatch.expectedName
-    label = XmlDiagnosticMessages.fixClosingTag()
+    label = context.getString(R.string.action_fix_closing_tag)
     visible = true
     enabled = true
   }

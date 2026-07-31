@@ -1,38 +1,50 @@
 /*
- *  This file is part of AndroidCodeStudio.
- *
- *  AndroidCodeStudio is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
+ * This file is part of AndroidCodeStudio.
  */
 package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.tom.rv2ide.lsp.models.DiagnosticItem
+import java.text.MessageFormat
 import java.util.Locale
+import java.util.MissingResourceException
+import java.util.ResourceBundle
 
 /** Machine-readable payloads attached to XML diagnostics through [DiagnosticItem.extra]. */
 internal data class ClosingTagMismatchDiagnosticData(
-    val actualName: String,
-    val expectedName: String,
+  val actualName: String,
+  val expectedName: String,
 )
 
-/** User-facing XML diagnostic messages. Code actions must use diagnostic data, never these strings. */
+/**
+ * XML LSP diagnostic messages. The key and argument order are the stable contract;
+ * the returned string is only a localized presentation value.
+ */
 internal object XmlDiagnosticMessages {
-  fun closingTagMismatch(actualName: String, expectedName: String, locale: Locale = Locale.getDefault()):
-      String {
-    return if (locale.language.equals(Locale.CHINESE.language, ignoreCase = true)) {
-      "结束标签 '</$actualName>' 与开始标签 '<$expectedName>' 不匹配"
-    } else {
-      "Closing tag '</$actualName>' does not match opening tag '<$expectedName>'"
-    }
-  }
+  private const val BUNDLE_BASE_NAME =
+    "com.tom.rv2ide.lsp.xml.diagnostics.messages.XmlDiagnostics"
+  private const val CLOSING_TAG_MISMATCH_KEY = "xml.diagnostic.closingTagMismatch"
 
-  fun fixClosingTag(locale: Locale = Locale.getDefault()): String {
-    return if (locale.language.equals(Locale.CHINESE.language, ignoreCase = true)) {
-      "修正结束标签"
-    } else {
-      "Fix closing tag"
+  fun closingTagMismatch(
+    actualName: String,
+    expectedName: String,
+    locale: Locale = Locale.getDefault(),
+  ): String = format(
+    key = CLOSING_TAG_MISMATCH_KEY,
+    arguments = arrayOf<Any>(actualName, expectedName),
+    locale = locale,
+  )
+
+  private fun format(key: String, arguments: Array<Any>, locale: Locale): String {
+    val bundle = try {
+      ResourceBundle.getBundle(BUNDLE_BASE_NAME, locale, XmlDiagnosticMessages::class.java.classLoader)
+    } catch (_: MissingResourceException) {
+      return key
     }
+    val pattern = try {
+      bundle.getString(key)
+    } catch (_: MissingResourceException) {
+      return key
+    }
+    return MessageFormat(pattern, locale).format(arguments)
   }
 }
