@@ -110,7 +110,7 @@ internal class XmlDiagnosticCollector(private val text: String) {
         ).also { it.extra = extra }
   }
 
-  fun hasExtra<T : Any>(code: String, type: Class<T>): Boolean {
+  fun <T : Any> hasExtra(code: String, type: Class<T>): Boolean {
     return diagnostics.any { it.code == code && type.isInstance(it.extra) }
   }
 
