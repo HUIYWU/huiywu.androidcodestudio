@@ -58,7 +58,8 @@ public final class KotlinJvmSourceNavigator {
         final Map<String, String> previousAliases = TYPE_ALIASES.get();
         final Map<String, GenericTypeAlias> previousGenericAliases = GENERIC_TYPE_ALIASES.get();
         TYPE_ALIASES.set(visibleTypeAliases(module, multifileDeclaration.file, multifileSource));
-        GENERIC_TYPE_ALIASES.set(collectGenericTypeAliases(multifileSource));
+        GENERIC_TYPE_ALIASES.set(visibleGenericTypeAliases(
+        module, multifileDeclaration.file, multifileSource));
         try {
           final SourceRange multifileRange = findFacadeMember(multifileSource, element);
           if (multifileRange != null) {
@@ -89,7 +90,7 @@ public final class KotlinJvmSourceNavigator {
     final Map<String, String> previousAliases = TYPE_ALIASES.get();
     final Map<String, GenericTypeAlias> previousGenericAliases = GENERIC_TYPE_ALIASES.get();
     TYPE_ALIASES.set(visibleTypeAliases(module, declaration.file, source));
-    GENERIC_TYPE_ALIASES.set(collectGenericTypeAliases(source));
+    GENERIC_TYPE_ALIASES.set(visibleGenericTypeAliases(module, declaration.file, source));
     try {
       final KotlinJvmSyntaxParser.TypeSyntax topLevelType =
           KotlinJvmSyntaxParser.findTopLevelType(source, topLevelOwner.getSimpleName().toString());
@@ -536,6 +537,19 @@ public final class KotlinJvmSourceNavigator {
     for (Map.Entry<String, String> alias :
         KotlinJvmTypeIndex.visibleDirectTypeAliases(module, consumerFile).entrySet()) {
       aliases.putIfAbsent(alias.getKey(), alias.getValue());
+    }
+    return aliases;
+  }
+
+  private static Map<String, GenericTypeAlias> visibleGenericTypeAliases(
+      ModuleProject module, Path consumerFile, String source) {
+    final Map<String, GenericTypeAlias> aliases = collectGenericTypeAliases(source);
+    for (Map.Entry<String, KotlinJvmTypeIndex.GenericTypeAlias> entry
+        : KotlinJvmTypeIndex.visibleGenericTypeAliases(module, consumerFile).entrySet()) {
+      final KotlinJvmTypeIndex.GenericTypeAlias value = entry.getValue();
+      aliases.putIfAbsent(entry.getKey(), new GenericTypeAlias(
+          value.parameters,
+          value.targetRawType + "<" + String.join(", ", value.targetArguments) + ">"));
     }
     return aliases;
   }

@@ -57,6 +57,11 @@ public final class KotlinJvmTypeIndex {
       "(?m)^\\s*import\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)(?:\\s+as\\s+[A-Za-z_$][\\w$]*)?\\s*$");
   private static final Pattern TYPE_ALIAS_PATTERN = Pattern.compile(
       "(?m)^\\s*((?:(?:public|internal|private)\\s+)*)typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
+  private static final Pattern GENERIC_TYPE_ALIAS_PATTERN = Pattern.compile(
+      "(?m)^\\s*((?:(?:public|internal|private)\\s+)*)typealias\\s+([A-Za-z_][\\w]*)\\s*<([^<>]+)>\\s*=\\s*([^\\r\\n]+?)\\s*$");
+  private static final Pattern TYPE_NAME_PATTERN =
+      Pattern.compile("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*");
+
   private static final Pattern TYPE_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|abstract|sealed|data|enum|"
@@ -132,6 +137,31 @@ public final class KotlinJvmTypeIndex {
       }
     }
     return result.isEmpty() ? Collections.emptyList() : Collections.unmodifiableList(result);
+  }
+
+  public static java.util.Map<String, GenericTypeAlias> visibleGenericTypeAliases(
+      ModuleProject module, Path consumerFile) {
+    if (module == null || consumerFile == null) {
+      return Collections.emptyMap();
+    }
+    final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
+    final Matcher packageMatcher = PACKAGE_PATTERN.matcher(consumerSource);
+    final String consumerPackage = packageMatcher.find() ? packageMatcher.group(1) : "";
+    final Set<String> explicitlyImported = new LinkedHashSet<>();
+    final Matcher importMatcher = IMPORT_PATTERN.matcher(consumerSource);
+    while (importMatcher.find()) explicitlyImported.add(importMatcher.group(1));
+    final java.util.Map<String, GenericTypeAlias> aliases = new java.util.LinkedHashMap<>();
+    for (java.io.File root : module.getCompileSourceDirectories()) {
+      if (root == null || !root.isDirectory()) continue;
+      try (Stream<Path> paths = Files.walk(root.toPath())) {
+        paths.filter(DocumentUtils::isKotlinFile).filter(path -> !path.equals(consumerFile))
+            .forEach(path -> collectVisibleGenericAliases(
+                path, consumerPackage, explicitlyImported, aliases));
+      } catch (IOException error) {
+        LOG.debug("Unable to scan Kotlin generic typealiases for {}", consumerFile, error);
+      }
+    }
+    return aliases.isEmpty() ? Collections.emptyMap() : Collections.unmodifiableMap(aliases);
   }
 
   public static java.util.Map<String, String> visibleDirectTypeAliases(
@@ -230,6 +260,58 @@ public final class KotlinJvmTypeIndex {
     }
   }
 
+  private static void collectVisibleGenericAliases(
+      Path path,
+      String consumerPackage,
+      Set<String> explicitlyImported,
+      java.util.Map<String, GenericTypeAlias> result) {
+    final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
+    final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
+    final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
+    final Matcher matcher = GENERIC_TYPE_ALIAS_PATTERN.matcher(source);
+    while (matcher.find()) {
+      final String modifiers = matcher.group(1);
+      final String name = matcher.group(2);
+      final String qualifiedAlias = qualifiedName(packageName, name);
+      final String target = matcher.group(4).trim();
+      if (modifiers.contains("private") || modifiers.contains("internal")
+          || result.containsKey(name)
+          || !(packageName.equals(consumerPackage) || explicitlyImported.contains(qualifiedAlias))
+          || target.endsWith("?") || target.indexOf("->") >= 0 || target.indexOf('&') >= 0
+          || target.indexOf('|') >= 0) continue;
+      final java.util.ArrayList<String> parameters = new java.util.ArrayList<>();
+      boolean valid = true;
+      for (String parameter : splitTypeArguments(matcher.group(3))) {
+        final String trimmed = parameter.trim();
+        if (!TYPE_NAME_PATTERN.matcher(trimmed).matches()) { valid = false; break; }
+        parameters.add(trimmed);
+      }
+      final int open = target.indexOf('<');
+      if (!valid || parameters.isEmpty() || open < 1 || !target.endsWith(">")) continue;
+      final String raw = target.substring(0, open).trim();
+      if (raw.indexOf('.') >= 0) continue;
+      final java.util.ArrayList<String> arguments = new java.util.ArrayList<>();
+      for (String argument : splitTypeArguments(target.substring(open + 1, target.length() - 1))) {
+        final String trimmed = argument.trim();
+        if (!TYPE_NAME_PATTERN.matcher(trimmed).matches()) { valid = false; break; }
+        arguments.add(trimmed);
+      }
+      if (valid) result.put(name, new GenericTypeAlias(parameters, raw, arguments));
+    }
+  }
+
+  private static java.util.List<String> splitTypeArguments(String text) {
+    final java.util.ArrayList<String> result = new java.util.ArrayList<>();
+    int start = 0, nesting = 0;
+    for (int i = 0; i < text.length(); i++) {
+      char c = text.charAt(i);
+      if (c == '<') nesting++; else if (c == '>') nesting--;
+      else if (c == ',' && nesting == 0) { result.add(text.substring(start, i)); start = i + 1; }
+    }
+    result.add(text.substring(start));
+    return result;
+  }
+
   private static void collectVisibleAliases(
       Path path,
       String consumerPackage,
@@ -296,6 +378,18 @@ public final class KotlinJvmTypeIndex {
     }
     final int declarationOffset = jvmNameMatcher.find(0) ? jvmNameMatcher.start(1) : 0;
     return new KotlinTypeDeclaration(path, declarationOffset, facade.length());
+  }
+
+  public static final class GenericTypeAlias {
+    public final List<String> parameters;
+    public final String targetRawType;
+    public final List<String> targetArguments;
+
+    GenericTypeAlias(List<String> parameters, String targetRawType, List<String> targetArguments) {
+      this.parameters = Collections.unmodifiableList(new java.util.ArrayList<>(parameters));
+      this.targetRawType = targetRawType;
+      this.targetArguments = Collections.unmodifiableList(new java.util.ArrayList<>(targetArguments));
+    }
   }
 
   public static final class KotlinTypeDeclaration {

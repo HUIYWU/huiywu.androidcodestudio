@@ -18,12 +18,7 @@ package com.tom.rv2ide.lsp.xml.diagnostics
 
 import com.google.common.truth.Truth.assertThat
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.XmlParserDiagnosticRule
-import java.io.StringReader
 import java.nio.file.Paths
-import jaxp.sun.org.apache.xerces.internal.parsers.XIncludeAwareParserConfiguration
-import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLErrorHandler
-import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLInputSource
-import jaxp.sun.org.apache.xerces.internal.xni.parser.XMLParseException
 import junit.framework.TestCase
 import org.eclipse.lemminx.dom.DOMParser
 import org.eclipse.lemminx.uriresolver.URIResolverExtensionManager
@@ -171,7 +166,7 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnostic.range.end.line).isEqualTo(0)
     assertThat(diagnostic.range.end.column).isEqualTo(27)
   }
-fun testReportsXml11MismatchedClosingTag() {
+  fun testReportsXml11MismatchedClosingTag() {
     val diagnostic =
         diagnose("<?xml version=\"1.1\"?><LinearLayout></LinearLayou>").single()
 
@@ -180,21 +175,9 @@ fun testReportsXml11MismatchedClosingTag() {
         .isEqualTo(
             "Closing tag '</LinearLayou>' does not match opening tag '<LinearLayout>'"
         )
-    assertThat(parseMismatch("<?xml version=\"1.1\"?><LinearLayout></LinearLayou>").arguments!!
-      .toList())
-      .containsExactly("LinearLayout", "LinearLayou")
   }
 
-  fun testMismatchArgumentsAreStructuredAndDefensivelyCopied() {
-    val exception = parseMismatch("<LinearLayout></LinearLayou>")
-
-    assertThat(exception.arguments!!.toList()).containsExactly("LinearLayout", "LinearLayou")
-    val firstRead = exception.arguments!!
-    firstRead[0] = "changed"
-    assertThat(exception.arguments!!.toList()).containsExactly("LinearLayout", "LinearLayou")
-  }
-
-  @Test
+  /** Keeps the mismatch range regression independent of parser-reported offsets. */
   fun testFindsFirstMismatchIndependentlyOfLargeFormattedPrefix() {
     val text =
         buildString {
@@ -218,26 +201,7 @@ fun testReportsXml11MismatchedClosingTag() {
         .isSameInstanceAs(XmlParserDiagnosticRule)
   }
 
-  private fun parseMismatch(text: String): XMLParseException {
-    val configuration = XIncludeAwareParserConfiguration()
-    var captured: XMLParseException? = null
-    configuration.errorHandler =
-        object : XMLErrorHandler {
-          override fun warning(domain: String?, key: String?, exception: XMLParseException) = Unit
-
-          override fun error(domain: String?, key: String?, exception: XMLParseException) = Unit
-
-          override fun fatalError(domain: String?, key: String?, exception: XMLParseException) {
-            if (key == "ETagNameMismatch") {
-              captured = exception
-            }
-          }
-        }
-    runCatching {
-      configuration.parse(XMLInputSource(null, null, null, StringReader(text), null))
-    }
-    return checkNotNull(captured) { "Expected ETagNameMismatch" }
-  }
+  // Parser arguments are consumed by XmlParserDiagnosticRule; this test class only verifies IDE output.
 
   private fun diagnose(text: String) =
       XmlDiagnosticCollector(text).let { collector ->

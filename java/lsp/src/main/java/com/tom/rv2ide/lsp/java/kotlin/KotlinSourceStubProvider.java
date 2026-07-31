@@ -199,6 +199,7 @@ public final class KotlinSourceStubProvider {
         kotlinFile.getFileName().toString(),
         source,
         knownTypes,
-        KotlinJvmTypeIndex.visibleDirectTypeAliases(module, kotlinFile));
+        KotlinJvmTypeIndex.visibleDirectTypeAliases(module, kotlinFile),
+        KotlinJvmTypeIndex.visibleGenericTypeAliases(module, kotlinFile));
   }
 }

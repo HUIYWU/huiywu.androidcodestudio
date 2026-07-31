@@ -159,6 +159,17 @@ private static final Pattern PROPERTY_PATTERN =
       String source,
       Set<String> knownTypes,
       Map<String, String> visibleTypeAliases) {
+    return generate(qualifiedName, kotlinFileName, source, knownTypes, visibleTypeAliases,
+        java.util.Collections.emptyMap());
+  }
+
+  static String generate(
+      String qualifiedName,
+      String kotlinFileName,
+      String source,
+      Set<String> knownTypes,
+      Map<String, String> visibleTypeAliases,
+      Map<String, KotlinJvmTypeIndex.GenericTypeAlias> visibleGenericTypeAliases) {
     final int separator = qualifiedName.lastIndexOf('.');
     final String packageName = separator < 0 ? "" : qualifiedName.substring(0, separator);
     final String simpleName = separator < 0 ? qualifiedName : qualifiedName.substring(separator + 1);
@@ -171,7 +182,8 @@ private static final Pattern PROPERTY_PATTERN =
     final TypeResolutionContext previous = TYPE_CONTEXT.get();
     TYPE_CONTEXT.set(
         TypeResolutionContext.create(
-            sourcePackage, simpleName, source, knownTypes, visibleTypeAliases));
+            sourcePackage, simpleName, source, knownTypes, visibleTypeAliases,
+            visibleGenericTypeAliases));
     try {
       final KotlinJvmSyntaxParser.TypeSyntax syntax =
           structuredGenerationEnabled()
@@ -2472,7 +2484,8 @@ private static final Pattern PROPERTY_PATTERN =
         String generatedSimpleName,
         String source,
         Set<String> knownTypes,
-        Map<String, String> visibleTypeAliases) {
+        Map<String, String> visibleTypeAliases,
+        Map<String, KotlinJvmTypeIndex.GenericTypeAlias> visibleGenericTypeAliases) {
       final Map<String, String> imports = new LinkedHashMap<>();
       final Matcher importMatcher = KOTLIN_IMPORT_PATTERN.matcher(source);
       while (importMatcher.find()) {
@@ -2531,6 +2544,15 @@ private static final Pattern PROPERTY_PATTERN =
       }
       final Map<String, String> typeAliases = collectSimpleTypeAliases(source, valueClassUnderlyingTypes);
       final Map<String, GenericTypeAlias> genericTypeAliases = collectGenericTypeAliases(source);
+      if (visibleGenericTypeAliases != null) {
+        for (Map.Entry<String, KotlinJvmTypeIndex.GenericTypeAlias> alias
+            : visibleGenericTypeAliases.entrySet()) {
+          genericTypeAliases.putIfAbsent(alias.getKey(),
+              new GenericTypeAlias(alias.getValue().parameters,
+                  alias.getValue().targetRawType + "<"
+                      + String.join(", ", alias.getValue().targetArguments) + ">"));
+        }
+      }
       if (visibleTypeAliases != null) {
         for (Map.Entry<String, String> alias : visibleTypeAliases.entrySet()) {
           typeAliases.putIfAbsent(alias.getKey(), alias.getValue());
