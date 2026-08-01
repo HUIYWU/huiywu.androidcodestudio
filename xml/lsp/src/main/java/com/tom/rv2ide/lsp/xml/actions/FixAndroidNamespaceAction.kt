@@ -149,18 +149,9 @@ internal class FixAndroidNamespaceAction : EditorActionItem {
     const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
 
     internal fun namespaceInsertion(text: String): TextEdit? {
-      val tagStart = text.indexOf('<')
-      if (tagStart < 0) {
-        traceLog.warn("XML namespace insertion trace: rejected reason=noStartTag text={}", preview(text))
-        return null
-      }
-      if (text.getOrNull(tagStart + 1) in setOf('/', '!', '?')) {
-        traceLog.warn(
-            "XML namespace insertion trace: rejected reason=nonElementStart tagStart={} next={} text={}",
-            tagStart,
-            text.getOrNull(tagStart + 1),
-            preview(text),
-        )
+      val tagStart = findRootStartTag(text)
+      if (tagStart == null) {
+        traceLog.warn("XML namespace insertion trace: rejected reason=noRootStartTag text={}", preview(text))
         return null
       }
       var nameEnd = tagStart + 1
@@ -195,6 +186,26 @@ internal class FixAndroidNamespaceAction : EditorActionItem {
           Range(offsetToPosition(text, nameEnd), offsetToPosition(text, nameEnd)),
           "\n    xmlns:android=\"$ANDROID_NAMESPACE_URI\"",
       )
+    }
+
+    private fun findRootStartTag(text: String): Int? {
+      var searchFrom = 0
+      while (searchFrom < text.length) {
+        val start = text.indexOf('<', searchFrom)
+        if (start < 0 || start + 1 >= text.length) return null
+        when (text[start + 1]) {
+          '?', '!' -> {
+            val close =
+                if (text[start + 1] == '!' && text.startsWith("<!--", start)) text.indexOf("-->", start + 4)
+                else text.indexOf('>', start + 2)
+            if (close < 0) return null
+            searchFrom = close + 1
+          }
+          '/' -> return null
+          else -> return start
+        }
+      }
+      return null
     }
 
     private fun offsetToPosition(text: String, offset: Int): Position {

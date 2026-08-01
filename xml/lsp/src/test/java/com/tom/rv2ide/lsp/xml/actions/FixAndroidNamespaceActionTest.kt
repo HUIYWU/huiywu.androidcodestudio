@@ -36,6 +36,23 @@ class FixAndroidNamespaceActionTest : TestCase() {
         .isEqualTo("\n    xmlns:android=\"${FixAndroidNamespaceAction.ANDROID_NAMESPACE_URI}\"")
   }
 
+  fun testSkipsXmlDeclarationBeforeRootTag() {
+    val text = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<LinearLayout android:id=\"@+id/root\" />"
+    val edit = FixAndroidNamespaceAction.namespaceInsertion(text)
+
+    assertThat(edit).isNotNull()
+    assertThat(edit!!.range.start.line).isEqualTo(1)
+    assertThat(edit.range.start.column).isEqualTo("<LinearLayout".length)
+  }
+
+  fun testSkipsCommentBeforeRootTag() {
+    val text = "<!-- layout root -->\n<LinearLayout android:id=\"@+id/root\" />"
+    val edit = FixAndroidNamespaceAction.namespaceInsertion(text)
+
+    assertThat(edit).isNotNull()
+    assertThat(edit!!.range.start.line).isEqualTo(1)
+  }
+
   fun testBuildsInsertionAtMultilineRootTagName() {
     val text = "\n<LinearLayout\n    android:id=\"@+id/root\" />"
     val edit = FixAndroidNamespaceAction.namespaceInsertion(text)

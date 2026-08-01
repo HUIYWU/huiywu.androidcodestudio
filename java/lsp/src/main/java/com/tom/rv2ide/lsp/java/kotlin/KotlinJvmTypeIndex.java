@@ -155,7 +155,7 @@ public final class KotlinJvmTypeIndex {
       return existing;
     }
     final java.util.Map<String, GenericTypeAlias> indexed =
-        visibleGenericTypeAliases(module.getCompileSourceDirectories(), consumerFile);
+        aliasDeclarationIndexForRevision(module).visibleGenericAliases(consumerFile, consumerSource);
     cached.genericAliases.put(consumerFile, consumerSource, indexed);
     return indexed;
   }
@@ -198,7 +198,7 @@ public final class KotlinJvmTypeIndex {
       return existing;
     }
     final java.util.Map<String, String> indexed =
-        visibleDirectTypeAliases(module.getCompileSourceDirectories(), consumerFile, consumerSource);
+        aliasDeclarationIndexForRevision(module).visibleDirectAliases(consumerFile, consumerSource);
     cached.directAliases.put(consumerFile, consumerSource, indexed);
     return indexed;
   }
@@ -258,6 +258,22 @@ public final class KotlinJvmTypeIndex {
   /** Kotlin source discovery is opt-in; callers must not create scanner/cache work while disabled. */
   private static boolean isRecognitionEnabled() {
     return JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled();
+  }
+
+  private static AliasDeclarationIndex aliasDeclarationIndexForRevision(ModuleProject module) {
+    final long revision = module.getSourceIndexVersion();
+    final CachedAliases cached = ALIAS_CACHE.get(module);
+    if (cached != null && cached.revision == revision && cached.declarationIndex != null) {
+      return cached.declarationIndex;
+    }
+    final AliasDeclarationIndex indexed = AliasDeclarationIndex.build(module.getCompileSourceDirectories());
+    final CachedAliases replacement = new CachedAliases(revision, indexed);
+    if (cached == null || cached.revision != revision) {
+      ALIAS_CACHE.put(module, replacement);
+      return indexed;
+    }
+    cached.declarationIndex = indexed;
+    return indexed;
   }
 
   private static CachedAliases aliasCacheForRevision(ModuleProject module) {
@@ -443,6 +459,188 @@ public final class KotlinJvmTypeIndex {
     return new KotlinTypeDeclaration(path, declarationOffset, facade.length());
   }
 
+  /**
+   * Immutable module-revision snapshot of project alias declarations. It stores only compact
+   * projection metadata, never source text or syntax trees. Consumer queries merely parse the
+   * consumer package/imports and filter these maps; they do not walk source roots again.
+   */
+  static final class AliasDeclarationIndex {
+    private final java.util.Map<String, java.util.List<DirectAliasDeclaration>> directByPackage;
+    private final java.util.Map<String, java.util.List<GenericAliasDeclaration>> genericByPackage;
+
+    private AliasDeclarationIndex(
+        java.util.Map<String, java.util.List<DirectAliasDeclaration>> directByPackage,
+        java.util.Map<String, java.util.List<GenericAliasDeclaration>> genericByPackage) {
+      this.directByPackage = directByPackage;
+      this.genericByPackage = genericByPackage;
+    }
+
+    static AliasDeclarationIndex build(Iterable<java.io.File> sourceRoots) {
+      final java.util.Map<String, java.util.List<DirectAliasDeclaration>> direct =
+          new java.util.LinkedHashMap<>();
+      final java.util.Map<String, java.util.List<GenericAliasDeclaration>> generic =
+          new java.util.LinkedHashMap<>();
+      if (sourceRoots == null) return new AliasDeclarationIndex(direct, generic);
+      for (java.io.File root : sourceRoots) {
+        if (root == null || !root.isDirectory()) continue;
+        try (Stream<Path> paths = Files.walk(root.toPath())) {
+          paths.filter(DocumentUtils::isKotlinFile)
+              .filter(path -> path.getFileName().toString().endsWith(".kt"))
+              .forEach(path -> collect(path, direct, generic));
+        } catch (IOException error) {
+          LOG.debug("Unable to build Kotlin typealias declaration index for {}", root, error);
+        }
+      }
+      return new AliasDeclarationIndex(freeze(direct), freeze(generic));
+    }
+
+    java.util.Map<String, String> visibleDirectAliases(Path consumerFile, String consumerSource) {
+      final Visibility visibility = Visibility.from(consumerSource);
+      final java.util.Map<String, String> result = new java.util.LinkedHashMap<>();
+      final Set<String> conflicts = new LinkedHashSet<>();
+      for (java.util.List<DirectAliasDeclaration> declarations : directByPackage.values()) {
+        for (DirectAliasDeclaration declaration : declarations) {
+          if (normalizedPath(declaration.file).equals(normalizedPath(consumerFile))
+              || !visibility.includes(declaration.packageName, declaration.qualifiedName)) continue;
+          if (result.putIfAbsent(declaration.name, declaration.target) != null) {
+            conflicts.add(declaration.name);
+          }
+        }
+      }
+      conflicts.forEach(result::remove);
+      return result.isEmpty() ? Collections.emptyMap() : Collections.unmodifiableMap(result);
+    }
+
+    java.util.Map<String, GenericTypeAlias> visibleGenericAliases(Path consumerFile, String consumerSource) {
+      final Visibility visibility = Visibility.from(consumerSource);
+      final java.util.Map<String, GenericTypeAlias> result = new java.util.LinkedHashMap<>();
+      final Set<String> conflicts = new LinkedHashSet<>();
+      for (java.util.List<GenericAliasDeclaration> declarations : genericByPackage.values()) {
+        for (GenericAliasDeclaration declaration : declarations) {
+          if (normalizedPath(declaration.file).equals(normalizedPath(consumerFile))
+              || !visibility.includes(declaration.packageName, declaration.qualifiedName)) continue;
+          if (result.putIfAbsent(declaration.name, declaration.alias) != null) {
+            conflicts.add(declaration.name);
+          }
+        }
+      }
+      conflicts.forEach(result::remove);
+      return result.isEmpty() ? Collections.emptyMap() : Collections.unmodifiableMap(result);
+    }
+
+    private static void collect(
+        Path path,
+        java.util.Map<String, java.util.List<DirectAliasDeclaration>> direct,
+        java.util.Map<String, java.util.List<GenericAliasDeclaration>> generic) {
+      final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
+      final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
+      final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
+      final Matcher directMatcher = TYPE_ALIAS_PATTERN.matcher(source);
+      while (directMatcher.find()) {
+        final String modifiers = directMatcher.group(1);
+        final String target = directMatcher.group(3).trim();
+        if (modifiers.contains("private") || modifiers.contains("internal") || !isDirectAliasTarget(target)) continue;
+        final String name = directMatcher.group(2);
+        direct.computeIfAbsent(packageName, ignored -> new java.util.ArrayList<>()).add(
+            new DirectAliasDeclaration(path, packageName, name, qualifiedName(packageName, name), target));
+      }
+      final Matcher genericMatcher = GENERIC_TYPE_ALIAS_PATTERN.matcher(source);
+      while (genericMatcher.find()) {
+        final String modifiers = genericMatcher.group(1);
+        final String target = genericMatcher.group(4).trim();
+        final java.util.ArrayList<String> parameters = new java.util.ArrayList<>();
+        boolean valid = !modifiers.contains("private") && !modifiers.contains("internal")
+            && !target.endsWith("?") && target.indexOf("->") < 0 && target.indexOf('&') < 0
+            && target.indexOf('|') < 0;
+        for (String parameter : KotlinJvmTypeProjection.splitTopLevelArguments(genericMatcher.group(3))) {
+          final String trimmed = parameter.trim();
+          if (!TYPE_NAME_PATTERN.matcher(trimmed).matches()) valid = false;
+          else parameters.add(trimmed);
+        }
+        final int open = target.indexOf('<');
+        if (!valid || parameters.isEmpty() || open < 1 || !target.endsWith(">")) continue;
+        final String raw = target.substring(0, open).trim();
+        if (raw.indexOf('.') >= 0) continue;
+        final java.util.ArrayList<String> arguments = new java.util.ArrayList<>();
+        for (String argument : KotlinJvmTypeProjection.splitTopLevelArguments(target.substring(open + 1, target.length() - 1))) {
+          final String trimmed = argument.trim();
+          if (!TYPE_NAME_PATTERN.matcher(trimmed).matches()) valid = false;
+          else arguments.add(trimmed);
+        }
+        if (!valid) continue;
+        final String name = genericMatcher.group(2);
+        generic.computeIfAbsent(packageName, ignored -> new java.util.ArrayList<>()).add(
+            new GenericAliasDeclaration(path, packageName, name, qualifiedName(packageName, name),
+                new GenericTypeAlias(parameters, raw, arguments)));
+      }
+    }
+
+    private static <T> java.util.Map<String, java.util.List<T>> freeze(
+        java.util.Map<String, java.util.List<T>> source) {
+      final java.util.Map<String, java.util.List<T>> result = new java.util.LinkedHashMap<>();
+      for (java.util.Map.Entry<String, java.util.List<T>> entry : source.entrySet()) {
+        result.put(entry.getKey(), Collections.unmodifiableList(new java.util.ArrayList<>(entry.getValue())));
+      }
+      return Collections.unmodifiableMap(result);
+    }
+  }
+
+  private static final class Visibility {
+    final String consumerPackage;
+    final Set<String> explicitlyImported;
+
+    private Visibility(String consumerPackage, Set<String> explicitlyImported) {
+      this.consumerPackage = consumerPackage;
+      this.explicitlyImported = explicitlyImported;
+    }
+
+    static Visibility from(String source) {
+      final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
+      final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
+      final Set<String> imports = new LinkedHashSet<>();
+      final Matcher importMatcher = IMPORT_PATTERN.matcher(source);
+      while (importMatcher.find()) imports.add(importMatcher.group(1));
+      return new Visibility(packageName, imports);
+    }
+
+    boolean includes(String declarationPackage, String qualifiedName) {
+      return declarationPackage.equals(consumerPackage) || explicitlyImported.contains(qualifiedName);
+    }
+  }
+
+  private static final class DirectAliasDeclaration {
+    final Path file;
+    final String packageName;
+    final String name;
+    final String qualifiedName;
+    final String target;
+
+    DirectAliasDeclaration(Path file, String packageName, String name, String qualifiedName, String target) {
+      this.file = file;
+      this.packageName = packageName;
+      this.name = name;
+      this.qualifiedName = qualifiedName;
+      this.target = target;
+    }
+  }
+
+  private static final class GenericAliasDeclaration {
+    final Path file;
+    final String packageName;
+    final String name;
+    final String qualifiedName;
+    final GenericTypeAlias alias;
+
+    GenericAliasDeclaration(Path file, String packageName, String name, String qualifiedName,
+        GenericTypeAlias alias) {
+      this.file = file;
+      this.packageName = packageName;
+      this.name = name;
+      this.qualifiedName = qualifiedName;
+      this.alias = alias;
+    }
+  }
+
   public static final class GenericTypeAlias {
     public final List<String> parameters;
     public final String targetRawType;
@@ -624,9 +822,15 @@ public final class KotlinJvmTypeIndex {
     final long revision;
     final ConsumerAliasCache<String> directAliases = new ConsumerAliasCache<>();
     final ConsumerAliasCache<GenericTypeAlias> genericAliases = new ConsumerAliasCache<>();
+    volatile AliasDeclarationIndex declarationIndex;
 
     CachedAliases(long revision) {
+      this(revision, null);
+    }
+
+    CachedAliases(long revision, AliasDeclarationIndex declarationIndex) {
       this.revision = revision;
+      this.declarationIndex = declarationIndex;
     }
   }
 
