@@ -126,15 +126,36 @@ class DefaultActionsRegistry : ActionsRegistry() {
   override fun fillMenu(params: FillMenuParams) {
     val (data, location, menu, onClickListener) = params
     val actions = getActions(location)
+    log.warn(
+        "Action menu trace: fill location={} menu={} beforeSize={} registered={}",
+        location,
+        System.identityHashCode(menu),
+        menu.size(),
+        actions.size,
+    )
 
     for (action in actions.values) {
       action.prepare(data)
+      log.warn(
+          "Action menu trace: prepared location={} id={} visible={} enabled={} label={}",
+          location,
+          action.id,
+          action.visible,
+          action.enabled,
+          action.label,
+      )
 
       if (!action.visible) {
         continue
       }
       addActionToMenu(menu, action, data, onClickListener)
     }
+    log.warn(
+        "Action menu trace: filled location={} menu={} afterSize={}",
+        location,
+        System.identityHashCode(menu),
+        menu.size(),
+    )
   }
 
   private fun addActionToMenu(
