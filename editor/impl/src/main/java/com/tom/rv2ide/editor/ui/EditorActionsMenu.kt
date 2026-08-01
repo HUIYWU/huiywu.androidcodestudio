@@ -487,21 +487,19 @@ open class EditorActionsMenu(val editor: IDEEditor) :
   }
 
   override fun onMenuItemSelected(menu: MenuBuilder, item: MenuItem): Boolean {
-    if (!item.hasSubMenu()) {
-      return false
-    }
+    val subMenu = item.subMenu ?: return false
 
-    if (item.hasSubMenu() && item.subMenu is SubMenuBuilder) {
-      (item.subMenu as SubMenuBuilder).setCallback(this)
+    if (subMenu is SubMenuBuilder) {
+      subMenu.setCallback(this)
     }
 
     this.editor.post {
       TransitionManager.beginDelayedTransition(this.list, ChangeBounds())
       this.list.layoutManager = LinearLayoutManager(editor.context)
-      this.list.adapter = ActionsListAdapter(item.subMenu, true)
+      this.list.adapter = ActionsListAdapter(subMenu, true)
 
       measureActionsList()
-      popup.update(findWidestItem(item.subMenu), this.list.measuredHeight)
+      popup.update(findWidestItem(subMenu), this.list.measuredHeight)
     }
 
     return true
