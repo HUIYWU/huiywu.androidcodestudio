@@ -201,16 +201,33 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
         )
   }
 
-  private fun errorOffset(error: ParserError, text: String): Int {
-    // Xerces characterOffset is the primary source after fixing XMLEntityScanner.load(). Keep the
-    // line/column locator as a compatibility fallback for malformed input or older parser builds.
-    if (error.characterOffset > 0) {
-      return (error.characterOffset - 1).coerceIn(0, text.length)
-    }
-    return lineColumnOffset(error.line, error.column, text) ?: 0
-  }
+private fun errorOffset(error: ParserError, text: String): Int {
+     // Xerces characterOffset is the primary source after fixing XMLEntityScanner.load(). Keep the
+     // line/column locator as a compatibility fallback for malformed input or older parser builds.
+     if (error.characterOffset > 0) {
+       return (error.characterOffset - 1).coerceIn(0, text.length)
+     }
+     return lineColumnOffset(error.line, error.column, text) ?: 0
+   }
 
-  private fun parserErrorRange(
+   /** Converts Xerces' one-based line/column locator to a zero-based document offset. */
+   private fun lineColumnOffset(line: Int, column: Int, text: String): Int? {
+     if (line <= 0 || column <= 0 || text.isEmpty()) return null
+     var currentLine = 1
+     var lineStart = 0
+     var index = 0
+     while (index < text.length && currentLine < line) {
+       if (text[index] == '\\n') {
+         currentLine++
+         lineStart = index + 1
+       }
+       index++
+     }
+     if (currentLine != line) return null
+     return (lineStart + column - 1).coerceIn(0, text.length)
+   }
+
+   private fun parserErrorRange(
       key: String,
       offset: Int,
       text: String,
