@@ -23,6 +23,7 @@ import com.tom.rv2ide.actions.ActionItem
 import com.tom.rv2ide.actions.EditorActionItem
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
+import com.tom.rv2ide.actions.getContext
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.models.CodeActionItem
 import com.tom.rv2ide.lsp.models.CodeActionKind
@@ -64,7 +65,10 @@ internal class CorrectAttributeNameAction : EditorActionItem {
       return
     }
 
-    val attributeName = attributeNameFromDiagnostic(diagnostic.message) ?: run {
+    val attributeName =
+        (diagnostic.extra as? com.tom.rv2ide.lsp.xml.diagnostics.UnknownLayoutAttributeDiagnosticData)?.name
+            ?: attributeNameFromDiagnostic(diagnostic.message)
+            ?: run {
       markInvisible()
       return
     }
@@ -74,9 +78,13 @@ internal class CorrectAttributeNameAction : EditorActionItem {
           markInvisible()
           return
         }
+    val context = data.getContext() ?: run {
+      markInvisible()
+      return
+    }
 
     replacement = "$ANDROID_ATTRIBUTE_PREFIX$candidate"
-    label = "Change to $replacement"
+    label = context.getString(com.tom.rv2ide.resources.R.string.action_fix_attribute_name)
     visible = true
     enabled = true
   }

@@ -30,6 +30,8 @@ import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticCollector
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlElementDiagnosticRule
+import com.tom.rv2ide.lsp.xml.diagnostics.UnknownLayoutAttributeDiagnosticData
+import com.tom.rv2ide.lsp.xml.diagnostics.UnknownLayoutTagDiagnosticData
 import com.tom.rv2ide.lsp.xml.resolver.StyleableResolver
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import com.tom.rv2ide.xml.versions.ApiVersions
@@ -69,6 +71,7 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
           code = CODE_UNKNOWN_LAYOUT_TAG,
           message = "Unknown layout tag '$tagName'",
           element = element,
+          extra = UnknownLayoutTagDiagnosticData(tagName),
       )
     }
   }
@@ -124,8 +127,9 @@ internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
       ) {
         collector.error(
             code = CODE_UNKNOWN_LAYOUT_ATTRIBUTE,
-            message = "Unknown attribute '$name' for $tagName",
-            attribute = attribute,
+message = "Unknown attribute '$name' for $tagName",
+             attribute = attribute,
+             extra = UnknownLayoutAttributeDiagnosticData(name),
         )
       }
     }

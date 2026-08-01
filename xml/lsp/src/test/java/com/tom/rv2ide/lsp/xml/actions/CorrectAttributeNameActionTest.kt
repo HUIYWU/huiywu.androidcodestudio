@@ -17,6 +17,10 @@
 package com.tom.rv2ide.lsp.xml.actions
 
 import com.google.common.truth.Truth.assertThat
+import com.tom.rv2ide.lsp.models.DiagnosticItem
+import com.tom.rv2ide.lsp.models.DiagnosticSeverity
+import com.tom.rv2ide.lsp.xml.diagnostics.UnknownLayoutAttributeDiagnosticData
+import com.tom.rv2ide.models.Range
 import junit.framework.TestCase
 
 class CorrectAttributeNameActionTest : TestCase() {
@@ -59,6 +63,13 @@ class CorrectAttributeNameActionTest : TestCase() {
             )
         )
         .isEqualTo("TextView")
+  }
+
+  fun testUsesStructuredAttributePayloadBeforeMessageText() {
+    val diagnostic = DiagnosticItem("ignored", "AXML002", Range.NONE, "test", DiagnosticSeverity.ERROR).also {
+      it.extra = UnknownLayoutAttributeDiagnosticData("android:textColro")
+    }
+    assertThat((diagnostic.extra as UnknownLayoutAttributeDiagnosticData).name).isEqualTo("android:textColro")
   }
 
   fun testExtractsOnlyFrameworkAttributeDiagnosticMessage() {

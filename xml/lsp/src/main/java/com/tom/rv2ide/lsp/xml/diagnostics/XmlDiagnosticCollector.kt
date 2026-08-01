@@ -30,16 +30,16 @@ internal class XmlDiagnosticCollector(private val text: String) {
   private val diagnostics = mutableListOf<DiagnosticItem>()
   private val keys = HashSet<String>()
 
-  fun error(code: String, message: String, attribute: DOMAttr) {
-    add(code, message, ERROR, attribute)
+  fun error(code: String, message: String, attribute: DOMAttr, extra: Any = Any()) {
+    add(code, message, ERROR, attribute, extra)
   }
 
   fun warning(code: String, message: String, attribute: DOMAttr) {
     add(code, message, WARNING, attribute)
   }
 
-  fun errorTag(code: String, message: String, element: DOMElement) {
-    addTag(code, message, ERROR, element)
+  fun errorTag(code: String, message: String, element: DOMElement, extra: Any = Any()) {
+    addTag(code, message, ERROR, element, extra)
   }
 
   fun warningTag(code: String, message: String, element: DOMElement) {
@@ -51,11 +51,12 @@ internal class XmlDiagnosticCollector(private val text: String) {
       message: String,
       severity: DiagnosticSeverity,
       element: DOMElement,
+      extra: Any = Any(),
   ) {
     val tagName = element.tagName ?: return
     val start = (element.start + 1).coerceIn(0, text.length)
     val end = (start + tagName.length).coerceIn(start, text.length)
-    add(code, message, severity, start, end)
+    add(code, message, severity, start, end, extra)
   }
 
   fun errorRange(code: String, message: String, start: Int, end: Int, extra: Any = Any()) {
@@ -80,11 +81,12 @@ internal class XmlDiagnosticCollector(private val text: String) {
       message: String,
       severity: DiagnosticSeverity,
       attribute: DOMAttr,
+      extra: Any = Any(),
   ) {
     val nameRange = attribute.nodeAttrName ?: return
     val start = nameRange.start.coerceIn(0, text.length)
     val end = nameRange.end.coerceIn(start, text.length)
-    add(code, message, severity, start, end)
+    add(code, message, severity, start, end, extra)
   }
 
   private fun add(

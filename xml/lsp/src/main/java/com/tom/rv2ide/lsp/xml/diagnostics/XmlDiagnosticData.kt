@@ -15,6 +15,12 @@ internal data class ClosingTagMismatchDiagnosticData(
   val expectedName: String,
 )
 
+/** Stable facts for the AXML001 unknown layout-tag diagnostic. */
+internal data class UnknownLayoutTagDiagnosticData(val name: String)
+
+/** Stable facts for the AXML002 unknown framework-attribute diagnostic. */
+internal data class UnknownLayoutAttributeDiagnosticData(val name: String)
+
 /**
  * XML LSP diagnostic messages. The key and argument order are the stable contract;
  * the returned string is only a localized presentation value.

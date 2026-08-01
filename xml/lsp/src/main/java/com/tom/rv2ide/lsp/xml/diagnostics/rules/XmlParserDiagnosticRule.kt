@@ -75,25 +75,18 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
           } else {
             null
           }
+      // Xerces characterOffset is authoritative after XMLEntityScanner's buffer accounting fix.
+      // The line/column-derived offset is passed only as a compatibility fallback for parser
+      // builds that do not provide a usable character offset.
       val range =
           endTagMismatch?.actualNameRange
               ?: parserErrorRange(
                   error.key,
                   offset,
                   context.text,
-                  lineColumnOffset(error.line, error.column, context.text),
+                  if (error.characterOffset > 0) null
+                  else lineColumnOffset(error.line, error.column, context.text),
               )
-      if (error.key in OFFSET_RELIABLE_LINE_COLUMN_KEYS &&
-          error.characterOffset > 0 &&
-          lineColumnOffset(error.line, error.column, context.text) != offset) {
-        logMarkupOffset(
-            error = error,
-            text = context.text,
-            resolvedOffset = offset,
-            diagnosticRange = range,
-            file = context.file.toString(),
-        )
-      }
       // Older parser builds use ETagUnterminated when the actual closing name starts with the
       // expected name (for example </LinearLayout> for <LinearLayou>). Preserve that fallback
       // only when source reconstruction proves it is a mismatch rather than a missing `>`. Newer
@@ -215,54 +208,6 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
       return (error.characterOffset - 1).coerceIn(0, text.length)
     }
     return lineColumnOffset(error.line, error.column, text) ?: 0
-  }
-
-  private fun logMarkupOffset(
-      error: ParserError,
-      text: String,
-      resolvedOffset: Int,
-      diagnosticRange: IntRange,
-      file: String,
-  ) {
-    val characterCandidate = (error.characterOffset - 1).takeIf { error.characterOffset > 0 }
-    val lineColumnCandidate = lineColumnOffset(error.line, error.column, text)
-    val previousLessThan = text.lastIndexOf('<', resolvedOffset.coerceAtMost(text.length) - 1)
-    log.warn(
-        "XML005 markup offset trace file={} key={} arguments={} rawCharOffset={} rawLine={} " +
-            "rawColumn={} charCandidate={} lineColumnCandidate={} resolvedOffset={} " +
-            "diagnosticRange={}..{} previousLessThan={} resolvedContext='{}' lessThanContext='{}'",
-        file,
-        error.key,
-        error.arguments,
-        error.characterOffset,
-        error.line,
-        error.column,
-        characterCandidate,
-        lineColumnCandidate,
-        resolvedOffset,
-        diagnosticRange.first,
-        diagnosticRange.last,
-        previousLessThan,
-        escapedContext(text, resolvedOffset),
-        escapedContext(text, previousLessThan),
-    )
-  }
-
-  private fun lineColumnOffset(lineNumber: Int, columnNumber: Int, text: String): Int? {
-    if (lineNumber <= 0 || columnNumber <= 0) return null
-    var line = 1
-    var offset = 0
-    while (offset < text.length && line < lineNumber) {
-      if (text[offset++] == '\n') line++
-    }
-    return (offset + columnNumber - 1).coerceIn(0, text.length)
-  }
-
-  private fun escapedContext(text: String, center: Int): String {
-    if (center !in 0..text.length) return "<unavailable>"
-    val start = (center - LOG_CONTEXT_RADIUS).coerceAtLeast(0)
-    val end = (center + LOG_CONTEXT_RADIUS).coerceAtMost(text.length)
-    return text.substring(start, end).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
   }
 
   private fun parserErrorRange(
@@ -629,13 +574,9 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   private const val E_TAG_NAME_MISMATCH = "ETagNameMismatch"
   private const val E_TAG_UNTERMINATED = "ETagUnterminated"
   private const val MARKUP_NOT_RECOGNIZED_IN_CONTENT = "MarkupNotRecognizedInContent"
-  private val OFFSET_RELIABLE_LINE_COLUMN_KEYS =
-      setOf(MARKUP_NOT_RECOGNIZED_IN_CONTENT, "LessthanInAttValue", "DashDashInComment")
-  // Offset probe logs every parser fact emitted for a document containing an isolated '<'/'<>'.
 
   private val END_TAG_NAME_ERROR_KEYS = setOf(E_TAG_REQUIRED, E_TAG_UNTERMINATED)
   private const val MAX_PARSER_ERRORS = 20
-  private const val LOG_CONTEXT_RADIUS = 24
   private const val MAX_ATTRIBUTE_LOOKBACK_TAGS = 4
   private const val MAX_ATTRIBUTE_LOOKBACK_CHARS = 4096
   private const val QUOTES = "\"'"

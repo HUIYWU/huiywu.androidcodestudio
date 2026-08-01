@@ -17,9 +17,20 @@
 package com.tom.rv2ide.lsp.xml.actions
 
 import com.google.common.truth.Truth.assertThat
+import com.tom.rv2ide.lsp.models.DiagnosticItem
+import com.tom.rv2ide.lsp.models.DiagnosticSeverity
+import com.tom.rv2ide.lsp.xml.diagnostics.UnknownLayoutTagDiagnosticData
+import com.tom.rv2ide.models.Range
 import junit.framework.TestCase
 
 class CorrectTagNameActionTest : TestCase() {
+
+  fun testUsesStructuredTagPayload() {
+    val diagnostic = DiagnosticItem("ignored", "AXML001", Range.NONE, "test", DiagnosticSeverity.ERROR).also {
+      it.extra = UnknownLayoutTagDiagnosticData("TextVeiw")
+    }
+    assertThat((diagnostic.extra as UnknownLayoutTagDiagnosticData).name).isEqualTo("TextVeiw")
+  }
 
   fun testExtractsSimpleUnknownLayoutTagDiagnosticMessage() {
     assertThat(CorrectTagNameAction.tagNameFromDiagnostic("Unknown layout tag 'TextVeiw'"))

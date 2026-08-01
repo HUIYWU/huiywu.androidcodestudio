@@ -22,6 +22,7 @@ import com.tom.rv2ide.actions.ActionItem
 import com.tom.rv2ide.actions.EditorActionItem
 import com.tom.rv2ide.actions.hasRequiredData
 import com.tom.rv2ide.actions.markInvisible
+import com.tom.rv2ide.actions.getContext
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.models.CodeActionItem
@@ -62,7 +63,10 @@ internal class CorrectTagNameAction : EditorActionItem {
       return
     }
 
-    val tagName = tagNameFromDiagnostic(diagnostic.message) ?: run {
+    val tagName =
+        (diagnostic.extra as? com.tom.rv2ide.lsp.xml.diagnostics.UnknownLayoutTagDiagnosticData)?.name
+            ?: tagNameFromDiagnostic(diagnostic.message)
+            ?: run {
       markInvisible()
       return
     }
@@ -81,8 +85,13 @@ internal class CorrectTagNameAction : EditorActionItem {
           return
         }
 
+    val context = data.getContext() ?: run {
+      markInvisible()
+      return
+    }
+
     replacement = candidate
-    label = "Change to $candidate"
+    label = context.getString(com.tom.rv2ide.resources.R.string.action_fix_tag_name)
     visible = true
     enabled = true
   }
