@@ -343,6 +343,39 @@ public class XMLEntityScanner implements XMLLocator {
         return fCurrentEntity != null ? fCurrentEntity.fTotalCountTillLastLoad + fCurrentEntity.position : -1 ;
     }
 
+    /** Diagnostic snapshot for investigating parser locator offsets. */
+    public final String getLocationDebugInfo() {
+        if (fCurrentEntity == null) return "entity=null";
+        int computedOffset = fCurrentEntity.fTotalCountTillLastLoad + fCurrentEntity.position;
+        int previousLoadEnd = fCurrentEntity.fTotalCountTillLastLoad;
+        return "offset=" + computedOffset +
+                ",totalCountTillLastLoad=" + fCurrentEntity.fTotalCountTillLastLoad +
+                ",lastCount=" + fCurrentEntity.fLastCount +
+                ",position=" + fCurrentEntity.position +
+                ",count=" + fCurrentEntity.count +
+                ",startPosition=" + fCurrentEntity.startPosition +
+                ",previousLoadEnd=" + previousLoadEnd +
+                ",line=" + fCurrentEntity.lineNumber +
+                ",column=" + fCurrentEntity.columnNumber +
+                ",entity=" + fCurrentEntity.name +
+                ",loadTrace=" + fLoadDebugTrace;
+    }
+
+    private final StringBuilder fLoadDebugTrace = new StringBuilder();
+
+    private void traceLoad(String phase, int offset, int oldTotal, int oldLastCount,
+            int oldPosition, int oldCount, int readCount) {
+        if (fLoadDebugTrace.length() > 600) fLoadDebugTrace.delete(0, 300);
+        fLoadDebugTrace.append('[').append(phase)
+                .append(" offset=").append(offset)
+                .append(" oldTotal=").append(oldTotal)
+                .append(" oldLastCount=").append(oldLastCount)
+                .append(" oldPos=").append(oldPosition)
+                .append(" oldCount=").append(oldCount)
+                .append(" read=").append(readCount)
+                .append("]");
+    }
+
     /** Returns the expanded system identifier.  */
     public final String getExpandedSystemId() {
         return (fCurrentEntity != null && fCurrentEntity.entityLocation != null) ? fCurrentEntity.entityLocation.getExpandedSystemId() : null;
@@ -1766,6 +1799,10 @@ public class XMLEntityScanner implements XMLLocator {
      */
     final boolean load(int offset, boolean changeEntity)
     throws IOException {
+        int oldTotal = fCurrentEntity.fTotalCountTillLastLoad;
+        int oldLastCount = fCurrentEntity.fLastCount;
+        int oldPosition = fCurrentEntity.position;
+        int oldCount = fCurrentEntity.count;
         if (DEBUG_BUFFER) {
             System.out.print("(load, "+offset+": ");
             print();
@@ -1780,6 +1817,7 @@ public class XMLEntityScanner implements XMLLocator {
         }
         if (DEBUG_BUFFER) System.out.println("  length to try to read: "+length);
         int count = fCurrentEntity.reader.read(fCurrentEntity.ch, offset, length);
+        traceLoad("load", offset, oldTotal, oldLastCount, oldPosition, oldCount, count);
         if (DEBUG_BUFFER) System.out.println("  length actually read:  "+count);
 
         // reset count and position

@@ -42,6 +42,26 @@ class XmlParserDiagnosticRuleTest : TestCase() {
     assertThat(diagnostics.single().message).isNotEmpty()
   }
 
+  fun testLessThanInAttributeValueStaysOnTheLessThanCharacter() {
+    val text = "<FrameLayout\n        android:layout_height=\"99<dp\"/>"
+    val diagnostic = diagnose(text).single { it.code == "XML005" }
+
+    assertThat(diagnostic.range.start.line).isEqualTo(1)
+    assertThat(diagnostic.range.end.line).isEqualTo(1)
+    assertThat(diagnostic.range.start.column).isEqualTo(33)
+    assertThat(diagnostic.range.end.column).isEqualTo(34)
+  }
+
+  fun testInvalidCommentDashRangeStaysInsideComment() {
+    val text = "<Root>\n    <!-- -- -->\n</Root>"
+    val diagnostic = diagnose(text).single { it.code == "XML005" }
+
+    assertThat(diagnostic.range.start.line).isEqualTo(1)
+    assertThat(diagnostic.range.end.line).isEqualTo(1)
+    assertThat(diagnostic.range.start.column).isEqualTo(9)
+    assertThat(diagnostic.range.end.column).isEqualTo(11)
+  }
+
   fun testMissingEqualsRangeStaysOnMalformedAttributeInMultilineTag() {
     val text =
         """

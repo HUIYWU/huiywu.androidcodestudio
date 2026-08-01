@@ -76,7 +76,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
             null
           }
       val range = endTagMismatch?.actualNameRange ?: parserErrorRange(error.key, offset, context.text)
-      if (error.key == MARKUP_NOT_RECOGNIZED_IN_CONTENT && hasOffsetProbeMarkup(context.text)) {
+      if (error.key in OFFSET_RELIABLE_LINE_COLUMN_KEYS) {
         logMarkupOffset(
             error = error,
             text = context.text,
@@ -203,7 +203,7 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     // In this relocated Xerces branch MarkupNotRecognizedInContent can retain a stale absolute
     // character offset after the entity scanner has read ahead. Its line/column locator still
     // tracks the malformed markup correctly, so prefer that source only for this parser fact.
-    if (error.key == MARKUP_NOT_RECOGNIZED_IN_CONTENT) {
+    if (error.key in OFFSET_RELIABLE_LINE_COLUMN_KEYS) {
       lineColumnOffset(error.line, error.column, text)?.let { return it }
     }
     if (error.characterOffset > 0) {
@@ -211,9 +211,6 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     }
     return lineColumnOffset(error.line, error.column, text) ?: 0
   }
-
-  private fun hasOffsetProbeMarkup(text: String): Boolean =
-      text.lineSequence().any { line -> line.trim() == "<" || line.trim() == "<>" }
 
   private fun logMarkupOffset(
       error: ParserError,
@@ -276,12 +273,27 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
           findMalformedAttributeName(text, safeOffset, requireMissingEquals = false)
               ?: selectNameAround(safeOffset, text)
       "AttributeNotUnique" -> selectNameAround(safeOffset, text)
-      "LessthanInAttValue" -> safeOffset..safeOffset
-      "DashDashInComment" ->
-          (safeOffset - 1).coerceAtLeast(0)..(safeOffset + 1).coerceAtMost(text.lastIndex)
+      "LessthanInAttValue" -> findLessThanInAttributeValue(text, safeOffset)
+      "DashDashInComment" -> findInvalidCommentDashRange(text, safeOffset)
       MARKUP_NOT_RECOGNIZED_IN_CONTENT -> findMalformedMarkupRange(text, safeOffset)
       else -> safeOffset..safeOffset
     }
+  }
+
+  private fun findLessThanInAttributeValue(text: String, locatorOffset: Int): IntRange {
+    val lineStart = text.lastIndexOf('\n', (locatorOffset - 1).coerceAtLeast(0)) + 1
+    val lineEnd = text.indexOf('\n', locatorOffset).let { if (it < 0) text.length else it }
+    val lessThan = text.lastIndexOf('<', locatorOffset.coerceAtMost(lineEnd - 1))
+    return if (lessThan >= lineStart) lessThan..lessThan else locatorOffset..locatorOffset
+  }
+
+  private fun findInvalidCommentDashRange(text: String, locatorOffset: Int): IntRange {
+    val lineStart = text.lastIndexOf('\n', (locatorOffset - 1).coerceAtLeast(0)) + 1
+    val lineEnd = text.indexOf('\n', locatorOffset).let { if (it < 0) text.length else it }
+    val commentStart = text.lastIndexOf("<!--", locatorOffset.coerceAtMost(lineEnd))
+    if (commentStart < lineStart) return locatorOffset..locatorOffset
+    val commentEnd = text.indexOf("--", commentStart + 4).takeIf { it in commentStart until lineEnd }
+    return if (commentEnd != null) commentEnd..(commentEnd + 1) else locatorOffset..locatorOffset
   }
 
   private fun findMalformedMarkupRange(text: String, locatorOffset: Int): IntRange {
@@ -606,6 +618,8 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   private const val E_TAG_NAME_MISMATCH = "ETagNameMismatch"
   private const val E_TAG_UNTERMINATED = "ETagUnterminated"
   private const val MARKUP_NOT_RECOGNIZED_IN_CONTENT = "MarkupNotRecognizedInContent"
+  private val OFFSET_RELIABLE_LINE_COLUMN_KEYS =
+      setOf(MARKUP_NOT_RECOGNIZED_IN_CONTENT, "LessthanInAttValue", "DashDashInComment")
   // Offset probe logs every parser fact emitted for a document containing an isolated '<'/'<>'.
 
   private val END_TAG_NAME_ERROR_KEYS = setOf(E_TAG_REQUIRED, E_TAG_UNTERMINATED)

@@ -402,8 +402,18 @@ public class XMLErrorReporter
      * @see #SEVERITY_FATAL_ERROR
      */
     public String reportError(XMLLocator location,
-                            String domain, String key, Object[] arguments,
-                            short severity, Exception exception) throws XNIException {
+                             String domain, String key, Object[] arguments,
+                             short severity, Exception exception) throws XNIException {
+
+        if (isOffsetProbeKey(key) && location instanceof XMLEntityScanner) {
+            System.err.println("XERCES_OFFSET_TRACE key=" + key +
+                    ",arguments=" + java.util.Arrays.toString(arguments) +
+                    ",severity=" + severity +
+                    ",locatorLine=" + location.getLineNumber() +
+                    ",locatorColumn=" + location.getColumnNumber() +
+                    ",locatorCharacterOffset=" + location.getCharacterOffset() +
+                    ",scanner=" + ((XMLEntityScanner) location).getLocationDebugInfo());
+        }
 
         // REVISIT: [Q] Should we do anything about invalid severity
         //              parameter? -Ac
@@ -466,6 +476,12 @@ public class XMLErrorReporter
         return message;
 
     } // reportError(XMLLocator,String,String,Object[],short,Exception):String
+
+    private static boolean isOffsetProbeKey(String key) {
+        return "MarkupNotRecognizedInContent".equals(key) ||
+                "LessthanInAttValue".equals(key) ||
+                "DashDashInComment".equals(key);
+    }
 
     //
     // XMLComponent methods
