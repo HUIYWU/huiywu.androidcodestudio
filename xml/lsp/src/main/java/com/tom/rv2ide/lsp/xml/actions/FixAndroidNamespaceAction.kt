@@ -139,6 +139,10 @@ internal class FixAndroidNamespaceAction : EditorActionItem {
   }
 
   internal companion object {
+    private val traceLog = LoggerFactory.getLogger(FixAndroidNamespaceAction::class.java)
+
+    private fun preview(text: String): String =
+        text.take(160).replace("\n", "\\n").replace("\r", "\\r")
     const val CODE_UNDECLARED_NAMESPACE = "XML003"
     const val CODE_INVALID_ANDROID_NAMESPACE = "XML004"
     const val ANDROID_PREFIX = "android"
@@ -146,14 +150,47 @@ internal class FixAndroidNamespaceAction : EditorActionItem {
 
     internal fun namespaceInsertion(text: String): TextEdit? {
       val tagStart = text.indexOf('<')
-      if (tagStart < 0 || text.getOrNull(tagStart + 1) in setOf('/', '!', '?')) return null
+      if (tagStart < 0) {
+        traceLog.warn("XML namespace insertion trace: rejected reason=noStartTag text={}", preview(text))
+        return null
+      }
+      if (text.getOrNull(tagStart + 1) in setOf('/', '!', '?')) {
+        traceLog.warn(
+            "XML namespace insertion trace: rejected reason=nonElementStart tagStart={} next={} text={}",
+            tagStart,
+            text.getOrNull(tagStart + 1),
+            preview(text),
+        )
+        return null
+      }
       var nameEnd = tagStart + 1
       while (nameEnd < text.length && !text[nameEnd].isWhitespace() && text[nameEnd] != '>' && text[nameEnd] != '/') {
         nameEnd++
       }
-      if (nameEnd == tagStart + 1 || nameEnd >= text.length) return null
-      val tagEnd = findStartTagEnd(text, nameEnd) ?: return null
-      if (text.substring(tagStart, tagEnd).contains("xmlns:android")) return null
+      if (nameEnd == tagStart + 1 || nameEnd >= text.length) {
+        traceLog.warn(
+            "XML namespace insertion trace: rejected reason=invalidTagName tagStart={} nameEnd={} text={}",
+            tagStart,
+            nameEnd,
+            preview(text),
+        )
+        return null
+      }
+      val tagEnd = findStartTagEnd(text, nameEnd)
+      if (tagEnd == null) {
+        traceLog.warn(
+            "XML namespace insertion trace: rejected reason=unclosedOrNestedStartTag tagStart={} nameEnd={} text={}",
+            tagStart,
+            nameEnd,
+            preview(text),
+        )
+        return null
+      }
+      if (text.substring(tagStart, tagEnd).contains("xmlns:android")) {
+        traceLog.warn("XML namespace insertion trace: rejected reason=alreadyDeclared tagStart={} tagEnd={}", tagStart, tagEnd)
+        return null
+      }
+      traceLog.warn("XML namespace insertion trace: accepted tagStart={} nameEnd={} tagEnd={}", tagStart, nameEnd, tagEnd)
       return TextEdit(
           Range(offsetToPosition(text, nameEnd), offsetToPosition(text, nameEnd)),
           "\n    xmlns:android=\"$ANDROID_NAMESPACE_URI\"",
