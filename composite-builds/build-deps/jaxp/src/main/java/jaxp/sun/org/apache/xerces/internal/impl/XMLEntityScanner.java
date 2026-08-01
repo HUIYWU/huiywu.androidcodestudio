@@ -1808,8 +1808,14 @@ public class XMLEntityScanner implements XMLLocator {
             print();
             System.out.println();
         }
-        //maintaing the count till last load
-        fCurrentEntity.fTotalCountTillLastLoad = fCurrentEntity.fTotalCountTillLastLoad + fCurrentEntity.fLastCount ;
+        // Keep the absolute offset based on characters consumed from the previous buffer.
+        // When load() is called with a non-zero offset, the prefix [0, offset) was retained
+        // and copied forward; adding fLastCount would count that retained prefix twice.
+        int consumedFromPreviousBuffer = fCurrentEntity.count - offset;
+        if (consumedFromPreviousBuffer < 0) {
+            consumedFromPreviousBuffer = 0;
+        }
+        fCurrentEntity.fTotalCountTillLastLoad += consumedFromPreviousBuffer;
         // read characters
         int length = fCurrentEntity.ch.length - offset;
         if (!fCurrentEntity.mayReadChunks && length > XMLEntityManager.DEFAULT_XMLDECL_BUFFER_SIZE) {
