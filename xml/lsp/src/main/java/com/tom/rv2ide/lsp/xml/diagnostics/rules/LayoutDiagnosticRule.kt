@@ -39,9 +39,12 @@ import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import com.tom.rv2ide.xml.versions.ApiVersions
 import com.tom.rv2ide.xml.widgets.WidgetTable
 import org.eclipse.lemminx.dom.DOMElement
+import org.slf4j.LoggerFactory
 
 /** AXML001, AXML002, AXML004, AXML006 and AXML007: conservative Layout diagnostics. */
 internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
+  private val log = LoggerFactory.getLogger(LayoutDiagnosticRule::class.java)
+
   override val id: String = "layout"
 
   override fun supports(context: XmlDiagnosticContext): Boolean = context.isLayoutFile
@@ -303,13 +306,20 @@ message = "Unknown attribute '$name' for $tagName",
               ?.findValue(ConfigDescription())
               ?.value as? AttributeResource
               ?: return@forEach
-      validateLiteralAttributeValue(attr, value)?.let { message ->
-        collector.errorValue(
-            CODE_INVALID_ATTRIBUTE_VALUE,
-            message,
-            attribute,
-            attributeValueFix(name, attr.typeMask, value) ?: Any(),
+      val validationMessage = validateLiteralAttributeValue(attr, value)
+      val fix = attributeValueFix(name, attr.typeMask, value)
+      if (name == "android:textColor" && COLOR_LITERAL_WITHOUT_HASH.matches(value)) {
+        log.warn(
+            "AXML004 color trace: name={} value={} typeMask=0x{} validation={} fix={}",
+            name,
+            value,
+            attr.typeMask.toString(16),
+            validationMessage,
+            fix,
         )
+      }
+      validationMessage?.let { message ->
+        collector.errorValue(CODE_INVALID_ATTRIBUTE_VALUE, message, attribute, fix ?: Any())
       }
     }
   }
