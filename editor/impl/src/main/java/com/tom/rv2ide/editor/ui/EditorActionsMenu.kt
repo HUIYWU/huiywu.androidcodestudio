@@ -300,8 +300,10 @@ open class EditorActionsMenu(val editor: IDEEditor) :
 
   private fun refreshRootMenu() {
     sizeAnimator?.cancel()
-    list.layoutParams =
-        ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    list.layoutParams.apply {
+      width = ViewGroup.LayoutParams.WRAP_CONTENT
+      height = ViewGroup.LayoutParams.WRAP_CONTENT
+    }
     list.layoutManager = LinearLayoutManager(editor.context, RecyclerView.HORIZONTAL, false)
     fillMenu()
     measureActionsList()
@@ -326,7 +328,10 @@ open class EditorActionsMenu(val editor: IDEEditor) :
         val fraction = animator.animatedFraction
         val animatedWidth = (startWidth + (targetWidth - startWidth) * fraction).toInt()
         val animatedHeight = (startHeight + (targetHeight - startHeight) * fraction).toInt()
-        list.layoutParams = ViewGroup.LayoutParams(animatedWidth, animatedHeight)
+        list.layoutParams.apply {
+          width = animatedWidth
+          height = animatedHeight
+        }
         popup.update(animatedWidth, animatedHeight)
       }
       start()
