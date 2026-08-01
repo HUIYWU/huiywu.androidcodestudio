@@ -34,8 +34,8 @@ internal class XmlDiagnosticCollector(private val text: String) {
     add(code, message, ERROR, attribute, extra)
   }
 
-  fun warning(code: String, message: String, attribute: DOMAttr) {
-    add(code, message, WARNING, attribute)
+  fun warning(code: String, message: String, attribute: DOMAttr, extra: Any = Any()) {
+    add(code, message, WARNING, attribute, extra)
   }
 
   fun errorTag(code: String, message: String, element: DOMElement, extra: Any = Any()) {
@@ -65,7 +65,21 @@ internal class XmlDiagnosticCollector(private val text: String) {
     add(code, message, ERROR, safeStart, safeEnd, extra)
   }
 
-  fun errorValue(code: String, message: String, attribute: DOMAttr) {
+  fun errorValue(code: String, message: String, attribute: DOMAttr, extra: Any = Any()) {
+    addValue(code, message, ERROR, attribute, extra)
+  }
+
+  fun warningValue(code: String, message: String, attribute: DOMAttr, extra: Any = Any()) {
+    addValue(code, message, WARNING, attribute, extra)
+  }
+
+  private fun addValue(
+      code: String,
+      message: String,
+      severity: DiagnosticSeverity,
+      attribute: DOMAttr,
+      extra: Any,
+  ) {
     val valueRange = attribute.nodeAttrValue ?: return
     var start = valueRange.start.coerceIn(0, text.length)
     var end = valueRange.end.coerceIn(start, text.length)
@@ -73,7 +87,7 @@ internal class XmlDiagnosticCollector(private val text: String) {
       start++
       end--
     }
-    add(code, message, ERROR, start, end)
+    add(code, message, severity, start, end, extra)
   }
 
   private fun add(

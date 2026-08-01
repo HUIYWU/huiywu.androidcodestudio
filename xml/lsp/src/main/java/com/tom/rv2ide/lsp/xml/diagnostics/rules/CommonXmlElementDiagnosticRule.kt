@@ -17,6 +17,8 @@
 package com.tom.rv2ide.lsp.xml.diagnostics.rules
 
 import com.tom.rv2ide.lsp.xml.diagnostics.ClosingTagMismatchDiagnosticData
+import com.tom.rv2ide.lsp.xml.diagnostics.InvalidAndroidNamespaceDiagnosticData
+import com.tom.rv2ide.lsp.xml.diagnostics.MissingAndroidNamespaceDiagnosticData
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticCollector
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlElementDiagnosticRule
@@ -134,6 +136,10 @@ internal object CommonXmlElementDiagnosticRule :
             code = CODE_UNDECLARED_NAMESPACE,
             message = "Namespace prefix '$prefix' is not declared",
             attribute = attribute,
+            extra =
+                if (prefix == ANDROID_NAMESPACE_PREFIX)
+                    MissingAndroidNamespaceDiagnosticData(prefix)
+                else Any(),
         )
       }
     }
@@ -145,10 +151,15 @@ internal object CommonXmlElementDiagnosticRule :
         return@forEach
       }
       if (attribute.value != ANDROID_NAMESPACE_URI) {
-        collector.warning(
+        // The quick fix replaces only the URI value, not the xmlns:android attribute name.
+        collector.warningValue(
             code = CODE_INVALID_ANDROID_NAMESPACE,
             message = "The android namespace must be '$ANDROID_NAMESPACE_URI'",
             attribute = attribute,
+            extra = InvalidAndroidNamespaceDiagnosticData(
+                actualUri = attribute.value.orEmpty(),
+                expectedUri = ANDROID_NAMESPACE_URI,
+            ),
         )
       }
     }
@@ -165,6 +176,7 @@ internal object CommonXmlElementDiagnosticRule :
   private const val CODE_INVALID_ANDROID_NAMESPACE = "XML004"
   private const val XMLNS_ATTRIBUTE = "xmlns"
   private const val XMLNS_PREFIX = "xmlns:"
+  private const val ANDROID_NAMESPACE_PREFIX = "android"
   private const val ANDROID_NAMESPACE_DECLARATION = "xmlns:android"
   private const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
 }

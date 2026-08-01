@@ -21,6 +21,15 @@ internal data class UnknownLayoutTagDiagnosticData(val name: String)
 /** Stable facts for the AXML002 unknown framework-attribute diagnostic. */
 internal data class UnknownLayoutAttributeDiagnosticData(val name: String)
 
+/** Stable facts for a missing `xmlns:android` declaration. */
+internal data class MissingAndroidNamespaceDiagnosticData(val prefix: String = "android")
+
+/** Stable facts for an `xmlns:android` declaration with a non-framework URI. */
+internal data class InvalidAndroidNamespaceDiagnosticData(
+  val actualUri: String,
+  val expectedUri: String,
+)
+
 /**
  * XML LSP diagnostic messages. The key and argument order are the stable contract;
  * the returned string is only a localized presentation value.

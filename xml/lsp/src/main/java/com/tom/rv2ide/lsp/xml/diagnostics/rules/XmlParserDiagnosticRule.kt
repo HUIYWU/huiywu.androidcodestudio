@@ -253,12 +253,15 @@ private fun errorOffset(error: ParserError, text: String): Int {
     }
   }
 
-  private fun findLessThanInAttributeValue(text: String, locatorOffset: Int): IntRange {
-    val lineStart = text.lastIndexOf('\n', (locatorOffset - 1).coerceAtLeast(0)) + 1
-    val lineEnd = text.indexOf('\n', locatorOffset).let { if (it < 0) text.length else it }
-    val lessThan = text.lastIndexOf('<', locatorOffset.coerceAtMost(lineEnd - 1))
-    return if (lessThan >= lineStart) lessThan..lessThan else locatorOffset..locatorOffset
-  }
+private fun findLessThanInAttributeValue(text: String, locatorOffset: Int): IntRange {
+     val lineStart = text.lastIndexOf('\n', (locatorOffset - 1).coerceAtLeast(0)) + 1
+     val lineEnd = text.indexOf('\n', locatorOffset).let { if (it < 0) text.length else it }
+     // Xerces may locate this error on the character immediately before '<'. Prefer the first
+     // less-than at or after that locator on the same line, then fall back to a preceding one.
+     val forward = text.indexOf('<', locatorOffset).takeIf { it in lineStart until lineEnd }
+     val lessThan = forward ?: text.lastIndexOf('<', locatorOffset.coerceAtMost(lineEnd - 1))
+     return if (lessThan >= lineStart) lessThan..lessThan else locatorOffset..locatorOffset
+   }
 
   private fun findInvalidCommentDashRange(text: String, locatorOffset: Int): IntRange {
     val lineStart = text.lastIndexOf('\n', (locatorOffset - 1).coerceAtLeast(0)) + 1
