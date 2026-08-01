@@ -148,14 +148,14 @@ public final class KotlinJvmTypeIndex {
       return Collections.emptyMap();
     }
     final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
-    final CachedAliases cached = aliasCacheForRevision(module);
+    final CachedAliases cached = aliasCacheWithDeclarationIndexForRevision(module);
     final java.util.Map<String, GenericTypeAlias> existing =
         cached.genericAliases.get(consumerFile, consumerSource);
     if (existing != null) {
       return existing;
     }
     final java.util.Map<String, GenericTypeAlias> indexed =
-        aliasDeclarationIndexForRevision(module).visibleGenericAliases(consumerFile, consumerSource);
+        cached.declarationIndex.visibleGenericAliases(consumerFile, consumerSource);
     cached.genericAliases.put(consumerFile, consumerSource, indexed);
     return indexed;
   }
@@ -191,14 +191,14 @@ public final class KotlinJvmTypeIndex {
       return Collections.emptyMap();
     }
     final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
-    final CachedAliases cached = aliasCacheForRevision(module);
+    final CachedAliases cached = aliasCacheWithDeclarationIndexForRevision(module);
     final java.util.Map<String, String> existing =
         cached.directAliases.get(consumerFile, consumerSource);
     if (existing != null) {
       return existing;
     }
     final java.util.Map<String, String> indexed =
-        aliasDeclarationIndexForRevision(module).visibleDirectAliases(consumerFile, consumerSource);
+        cached.declarationIndex.visibleDirectAliases(consumerFile, consumerSource);
     cached.directAliases.put(consumerFile, consumerSource, indexed);
     return indexed;
   }
@@ -260,31 +260,25 @@ public final class KotlinJvmTypeIndex {
     return JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled();
   }
 
-  private static AliasDeclarationIndex aliasDeclarationIndexForRevision(ModuleProject module) {
-    final long revision = module.getSourceIndexVersion();
-    final CachedAliases cached = ALIAS_CACHE.get(module);
-    if (cached != null && cached.revision == revision && cached.declarationIndex != null) {
-      return cached.declarationIndex;
+  private static CachedAliases aliasCacheWithDeclarationIndexForRevision(ModuleProject module) {
+    while (true) {
+      final long revision = module.getSourceIndexVersion();
+      final CachedAliases existing = ALIAS_CACHE.get(module);
+      if (existing != null && existing.revision == revision) return existing;
+      // Index construction reads many source files. Serialize only this cold/revision-change path
+      // per module so concurrent first consumers publish one complete immutable snapshot.
+      synchronized (module) {
+        final long lockedRevision = module.getSourceIndexVersion();
+        final CachedAliases lockedExisting = ALIAS_CACHE.get(module);
+        if (lockedExisting != null && lockedExisting.revision == lockedRevision) return lockedExisting;
+        final AliasDeclarationIndex indexed = AliasDeclarationIndex.build(module.getCompileSourceDirectories());
+        // Do not publish a snapshot that was built while the module source revision changed.
+        if (module.getSourceIndexVersion() != lockedRevision) continue;
+        final CachedAliases replacement = new CachedAliases(lockedRevision, indexed);
+        ALIAS_CACHE.put(module, replacement);
+        return replacement;
+      }
     }
-    final AliasDeclarationIndex indexed = AliasDeclarationIndex.build(module.getCompileSourceDirectories());
-    final CachedAliases replacement = new CachedAliases(revision, indexed);
-    if (cached == null || cached.revision != revision) {
-      ALIAS_CACHE.put(module, replacement);
-      return indexed;
-    }
-    cached.declarationIndex = indexed;
-    return indexed;
-  }
-
-  private static CachedAliases aliasCacheForRevision(ModuleProject module) {
-    final long revision = module.getSourceIndexVersion();
-    final CachedAliases existing = ALIAS_CACHE.get(module);
-    if (existing != null && existing.revision == revision) {
-      return existing;
-    }
-    final CachedAliases replacement = new CachedAliases(revision);
-    ALIAS_CACHE.put(module, replacement);
-    return replacement;
   }
 
   /** Removes cached Kotlin source symbols and alias visibility results for a module. */
