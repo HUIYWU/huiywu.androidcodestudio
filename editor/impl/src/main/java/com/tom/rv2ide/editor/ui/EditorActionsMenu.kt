@@ -245,6 +245,10 @@ open class EditorActionsMenu(val editor: IDEEditor) :
 
   @JvmOverloads
   open fun displayWindow(update: Boolean = false) {
+    if (update) {
+      refreshRootMenu()
+    }
+
     var top: Int
     val cursor = editor.cursor
     top =
@@ -291,6 +295,15 @@ open class EditorActionsMenu(val editor: IDEEditor) :
     onFillMenu(registry, data)
 
     this.list.adapter = ActionsListAdapter(getMenu())
+  }
+
+  private fun refreshRootMenu() {
+    fillMenu()
+    measureActionsList()
+    popup.update(
+        min(editor.width - SizeUtils.dp2px(45f), list.measuredWidth),
+        list.measuredHeight,
+    )
   }
 
   protected open fun onFillMenu(registry: ActionsRegistry, data: ActionData) {
@@ -367,7 +380,7 @@ open class EditorActionsMenu(val editor: IDEEditor) :
   }
 
   @SuppressLint("InflateParams")
-  private fun findWidestItem(): Int {
+  private fun findWidestItem(menu: Menu): Int {
     var widest = 0
     val text =
         LayoutInflater.from(editor.context).inflate(layout.layout_popup_menu_item, null)
@@ -377,8 +390,8 @@ open class EditorActionsMenu(val editor: IDEEditor) :
     val drawablePadding = text.iconPadding
     val extraWidth = dp30 * 2
 
-    for (i in 0 until getMenu().size()) {
-      val item = getMenu().getItem(i)
+    for (i in 0 until menu.size()) {
+      val item = menu.getItem(i)
       val title = item.title.toString()
       var width = paddingHorizontal + (drawablePadding * 2)
       width += text.paint.measureText(title).toInt()
@@ -488,7 +501,7 @@ open class EditorActionsMenu(val editor: IDEEditor) :
       this.list.adapter = ActionsListAdapter(item.subMenu, true)
 
       measureActionsList()
-      popup.update(findWidestItem(), this.list.measuredHeight)
+      popup.update(findWidestItem(item.subMenu), this.list.measuredHeight)
     }
 
     return true

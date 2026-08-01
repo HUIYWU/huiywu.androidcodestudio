@@ -271,11 +271,17 @@ public final class KotlinJvmTypeIndex {
         final long lockedRevision = module.getSourceIndexVersion();
         final CachedAliases lockedExisting = ALIAS_CACHE.get(module);
         if (lockedExisting != null && lockedExisting.revision == lockedRevision) return lockedExisting;
+        final long startedAt = System.nanoTime();
         final AliasDeclarationIndex indexed = AliasDeclarationIndex.build(module.getCompileSourceDirectories());
+        final long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
         // Do not publish a snapshot that was built while the module source revision changed.
-        if (module.getSourceIndexVersion() != lockedRevision) continue;
+        if (module.getSourceIndexVersion() != lockedRevision) {
+          LOG.debug("Discarded Kotlin typealias declaration index for module {} revision {} after {} ms; source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
+          continue;
+        }
         final CachedAliases replacement = new CachedAliases(lockedRevision, indexed);
         ALIAS_CACHE.put(module, replacement);
+        LOG.debug("Built Kotlin typealias declaration index for module {} revision {}: direct={} generic={} in {} ms", module.getPath(), lockedRevision, indexed.directAliasCount(), indexed.genericAliasCount(), elapsedMillis);
         return replacement;
       }
     }
@@ -503,6 +509,20 @@ public final class KotlinJvmTypeIndex {
       }
       conflicts.forEach(result::remove);
       return result.isEmpty() ? Collections.emptyMap() : Collections.unmodifiableMap(result);
+    }
+
+    int directAliasCount() {
+      return declarationCount(directByPackage);
+    }
+
+    int genericAliasCount() {
+      return declarationCount(genericByPackage);
+    }
+
+    private static int declarationCount(java.util.Map<String, ? extends java.util.List<?>> declarations) {
+      int count = 0;
+      for (java.util.List<?> aliases : declarations.values()) count += aliases.size();
+      return count;
     }
 
     java.util.Map<String, GenericTypeAlias> visibleGenericAliases(Path consumerFile, String consumerSource) {
