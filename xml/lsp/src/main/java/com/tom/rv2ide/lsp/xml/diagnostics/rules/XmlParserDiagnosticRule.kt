@@ -75,8 +75,17 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
           } else {
             null
           }
-      val range = endTagMismatch?.actualNameRange ?: parserErrorRange(error.key, offset, context.text)
-      if (error.key in OFFSET_RELIABLE_LINE_COLUMN_KEYS) {
+      val range =
+          endTagMismatch?.actualNameRange
+              ?: parserErrorRange(
+                  error.key,
+                  offset,
+                  context.text,
+                  lineColumnOffset(error.line, error.column, context.text),
+              )
+      if (error.key in OFFSET_RELIABLE_LINE_COLUMN_KEYS &&
+          error.characterOffset > 0 &&
+          lineColumnOffset(error.line, error.column, context.text) != offset) {
         logMarkupOffset(
             error = error,
             text = context.text,
@@ -200,12 +209,8 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
   }
 
   private fun errorOffset(error: ParserError, text: String): Int {
-    // In this relocated Xerces branch MarkupNotRecognizedInContent can retain a stale absolute
-    // character offset after the entity scanner has read ahead. Its line/column locator still
-    // tracks the malformed markup correctly, so prefer that source only for this parser fact.
-    if (error.key in OFFSET_RELIABLE_LINE_COLUMN_KEYS) {
-      lineColumnOffset(error.line, error.column, text)?.let { return it }
-    }
+    // Xerces characterOffset is the primary source after fixing XMLEntityScanner.load(). Keep the
+    // line/column locator as a compatibility fallback for malformed input or older parser builds.
     if (error.characterOffset > 0) {
       return (error.characterOffset - 1).coerceIn(0, text.length)
     }
@@ -260,11 +265,17 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
     return text.substring(start, end).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
   }
 
-  private fun parserErrorRange(key: String, offset: Int, text: String): IntRange {
+  private fun parserErrorRange(
+      key: String,
+      offset: Int,
+      text: String,
+      lineColumnOffset: Int? = null,
+  ): IntRange {
     if (text.isEmpty()) {
       return 0..0
     }
     val safeOffset = offset.coerceIn(0, text.lastIndex)
+    val fallbackOffset = lineColumnOffset?.coerceIn(0, text.lastIndex) ?: safeOffset
     return when (key) {
       "EqRequiredInAttribute" ->
           findMalformedAttributeName(text, safeOffset, requireMissingEquals = true)
@@ -273,9 +284,9 @@ internal object XmlParserDiagnosticRule : XmlDiagnosticRule {
           findMalformedAttributeName(text, safeOffset, requireMissingEquals = false)
               ?: selectNameAround(safeOffset, text)
       "AttributeNotUnique" -> selectNameAround(safeOffset, text)
-      "LessthanInAttValue" -> findLessThanInAttributeValue(text, safeOffset)
-      "DashDashInComment" -> findInvalidCommentDashRange(text, safeOffset)
-      MARKUP_NOT_RECOGNIZED_IN_CONTENT -> findMalformedMarkupRange(text, safeOffset)
+      "LessthanInAttValue" -> findLessThanInAttributeValue(text, fallbackOffset)
+      "DashDashInComment" -> findInvalidCommentDashRange(text, fallbackOffset)
+      MARKUP_NOT_RECOGNIZED_IN_CONTENT -> findMalformedMarkupRange(text, fallbackOffset)
       else -> safeOffset..safeOffset
     }
   }
