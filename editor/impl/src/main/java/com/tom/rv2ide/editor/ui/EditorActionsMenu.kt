@@ -37,8 +37,7 @@ import androidx.appcompat.view.menu.SubMenuBuilder
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.RecyclerView.ViewHolder
-import androidx.transition.ChangeBounds
-import androidx.transition.TransitionManager
+// Submenu content and PopupWindow dimensions are updated atomically; do not animate them separately.
 import com.blankj.utilcode.util.SizeUtils
 import com.google.android.material.button.MaterialButton
 import com.tom.rv2ide.actions.ActionData
@@ -298,6 +297,7 @@ open class EditorActionsMenu(val editor: IDEEditor) :
   }
 
   private fun refreshRootMenu() {
+    list.layoutManager = LinearLayoutManager(editor.context, RecyclerView.HORIZONTAL, false)
     fillMenu()
     measureActionsList()
     popup.update(
@@ -494,7 +494,7 @@ open class EditorActionsMenu(val editor: IDEEditor) :
     }
 
     this.editor.post {
-      TransitionManager.beginDelayedTransition(this.list, ChangeBounds())
+      // Do not animate only the list bounds: PopupWindow is resized separately below.
       this.list.layoutManager = LinearLayoutManager(editor.context)
       this.list.adapter = ActionsListAdapter(subMenu, true)
 
