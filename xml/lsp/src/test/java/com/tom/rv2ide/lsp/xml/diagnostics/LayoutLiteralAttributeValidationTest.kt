@@ -22,6 +22,7 @@ import com.android.aapt.Resources.Attribute.FormatFlags.DIMENSION
 import com.android.aapt.Resources.Attribute.FormatFlags.ENUM
 import com.android.aapt.Resources.Attribute.FormatFlags.FLAGS
 import com.android.aapt.Resources.Attribute.FormatFlags.INTEGER
+import com.android.aapt.Resources.Attribute.FormatFlags.REFERENCE
 import com.android.aapt.Resources.Attribute.FormatFlags.STRING
 import com.google.common.truth.Truth.assertThat
 import com.tom.rv2ide.lsp.xml.diagnostics.rules.LayoutDiagnosticRule
@@ -75,6 +76,12 @@ class LayoutLiteralAttributeValidationTest : TestCase() {
     assertFix(DIMENSION.number, "1E2PX", "1E2px", AttributeValueFixReason.NORMALIZE_DIMENSION_UNIT_CASE)
     assertFix(COLOR.number, "AABBCC", "#AABBCC", AttributeValueFixReason.ADD_COLOR_HASH_PREFIX)
     assertFix(COLOR.number, "80AABBCC", "#80AABBCC", AttributeValueFixReason.ADD_COLOR_HASH_PREFIX)
+    assertFix(
+        REFERENCE.number or COLOR.number,
+        "AABBCC",
+        "#AABBCC",
+        AttributeValueFixReason.ADD_COLOR_HASH_PREFIX,
+    )
   }
 
   fun testDoesNotBuildAttributeValueFixForAmbiguousOrInvalidValues() {

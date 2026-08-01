@@ -22,6 +22,7 @@ import com.android.aapt.Resources.Attribute.FormatFlags.DIMENSION
 import com.android.aapt.Resources.Attribute.FormatFlags.ENUM
 import com.android.aapt.Resources.Attribute.FormatFlags.FLAGS
 import com.android.aapt.Resources.Attribute.FormatFlags.INTEGER
+import com.android.aapt.Resources.Attribute.FormatFlags.REFERENCE
 import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.STYLEABLE
 import com.android.aaptcompiler.AttributeResource
@@ -39,12 +40,9 @@ import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import com.tom.rv2ide.xml.versions.ApiVersions
 import com.tom.rv2ide.xml.widgets.WidgetTable
 import org.eclipse.lemminx.dom.DOMElement
-import org.slf4j.LoggerFactory
 
 /** AXML001, AXML002, AXML004, AXML006 and AXML007: conservative Layout diagnostics. */
 internal object LayoutDiagnosticRule : XmlElementDiagnosticRule {
-  private val log = LoggerFactory.getLogger(LayoutDiagnosticRule::class.java)
-
   override val id: String = "layout"
 
   override fun supports(context: XmlDiagnosticContext): Boolean = context.isLayoutFile
@@ -306,18 +304,10 @@ message = "Unknown attribute '$name' for $tagName",
               ?.findValue(ConfigDescription())
               ?.value as? AttributeResource
               ?: return@forEach
-      val validationMessage = validateLiteralAttributeValue(attr, value)
+      val validationMessage =
+          validateLiteralAttributeValue(attr, value)
+              ?: colorHashPrefixValidationMessage(attr.typeMask, value)
       val fix = attributeValueFix(name, attr.typeMask, value)
-      if (name == "android:textColor" && COLOR_LITERAL_WITHOUT_HASH.matches(value)) {
-        log.warn(
-            "AXML004 color trace: name={} value={} typeMask=0x{} validation={} fix={}",
-            name,
-            value,
-            attr.typeMask.toString(16),
-            validationMessage,
-            fix,
-        )
-      }
       validationMessage?.let { message ->
         collector.errorValue(CODE_INVALID_ATTRIBUTE_VALUE, message, attribute, fix ?: Any())
       }
@@ -329,6 +319,14 @@ message = "Unknown attribute '$name' for $tagName",
   private fun validateLiteralAttributeValue(attr: AttributeResource, value: String): String? {
     val symbols = attr.symbols.mapNotNull { it.symbol.name.entry }.toSet()
     return validateLiteralAttributeValue(attr.typeMask, symbols, value)
+  }
+
+  private fun colorHashPrefixValidationMessage(typeMask: Int, value: String): String? {
+    return if (typeMask == REFERENCE_COLOR_TYPE_MASK && COLOR_LITERAL_WITHOUT_HASH.matches(value)) {
+      "Expected a color value"
+    } else {
+      null
+    }
   }
 
   /** Returns a replacement only when the invalid literal differs by a lossless syntax normalization. */
@@ -351,7 +349,8 @@ message = "Unknown attribute '$name' for $tagName",
                       AttributeValueFixReason.NORMALIZE_DIMENSION_UNIT_CASE
                 }
               }
-          COLOR.number ->
+          COLOR.number,
+          REFERENCE_COLOR_TYPE_MASK ->
               COLOR_LITERAL_WITHOUT_HASH.matches(value).takeIf { it }?.let {
                 "#$value" to AttributeValueFixReason.ADD_COLOR_HASH_PREFIX
               }
@@ -502,6 +501,7 @@ message = "Unknown attribute '$name' for $tagName",
   private const val TOOLS_NAMESPACE_URI = "http://schemas.android.com/tools"
   private const val XMLNS_NAMESPACE_URI = "http://www.w3.org/2000/xmlns/"
   private const val AUTO_PACKAGE = "<auto>"
+  private val REFERENCE_COLOR_TYPE_MASK = REFERENCE.number or COLOR.number
   private val INTEGER_LITERAL = Regex("^[+-]?(?:0[xX][0-9a-fA-F]+|[0-9]+)$")
   private val ZERO_DIMENSION_LITERALS = setOf("0", "+0", "-0")
   private val DIMENSION_LITERAL =
