@@ -52,6 +52,8 @@
   <string name="action_fix_closing_tag">修正结束标签</string>
   <string name="action_fix_attribute_name">修正属性名</string>
   <string name="action_fix_tag_name">修正标签名</string>
+  <string name="action_add_android_namespace">添加 Android 命名空间</string>
+  <string name="action_fix_android_namespace">修正 Android 命名空间</string>
   <string name="msg_performing_actions">正在执行快速修复…</string>
   <string name="msg_api_info_since">添加于 API %d</string>
   <string name="msg_api_info_removed">已在 API %d 中移除</string>

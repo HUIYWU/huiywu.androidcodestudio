@@ -164,6 +164,8 @@
   <string name="action_fix_closing_tag">Fix closing tag</string>
   <string name="action_fix_attribute_name">Fix attribute name</string>
   <string name="action_fix_tag_name">Fix tag name</string>
+  <string name="action_add_android_namespace">Add Android namespace</string>
+  <string name="action_fix_android_namespace">Fix Android namespace</string>
   <string name="msg_performing_actions">Performing code action…</string>
   <string name="msg_api_info_since">Since API %d</string>
   <string name="msg_api_info_removed">Removed in API %d</string>
