@@ -217,7 +217,7 @@ private fun errorOffset(error: ParserError, text: String): Int {
      var lineStart = 0
      var index = 0
      while (index < text.length && currentLine < line) {
-       if (text[index] == '\\n') {
+       if (text[index] == '\n') {
          currentLine++
          lineStart = index + 1
        }
