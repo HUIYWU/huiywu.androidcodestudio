@@ -30,6 +30,8 @@ import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticCollector
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlElementDiagnosticRule
+import com.tom.rv2ide.lsp.xml.diagnostics.AttributeValueFixReason
+import com.tom.rv2ide.lsp.xml.diagnostics.InvalidAttributeValueDiagnosticData
 import com.tom.rv2ide.lsp.xml.diagnostics.UnknownLayoutAttributeDiagnosticData
 import com.tom.rv2ide.lsp.xml.diagnostics.UnknownLayoutTagDiagnosticData
 import com.tom.rv2ide.lsp.xml.resolver.StyleableResolver
@@ -302,7 +304,12 @@ message = "Unknown attribute '$name' for $tagName",
               ?.value as? AttributeResource
               ?: return@forEach
       validateLiteralAttributeValue(attr, value)?.let { message ->
-        collector.errorValue(CODE_INVALID_ATTRIBUTE_VALUE, message, attribute)
+        collector.errorValue(
+            CODE_INVALID_ATTRIBUTE_VALUE,
+            message,
+            attribute,
+            attributeValueFix(name, attr.typeMask, value) ?: Any(),
+        )
       }
     }
   }
@@ -312,6 +319,37 @@ message = "Unknown attribute '$name' for $tagName",
   private fun validateLiteralAttributeValue(attr: AttributeResource, value: String): String? {
     val symbols = attr.symbols.mapNotNull { it.symbol.name.entry }.toSet()
     return validateLiteralAttributeValue(attr.typeMask, symbols, value)
+  }
+
+  /** Returns a replacement only when the invalid literal differs by a lossless syntax normalization. */
+  internal fun attributeValueFix(
+      attributeName: String,
+      typeMask: Int,
+      value: String,
+  ): InvalidAttributeValueDiagnosticData? {
+    val replacementAndReason =
+        when (typeMask) {
+          BOOLEAN.number ->
+              value.lowercase().takeIf { (it == "true" || it == "false") && it != value }?.let {
+                it to AttributeValueFixReason.NORMALIZE_BOOLEAN_CASE
+              }
+          DIMENSION.number ->
+              DIMENSION_LITERAL_CASE_INSENSITIVE.matchEntire(value)?.let { match ->
+                val unit = match.groupValues[1]
+                unit.lowercase().takeIf { it != unit }?.let { normalizedUnit ->
+                  value.dropLast(unit.length) + normalizedUnit to
+                      AttributeValueFixReason.NORMALIZE_DIMENSION_UNIT_CASE
+                }
+              }
+          COLOR.number ->
+              COLOR_LITERAL_WITHOUT_HASH.matches(value).takeIf { it }?.let {
+                "#$value" to AttributeValueFixReason.ADD_COLOR_HASH_PREFIX
+              }
+          else -> null
+        }
+    return replacementAndReason?.let { (replacement, reason) ->
+      InvalidAttributeValueDiagnosticData(attributeName, value, replacement, reason)
+    }
   }
 
   /** Validates only pure, unambiguous inline formats; mixed masks remain intentionally permissive. */
@@ -458,7 +496,14 @@ message = "Unknown attribute '$name' for $tagName",
   private val ZERO_DIMENSION_LITERALS = setOf("0", "+0", "-0")
   private val DIMENSION_LITERAL =
       Regex("^[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?)|(?:\\.[0-9]+))(?:[eE][+-]?[0-9]+)?(?:px|dp|dip|sp|pt|in|mm)$")
+  private val DIMENSION_LITERAL_CASE_INSENSITIVE =
+      Regex(
+          "^[+-]?(?:(?:[0-9]+(?:\\.[0-9]*)?)|(?:\\.[0-9]+))(?:[eE][+-]?[0-9]+)?(px|dp|dip|sp|pt|in|mm)$",
+          RegexOption.IGNORE_CASE,
+      )
   private val COLOR_LITERAL = Regex("^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+  private val COLOR_LITERAL_WITHOUT_HASH =
+      Regex("^(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
   private val LAYOUT_SPECIAL_TAGS =
       setOf("include", "merge", "view", "fragment", "tag", "layout")
 }

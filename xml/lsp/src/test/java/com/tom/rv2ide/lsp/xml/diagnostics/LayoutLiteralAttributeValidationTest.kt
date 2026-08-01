@@ -16,8 +16,11 @@
  */
 package com.tom.rv2ide.lsp.xml.diagnostics
 
+import com.android.aapt.Resources.Attribute.FormatFlags.BOOLEAN
 import com.android.aapt.Resources.Attribute.FormatFlags.COLOR
 import com.android.aapt.Resources.Attribute.FormatFlags.DIMENSION
+import com.android.aapt.Resources.Attribute.FormatFlags.ENUM
+import com.android.aapt.Resources.Attribute.FormatFlags.FLAGS
 import com.android.aapt.Resources.Attribute.FormatFlags.INTEGER
 import com.android.aapt.Resources.Attribute.FormatFlags.STRING
 import com.google.common.truth.Truth.assertThat
@@ -63,6 +66,46 @@ class LayoutLiteralAttributeValidationTest : TestCase() {
   fun testLeavesMixedFormatsPermissive() {
     assertValid(INTEGER.number or STRING.number, "not-an-integer")
     assertValid(COLOR.number or STRING.number, "named-color-like-text")
+  }
+
+  fun testBuildsOnlyLosslessAttributeValueFixes() {
+    assertFix(BOOLEAN.number, "TRUE", "true", AttributeValueFixReason.NORMALIZE_BOOLEAN_CASE)
+    assertFix(BOOLEAN.number, "False", "false", AttributeValueFixReason.NORMALIZE_BOOLEAN_CASE)
+    assertFix(DIMENSION.number, "16DP", "16dp", AttributeValueFixReason.NORMALIZE_DIMENSION_UNIT_CASE)
+    assertFix(DIMENSION.number, "1E2PX", "1E2px", AttributeValueFixReason.NORMALIZE_DIMENSION_UNIT_CASE)
+    assertFix(COLOR.number, "AABBCC", "#AABBCC", AttributeValueFixReason.ADD_COLOR_HASH_PREFIX)
+    assertFix(COLOR.number, "80AABBCC", "#80AABBCC", AttributeValueFixReason.ADD_COLOR_HASH_PREFIX)
+  }
+
+  fun testDoesNotBuildAttributeValueFixForAmbiguousOrInvalidValues() {
+    listOf(
+            BOOLEAN.number to "true",
+            BOOLEAN.number to "truth",
+            DIMENSION.number to "16em",
+            DIMENSION.number to "16",
+            COLOR.number to "GGHHII",
+            COLOR.number to "12345",
+            INTEGER.number to "1.5",
+            ENUM.number to "Center",
+            FLAGS.number to "left|right",
+            (COLOR.number or STRING.number) to "AABBCC",
+        )
+        .forEach { (typeMask, value) ->
+          assertThat(LayoutDiagnosticRule.attributeValueFix("android:test", typeMask, value)).isNull()
+        }
+  }
+
+  private fun assertFix(
+      typeMask: Int,
+      value: String,
+      replacement: String,
+      reason: AttributeValueFixReason,
+  ) {
+    val fix = LayoutDiagnosticRule.attributeValueFix("android:test", typeMask, value)
+    assertThat(fix).isNotNull()
+    assertThat(fix!!.actualValue).isEqualTo(value)
+    assertThat(fix.replacement).isEqualTo(replacement)
+    assertThat(fix.reason).isEqualTo(reason)
   }
 
   private fun assertValid(typeMask: Int, value: String) {

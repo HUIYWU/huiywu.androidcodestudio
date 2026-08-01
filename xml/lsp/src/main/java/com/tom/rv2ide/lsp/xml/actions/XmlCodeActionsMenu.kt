@@ -28,5 +28,6 @@ internal object XmlCodeActionsMenu : IActionsMenuProvider {
           CorrectTagNameAction(),
           CorrectClosingTagNameAction(),
           FixAndroidNamespaceAction(),
+          FixAttributeValueAction(),
       )
 }

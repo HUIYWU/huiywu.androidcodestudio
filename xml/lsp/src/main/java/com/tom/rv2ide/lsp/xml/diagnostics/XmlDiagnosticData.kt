@@ -30,6 +30,20 @@ internal data class InvalidAndroidNamespaceDiagnosticData(
   val expectedUri: String,
 )
 
+/** A uniquely determined, local replacement for an AXML004 attribute value. */
+internal data class InvalidAttributeValueDiagnosticData(
+  val attributeName: String,
+  val actualValue: String,
+  val replacement: String,
+  val reason: AttributeValueFixReason,
+)
+
+internal enum class AttributeValueFixReason {
+  NORMALIZE_BOOLEAN_CASE,
+  NORMALIZE_DIMENSION_UNIT_CASE,
+  ADD_COLOR_HASH_PREFIX,
+}
+
 /**
  * XML LSP diagnostic messages. The key and argument order are the stable contract;
  * the returned string is only a localized presentation value.

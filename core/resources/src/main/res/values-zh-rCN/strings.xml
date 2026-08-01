@@ -50,8 +50,9 @@
   <string name="get_started">开始使用</string>
   <string name="msg_cannot_perform_fix">无法执行快速修复</string>
   <string name="action_fix_closing_tag">修正结束标签</string>
-  <string name="action_fix_attribute_name">修正属性名</string>
-  <string name="action_fix_tag_name">修正标签名</string>
+<string name="action_fix_attribute_name">修正属性名</string>
+ <string name="action_fix_attribute_value">修正属性值</string>
+><string name="action_fix_tag_name">修正标签名</string>
   <string name="action_add_android_namespace">添加 Android 命名空间</string>
   <string name="action_fix_android_namespace">修正 Android 命名空间</string>
   <string name="msg_performing_actions">正在执行快速修复…</string>

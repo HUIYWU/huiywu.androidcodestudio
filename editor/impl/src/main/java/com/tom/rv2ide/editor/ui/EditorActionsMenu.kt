@@ -323,7 +323,7 @@ open class EditorActionsMenu(val editor: IDEEditor) :
     }
 
     sizeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-      duration = 240L
+      duration = 270L
       addUpdateListener { animator ->
         val fraction = animator.animatedFraction
         val animatedWidth = (startWidth + (targetWidth - startWidth) * fraction).toInt()
