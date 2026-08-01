@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.editor.ui
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
@@ -85,6 +86,7 @@ open class EditorActionsMenu(val editor: IDEEditor) :
   private val touchHandler: EditorTouchEventHandler = editor.eventHandler
   private val receipts: MutableList<SubscriptionReceipt<*>> = mutableListOf()
   private val list = RecyclerView(editor.context)
+  private var sizeAnimator: ValueAnimator? = null
   private var mLastScroll: Long = 0
   private var mLastPosition: Int = 0
 
@@ -297,6 +299,9 @@ open class EditorActionsMenu(val editor: IDEEditor) :
   }
 
   private fun refreshRootMenu() {
+    sizeAnimator?.cancel()
+    list.layoutParams =
+        ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     list.layoutManager = LinearLayoutManager(editor.context, RecyclerView.HORIZONTAL, false)
     fillMenu()
     measureActionsList()
@@ -304,6 +309,28 @@ open class EditorActionsMenu(val editor: IDEEditor) :
         min(editor.width - SizeUtils.dp2px(45f), list.measuredWidth),
         list.measuredHeight,
     )
+  }
+
+  private fun animateSizeTo(targetWidth: Int, targetHeight: Int) {
+    sizeAnimator?.cancel()
+
+    val startWidth = width.coerceAtLeast(1)
+    val startHeight = height.coerceAtLeast(1)
+    if (startWidth == targetWidth && startHeight == targetHeight) {
+      return
+    }
+
+    sizeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+      duration = 180L
+      addUpdateListener { animator ->
+        val fraction = animator.animatedFraction
+        val animatedWidth = (startWidth + (targetWidth - startWidth) * fraction).toInt()
+        val animatedHeight = (startHeight + (targetHeight - startHeight) * fraction).toInt()
+        list.layoutParams = ViewGroup.LayoutParams(animatedWidth, animatedHeight)
+        popup.update(animatedWidth, animatedHeight)
+      }
+      start()
+    }
   }
 
   protected open fun onFillMenu(registry: ActionsRegistry, data: ActionData) {
@@ -499,7 +526,7 @@ open class EditorActionsMenu(val editor: IDEEditor) :
       this.list.adapter = ActionsListAdapter(subMenu, true)
 
       measureActionsList()
-      popup.update(findWidestItem(subMenu), this.list.measuredHeight)
+      animateSizeTo(findWidestItem(subMenu), this.list.measuredHeight)
     }
 
     return true
