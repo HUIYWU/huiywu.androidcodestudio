@@ -23,6 +23,7 @@ import com.tom.rv2ide.lsp.api.IServerSettings;
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmSourceNavigator;
+import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.lsp.java.providers.definition.ErroneousDefinitionProvider;
 import com.tom.rv2ide.lsp.java.providers.definition.IJavaDefinitionProvider;
 import com.tom.rv2ide.lsp.java.providers.definition.KotlinDefinitionFallback;
@@ -90,7 +91,12 @@ public class DefinitionProvider extends CancelableServiceProvider {
       return KotlinDefinitionFallback.find(compiler, file, line - 1, column - 1);
     }
 
-    final Location kotlinLocation = KotlinJvmSourceNavigator.find(compiler.getModule(), element);
+    // Java-to-Kotlin source navigation is an opt-in language-service capability.
+    // Do not let an element originating from a stale classpath or previous task bypass the
+    // recognition preference and trigger Kotlin source/index work while the feature is disabled.
+    final Location kotlinLocation = JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()
+        ? KotlinJvmSourceNavigator.find(compiler.getModule(), element)
+        : null;
     if (kotlinLocation != null) {
       return Collections.singletonList(kotlinLocation);
     }

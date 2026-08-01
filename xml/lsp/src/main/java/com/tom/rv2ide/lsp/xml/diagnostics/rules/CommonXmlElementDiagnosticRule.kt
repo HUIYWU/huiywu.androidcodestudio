@@ -24,10 +24,12 @@ import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlElementDiagnosticRule
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlElementRecoveryDiagnosticRule
 import org.eclipse.lemminx.dom.DOMElement
+import org.slf4j.LoggerFactory
 
 /** XML001-XML004: tolerant recovery, attribute and namespace checks for every XML element. */
 internal object CommonXmlElementDiagnosticRule :
     XmlElementRecoveryDiagnosticRule, XmlElementDiagnosticRule {
+  private val log = LoggerFactory.getLogger(CommonXmlElementDiagnosticRule::class.java)
   override val id: String = "common-xml-element"
 
   override fun supports(context: XmlDiagnosticContext): Boolean = true
@@ -89,7 +91,7 @@ internal object CommonXmlElementDiagnosticRule :
       collector: XmlDiagnosticCollector,
   ) {
     checkDuplicateAttributes(element, collector)
-    checkUndeclaredAttributePrefixes(element, collector)
+    checkUndeclaredAttributePrefixes(element, context, collector)
     checkAndroidNamespace(element, collector)
   }
 
@@ -119,6 +121,7 @@ internal object CommonXmlElementDiagnosticRule :
 
   private fun checkUndeclaredAttributePrefixes(
       element: DOMElement,
+      context: XmlDiagnosticContext,
       collector: XmlDiagnosticCollector,
   ) {
     element.attributeNodes.orEmpty().forEach { attribute ->
@@ -131,15 +134,26 @@ internal object CommonXmlElementDiagnosticRule :
         return@forEach
       }
       val prefix = name.substring(0, separator)
-      if (element.getNamespaceURI(prefix) == null) {
+      // LemMinX can supply Android's URI from its parser context even when the source omitted the
+      // declaration. The source declaration is authoritative for this XML003 quick-fix contract.
+      val isMissingAndroidNamespace =
+          prefix == ANDROID_NAMESPACE_PREFIX && !hasAndroidNamespaceDeclaration(context.text)
+      if (isMissingAndroidNamespace || element.getNamespaceURI(prefix) == null) {
+        if (prefix == ANDROID_NAMESPACE_PREFIX) {
+          log.warn(
+              "XML namespace trace: attr={} domUri={} sourceDecl={} emitFixPayload={}",
+              name,
+              element.getNamespaceURI(prefix),
+              !isMissingAndroidNamespace,
+              isMissingAndroidNamespace,
+          )
+        }
         collector.error(
             code = CODE_UNDECLARED_NAMESPACE,
             message = "Namespace prefix '$prefix' is not declared",
             attribute = attribute,
             extra =
-                if (prefix == ANDROID_NAMESPACE_PREFIX)
-                    MissingAndroidNamespaceDiagnosticData(prefix)
-                else Any(),
+                if (isMissingAndroidNamespace) MissingAndroidNamespaceDiagnosticData(prefix) else Any(),
         )
       }
     }
@@ -165,6 +179,10 @@ internal object CommonXmlElementDiagnosticRule :
     }
   }
 
+  private fun hasAndroidNamespaceDeclaration(text: String): Boolean {
+    return ANDROID_NAMESPACE_DECLARATION_REGEX.containsMatchIn(text)
+  }
+
   private fun isNamespaceDeclaration(name: String): Boolean {
     return name == XMLNS_ATTRIBUTE || name.startsWith(XMLNS_PREFIX)
   }
@@ -178,5 +196,6 @@ internal object CommonXmlElementDiagnosticRule :
   private const val XMLNS_PREFIX = "xmlns:"
   private const val ANDROID_NAMESPACE_PREFIX = "android"
   private const val ANDROID_NAMESPACE_DECLARATION = "xmlns:android"
+  private val ANDROID_NAMESPACE_DECLARATION_REGEX = Regex("\\bxmlns:android\\s*=")
   private const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
 }

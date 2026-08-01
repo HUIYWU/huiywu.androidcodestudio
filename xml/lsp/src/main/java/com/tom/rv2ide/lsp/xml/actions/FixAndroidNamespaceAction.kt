@@ -26,9 +26,12 @@ import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.resources.R
 import io.github.rosemoe.sora.widget.CodeEditor
 import java.io.File
+import org.slf4j.LoggerFactory
 
 /** Adds a missing `xmlns:android` declaration or corrects its URI when diagnostics prove the fix. */
 internal class FixAndroidNamespaceAction : EditorActionItem {
+  private val log = LoggerFactory.getLogger(FixAndroidNamespaceAction::class.java)
+
   override val id: String = "ide.editor.lsp.xml.fixAndroidNamespace"
   override var label: String = ""
   override var visible: Boolean = true
@@ -42,6 +45,9 @@ internal class FixAndroidNamespaceAction : EditorActionItem {
   override fun prepare(data: ActionData) {
     super.prepare(data)
     edit = null
+    label = ""
+    visible = false
+    enabled = false
     if (!data.hasRequiredData(File::class.java, DiagnosticItem::class.java, CodeEditor::class.java)) {
       markInvisible()
       return
@@ -50,23 +56,46 @@ internal class FixAndroidNamespaceAction : EditorActionItem {
     val diagnostic = data[DiagnosticItem::class.java]!!
     val editor = data[CodeEditor::class.java]!!
     val context = data.getContext()
-    if (!isWorkspaceXmlFile(file.toPath()) || context == null) {
+    val workspaceXml = isWorkspaceXmlFile(file.toPath())
+    if (!workspaceXml || context == null) {
+      log.warn(
+          "XML namespace action trace: hidden reason=invalidContext file={} workspaceXml={} hasContext={} code={} payload={}",
+          file,
+          workspaceXml,
+          context != null,
+          diagnostic.code,
+          diagnostic.extra?.javaClass?.name,
+      )
       markInvisible()
       return
     }
 
+    log.warn(
+        "XML namespace action trace: prepare file={} code={} payload={} textLength={}",
+        file,
+        diagnostic.code,
+        diagnostic.extra?.javaClass?.name,
+        editor.text.length,
+    )
     when (val facts = diagnostic.extra) {
       is MissingAndroidNamespaceDiagnosticData -> {
         if (diagnostic.code != CODE_UNDECLARED_NAMESPACE || facts.prefix != ANDROID_PREFIX) {
+          log.warn(
+              "XML namespace action trace: hidden reason=unexpectedMissingPayload code={} prefix={}",
+              diagnostic.code,
+              facts.prefix,
+          )
           markInvisible()
           return
         }
         val insertion = namespaceInsertion(editor.text.toString()) ?: run {
+          log.warn("XML namespace action trace: hidden reason=noSafeRootInsertion")
           markInvisible()
           return
         }
         edit = insertion
         label = context.getString(R.string.action_add_android_namespace)
+        log.warn("XML namespace action trace: visible kind=add range={}", insertion.range)
       }
       is InvalidAndroidNamespaceDiagnosticData -> {
         if (diagnostic.code != CODE_INVALID_ANDROID_NAMESPACE ||
@@ -79,6 +108,11 @@ internal class FixAndroidNamespaceAction : EditorActionItem {
         label = context.getString(R.string.action_fix_android_namespace)
       }
       else -> {
+        log.warn(
+            "XML namespace action trace: hidden reason=unsupportedPayload code={} payload={}",
+            diagnostic.code,
+            facts?.javaClass?.name,
+        )
         markInvisible()
         return
       }

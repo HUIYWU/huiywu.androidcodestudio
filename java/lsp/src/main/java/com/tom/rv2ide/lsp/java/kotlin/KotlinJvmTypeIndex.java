@@ -18,6 +18,7 @@ package com.tom.rv2ide.lsp.java.kotlin;
 
 import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.projects.ModuleProject;
+import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.utils.DocumentUtils;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -77,7 +78,7 @@ public final class KotlinJvmTypeIndex {
 
   /** Returns Kotlin declarations which Java can use as top-level class names or file facades. */
   public static Set<String> publicTopLevelTypes(ModuleProject module) {
-    if (module == null) {
+    if (!isRecognitionEnabled() || module == null) {
       return Collections.emptySet();
     }
 
@@ -114,7 +115,7 @@ public final class KotlinJvmTypeIndex {
    */
   public static List<KotlinTypeDeclaration> findMultifileDeclarations(
       ModuleProject module, String qualifiedName) {
-    if (module == null || qualifiedName == null || qualifiedName.isEmpty()) {
+    if (!isRecognitionEnabled() || module == null || qualifiedName == null || qualifiedName.isEmpty()) {
       return Collections.emptyList();
     }
     final java.util.ArrayList<KotlinTypeDeclaration> result = new java.util.ArrayList<>();
@@ -143,7 +144,7 @@ public final class KotlinJvmTypeIndex {
 
   public static java.util.Map<String, GenericTypeAlias> visibleGenericTypeAliases(
       ModuleProject module, Path consumerFile) {
-    if (module == null || consumerFile == null) {
+    if (!isRecognitionEnabled() || module == null || consumerFile == null) {
       return Collections.emptyMap();
     }
     final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
@@ -186,7 +187,7 @@ public final class KotlinJvmTypeIndex {
 
   public static java.util.Map<String, String> visibleDirectTypeAliases(
       ModuleProject module, Path consumerFile) {
-    if (module == null || consumerFile == null) {
+    if (!isRecognitionEnabled() || module == null || consumerFile == null) {
       return Collections.emptyMap();
     }
     final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
@@ -229,7 +230,7 @@ public final class KotlinJvmTypeIndex {
   }
 
   public static KotlinTypeDeclaration findDeclaration(ModuleProject module, String qualifiedName) {
-    if (module == null || qualifiedName == null || qualifiedName.isEmpty()) {
+    if (!isRecognitionEnabled() || module == null || qualifiedName == null || qualifiedName.isEmpty()) {
       return null;
     }
     for (java.io.File root : module.getCompileSourceDirectories()) {
@@ -252,6 +253,11 @@ public final class KotlinJvmTypeIndex {
       }
     }
     return null;
+  }
+
+  /** Kotlin source discovery is opt-in; callers must not create scanner/cache work while disabled. */
+  private static boolean isRecognitionEnabled() {
+    return JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled();
   }
 
   private static CachedAliases aliasCacheForRevision(ModuleProject module) {

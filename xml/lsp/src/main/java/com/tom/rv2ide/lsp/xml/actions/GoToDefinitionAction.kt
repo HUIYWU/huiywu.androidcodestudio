@@ -43,6 +43,9 @@ internal class GoToDefinitionAction : EditorActionItem {
 
   override fun prepare(data: ActionData) {
     super.prepare(data)
+    label = ""
+    visible = false
+    enabled = false
     if (!data.hasRequiredData(CodeEditor::class.java, File::class.java)) {
       markInvisible()
       return

@@ -53,6 +53,9 @@ internal class CorrectAttributeNameAction : EditorActionItem {
   override fun prepare(data: ActionData) {
     super.prepare(data)
     replacement = null
+    label = ""
+    visible = false
+    enabled = false
     if (!data.hasRequiredData(File::class.java, DiagnosticItem::class.java)) {
       markInvisible()
       return

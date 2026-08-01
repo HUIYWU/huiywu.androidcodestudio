@@ -7,6 +7,7 @@ import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex.KotlinTypeDeclaration;
 import com.tom.rv2ide.models.Location;
 import com.tom.rv2ide.models.Position;
 import com.tom.rv2ide.models.Range;
+import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.projects.ModuleProject;
 import java.nio.file.Path;
@@ -39,6 +40,9 @@ public final class KotlinJvmSourceNavigator {
   private KotlinJvmSourceNavigator() {}
 
   public static Location find(ModuleProject module, Element element) {
+    if (!JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()) {
+      return null;
+    }
     TypeElement owner = ownerType(element);
     if (module == null || owner == null) {
       return null;
