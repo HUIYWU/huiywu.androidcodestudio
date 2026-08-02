@@ -82,6 +82,45 @@ class KotlinJvmAliasDeclarationIndexTest {
   }
 
   @Test
+  fun kotlinSourceFiles_deduplicatesOverlappingSourceRoots() {
+    val root = Files.createTempDirectory("kotlin-overlapping-source-roots")
+    try {
+      val nested = Files.createDirectories(root.resolve("nested"))
+      write(root.resolve("Root.kt"), "package sample\nclass Root")
+      write(nested.resolve("Nested.kt"), "package sample\nclass Nested")
+
+      val files = KotlinJvmTypeIndex.kotlinSourceFiles(listOf(root.toFile(), nested.toFile()))
+      val navigation = KotlinJvmTypeIndex.NavigationCandidateIndex.build(
+        listOf(root.toFile(), nested.toFile()))
+
+      assertEquals(2, files.size)
+      // Ordering is by normalized full path, not bare file name: /root/Root.kt precedes
+      // /root/nested/Nested.kt because the path separator sorts before the next file-name letter.
+      assertEquals(listOf("Root.kt", "Nested.kt"), files.map { it.fileName.toString() })
+      assertEquals(2, navigation.declarationCount())
+      assertEquals("Root.kt", navigation.declaration("sample.Root")!!.file.fileName.toString())
+      assertEquals("Nested.kt", navigation.declaration("sample.Nested")!!.file.fileName.toString())
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
+  fun navigationCandidateIndex_rejectsAmbiguousQualifiedDeclarations() {
+    val root = Files.createTempDirectory("kotlin-navigation-ambiguity")
+    try {
+      write(root.resolve("First.kt"), "package sample\nclass Duplicate")
+      write(root.resolve("Second.kt"), "package sample\nclass Duplicate")
+
+      val index = KotlinJvmTypeIndex.NavigationCandidateIndex.build(listOf(root.toFile()))
+
+      assertNull(index.declaration("sample.Duplicate"))
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
   fun navigationCandidateIndex_reusesImmutableDeclarationAndMultifileMetadata() {
     val root = Files.createTempDirectory("kotlin-navigation-candidates")
     try {

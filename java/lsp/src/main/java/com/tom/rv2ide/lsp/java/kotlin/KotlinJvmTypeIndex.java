@@ -293,23 +293,32 @@ public final class KotlinJvmTypeIndex {
 
     // Callers already hold the module lock while building a derived snapshot. Keeping this method
     // lock-free prevents lock-order surprises and lets all derived indexes share one file listing.
-    final List<Path> files = new java.util.ArrayList<>();
-    for (java.io.File root : module.getCompileSourceDirectories()) {
-      if (root == null || !root.isDirectory()) continue;
-      try (Stream<Path> paths = Files.walk(root.toPath())) {
-        paths.filter(DocumentUtils::isKotlinFile)
-            .filter(path -> path.getFileName().toString().endsWith(".kt"))
-            .map(KotlinJvmTypeIndex::normalizedPath)
-            .forEach(files::add);
-      } catch (IOException error) {
-        LOG.debug("Unable to list Kotlin source root {}", root, error);
-      }
-    }
-    final List<Path> immutable = Collections.unmodifiableList(files);
+    final List<Path> immutable = kotlinSourceFiles(module.getCompileSourceDirectories());
     if (module.getSourceIndexVersion() == revision) {
       store.replace(revision, immutable);
     }
     return immutable;
+  }
+
+  static List<Path> kotlinSourceFiles(Iterable<java.io.File> sourceRoots) {
+    final Set<Path> files = new LinkedHashSet<>();
+    if (sourceRoots != null) {
+      for (java.io.File root : sourceRoots) {
+        if (root == null || !root.isDirectory()) continue;
+        try (Stream<Path> paths = Files.walk(root.toPath())) {
+          paths.filter(DocumentUtils::isKotlinFile)
+              .filter(path -> path.getFileName().toString().endsWith(".kt"))
+              .map(KotlinJvmTypeIndex::normalizedPath)
+              .forEach(files::add);
+        } catch (IOException error) {
+          LOG.debug("Unable to list Kotlin source root {}", root, error);
+        }
+      }
+    }
+    if (files.isEmpty()) return Collections.emptyList();
+    final java.util.ArrayList<Path> ordered = new java.util.ArrayList<>(files);
+    Collections.sort(ordered, (left, right) -> left.toString().compareTo(right.toString()));
+    return Collections.unmodifiableList(ordered);
   }
 
   private static RevisionSnapshotStore<List<Path>> sourceFileSnapshotStore(ModuleProject module) {
@@ -584,37 +593,29 @@ public final class KotlinJvmTypeIndex {
     }
 
     static NavigationCandidateIndex build(Iterable<java.io.File> sourceRoots) {
-      final java.util.List<Path> paths = new java.util.ArrayList<>();
-      if (sourceRoots != null) {
-        for (java.io.File root : sourceRoots) {
-          if (root == null || !root.isDirectory()) continue;
-          try (Stream<Path> stream = Files.walk(root.toPath())) {
-            stream.filter(DocumentUtils::isKotlinFile)
-                .filter(path -> path.getFileName().toString().endsWith(".kt"))
-                .forEach(paths::add);
-          } catch (IOException error) {
-            LOG.debug("Unable to build Kotlin JVM navigation candidate index for {}", root, error);
-          }
-        }
-      }
-      return buildFromPaths(paths);
+      return buildFromPaths(kotlinSourceFiles(sourceRoots));
     }
 
     static NavigationCandidateIndex buildFromPaths(Iterable<Path> paths) {
       final java.util.Map<String, KotlinTypeDeclaration> declarations = new java.util.LinkedHashMap<>();
       final java.util.Map<String, List<KotlinTypeDeclaration>> multifile = new java.util.LinkedHashMap<>();
+      final Set<String> ambiguousDeclarations = new LinkedHashSet<>();
       if (paths != null) {
         for (Path path : paths) {
-          if (path != null) collect(path, declarations, multifile);
+          if (path != null) collect(path, declarations, multifile, ambiguousDeclarations);
         }
       }
+      // A qualified JVM name that maps to multiple normal Kotlin declarations is not safe to
+      // navigate. Do not make the answer depend on source-root traversal order.
+      ambiguousDeclarations.forEach(declarations::remove);
       return new NavigationCandidateIndex(declarations, multifile);
     }
 
     private static void collect(
         Path path,
         java.util.Map<String, KotlinTypeDeclaration> declarations,
-        java.util.Map<String, List<KotlinTypeDeclaration>> multifile) {
+        java.util.Map<String, List<KotlinTypeDeclaration>> multifile,
+        Set<String> ambiguousDeclarations) {
       final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
       final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
       final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
@@ -626,13 +627,13 @@ public final class KotlinJvmTypeIndex {
       if (syntaxTypes != null && syntaxMembers != null) {
         for (KotlinJvmSyntaxParser.TopLevelTypeSyntax type : syntaxTypes) {
           if (!type.privateType && type.name != null && !type.name.isEmpty()) {
-            declarations.putIfAbsent(qualifiedName(packageName, type.name),
+            putUniqueDeclaration(declarations, ambiguousDeclarations, qualifiedName(packageName, type.name),
                 new KotlinTypeDeclaration(path, type.nameOffset, type.nameLength));
           }
         }
         hasTopLevelMember = hasPublicTopLevelMember(syntaxMembers);
       } else {
-        collectFallbackDeclarations(path, source, packageName, declarations);
+        collectFallbackDeclarations(path, source, packageName, declarations, ambiguousDeclarations);
         hasTopLevelMember = hasPublicTopLevelMemberFallback(source);
       }
       if (!hasTopLevelMember) return;
@@ -640,14 +641,28 @@ public final class KotlinJvmTypeIndex {
       final String qualifiedFacade = qualifiedName(packageName, facade);
       final KotlinTypeDeclaration facadeDeclaration = new KotlinTypeDeclaration(
           path, fileJvmNameOffset(source), facade.length());
-      declarations.putIfAbsent(qualifiedFacade, facadeDeclaration);
-      if (isMultifileFacade(source, path, qualifiedFacade)) {
+      final boolean multifileFacade = isMultifileFacade(source, path, qualifiedFacade);
+      if (!multifileFacade) {
+        putUniqueDeclaration(declarations, ambiguousDeclarations, qualifiedFacade, facadeDeclaration);
+      }
+      if (multifileFacade) {
         List<KotlinTypeDeclaration> entries = multifile.get(qualifiedFacade);
         if (entries == null) {
           entries = new java.util.ArrayList<>();
           multifile.put(qualifiedFacade, entries);
         }
         entries.add(facadeDeclaration);
+      }
+    }
+
+    private static void putUniqueDeclaration(
+        java.util.Map<String, KotlinTypeDeclaration> declarations,
+        Set<String> ambiguousDeclarations,
+        String qualifiedName,
+        KotlinTypeDeclaration declaration) {
+      if (ambiguousDeclarations.contains(qualifiedName)) return;
+      if (declarations.putIfAbsent(qualifiedName, declaration) != null) {
+        ambiguousDeclarations.add(qualifiedName);
       }
     }
 
@@ -688,20 +703,7 @@ public final class KotlinJvmTypeIndex {
     }
 
     static AliasDeclarationIndex build(Iterable<java.io.File> sourceRoots) {
-      final java.util.List<Path> paths = new java.util.ArrayList<>();
-      if (sourceRoots != null) {
-        for (java.io.File root : sourceRoots) {
-          if (root == null || !root.isDirectory()) continue;
-          try (Stream<Path> stream = Files.walk(root.toPath())) {
-            stream.filter(DocumentUtils::isKotlinFile)
-                .filter(path -> path.getFileName().toString().endsWith(".kt"))
-                .forEach(paths::add);
-          } catch (IOException error) {
-            LOG.debug("Unable to build Kotlin typealias declaration index for {}", root, error);
-          }
-        }
-      }
-      return buildFromPaths(paths);
+      return buildFromPaths(kotlinSourceFiles(sourceRoots));
     }
 
     static AliasDeclarationIndex buildFromPaths(Iterable<Path> paths) {
@@ -957,7 +959,8 @@ public final class KotlinJvmTypeIndex {
       Path path,
       String source,
       String packageName,
-      java.util.Map<String, KotlinTypeDeclaration> declarations) {
+      java.util.Map<String, KotlinTypeDeclaration> declarations,
+      Set<String> ambiguousDeclarations) {
     final String[] lines = source.split("\\R", -1);
     int braceDepth = 0;
     int offset = 0;
@@ -966,7 +969,8 @@ public final class KotlinJvmTypeIndex {
         final Matcher typeMatcher = TYPE_PATTERN.matcher(line);
         if (typeMatcher.find() && !containsPrivateModifier(typeMatcher.group(1))) {
           final String name = typeMatcher.group(2);
-          declarations.putIfAbsent(qualifiedName(packageName, name),
+          NavigationCandidateIndex.putUniqueDeclaration(declarations, ambiguousDeclarations,
+              qualifiedName(packageName, name),
               new KotlinTypeDeclaration(path, offset + typeMatcher.start(2), name.length()));
         }
       }

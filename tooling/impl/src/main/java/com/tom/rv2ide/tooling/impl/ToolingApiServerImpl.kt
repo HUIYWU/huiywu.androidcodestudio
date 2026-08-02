@@ -228,17 +228,15 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
 
         val nativeWarmupTasks = collectAndroidNativeCompileCommandsWarmupTasks(project)
         if (nativeWarmupTasks.isNotEmpty()) {
-          log.info(
-              "Discovered Android native compile_commands warm-up task candidates during initialize: {}",
-              nativeWarmupTasks,
-          )
           try {
             runAndroidNativeCompileCommandsWarmup(connection, project, nativeWarmupTasks)
           } catch (nativeWarmupError: Throwable) {
-            log.error("Android native compile_commands warm-up failed during initialize. Continuing without native warm-up. tasks={}", nativeWarmupTasks, nativeWarmupError)
+            log.error(
+                "Android native configuration warm-up failed; continuing project initialization. task={}",
+                nativeWarmupTasks.first(),
+                nativeWarmupError,
+            )
           }
-        } else {
-          log.debug("No Android native compile_commands warm-up task candidates discovered during initialize")
         }
 
         stopWatch.log()
@@ -480,13 +478,11 @@ artifact = variant.mainArtifact,
     }
     return availableTasks.firstOrNull { it.name == taskName }?.path
   }
-
   private data class AndroidNativeWarmupContext(
       val projectPath: String,
       val projectDir: File,
       val variantName: String,
-      val variantNameCapitalized: String,
-      val tasks: List<com.tom.rv2ide.tooling.api.models.GradleTask>,
+      val tasks: List<GradleTask>,
   )
 
   private fun collectAndroidNativeCompileCommandsWarmupTasks(project: ProjectImpl): List<String> {
@@ -495,108 +491,44 @@ artifact = variant.mainArtifact,
     project.projects.filterIsInstance<AndroidProjectImpl>().forEach { androidProject ->
       val configuredVariant = androidProject.getConfiguredVariant().get().orEmpty().ifBlank { "debug" }
       val rawMetadata = androidProject.getMetadata().get()
-      val projectPath = rawMetadata.projectPath
-      val projectDir = rawMetadata.projectDir
-      val variantNameCapitalized =
-          configuredVariant.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-      val availableTasks = androidProject.getTasks().get().orEmpty()
       val context =
           AndroidNativeWarmupContext(
-              projectPath = projectPath,
-              projectDir = projectDir,
+              projectPath = rawMetadata.projectPath,
+              projectDir = rawMetadata.projectDir,
               variantName = configuredVariant,
-              variantNameCapitalized = variantNameCapitalized,
-              tasks = availableTasks,
+              tasks = androidProject.getTasks().get().orEmpty(),
           )
       if (!isLikelyAndroidNativeProject(context.projectDir)) {
         return@forEach
       }
 
-      // GradleProject.tasks is the Tooling API's task inventory, rather than a name inferred by
-      // ACS. Log the complete native-looking subset before selecting a warm-up task so that a
-      // missing AGP-internal configure task can be distinguished from an ACS selection failure.
-      val nativeTaskInventory =
-          availableTasks
-              .filter { task ->
-                val name = task.name.lowercase()
-                name.contains("cmake") ||
-                    name.contains("ndkbuild") ||
-                    name.contains("nativebuild") ||
-                    name.contains("generatejsonmodel")
-              }
-              .map { task -> task.path }
-              .sorted()
-      log.info(
-          "Android native task inventory from Gradle Tooling API: module={}, configuredVariant={}, totalTaskCount={}, nativeTaskCount={}, nativeTasks={}",
-          projectPath,
-          configuredVariant,
-          availableTasks.size,
-          nativeTaskInventory.size,
-          nativeTaskInventory,
-      )
-
-      val selected = selectAndroidNativeWarmupTasks(context)
-      if (selected.isNotEmpty()) {
-        log.debug(
-          "Android native warm-up task candidates selected from Tooling API inventory for {} (variant={}): {}",
-          projectPath,
-          configuredVariant,
-          selected,
-        )
-        tasks.addAll(selected)
-      } else {
-        log.info(
-            "No Android native warm-up task was selected from the Gradle Tooling API inventory: module={}, configuredVariant={}",
-            projectPath,
-            configuredVariant,
-        )
-      }
+      // Task paths originate from Gradle's Tooling API model. The selector only ranks those
+      // paths for the configured Android variant; it never synthesizes a task name.
+      selectAndroidNativeWarmupTasks(context).firstOrNull()?.let(tasks::add)
     }
 
     return tasks.toList()
   }
 
   /**
-   * For Android native modules opened before any native build has run, clang fallback flags are not
-   * sufficient to resolve NDK sysroot, prefab and imported target include chains. We therefore run a
-   * lightweight native configuration task during initialize so AGP emits the authoritative native
-   * build metadata under `.cxx/...` before clangd starts.
-   *
-   * `configureCMake<Variant>` remains the preferred path for CMake projects, while
-   * `configureNdkBuild<Variant>` is now treated as the equivalent lightweight entry point for
-   * traditional ndk-build projects that also generate the `.cxx` directory and compile db metadata.
+   * Generates native compilation metadata before clangd starts when an Android native module has
+   * not been configured yet. The selected task is an existing Gradle task path, normally a CMake
+   * or ndk-build configure task; legacy JSON-model and external-native-build tasks are fallbacks.
    */
   private fun runAndroidNativeCompileCommandsWarmup(
       connection: ProjectConnection,
       project: ProjectImpl,
       discoveredTasks: List<String>,
   ) {
-    // Selection has already ranked real Gradle task paths, including CMake and ndk-build
-    // configure tasks. Do not re-filter here: legacy AGP fallback tasks are also intentional.
     val targetTask = discoveredTasks.firstOrNull() ?: return
-    val hadCompileCommandsBefore = projectHasNativeCompileCommands(project)
-    if (hadCompileCommandsBefore) {
-      log.info(
-          "Skipping Android native compile_commands warm-up execution because compile_commands already exist. task={}",
-          targetTask,
-      )
+    if (projectHasNativeCompileCommands(project)) {
       return
     }
 
-    log.info("Running Android native compile_commands warm-up as part of initialize: {}", targetTask)
+    log.info("Configuring Android native build metadata: {}", targetTask)
     runWarmupBuild(connection, listOf(targetTask))
-
-    val hasCompileCommandsAfter = projectHasNativeCompileCommands(project)
-    if (hasCompileCommandsAfter) {
-      log.info(
-          "Android native compile_commands warm-up produced compile_commands.json via {}",
-          targetTask,
-      )
-    } else {
-      log.warn(
-          "Android native compile_commands warm-up completed but no compile_commands.json were found after running {}",
-          targetTask,
-      )
+    if (!projectHasNativeCompileCommands(project)) {
+      log.warn("Android native configuration finished without compile_commands metadata: {}", targetTask)
     }
   }
 
@@ -692,7 +624,8 @@ artifact = variant.mainArtifact,
     }
     return matches
   }
-private enum class AndroidNativeTaskKind(val priority: Int) {
+
+  private enum class AndroidNativeTaskKind(val priority: Int) {
     CMAKE_CONFIGURE(0),
     NDK_BUILD_CONFIGURE(1),
     JSON_MODEL(2),
@@ -768,7 +701,7 @@ private enum class AndroidNativeTaskKind(val priority: Int) {
         if (abiStart >= 0 && suffix.endsWith(']')) suffix.substring(abiStart + 1, suffix.length - 1)
         else null
     return AndroidNativeWarmupTask(task, kindAndSuffix.first, buildType.ifBlank { null }, abi)
-}
+  }
 
   private fun nativeBuildTypeCompatibility(variantName: String, nativeBuildType: String?): Int? {
     val type = nativeBuildType?.takeIf { it.isNotBlank() } ?: return null
