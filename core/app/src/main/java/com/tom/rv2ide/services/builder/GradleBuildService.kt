@@ -512,15 +512,8 @@ class GradleBuildService :
         val processBuilder = ProcessBuilder(command)
         processBuilder.directory(projectDir)
         
-        // Set up environment
-        val termuxEnv = TermuxShellEnvironment().getEnvironment(this@GradleBuildService, false)
-        val customEnv = HashMap<String, String>()
-        Environment.putEnvironment(customEnv, false)
-        
-        val finalEnv = processBuilder.environment()
-        finalEnv.putAll(termuxEnv)
-        finalEnv.putAll(customEnv)
-        
+        configureGradleEnvironment(processBuilder)
+
         val process = processBuilder.start()
         val exitCode = process.waitFor()
         
@@ -536,6 +529,40 @@ class GradleBuildService :
     }
   }
   
+  /**
+   * Configures a Gradle-only process environment.
+   *
+   * Gradle annotation processors can load JNI libraries through [System.load]. Passing the
+   * Termux-wide [LD_LIBRARY_PATH] makes Android's linker resolve unrelated Prefix libraries
+   * (for example, libjpeg) into that dependency graph. Room's sqlite-jdbc verifier then fails on
+   * devices whose system-extension JPEG library is incompatible with the Prefix variant.
+   */
+  private fun configureGradleEnvironment(processBuilder: ProcessBuilder) {
+    val termuxEnv = TermuxShellEnvironment().getEnvironment(this, false)
+    val customEnv = HashMap<String, String>()
+    Environment.putEnvironment(customEnv, false)
+
+    val environment = processBuilder.environment()
+    environment.putAll(termuxEnv)
+    environment.putAll(customEnv)
+
+    val currentPath = environment["PATH"].orEmpty()
+    val requiredBinPaths = listOf(Environment.BIN_DIR.absolutePath, File(Environment.PREFIX, "bin").absolutePath)
+    environment["PATH"] =
+        (requiredBinPaths + currentPath.split(':'))
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(":")
+    environment["TMPDIR"] = Environment.TMP_DIR.absolutePath
+
+    // Keep generic Termux environment setup intact for other process types, but isolate Gradle
+    // and its workers from Prefix-wide native-library and preload injection.
+    environment.remove("LD_LIBRARY_PATH")
+    environment.remove("LD_PRELOAD")
+
+    log.info("Gradle native library search path isolated; PATH={}", environment["PATH"])
+  }
+
   override fun executeTasks(vararg tasks: String): CompletableFuture<TaskExecutionResult> {
     checkServerStarted()
     val tasksList = tasks.toList()
@@ -578,50 +605,7 @@ class GradleBuildService :
             val processBuilder = ProcessBuilder(command)
             processBuilder.directory(projectDir)
 
-            // Get Termux environment
-            val termuxEnv = TermuxShellEnvironment().getEnvironment(this@GradleBuildService, false)
-
-            // Add custom environment variables from Environment class
-            val customEnv = HashMap<String, String>()
-            Environment.putEnvironment(customEnv, false)
-
-            // Merge environments
-            val finalEnv = processBuilder.environment()
-            finalEnv.putAll(termuxEnv)
-            finalEnv.putAll(customEnv)
-
-            // Ensure PATH includes BIN_DIR for clang, python, etc.
-            val currentPath = finalEnv["PATH"] ?: ""
-            val binDirPath = Environment.BIN_DIR.absolutePath
-            val prefixBinPath = File(Environment.PREFIX, "bin").absolutePath
-
-            // Add BIN_DIR and PREFIX/bin to PATH if not already present
-            val pathEntries = mutableListOf<String>()
-            if (!currentPath.contains(binDirPath)) {
-              pathEntries.add(binDirPath)
-            }
-            if (!currentPath.contains(prefixBinPath)) {
-              pathEntries.add(prefixBinPath)
-            }
-            pathEntries.add(currentPath)
-
-            finalEnv["PATH"] = pathEntries.filter { it.isNotEmpty() }.joinToString(":")
-
-            // Add LD_LIBRARY_PATH for native libraries
-            val ldLibraryPath = finalEnv["LD_LIBRARY_PATH"] ?: ""
-            val libDirPath = Environment.LIB_DIR.absolutePath
-            finalEnv["LD_LIBRARY_PATH"] =
-                if (ldLibraryPath.isEmpty()) {
-                  libDirPath
-                } else {
-                  "$libDirPath:$ldLibraryPath"
-                }
-
-            // Set TMPDIR
-            finalEnv["TMPDIR"] = Environment.TMP_DIR.absolutePath
-
-            log.info("PATH set to: ${finalEnv["PATH"]}")
-            log.info("LD_LIBRARY_PATH set to: ${finalEnv["LD_LIBRARY_PATH"]}")
+            configureGradleEnvironment(processBuilder)
 
             val process = processBuilder.start()
 
