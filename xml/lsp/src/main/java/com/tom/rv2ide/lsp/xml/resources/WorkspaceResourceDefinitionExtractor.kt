@@ -49,7 +49,13 @@ internal object WorkspaceResourceDefinitionExtractor {
     val definitions =
         root.children.filterIsInstance<DOMElement>().mapNotNull { element ->
           val type = valueType(element) ?: return@mapNotNull null
-          definitionFromNameAttribute(file, text, type, element.getAttributeNode(NAME_ATTRIBUTE), VALUE_ELEMENT)
+          definitionFromNameAttribute(
+              file,
+              text,
+              type,
+              element.getAttributeNode(NAME_ATTRIBUTE),
+              WorkspaceResourceDefinitionKind.VALUE_ELEMENT,
+          )
         }
     return Extraction.Available(definitions)
   }
@@ -65,7 +71,7 @@ internal object WorkspaceResourceDefinitionExtractor {
                 name = name,
                 sourceFile = file,
                 nameRange = null,
-                kind = FILE_RESOURCE,
+                kind = WorkspaceResourceDefinitionKind.FILE_RESOURCE,
             )
         )
     )
