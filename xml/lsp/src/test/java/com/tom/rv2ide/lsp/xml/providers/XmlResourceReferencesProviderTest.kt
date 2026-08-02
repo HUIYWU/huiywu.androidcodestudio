@@ -39,6 +39,48 @@ class XmlResourceReferencesProviderTest : TestCase() {
     assertThat(locations!!.map { it.file }).containsExactly(definitionsFile, firstUsage, secondUsage).inOrder()
   }
 
+  fun testResolvesValuesAndIdDefinitionNamesAsTargets() {
+    val values = Paths.get("project/app/src/main/res/values/references.xml")
+    val text =
+        """
+        <resources>
+            <string name="probe_title">Title</string>
+            <item type="id" name="probe_id" />
+        </resources>
+        """
+            .trimIndent()
+    val snapshot = snapshot(linkedMapOf(values to text))
+    val provider = XmlResourceReferencesProvider()
+
+    val stringTarget = provider.targetFor(values, text, text.indexOf("probe_title") + 2, snapshot)
+    val idTarget = provider.targetFor(values, text, text.indexOf("probe_id") + 2, snapshot)
+
+    assertThat(stringTarget?.reference?.text).isEqualTo("@string/probe_title")
+    assertThat(idTarget?.reference?.text).isEqualTo("@id/probe_id")
+  }
+
+  fun testResolvesFileDefinitionOnlyWhenCursorIsNotOnInnerReference() {
+    val drawable = Paths.get("project/app/src/main/res/drawable/probe_background.xml")
+    val values = Paths.get("project/app/src/main/res/values/colors.xml")
+    val drawableText =
+        """
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <solid android:color="@color/probe_color" />
+        </shape>
+        """
+            .trimIndent()
+    val valuesText = "<resources><color name=\"probe_color\">#000000</color></resources>"
+    val snapshot = snapshot(linkedMapOf(drawable to drawableText, values to valuesText))
+    val provider = XmlResourceReferencesProvider()
+
+    val fileTarget = provider.targetFor(drawable, drawableText, drawableText.indexOf("shape"), snapshot)
+    val innerReferenceTarget =
+        provider.targetFor(drawable, drawableText, drawableText.indexOf("probe_color") + 2, snapshot)
+
+    assertThat(fileTarget?.reference?.text).isEqualTo("@drawable/probe_background")
+    assertThat(innerReferenceTarget?.reference?.text).isEqualTo("@color/probe_color")
+  }
+
   fun testFailsClosedWhenAnyIndexedFileCannotBeScanned() {
     val definitionsFile = Paths.get("project/app/src/main/res/values/strings.xml")
     val usage = Paths.get("project/app/src/main/res/layout/screen.xml")

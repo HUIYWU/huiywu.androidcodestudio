@@ -611,11 +611,11 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     pendingEditorFiles.remove(opened)
     editor?.close() ?: run { log.error("Cannot save file before close. Editor instance is null") }
 
+    // removeTabAt() synchronously selects a replacement tab. Keep the editor container and view
+    // model aligned before that callback can query the newly selected editor.
+    content.editorContainer.removeViewAt(index)
     editorViewModel.removeFile(index)
-    content.apply {
-      tabs.removeTabAt(index)
-      editorContainer.removeViewAt(index)
-    }
+    content.tabs.removeTabAt(index)
 
     editorViewModel.areFilesModified = hasUnsavedFiles()
 

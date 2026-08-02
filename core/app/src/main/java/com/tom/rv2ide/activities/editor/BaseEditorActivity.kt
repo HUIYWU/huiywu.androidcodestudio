@@ -1108,11 +1108,18 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
   override fun onTabSelected(tab: Tab) {
       val position = tab.position
+      val editorView = provideEditorAt(position)
+      if (editorView == null || editorView.editor == null) {
+        // TabLayout can synchronously dispatch this while a tab is being removed. Ignore the
+        // transient callback until the replacement editor has been installed at this position.
+        log.debug("Ignoring tab selection without an active editor. position={}", position)
+        return
+      }
+
       val previousEditor = provideCurrentEditor()
-      if (previousEditor != null && previousEditor !== provideEditorAt(position)) {
+      if (previousEditor != null && previousEditor !== editorView) {
         previousEditor.onEditorUnselected()
       }
-      val editorView = provideEditorAt(position)!!
       val selectedFile = editorView.file ?: runCatching { editorViewModel.getOpenedFile(position) }.getOrNull()
 
       val alreadyCurrent =

@@ -611,8 +611,9 @@ constructor(
     runOnUiThread { pagerAdapter.searchResultFragment?.setAdapter(adapter) }
   }
   fun refreshSymbolInput(editor: CodeEditorView) {
+    val ideEditor = editor.editor ?: return
     currentSymbolInputEditor = editor
-    binding.symbolInput.refresh(editor.editor, editor.file, forFile(editor.file))
+    binding.symbolInput.refresh(ideEditor, editor.file, forFile(editor.file))
   }
 
   fun getCurrentQuickInputEditor(): CodeEditorView? = currentSymbolInputEditor
