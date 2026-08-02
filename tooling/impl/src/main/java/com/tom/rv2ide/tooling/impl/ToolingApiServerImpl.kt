@@ -506,20 +506,48 @@ artifact = variant.mainArtifact,
               variantNameCapitalized = variantNameCapitalized,
               tasks = availableTasks,
           )
-
       if (!isLikelyAndroidNativeProject(context.projectDir)) {
         return@forEach
       }
 
+      // GradleProject.tasks is the Tooling API's task inventory, rather than a name inferred by
+      // ACS. Log the complete native-looking subset before selecting a warm-up task so that a
+      // missing AGP-internal configure task can be distinguished from an ACS selection failure.
+      val nativeTaskInventory =
+          availableTasks
+              .filter { task ->
+                val name = task.name.lowercase()
+                name.contains("cmake") ||
+                    name.contains("ndkbuild") ||
+                    name.contains("nativebuild") ||
+                    name.contains("generatejsonmodel")
+              }
+              .map { task -> task.path }
+              .sorted()
+      log.info(
+          "Android native task inventory from Gradle Tooling API: module={}, configuredVariant={}, totalTaskCount={}, nativeTaskCount={}, nativeTasks={}",
+          projectPath,
+          configuredVariant,
+          availableTasks.size,
+          nativeTaskInventory.size,
+          nativeTaskInventory,
+      )
+
       val selected = selectAndroidNativeWarmupTasks(context)
       if (selected.isNotEmpty()) {
         log.debug(
-            "Android native warm-up task candidates for {} (variant={}): {}",
-            projectPath,
-            configuredVariant,
-            selected,
+          "Android native warm-up task candidates selected from Tooling API inventory for {} (variant={}): {}",
+          projectPath,
+          configuredVariant,
+          selected,
         )
         tasks.addAll(selected)
+      } else {
+        log.info(
+            "No Android native warm-up task was selected from the Gradle Tooling API inventory: module={}, configuredVariant={}",
+            projectPath,
+            configuredVariant,
+        )
       }
     }
 
