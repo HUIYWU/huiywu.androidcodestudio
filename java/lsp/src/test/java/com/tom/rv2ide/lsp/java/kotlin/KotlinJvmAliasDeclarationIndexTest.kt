@@ -52,6 +52,35 @@ class KotlinJvmAliasDeclarationIndexTest {
   }
 
   @Test
+  fun declarationIndex_isImmutableUntilTheNextRevisionSnapshotIsBuilt() {
+    val root = Files.createTempDirectory("kotlin-alias-declaration-revision")
+    try {
+      val shared = root.resolve("shared").also { Files.createDirectories(it) }
+      val consumer = root.resolve("consumer").also { Files.createDirectories(it) }
+      val aliasFile = shared.resolve("Aliases.kt")
+      val consumerFile = consumer.resolve("Use.kt")
+      val consumerSource = """
+        package consumer
+        import shared.ApiName
+      """.trimIndent()
+      write(aliasFile, "package shared\ntypealias ApiName = String")
+      write(consumerFile, consumerSource)
+
+      val revisionOne = KotlinJvmTypeIndex.AliasDeclarationIndex.build(listOf(root.toFile()))
+      write(aliasFile, "package shared\ntypealias ApiName = Long")
+
+      // A published snapshot must not observe later file edits. Module revision invalidation is
+      // responsible for selecting a newly built snapshot.
+      assertEquals("String", revisionOne.visibleDirectAliases(consumerFile, consumerSource)["ApiName"])
+
+      val revisionTwo = KotlinJvmTypeIndex.AliasDeclarationIndex.build(listOf(root.toFile()))
+      assertEquals("Long", revisionTwo.visibleDirectAliases(consumerFile, consumerSource)["ApiName"])
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
   fun declarationIndex_rejectsSameSimpleNameConflicts() {
     val root = Files.createTempDirectory("kotlin-alias-declaration-conflict")
     try {
