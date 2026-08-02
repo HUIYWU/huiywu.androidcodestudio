@@ -43,7 +43,9 @@ import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UN
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_BUILD_ARGUMENT
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_CONFIGURATION
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_GRADLE_VERSION
+import com.tom.rv2ide.tooling.api.models.GradleTask
 import com.tom.rv2ide.tooling.api.models.ToolingServerMetadata
+
 import com.tom.rv2ide.tooling.impl.internal.AndroidProjectImpl
 import com.tom.rv2ide.tooling.impl.internal.ProjectImpl
 import com.tom.rv2ide.tooling.impl.net.SimpleHttpProxy
@@ -569,26 +571,9 @@ artifact = variant.mainArtifact,
       project: ProjectImpl,
       discoveredTasks: List<String>,
   ) {
-    val configureTasks =
-        discoveredTasks.filter { task ->
-          val name = task.substringAfterLast(':')
-          name.startsWith("configureCMake") || name.startsWith("configureNdkBuild")
-        }
-    if (configureTasks.isEmpty()) {
-      return
-    }
-
-    val targetTask =
-        configureTasks.sortedWith(
-            compareBy<String> {
-                  when {
-                    it.substringAfterLast(':').startsWith("configureCMake") -> 0
-                    it.substringAfterLast(':').startsWith("configureNdkBuild") -> 1
-                    else -> 2
-                  }
-                }
-                .thenBy { it.length }
-        ).first()
+    // Selection has already ranked real Gradle task paths, including CMake and ndk-build
+    // configure tasks. Do not re-filter here: legacy AGP fallback tasks are also intentional.
+    val targetTask = discoveredTasks.firstOrNull() ?: return
     val hadCompileCommandsBefore = projectHasNativeCompileCommands(project)
     if (hadCompileCommandsBefore) {
       log.info(
@@ -707,50 +692,115 @@ artifact = variant.mainArtifact,
     }
     return matches
   }
+private enum class AndroidNativeTaskKind(val priority: Int) {
+    CMAKE_CONFIGURE(0),
+    NDK_BUILD_CONFIGURE(1),
+    JSON_MODEL(2),
+    EXTERNAL_NATIVE_BUILD(3),
+  }
+
+  private data class AndroidNativeWarmupTask(
+      val task: GradleTask,
+      val kind: AndroidNativeTaskKind,
+      val buildType: String?,
+      val abi: String?,
+  )
 
   private fun selectAndroidNativeWarmupTasks(
       context: AndroidNativeWarmupContext,
   ): List<String> {
     val moduleTasks =
-        context.tasks
-            .asSequence()
-            .filter { task ->
-              task.path.startsWith("${context.projectPath}:") || task.projectPath == context.projectPath
-            }
-            .toList()
-
-    val selected = linkedSetOf<String>()
-    val variantSuffixes =
-        listOf(
-            context.variantNameCapitalized,
-            context.variantName,
-            context.variantName.lowercase(),
-        )
-    val normalizedVariantTokens = variantSuffixes.map { it.lowercase() }
-
-    fun matchesVariant(taskName: String): Boolean {
-      val normalized = taskName.lowercase()
-      return normalizedVariantTokens.any { token -> normalized.contains(token) }
+        context.tasks.filter { task ->
+          task.path.startsWith("${context.projectPath}:") || task.projectPath == context.projectPath
+        }
+    val configureTasks =
+        moduleTasks
+            .mapNotNull(::parseAndroidNativeWarmupTask)
+            .filter { it.kind == AndroidNativeTaskKind.CMAKE_CONFIGURE || it.kind == AndroidNativeTaskKind.NDK_BUILD_CONFIGURE }
+            .filter { candidate -> nativeBuildTypeCompatibility(context.variantName, candidate.buildType) != null }
+            .sortedWith(
+                compareBy<AndroidNativeWarmupTask> {
+                      nativeBuildTypeCompatibility(context.variantName, it.buildType) ?: Int.MAX_VALUE
+                    }
+                    .then(nativeWarmupTaskComparator())
+            )
+    // AGP names CMake and ndk-build configure tasks by their native build type (for example,
+    // configureCMakeDebug[arm64-v8a]), not necessarily by the full Android flavor variant
+    // (genericDebug). The path came from Gradle's task model; ACS only ranks it here.
+    if (configureTasks.isNotEmpty()) {
+      return listOf(configureTasks.first().task.path)
     }
 
-    fun addBestMatchingTask(prefixes: List<String>) {
-      moduleTasks
-          .filter { task ->
-            val normalized = task.name.lowercase()
-            prefixes.any { prefix -> normalized.startsWith(prefix) } && matchesVariant(task.name)
-          }
-          .sortedWith(compareBy<com.tom.rv2ide.tooling.api.models.GradleTask> { it.path.length }.thenBy { it.name })
-          .firstOrNull()
-          ?.path
-          ?.let(selected::add)
+    // Older AGP versions can expose only variant-scoped metadata/build tasks. Keep this fallback
+    // reachable instead of selecting it and silently discarding it in the execution layer.
+    return moduleTasks
+        .mapNotNull(::parseAndroidNativeWarmupTask)
+        .filter { candidate ->
+          (candidate.kind == AndroidNativeTaskKind.JSON_MODEL || candidate.kind == AndroidNativeTaskKind.EXTERNAL_NATIVE_BUILD) &&
+              candidate.buildType != null &&
+              candidate.buildType.equals(context.variantName, ignoreCase = true)
+        }
+        .sortedWith(nativeWarmupTaskComparator())
+        .firstOrNull()
+        ?.let { listOf(it.task.path) }
+        ?: emptyList()
+  }
+
+  private fun parseAndroidNativeWarmupTask(task: GradleTask): AndroidNativeWarmupTask? {
+    val name = task.name
+    val kindAndSuffix =
+        when {
+          name.startsWith("configureCMake", ignoreCase = true) ->
+            AndroidNativeTaskKind.CMAKE_CONFIGURE to name.substring("configureCMake".length)
+          name.startsWith("configureNdkBuild", ignoreCase = true) ->
+            AndroidNativeTaskKind.NDK_BUILD_CONFIGURE to name.substring("configureNdkBuild".length)
+          name.startsWith("generateJsonModel", ignoreCase = true) ->
+            AndroidNativeTaskKind.JSON_MODEL to name.substring("generateJsonModel".length)
+          name.startsWith("externalNativeBuild", ignoreCase = true) &&
+              !name.startsWith("externalNativeBuildClean", ignoreCase = true) ->
+            AndroidNativeTaskKind.EXTERNAL_NATIVE_BUILD to name.substring("externalNativeBuild".length)
+          else -> return null
+        }
+    val suffix = kindAndSuffix.second
+    val abiStart = suffix.indexOf('[')
+    val buildType = if (abiStart >= 0) suffix.substring(0, abiStart) else suffix
+    val abi =
+        if (abiStart >= 0 && suffix.endsWith(']')) suffix.substring(abiStart + 1, suffix.length - 1)
+        else null
+    return AndroidNativeWarmupTask(task, kindAndSuffix.first, buildType.ifBlank { null }, abi)
+}
+
+  private fun nativeBuildTypeCompatibility(variantName: String, nativeBuildType: String?): Int? {
+    val type = nativeBuildType?.takeIf { it.isNotBlank() } ?: return null
+    if (variantName.equals(type, ignoreCase = true)) return 0
+    if (variantName.endsWith(type, ignoreCase = true)) return 1
+
+    // Some AGP versions expose CMake/ndk-build tasks as Debug/RelWithDebInfo while Android
+    // variants use the conventional Debug/Release build types. Treat that documented native
+    // release configuration as a lower-priority compatible match for both build systems.
+    return if (
+        type.equals("RelWithDebInfo", ignoreCase = true) &&
+            variantName.endsWith("Release", ignoreCase = true)
+    ) {
+      2
+    } else {
+      null
     }
+  }
 
-    addBestMatchingTask(listOf("configurecmake"))
-    addBestMatchingTask(listOf("configurendkbuild"))
-    addBestMatchingTask(listOf("generatejsonmodel"))
-    addBestMatchingTask(listOf("externalnativebuild"))
+  private fun nativeWarmupTaskComparator(): Comparator<AndroidNativeWarmupTask> {
+    return compareBy<AndroidNativeWarmupTask> { it.kind.priority }
+        .thenBy { nativeWarmupAbiPriority(it.abi) }
+        .thenBy { it.task.path.length }
+        .thenBy { it.task.path }
+  }
 
-    return selected.toList()
+  private fun nativeWarmupAbiPriority(abi: String?): Int {
+    return when (abi) {
+      "arm64-v8a" -> 0
+      null -> 1
+      else -> 2
+    }
   }
 
 
