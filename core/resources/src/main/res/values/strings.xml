@@ -166,6 +166,7 @@
    <string name="action_fix_attribute_value">Fix attribute value</string>
    <string name="action_fix_tag_name">Fix tag name</string>
   <string name="action_add_android_namespace">Add Android namespace</string>
+   <string name="action_add_android_resource_prefix">Add Android resource prefix</string>
   <string name="action_fix_android_namespace">Fix Android namespace</string>
   <string name="msg_performing_actions">Performing code action…</string>
   <string name="msg_api_info_since">Since API %d</string>

@@ -17,6 +17,7 @@
 package com.tom.rv2ide.lsp.xml.diagnostics.rules
 
 import com.android.aaptcompiler.AaptResourceType.ID
+import com.tom.rv2ide.lsp.xml.diagnostics.MissingFrameworkResourcePrefixDiagnosticData
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticCollector
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticContext
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlElementDiagnosticRule
@@ -25,14 +26,12 @@ import com.tom.rv2ide.lsp.xml.diagnostics.XmlResourceResolver
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlTextDiagnosticRule
 import org.eclipse.lemminx.dom.DOMElement
 import org.eclipse.lemminx.dom.DOMText
-import org.slf4j.LoggerFactory
 
 /** AXML003: conservative complete resource-reference checks for attributes and plain text nodes. */
 internal object ResourceReferenceDiagnosticRule :
     XmlElementDiagnosticRule, XmlTextDiagnosticRule {
   override val id: String = "resource-reference"
 
-  private val log = LoggerFactory.getLogger(ResourceReferenceDiagnosticRule::class.java)
   private val resourceResolver = XmlResourceResolver()
 
   override fun supports(context: XmlDiagnosticContext): Boolean = true
@@ -59,11 +58,12 @@ internal object ResourceReferenceDiagnosticRule :
       }
       val resolution = resourceResolver.resolve(reference, context.moduleResourceIds)
       if (resolution == XmlResourceResolver.Resolution.NotFound) {
-        traceMissingFrameworkPrefix(reference)
+        val fix = frameworkPrefixFix(reference)
         collector.errorValue(
             code = CODE_UNRESOLVED_RESOURCE,
             message = "Cannot resolve resource reference '${reference.text}'",
             attribute = attribute,
+            extra = fix ?: Any(),
         )
       }
     }
@@ -84,12 +84,13 @@ internal object ResourceReferenceDiagnosticRule :
       return
     }
 
-    traceMissingFrameworkPrefix(reference)
+    val fix = frameworkPrefixFix(reference)
     collector.errorRange(
         code = CODE_UNRESOLVED_RESOURCE,
         message = "Cannot resolve resource reference '${reference.text}'",
         start = candidate.start,
         end = candidate.end,
+        extra = fix ?: Any(),
     )
   }
 
@@ -117,20 +118,18 @@ internal object ResourceReferenceDiagnosticRule :
     return namespaceUri == TOOLS_NAMESPACE_URI
   }
 
-  private fun traceMissingFrameworkPrefix(reference: XmlResourceReference) {
+  private fun frameworkPrefixFix(
+      reference: XmlResourceReference,
+  ): MissingFrameworkResourcePrefixDiagnosticData? {
     if (reference.packageName != null || reference.isThemeAttribute || reference.type == ID) {
-      return
+      return null
     }
     val frameworkReference =
-        XmlResourceReference.parse("@android:${reference.type.tagName}/${reference.entry}") ?: return
-    val frameworkResolution = resourceResolver.resolve(frameworkReference)
-    log.warn(
-        "AXML003 framework-prefix trace: reference={} frameworkReference={} frameworkResolution={} suggestedReplacement={}",
-        reference.text,
-        frameworkReference.text,
-        frameworkResolution,
-        if (frameworkResolution == XmlResourceResolver.Resolution.Resolved) frameworkReference.text else null,
-    )
+        XmlResourceReference.parse("@android:${reference.type.tagName}/${reference.entry}") ?: return null
+    if (resourceResolver.resolve(frameworkReference) != XmlResourceResolver.Resolution.Resolved) {
+      return null
+    }
+    return MissingFrameworkResourcePrefixDiagnosticData(reference.text, frameworkReference.text)
   }
 
   private fun isDeclaredLocally(

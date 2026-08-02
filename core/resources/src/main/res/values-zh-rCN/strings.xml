@@ -54,6 +54,7 @@
  <string name="action_fix_attribute_value">修正属性值</string>
 ><string name="action_fix_tag_name">修正标签名</string>
   <string name="action_add_android_namespace">添加 Android 命名空间</string>
+ <string name="action_add_android_resource_prefix">添加 Android 资源前缀</string>
   <string name="action_fix_android_namespace">修正 Android 命名空间</string>
   <string name="msg_performing_actions">正在执行快速修复…</string>
   <string name="msg_api_info_since">添加于 API %d</string>

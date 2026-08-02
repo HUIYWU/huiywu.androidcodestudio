@@ -44,6 +44,12 @@ internal enum class AttributeValueFixReason {
   ADD_COLOR_HASH_PREFIX,
 }
 
+/** Stable facts for an AXML003 reference that uniquely resolves in the Android framework. */
+internal data class MissingFrameworkResourcePrefixDiagnosticData(
+  val originalReference: String,
+  val replacement: String,
+)
+
 /**
  * XML LSP diagnostic messages. The key and argument order are the stable contract;
  * the returned string is only a localized presentation value.
