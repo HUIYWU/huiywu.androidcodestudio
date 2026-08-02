@@ -12,7 +12,7 @@ import com.google.common.truth.Truth.assertThat
 import java.nio.file.Paths
 import junit.framework.TestCase
 
-class WorkspaceResourceDefinitionExtractorTest : TestCase() {
+class ResourceDefinitionExtractorTest : TestCase() {
 
   fun testExtractsSupportedValuesDefinitionsWithExactNameRanges() {
     val text =
@@ -33,9 +33,9 @@ class WorkspaceResourceDefinitionExtractorTest : TestCase() {
         .inOrder()
     assertThat(definitions.map { it.kind })
         .containsExactly(
-            WorkspaceResourceDefinitionKind.VALUE_ELEMENT,
-            WorkspaceResourceDefinitionKind.VALUE_ELEMENT,
-            WorkspaceResourceDefinitionKind.VALUE_ELEMENT,
+            ResourceDefinitionKind.VALUE_ELEMENT,
+            ResourceDefinitionKind.VALUE_ELEMENT,
+            ResourceDefinitionKind.ID_DECLARATION,
         )
     assertNameRange(text, definitions[0], "title")
     assertNameRange(text, definitions[1], "primary")
@@ -49,13 +49,30 @@ class WorkspaceResourceDefinitionExtractorTest : TestCase() {
     assertThat(layout).hasSize(1)
     assertThat(layout.single().type).isEqualTo(LAYOUT)
     assertThat(layout.single().name).isEqualTo("activity_main")
-    assertThat(layout.single().kind).isEqualTo(WorkspaceResourceDefinitionKind.FILE_RESOURCE)
+    assertThat(layout.single().kind).isEqualTo(ResourceDefinitionKind.FILE_RESOURCE)
     assertThat(layout.single().nameRange).isNull()
 
     assertThat(drawable).hasSize(1)
     assertThat(drawable.single().type).isEqualTo(DRAWABLE)
     assertThat(drawable.single().name).isEqualTo("ic_logo")
     assertThat(drawable.single().nameRange).isNull()
+  }
+
+  fun testExtractsCreatingIdsFromCompleteFileResourceXml() {
+    val text =
+        """
+        <View xmlns:android="http://schemas.android.com/apk/res/android"
+            android:id="@+id/content"
+            android:label="@+android:id/framework" />
+        """
+            .trimIndent()
+    val definitions = extract("project/app/src/main/res/layout/screen.xml", text)
+
+    assertThat(definitions.map { it.type to it.name })
+        .containsExactly(LAYOUT to "screen", ID to "content")
+        .inOrder()
+    assertThat(definitions[1].kind).isEqualTo(ResourceDefinitionKind.ID_DECLARATION)
+    assertNameRange(text, definitions[1], "content")
   }
 
   fun testIgnoresNonResourceAndInvalidFileNames() {
@@ -66,21 +83,42 @@ class WorkspaceResourceDefinitionExtractorTest : TestCase() {
 
   fun testTreatsMalformedValuesDocumentAsUnavailable() {
     val result =
-        WorkspaceResourceDefinitionExtractor.extract(
+        ResourceDefinitionExtractor.extract(
             Paths.get("project/src/main/res/values/strings.xml"),
             "<resources><string name=\"title\">Title",
         )
 
-    assertThat(result).isEqualTo(WorkspaceResourceDefinitionExtractor.Extraction.Unavailable)
+    assertThat(result).isEqualTo(ResourceDefinitionExtractor.Extraction.Unavailable)
   }
 
-  private fun extract(path: String, text: String): List<WorkspaceResourceDefinition> {
-    val result = WorkspaceResourceDefinitionExtractor.extract(Paths.get(path), text)
-    assertThat(result).isInstanceOf(WorkspaceResourceDefinitionExtractor.Extraction.Available::class.java)
-    return (result as WorkspaceResourceDefinitionExtractor.Extraction.Available).definitions
+  fun testSnapshotKeepsQualifiedDefinitionsAndFailsClosedForUnavailableFile() {
+    val base = Paths.get("project/app/src/main/res/values/strings.xml")
+    val qualified = Paths.get("project/app/src/main/res/values-v31/strings.xml")
+    val usageOnly = Paths.get("project/app/src/main/res/layout/screen.xml")
+    val baseExtraction = ResourceDefinitionExtractor.extract(base, "<resources><string name=\"title\">Base</string></resources>")
+    val qualifiedExtraction = ResourceDefinitionExtractor.extract(qualified, "<resources><string name=\"title\">Qualified</string></resources>")
+    val usageOnlyExtraction = ResourceDefinitionExtractor.extract(usageOnly, "<View android:text=\"@string/title\" />")
+
+    val available = snapshotDefinitions(
+        linkedMapOf(base to baseExtraction, qualified to qualifiedExtraction, usageOnly to usageOnlyExtraction)
+    )
+    assertThat(available).isInstanceOf(ResourceSnapshot.Available::class.java)
+    val snapshot = available as ResourceSnapshot.Available
+    // A layout with no values declaration is still the @layout/screen file-resource definition.
+    assertThat(snapshot.definitions.map { it.sourceFile }).containsExactly(base, qualified, usageOnly).inOrder()
+    assertThat(snapshot.files).containsExactly(base, qualified, usageOnly)
+
+    assertThat(snapshotDefinitions(mapOf(base to ResourceDefinitionExtractor.Extraction.Unavailable)))
+        .isEqualTo(ResourceSnapshot.Unavailable)
   }
 
-  private fun assertNameRange(text: String, definition: WorkspaceResourceDefinition, expected: String) {
+  private fun extract(path: String, text: String): List<ResourceDefinition> {
+    val result = ResourceDefinitionExtractor.extract(Paths.get(path), text)
+    assertThat(result).isInstanceOf(ResourceDefinitionExtractor.Extraction.Available::class.java)
+    return (result as ResourceDefinitionExtractor.Extraction.Available).definitions
+  }
+
+  private fun assertNameRange(text: String, definition: ResourceDefinition, expected: String) {
     val range = checkNotNull(definition.nameRange)
     val offset = text.indexOf(expected)
     val lineStart = text.lastIndexOf('\n', offset - 1) + 1

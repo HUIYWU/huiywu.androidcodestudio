@@ -1,0 +1,86 @@
+/*
+ *  This file is part of AndroidCodeStudio.
+ */
+package com.tom.rv2ide.lsp.xml.resources
+
+import com.android.aaptcompiler.AaptResourceType.COLOR
+import com.android.aaptcompiler.AaptResourceType.ID
+import com.android.aaptcompiler.AaptResourceType.STRING
+import com.google.common.truth.Truth.assertThat
+import junit.framework.TestCase
+
+class ResourceReferenceScannerTest : TestCase() {
+
+  fun testScansCompleteAttributeAndPlainTextReferencesWithExactRanges() {
+    val text =
+        """
+        <View xmlns:android="http://schemas.android.com/apk/res/android"
+            android:text="@string/title"
+            android:id="@+id/content">
+          @color/primary
+        </View>
+        """
+            .trimIndent()
+
+    val occurrences = scan(text)
+
+    assertThat(occurrences.map { it.reference.type to it.reference.entry })
+        .containsExactly(STRING to "title", ID to "content", COLOR to "primary")
+        .inOrder()
+    assertThat(occurrences.map { it.isCreatingId }).containsExactly(false, true, false).inOrder()
+    assertOccurrenceRange(text, occurrences[0], "@string/title")
+    assertOccurrenceRange(text, occurrences[1], "@+id/content")
+    assertOccurrenceRange(text, occurrences[2], "@color/primary")
+    assertThat(occurrences[1].reference.text).isEqualTo("@id/content")
+  }
+
+  fun testSkipsToolsDataBindingSpecialAndPartialReferences() {
+    val text =
+        """
+        <View xmlns:tools="http://schemas.android.com/tools"
+            tools:text="@string/tools_only"
+            android:text="@{viewModel.title}"
+            android:tag="prefix @string/not_complete"
+            android:contentDescription="@null">
+          text @string/not_complete
+        </View>
+        """
+            .trimIndent()
+
+    assertThat(scan(text)).isEmpty()
+  }
+
+  fun testTargetAtAcceptsOnlyReferenceRange() {
+    val text = "<View android:text=\"@string/title\" />"
+    val referenceOffset = text.indexOf("title") + 2
+
+    val target = ResourceReferenceScanner.targetAt(text, referenceOffset)
+
+    assertThat(target).isNotNull()
+    assertThat(target!!.reference.type).isEqualTo(STRING)
+    assertThat(ResourceReferenceScanner.targetAt(text, text.indexOf("android:text"))).isNull()
+    assertThat(ResourceReferenceScanner.targetAt(text, text.indexOf('"'))).isNull()
+  }
+
+  fun testMalformedDocumentIsUnavailable() {
+    assertThat(ResourceReferenceScanner.scan("<View android:text=\"@string/title\">"))
+        .isEqualTo(ResourceReferenceScanner.ScanResult.Unavailable)
+  }
+
+  private fun scan(text: String): List<ResourceReferenceOccurrence> {
+    val result = ResourceReferenceScanner.scan(text)
+    assertThat(result).isInstanceOf(ResourceReferenceScanner.ScanResult.Available::class.java)
+    return (result as ResourceReferenceScanner.ScanResult.Available).occurrences
+  }
+
+  private fun assertOccurrenceRange(
+      text: String,
+      occurrence: ResourceReferenceOccurrence,
+      expected: String,
+  ) {
+    val offset = text.indexOf(expected)
+    assertThat(occurrence.startOffset).isEqualTo(offset)
+    assertThat(occurrence.endOffset).isEqualTo(offset + expected.length)
+    assertThat(occurrence.range.end.column - occurrence.range.start.column).isEqualTo(expected.length)
+  }
+}

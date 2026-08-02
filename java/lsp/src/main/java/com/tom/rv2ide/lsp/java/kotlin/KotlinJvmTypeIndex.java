@@ -45,10 +45,14 @@ import org.slf4j.LoggerFactory;
 public final class KotlinJvmTypeIndex {
 
   private static final Logger LOG = LoggerFactory.getLogger(KotlinJvmTypeIndex.class);
-  private static final ConcurrentHashMap<ModuleProject, CachedTypes> CACHE =
-      new ConcurrentHashMap<>();
-  private static final ConcurrentHashMap<ModuleProject, CachedAliases> ALIAS_CACHE =
-      new ConcurrentHashMap<>();
+  private static final AliasCacheStore<ModuleProject, RevisionSnapshotStore<Set<String>>> CACHE =
+      new AliasCacheStore<>();
+  private static final AliasCacheStore<ModuleProject, RevisionSnapshotStore<CachedAliases>> ALIAS_CACHE =
+      new AliasCacheStore<>();
+  private static final AliasCacheStore<ModuleProject, RevisionSnapshotStore<NavigationCandidateIndex>>
+      NAVIGATION_CACHE = new AliasCacheStore<>();
+  private static final AliasCacheStore<ModuleProject, RevisionSnapshotStore<List<Path>>>
+      SOURCE_FILE_CACHE = new AliasCacheStore<>();
 
   private static final Pattern PACKAGE_PATTERN =
       Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_][\\w]*(?:\\.[A-Za-z_][\\w]*)*)");
@@ -82,30 +86,36 @@ public final class KotlinJvmTypeIndex {
       return Collections.emptySet();
     }
 
-    final long revision = module.getSourceIndexVersion();
-    final CachedTypes cached = CACHE.get(module);
-    if (cached != null && cached.revision == revision) {
-      return cached.types;
-    }
+    while (true) {
+      final long revision = module.getSourceIndexVersion();
+      final RevisionSnapshotStore<Set<String>> store = topLevelTypeSnapshotStore(module);
+      final Set<String> cached = store.get(revision);
+      if (cached != null) return cached;
 
-    final Set<String> indexed = new LinkedHashSet<>();
-    for (java.io.File root : module.getCompileSourceDirectories()) {
-      if (root == null || !root.isDirectory()) {
-        continue;
-      }
-      try (Stream<Path> paths = Files.walk(root.toPath())) {
-        paths.filter(DocumentUtils::isKotlinFile)
-            .filter(path -> path.getFileName().toString().endsWith(".kt"))
-            .forEach(path -> indexFile(path, indexed));
-      } catch (IOException error) {
-        LOG.debug("Unable to scan Kotlin source root {}", root, error);
+      // Scanning every Kotlin source file is a cold/revision-change operation. Keep it per-module
+      // so concurrent completion/import requests share one immutable published result.
+      synchronized (module) {
+        final long lockedRevision = module.getSourceIndexVersion();
+        final Set<String> lockedCached = store.get(lockedRevision);
+        if (lockedCached != null) return lockedCached;
+
+        final long startedAt = System.nanoTime();
+        final Set<String> indexed = new LinkedHashSet<>();
+        for (Path path : kotlinSourceFilesForRevision(module, lockedRevision)) {
+          indexFile(path, indexed);
+        }
+
+        final long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
+        if (module.getSourceIndexVersion() != lockedRevision) {
+          LOG.debug("Discarded Kotlin JVM top-level type index for module {} revision {} after {} ms; source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
+          continue;
+        }
+        final Set<String> immutable = Collections.unmodifiableSet(indexed);
+        store.replace(lockedRevision, immutable);
+        LOG.debug("Built Kotlin JVM top-level type index for module {} revision {}: types={} in {} ms", module.getPath(), lockedRevision, immutable.size(), elapsedMillis);
+        return immutable;
       }
     }
-
-    final Set<String> immutable = Collections.unmodifiableSet(indexed);
-    CACHE.put(module, new CachedTypes(revision, immutable));
-    LOG.debug("Indexed {} Kotlin JVM top-level types for module {}", immutable.size(), module.getPath());
-    return immutable;
   }
 
   /**
@@ -118,28 +128,7 @@ public final class KotlinJvmTypeIndex {
     if (!isRecognitionEnabled() || module == null || qualifiedName == null || qualifiedName.isEmpty()) {
       return Collections.emptyList();
     }
-    final java.util.ArrayList<KotlinTypeDeclaration> result = new java.util.ArrayList<>();
-    for (java.io.File root : module.getCompileSourceDirectories()) {
-      if (root == null || !root.isDirectory()) {
-        continue;
-      }
-      try (Stream<Path> paths = Files.walk(root.toPath())) {
-        final java.util.Iterator<Path> iterator = paths
-            .filter(DocumentUtils::isKotlinFile)
-            .filter(path -> path.getFileName().toString().endsWith(".kt"))
-            .iterator();
-        while (iterator.hasNext()) {
-          final Path path = iterator.next();
-          final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
-          if (isMultifileFacade(source, path, qualifiedName)) {
-            result.add(new KotlinTypeDeclaration(path, fileJvmNameOffset(source), facadeName(source, path).length()));
-          }
-        }
-      } catch (IOException error) {
-        LOG.debug("Unable to scan Kotlin multifile sources for {}", qualifiedName, error);
-      }
-    }
-    return result.isEmpty() ? Collections.emptyList() : Collections.unmodifiableList(result);
+    return navigationCandidatesForRevision(module).multifileDeclarations(qualifiedName);
   }
 
   public static java.util.Map<String, GenericTypeAlias> visibleGenericTypeAliases(
@@ -233,26 +222,7 @@ public final class KotlinJvmTypeIndex {
     if (!isRecognitionEnabled() || module == null || qualifiedName == null || qualifiedName.isEmpty()) {
       return null;
     }
-    for (java.io.File root : module.getCompileSourceDirectories()) {
-      if (root == null || !root.isDirectory()) {
-        continue;
-      }
-      try (Stream<Path> paths = Files.walk(root.toPath())) {
-        final java.util.Iterator<Path> iterator = paths
-            .filter(DocumentUtils::isKotlinFile)
-            .filter(path -> path.getFileName().toString().endsWith(".kt"))
-            .iterator();
-        while (iterator.hasNext()) {
-          final KotlinTypeDeclaration declaration = findDeclarationInFile(iterator.next(), qualifiedName);
-          if (declaration != null) {
-            return declaration;
-          }
-        }
-      } catch (IOException error) {
-        LOG.debug("Unable to scan Kotlin source root {} for {}", root, qualifiedName, error);
-      }
-    }
-    return null;
+    return navigationCandidatesForRevision(module).declaration(qualifiedName);
   }
 
   /** Kotlin source discovery is opt-in; callers must not create scanner/cache work while disabled. */
@@ -263,27 +233,154 @@ public final class KotlinJvmTypeIndex {
   private static CachedAliases aliasCacheWithDeclarationIndexForRevision(ModuleProject module) {
     while (true) {
       final long revision = module.getSourceIndexVersion();
-      final CachedAliases existing = ALIAS_CACHE.get(module);
-      if (existing != null && existing.revision == revision) return existing;
+      final RevisionSnapshotStore<CachedAliases> store = aliasSnapshotStore(module);
+      final CachedAliases existing = store.get(revision);
+      if (existing != null) return existing;
       // Index construction reads many source files. Serialize only this cold/revision-change path
       // per module so concurrent first consumers publish one complete immutable snapshot.
       synchronized (module) {
         final long lockedRevision = module.getSourceIndexVersion();
-        final CachedAliases lockedExisting = ALIAS_CACHE.get(module);
-        if (lockedExisting != null && lockedExisting.revision == lockedRevision) return lockedExisting;
+        final CachedAliases lockedExisting = store.get(lockedRevision);
+        if (lockedExisting != null) return lockedExisting;
         final long startedAt = System.nanoTime();
-        final AliasDeclarationIndex indexed = AliasDeclarationIndex.build(module.getCompileSourceDirectories());
+        final AliasDeclarationIndex indexed = AliasDeclarationIndex.buildFromPaths(
+            kotlinSourceFilesForRevision(module, lockedRevision));
         final long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
         // Do not publish a snapshot that was built while the module source revision changed.
         if (module.getSourceIndexVersion() != lockedRevision) {
           LOG.debug("Discarded Kotlin typealias declaration index for module {} revision {} after {} ms; source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
           continue;
         }
-        final CachedAliases replacement = new CachedAliases(lockedRevision, indexed);
-        ALIAS_CACHE.put(module, replacement);
+        final CachedAliases replacement = new CachedAliases(indexed);
+        store.replace(lockedRevision, replacement);
         LOG.debug("Built Kotlin typealias declaration index for module {} revision {}: direct={} generic={} in {} ms", module.getPath(), lockedRevision, indexed.directAliasCount(), indexed.genericAliasCount(), elapsedMillis);
         return replacement;
       }
+    }
+  }
+
+  private static NavigationCandidateIndex navigationCandidatesForRevision(ModuleProject module) {
+    while (true) {
+      final long revision = module.getSourceIndexVersion();
+      final RevisionSnapshotStore<NavigationCandidateIndex> store = navigationSnapshotStore(module);
+      final NavigationCandidateIndex existing = store.get(revision);
+      if (existing != null) return existing;
+
+      synchronized (module) {
+        final long lockedRevision = module.getSourceIndexVersion();
+        final NavigationCandidateIndex lockedExisting = store.get(lockedRevision);
+        if (lockedExisting != null) return lockedExisting;
+
+        final long startedAt = System.nanoTime();
+        final NavigationCandidateIndex indexed = NavigationCandidateIndex.buildFromPaths(
+            kotlinSourceFilesForRevision(module, lockedRevision));
+        final long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
+        if (module.getSourceIndexVersion() != lockedRevision) {
+          LOG.debug("Discarded Kotlin JVM navigation candidate index for module {} revision {} after {} ms; source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
+          continue;
+        }
+        store.replace(lockedRevision, indexed);
+        LOG.debug("Built Kotlin JVM navigation candidate index for module {} revision {}: declarations={} multifileDeclarations={} in {} ms", module.getPath(), lockedRevision, indexed.declarationCount(), indexed.multifileDeclarationCount(), elapsedMillis);
+        return indexed;
+      }
+    }
+  }
+
+  private static List<Path> kotlinSourceFilesForRevision(ModuleProject module, long revision) {
+    final RevisionSnapshotStore<List<Path>> store = sourceFileSnapshotStore(module);
+    final List<Path> existing = store.get(revision);
+    if (existing != null) return existing;
+
+    // Callers already hold the module lock while building a derived snapshot. Keeping this method
+    // lock-free prevents lock-order surprises and lets all derived indexes share one file listing.
+    final List<Path> files = new java.util.ArrayList<>();
+    for (java.io.File root : module.getCompileSourceDirectories()) {
+      if (root == null || !root.isDirectory()) continue;
+      try (Stream<Path> paths = Files.walk(root.toPath())) {
+        paths.filter(DocumentUtils::isKotlinFile)
+            .filter(path -> path.getFileName().toString().endsWith(".kt"))
+            .map(KotlinJvmTypeIndex::normalizedPath)
+            .forEach(files::add);
+      } catch (IOException error) {
+        LOG.debug("Unable to list Kotlin source root {}", root, error);
+      }
+    }
+    final List<Path> immutable = Collections.unmodifiableList(files);
+    if (module.getSourceIndexVersion() == revision) {
+      store.replace(revision, immutable);
+    }
+    return immutable;
+  }
+
+  private static RevisionSnapshotStore<List<Path>> sourceFileSnapshotStore(ModuleProject module) {
+    RevisionSnapshotStore<List<Path>> store = SOURCE_FILE_CACHE.get(module);
+    if (store != null) return store;
+    final RevisionSnapshotStore<List<Path>> created = new RevisionSnapshotStore<>();
+    SOURCE_FILE_CACHE.putIfAbsent(module, created);
+    final RevisionSnapshotStore<List<Path>> published = SOURCE_FILE_CACHE.get(module);
+    return published == null ? created : published;
+  }
+
+  private static RevisionSnapshotStore<NavigationCandidateIndex> navigationSnapshotStore(
+      ModuleProject module) {
+    RevisionSnapshotStore<NavigationCandidateIndex> store = NAVIGATION_CACHE.get(module);
+    if (store != null) return store;
+    final RevisionSnapshotStore<NavigationCandidateIndex> created = new RevisionSnapshotStore<>();
+    NAVIGATION_CACHE.putIfAbsent(module, created);
+    final RevisionSnapshotStore<NavigationCandidateIndex> published = NAVIGATION_CACHE.get(module);
+    return published == null ? created : published;
+  }
+
+  private static RevisionSnapshotStore<Set<String>> topLevelTypeSnapshotStore(ModuleProject module) {
+    RevisionSnapshotStore<Set<String>> store = CACHE.get(module);
+    if (store != null) return store;
+    final RevisionSnapshotStore<Set<String>> created = new RevisionSnapshotStore<>();
+    CACHE.putIfAbsent(module, created);
+    final RevisionSnapshotStore<Set<String>> published = CACHE.get(module);
+    return published == null ? created : published;
+  }
+
+  private static RevisionSnapshotStore<CachedAliases> aliasSnapshotStore(ModuleProject module) {
+    RevisionSnapshotStore<CachedAliases> store = ALIAS_CACHE.get(module);
+    if (store != null) return store;
+    final RevisionSnapshotStore<CachedAliases> created = new RevisionSnapshotStore<>();
+    ALIAS_CACHE.putIfAbsent(module, created);
+    final RevisionSnapshotStore<CachedAliases> published = ALIAS_CACHE.get(module);
+    return published == null ? created : published;
+  }
+
+  /**
+   * Revision gate shared by the module cache path and unit tests. It never returns a snapshot from
+   * a different source revision, so a caller must replace rather than mutate stale state.
+   */
+  static final class RevisionSnapshotStore<T> {
+    // Publish revision and snapshot as one immutable state. Separate volatile fields could expose a
+    // new revision together with the previous snapshot to a concurrent reader between writes.
+    private volatile RevisionSnapshot<T> current;
+
+    T get(long requestedRevision) {
+      final RevisionSnapshot<T> snapshot = current;
+      return snapshot != null && snapshot.revision == requestedRevision ? snapshot.value : null;
+    }
+
+    synchronized T replace(long requestedRevision, T replacement) {
+      if (replacement == null) throw new IllegalArgumentException("replacement == null");
+      current = new RevisionSnapshot<>(requestedRevision, replacement);
+      return replacement;
+    }
+
+    synchronized void clear() {
+      current = null;
+    }
+  }
+
+  private static final class RevisionSnapshot<T> {
+    final long revision;
+    final T value;
+
+    RevisionSnapshot(long revision, T value) {
+      this.revision = revision;
+      this.value = value;
     }
   }
 
@@ -292,12 +389,16 @@ public final class KotlinJvmTypeIndex {
     if (module != null) {
       CACHE.remove(module);
       ALIAS_CACHE.remove(module);
+      NAVIGATION_CACHE.remove(module);
+      SOURCE_FILE_CACHE.remove(module);
     }
   }
 
   public static void clear() {
     CACHE.clear();
     ALIAS_CACHE.clear();
+    NAVIGATION_CACHE.clear();
+    SOURCE_FILE_CACHE.clear();
   }
 
   private static void indexFile(Path path, Set<String> result) {
@@ -460,6 +561,117 @@ public final class KotlinJvmTypeIndex {
   }
 
   /**
+   * Immutable module-revision navigation metadata. It stores only file paths and declaration
+   * ranges, never source text or syntax trees. This preserves exact navigation lookup without
+   * repeating a source-root walk for each Java definition request.
+   */
+  static final class NavigationCandidateIndex {
+    private final java.util.Map<String, KotlinTypeDeclaration> declarations;
+    private final java.util.Map<String, List<KotlinTypeDeclaration>> multifileDeclarations;
+
+    private NavigationCandidateIndex(
+        java.util.Map<String, KotlinTypeDeclaration> declarations,
+        java.util.Map<String, List<KotlinTypeDeclaration>> multifileDeclarations) {
+      this.declarations = Collections.unmodifiableMap(new java.util.LinkedHashMap<>(declarations));
+      final java.util.Map<String, List<KotlinTypeDeclaration>> immutableMultifile =
+          new java.util.LinkedHashMap<>();
+      for (java.util.Map.Entry<String, List<KotlinTypeDeclaration>> entry
+          : multifileDeclarations.entrySet()) {
+        immutableMultifile.put(entry.getKey(), Collections.unmodifiableList(
+            new java.util.ArrayList<>(entry.getValue())));
+      }
+      this.multifileDeclarations = Collections.unmodifiableMap(immutableMultifile);
+    }
+
+    static NavigationCandidateIndex build(Iterable<java.io.File> sourceRoots) {
+      final java.util.List<Path> paths = new java.util.ArrayList<>();
+      if (sourceRoots != null) {
+        for (java.io.File root : sourceRoots) {
+          if (root == null || !root.isDirectory()) continue;
+          try (Stream<Path> stream = Files.walk(root.toPath())) {
+            stream.filter(DocumentUtils::isKotlinFile)
+                .filter(path -> path.getFileName().toString().endsWith(".kt"))
+                .forEach(paths::add);
+          } catch (IOException error) {
+            LOG.debug("Unable to build Kotlin JVM navigation candidate index for {}", root, error);
+          }
+        }
+      }
+      return buildFromPaths(paths);
+    }
+
+    static NavigationCandidateIndex buildFromPaths(Iterable<Path> paths) {
+      final java.util.Map<String, KotlinTypeDeclaration> declarations = new java.util.LinkedHashMap<>();
+      final java.util.Map<String, List<KotlinTypeDeclaration>> multifile = new java.util.LinkedHashMap<>();
+      if (paths != null) {
+        for (Path path : paths) {
+          if (path != null) collect(path, declarations, multifile);
+        }
+      }
+      return new NavigationCandidateIndex(declarations, multifile);
+    }
+
+    private static void collect(
+        Path path,
+        java.util.Map<String, KotlinTypeDeclaration> declarations,
+        java.util.Map<String, List<KotlinTypeDeclaration>> multifile) {
+      final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
+      final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
+      final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
+      final List<KotlinJvmSyntaxParser.TopLevelTypeSyntax> syntaxTypes =
+          KotlinJvmSyntaxParser.findTopLevelTypes(source);
+      final List<KotlinJvmSyntaxParser.MemberSyntax> syntaxMembers =
+          KotlinJvmSyntaxParser.findTopLevelMembers(source);
+      final boolean hasTopLevelMember;
+      if (syntaxTypes != null && syntaxMembers != null) {
+        for (KotlinJvmSyntaxParser.TopLevelTypeSyntax type : syntaxTypes) {
+          if (!type.privateType && type.name != null && !type.name.isEmpty()) {
+            declarations.putIfAbsent(qualifiedName(packageName, type.name),
+                new KotlinTypeDeclaration(path, type.nameOffset, type.nameLength));
+          }
+        }
+        hasTopLevelMember = hasPublicTopLevelMember(syntaxMembers);
+      } else {
+        collectFallbackDeclarations(path, source, packageName, declarations);
+        hasTopLevelMember = hasPublicTopLevelMemberFallback(source);
+      }
+      if (!hasTopLevelMember) return;
+      final String facade = facadeName(source, path);
+      final String qualifiedFacade = qualifiedName(packageName, facade);
+      final KotlinTypeDeclaration facadeDeclaration = new KotlinTypeDeclaration(
+          path, fileJvmNameOffset(source), facade.length());
+      declarations.putIfAbsent(qualifiedFacade, facadeDeclaration);
+      if (isMultifileFacade(source, path, qualifiedFacade)) {
+        List<KotlinTypeDeclaration> entries = multifile.get(qualifiedFacade);
+        if (entries == null) {
+          entries = new java.util.ArrayList<>();
+          multifile.put(qualifiedFacade, entries);
+        }
+        entries.add(facadeDeclaration);
+      }
+    }
+
+    KotlinTypeDeclaration declaration(String qualifiedName) {
+      return declarations.get(qualifiedName);
+    }
+
+    List<KotlinTypeDeclaration> multifileDeclarations(String qualifiedName) {
+      final List<KotlinTypeDeclaration> result = multifileDeclarations.get(qualifiedName);
+      return result == null ? Collections.emptyList() : result;
+    }
+
+    int declarationCount() {
+      return declarations.size();
+    }
+
+    int multifileDeclarationCount() {
+      int count = 0;
+      for (List<KotlinTypeDeclaration> entries : multifileDeclarations.values()) count += entries.size();
+      return count;
+    }
+  }
+
+  /**
    * Immutable module-revision snapshot of project alias declarations. It stores only compact
    * projection metadata, never source text or syntax trees. Consumer queries merely parse the
    * consumer package/imports and filter these maps; they do not walk source roots again.
@@ -476,19 +688,30 @@ public final class KotlinJvmTypeIndex {
     }
 
     static AliasDeclarationIndex build(Iterable<java.io.File> sourceRoots) {
+      final java.util.List<Path> paths = new java.util.ArrayList<>();
+      if (sourceRoots != null) {
+        for (java.io.File root : sourceRoots) {
+          if (root == null || !root.isDirectory()) continue;
+          try (Stream<Path> stream = Files.walk(root.toPath())) {
+            stream.filter(DocumentUtils::isKotlinFile)
+                .filter(path -> path.getFileName().toString().endsWith(".kt"))
+                .forEach(paths::add);
+          } catch (IOException error) {
+            LOG.debug("Unable to build Kotlin typealias declaration index for {}", root, error);
+          }
+        }
+      }
+      return buildFromPaths(paths);
+    }
+
+    static AliasDeclarationIndex buildFromPaths(Iterable<Path> paths) {
       final java.util.Map<String, java.util.List<DirectAliasDeclaration>> direct =
           new java.util.LinkedHashMap<>();
       final java.util.Map<String, java.util.List<GenericAliasDeclaration>> generic =
           new java.util.LinkedHashMap<>();
-      if (sourceRoots == null) return new AliasDeclarationIndex(direct, generic);
-      for (java.io.File root : sourceRoots) {
-        if (root == null || !root.isDirectory()) continue;
-        try (Stream<Path> paths = Files.walk(root.toPath())) {
-          paths.filter(DocumentUtils::isKotlinFile)
-              .filter(path -> path.getFileName().toString().endsWith(".kt"))
-              .forEach(path -> collect(path, direct, generic));
-        } catch (IOException error) {
-          LOG.debug("Unable to build Kotlin typealias declaration index for {}", root, error);
+      if (paths != null) {
+        for (Path path : paths) {
+          if (path != null) collect(path, direct, generic);
         }
       }
       return new AliasDeclarationIndex(freeze(direct), freeze(generic));
@@ -730,6 +953,28 @@ public final class KotlinJvmTypeIndex {
     return hasTopLevelMember;
   }
 
+  private static void collectFallbackDeclarations(
+      Path path,
+      String source,
+      String packageName,
+      java.util.Map<String, KotlinTypeDeclaration> declarations) {
+    final String[] lines = source.split("\\R", -1);
+    int braceDepth = 0;
+    int offset = 0;
+    for (String line : lines) {
+      if (braceDepth == 0) {
+        final Matcher typeMatcher = TYPE_PATTERN.matcher(line);
+        if (typeMatcher.find() && !containsPrivateModifier(typeMatcher.group(1))) {
+          final String name = typeMatcher.group(2);
+          declarations.putIfAbsent(qualifiedName(packageName, name),
+              new KotlinTypeDeclaration(path, offset + typeMatcher.start(2), name.length()));
+        }
+      }
+      braceDepth = Math.max(0, braceDepth + braceDelta(line));
+      offset += line.length() + 1;
+    }
+  }
+
   private static KotlinTypeDeclaration findTypeDeclarationFallback(
       Path path, String source, String packageName, String qualifiedName) {
     final String[] lines = source.split("\\R", -1);
@@ -822,6 +1067,35 @@ public final class KotlinJvmTypeIndex {
     }
   }
 
+  /** Small concurrent cache facade so lifecycle semantics remain testable without ModuleProject. */
+  static final class AliasCacheStore<K, V> {
+    private final ConcurrentHashMap<K, V> entries = new ConcurrentHashMap<>();
+
+    V get(K key) {
+      return entries.get(key);
+    }
+
+    void put(K key, V value) {
+      entries.put(key, value);
+    }
+
+    V putIfAbsent(K key, V value) {
+      return entries.putIfAbsent(key, value);
+    }
+
+    void remove(K key) {
+      entries.remove(key);
+    }
+
+    void clear() {
+      entries.clear();
+    }
+
+    int size() {
+      return entries.size();
+    }
+  }
+
   private static final class CachedAliasResult<T> {
     final String consumerSource;
     final java.util.Map<String, T> aliases;
@@ -833,28 +1107,12 @@ public final class KotlinJvmTypeIndex {
   }
 
   private static final class CachedAliases {
-    final long revision;
     final ConsumerAliasCache<String> directAliases = new ConsumerAliasCache<>();
     final ConsumerAliasCache<GenericTypeAlias> genericAliases = new ConsumerAliasCache<>();
-    volatile AliasDeclarationIndex declarationIndex;
+    final AliasDeclarationIndex declarationIndex;
 
-    CachedAliases(long revision) {
-      this(revision, null);
-    }
-
-    CachedAliases(long revision, AliasDeclarationIndex declarationIndex) {
-      this.revision = revision;
+    CachedAliases(AliasDeclarationIndex declarationIndex) {
       this.declarationIndex = declarationIndex;
-    }
-  }
-
-  private static final class CachedTypes {
-    final long revision;
-    final Set<String> types;
-
-    CachedTypes(long revision, Set<String> types) {
-      this.revision = revision;
-      this.types = types;
     }
   }
 }

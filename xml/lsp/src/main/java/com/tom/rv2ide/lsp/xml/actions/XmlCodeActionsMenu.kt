@@ -24,6 +24,7 @@ internal object XmlCodeActionsMenu : IActionsMenuProvider {
   override val actions: List<ActionItem> =
       listOf(
           GoToDefinitionAction(),
+          FindReferencesAction(),
           CorrectAttributeNameAction(),
           CorrectTagNameAction(),
           CorrectClosingTagNameAction(),

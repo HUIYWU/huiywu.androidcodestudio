@@ -39,6 +39,68 @@ class KotlinJvmTypeIndexAliasCacheTest {
   }
 
   @Test
+  fun revisionSnapshotStore_replacesSnapshotsAcrossSourceRevisions() {
+    val store = KotlinJvmTypeIndex.RevisionSnapshotStore<String>()
+    val revisionOne = store.replace(41L, "snapshot-one")
+
+    assertSame(revisionOne, store.get(41L))
+    assertNull(store.get(42L))
+
+    val revisionTwo = store.replace(42L, "snapshot-two")
+    assertNull(store.get(41L))
+    assertSame(revisionTwo, store.get(42L))
+  }
+  @Test
+  fun revisionSnapshotStore_clearMakesEveryRevisionMiss() {
+    val store = KotlinJvmTypeIndex.RevisionSnapshotStore<String>()
+    store.replace(41L, "snapshot-one")
+
+    store.clear()
+
+    assertNull(store.get(41L))
+    assertNull(store.get(42L))
+  }
+
+  @Test
+  fun revisionSnapshotStore_rejectsNullSnapshotPublication() {
+    val store = KotlinJvmTypeIndex.RevisionSnapshotStore<String?>()
+
+    try {
+      store.replace(41L, null)
+      throw AssertionError("Expected replacement validation failure")
+    } catch (_: IllegalArgumentException) {
+      assertNull(store.get(41L))
+    }
+  }
+
+
+  @Test
+  fun aliasCacheStore_invalidateRemovesOnlyTheRequestedModuleSnapshot() {
+    val cache = KotlinJvmTypeIndex.AliasCacheStore<String, String>()
+    cache.put("first", "revision-one")
+    cache.put("second", "revision-two")
+
+    cache.remove("first")
+
+    assertNull(cache.get("first"))
+    assertEquals("revision-two", cache.get("second"))
+    assertEquals(1, cache.size())
+  }
+
+  @Test
+  fun aliasCacheStore_clearRemovesAllModuleSnapshots() {
+    val cache = KotlinJvmTypeIndex.AliasCacheStore<String, String>()
+    cache.put("first", "revision-one")
+    cache.put("second", "revision-two")
+
+    cache.clear()
+
+    assertNull(cache.get("first"))
+    assertNull(cache.get("second"))
+    assertEquals(0, cache.size())
+  }
+
+  @Test
   fun consumerAliasCache_normalizesEquivalentPaths() {
     val cache = KotlinJvmTypeIndex.ConsumerAliasCache<String>()
     val aliases = Collections.singletonMap("Name", "String")

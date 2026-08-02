@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -75,6 +76,39 @@ class KotlinJvmAliasDeclarationIndexTest {
 
       val revisionTwo = KotlinJvmTypeIndex.AliasDeclarationIndex.build(listOf(root.toFile()))
       assertEquals("Long", revisionTwo.visibleDirectAliases(consumerFile, consumerSource)["ApiName"])
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
+  fun navigationCandidateIndex_reusesImmutableDeclarationAndMultifileMetadata() {
+    val root = Files.createTempDirectory("kotlin-navigation-candidates")
+    try {
+      val regular = root.resolve("Regular.kt")
+      val firstPart = root.resolve("FirstPart.kt")
+      val secondPart = root.resolve("SecondPart.kt")
+      write(regular, "package sample\nclass Regular")
+      write(firstPart, """
+        @file:JvmName("SharedFacade")
+        @file:JvmMultifileClass
+        package sample
+        fun first() = 1
+      """.trimIndent())
+      write(secondPart, """
+        @file:JvmName("SharedFacade")
+        @file:JvmMultifileClass
+        package sample
+        fun second() = 2
+      """.trimIndent())
+
+      val index = KotlinJvmTypeIndex.NavigationCandidateIndex.build(listOf(root.toFile()))
+
+      assertEquals("Regular.kt", index.declaration("sample.Regular")!!.file.fileName.toString())
+      assertEquals(2, index.multifileDeclarations("sample.SharedFacade").size)
+      write(regular, "package sample\nclass Changed")
+      assertEquals("Regular.kt", index.declaration("sample.Regular")!!.file.fileName.toString())
+      assertNull(index.declaration("sample.Changed"))
     } finally {
       root.toFile().deleteRecursively()
     }

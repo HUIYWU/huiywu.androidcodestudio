@@ -50,6 +50,7 @@ import com.tom.rv2ide.lsp.xml.providers.CodeFormatProvider
 import com.tom.rv2ide.lsp.xml.providers.XmlCompletionProvider
 import com.tom.rv2ide.lsp.xml.providers.XmlDefinitionProvider
 import com.tom.rv2ide.lsp.xml.providers.XmlHoverProvider
+import com.tom.rv2ide.lsp.xml.providers.XmlResourceReferencesProvider
 import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.utils.DocumentUtils
@@ -129,7 +130,10 @@ class XMLLanguageServer : ILanguageServer {
   }
 
   override suspend fun findReferences(params: ReferenceParams): ReferenceResult {
-    return ReferenceResult(emptyList())
+    if (!isWorkspaceXmlFile(params.file)) {
+      return ReferenceResult(emptyList())
+    }
+    return XmlResourceReferencesProvider().findReferences(params)
   }
 
   override suspend fun findDefinition(params: DefinitionParams): DefinitionResult {

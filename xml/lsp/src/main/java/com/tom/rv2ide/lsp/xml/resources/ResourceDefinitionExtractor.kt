@@ -24,13 +24,13 @@ import org.eclipse.lemminx.uriresolver.URIResolverExtensionManager
  * This is intentionally a pure, document-local component. Cache ownership, disk traversal and
  * active-editor overlays belong to the later module snapshot layer.
  */
-internal object WorkspaceResourceDefinitionExtractor {
+internal object ResourceDefinitionExtractor {
 
   fun extract(file: Path, text: String): Extraction {
     return when (val resourcePath = resourcePath(file)) {
       null -> Extraction.Available(emptyList())
       ResourcePath.Values -> valuesDefinitions(file, text)
-      is ResourcePath.File -> fileDefinition(file, resourcePath)
+      is ResourcePath.File -> fileDefinitions(file, text, resourcePath)
     }
   }
 
@@ -46,7 +46,7 @@ internal object WorkspaceResourceDefinitionExtractor {
 
     val root = document.documentElement ?: return Extraction.Available(emptyList())
     if (root.tagName != VALUES_ROOT_TAG) return Extraction.Available(emptyList())
-    val definitions =
+    val valueDefinitions =
         root.children.filterIsInstance<DOMElement>().mapNotNull { element ->
           val type = valueType(element) ?: return@mapNotNull null
           definitionFromNameAttribute(
@@ -54,27 +54,84 @@ internal object WorkspaceResourceDefinitionExtractor {
               text,
               type,
               element.getAttributeNode(NAME_ATTRIBUTE),
-              WorkspaceResourceDefinitionKind.VALUE_ELEMENT,
+              if (type == AaptResourceType.ID) {
+                ResourceDefinitionKind.ID_DECLARATION
+              } else {
+                ResourceDefinitionKind.VALUE_ELEMENT
+              },
           )
         }
-    return Extraction.Available(definitions)
+    return Extraction.Available(valueDefinitions + creatingIdDefinitions(file, text, document))
   }
 
-  private fun fileDefinition(file: Path, path: ResourcePath.File): Extraction {
+  private fun fileDefinitions(file: Path, text: String, path: ResourcePath.File): Extraction {
     // File resources remain real resources even if their contents are currently incomplete.
-    val name = file.fileName?.toString()?.removeSuffix(XML_SUFFIX).orEmpty()
-    if (!RESOURCE_NAME.matches(name)) return Extraction.Available(emptyList())
-    return Extraction.Available(
-        listOf(
-            WorkspaceResourceDefinition(
-                type = path.type,
-                name = name,
-                sourceFile = file,
-                nameRange = null,
-                kind = WorkspaceResourceDefinitionKind.FILE_RESOURCE,
-            )
-        )
-    )
+    val fileResource =
+        file.fileName
+            ?.toString()
+            ?.removeSuffix(XML_SUFFIX)
+            ?.takeIf { RESOURCE_NAME.matches(it) }
+            ?.let { name ->
+              ResourceDefinition(
+                  type = path.type,
+                  name = name,
+                  sourceFile = file,
+                  nameRange = null,
+                  kind = ResourceDefinitionKind.FILE_RESOURCE,
+              )
+            }
+    val document =
+        runCatching {
+              DOMParser.getInstance()
+                  .parse(text, ANDROID_NAMESPACE_URI, URIResolverExtensionManager())
+            }
+            .getOrNull()
+    if (document == null || hasSyntaxRecovery(document)) {
+      return Extraction.Available(listOfNotNull(fileResource))
+    }
+    return Extraction.Available(listOfNotNull(fileResource) + creatingIdDefinitions(file, text, document))
+  }
+
+  private fun creatingIdDefinitions(
+      file: Path,
+      text: String,
+      document: DOMNode,
+  ): List<ResourceDefinition> {
+    val definitions = mutableListOf<ResourceDefinition>()
+
+    fun collect(node: DOMNode) {
+      if (node is DOMElement) {
+        node.attributeNodes.orEmpty().forEach { attribute ->
+          val match = CREATING_ID.matchEntire(attribute.value.orEmpty()) ?: return@forEach
+          val offsets = attributeValueOffsets(attribute, text) ?: return@forEach
+          val nameStart = offsets.first + CREATING_ID_PREFIX.length
+          val nameEnd = offsets.second
+          definitions +=
+              ResourceDefinition(
+                  type = AaptResourceType.ID,
+                  name = match.groupValues[1],
+                  sourceFile = file,
+                  nameRange = Range(offsetToPosition(text, nameStart), offsetToPosition(text, nameEnd)),
+                  kind = ResourceDefinitionKind.ID_DECLARATION,
+              )
+        }
+      }
+      node.children.forEach(::collect)
+    }
+
+    collect(document)
+    return definitions
+  }
+
+  private fun attributeValueOffsets(attribute: DOMAttr, text: String): Pair<Int, Int>? {
+    val value = attribute.nodeAttrValue ?: return null
+    var start = value.start.coerceIn(0, text.length)
+    var end = value.end.coerceIn(start, text.length)
+    if (end - start >= 2 && text[start] in QUOTES && text[end - 1] == text[start]) {
+      start++
+      end--
+    }
+    return start to end
   }
 
   private fun valueType(element: DOMElement): AaptResourceType? {
@@ -91,11 +148,11 @@ internal object WorkspaceResourceDefinitionExtractor {
       text: String,
       type: AaptResourceType,
       attribute: DOMAttr?,
-      kind: WorkspaceResourceDefinitionKind,
-  ): WorkspaceResourceDefinition? {
+      kind: ResourceDefinitionKind,
+  ): ResourceDefinition? {
     val name = attribute?.value?.takeIf { RESOURCE_NAME.matches(it) } ?: return null
     val range = attributeValueRange(text, attribute) ?: return null
-    return WorkspaceResourceDefinition(type, name, file, range, kind)
+    return ResourceDefinition(type, name, file, range, kind)
   }
 
   private fun attributeValueRange(text: String, attribute: DOMAttr): Range? {
@@ -141,7 +198,7 @@ internal object WorkspaceResourceDefinitionExtractor {
   }
 
   internal sealed interface Extraction {
-    data class Available(val definitions: List<WorkspaceResourceDefinition>) : Extraction
+    data class Available(val definitions: List<ResourceDefinition>) : Extraction
 
     data object Unavailable : Extraction
   }
@@ -162,20 +219,51 @@ internal object WorkspaceResourceDefinitionExtractor {
   private const val ID_TYPE_NAME = "id"
   private const val XML_SUFFIX = ".xml"
   private const val QUOTES = "\"'"
+  private const val CREATING_ID_PREFIX = "@+id/"
   private val UNSUPPORTED_VALUE_TAGS = setOf("declare-styleable", "public", "overlayable")
   private val RESOURCE_NAME = Regex("[a-z][a-z0-9_]*")
+  private val CREATING_ID = Regex("@\\+id/([a-z][a-z0-9_]*)")
 }
 
-internal data class WorkspaceResourceDefinition(
+internal data class ResourceDefinition(
     val type: AaptResourceType,
     val name: String,
     val sourceFile: Path,
     /** Null for file resources because changing their name requires a file rename, not TextEdit. */
     val nameRange: Range?,
-    val kind: WorkspaceResourceDefinitionKind,
+    val kind: ResourceDefinitionKind,
 )
 
-internal enum class WorkspaceResourceDefinitionKind {
+internal enum class ResourceDefinitionKind {
   VALUE_ELEMENT,
   FILE_RESOURCE,
+  ID_DECLARATION,
+}
+
+/** Immutable per-module view consumed later by XML references and restricted rename. */
+internal sealed interface ResourceSnapshot {
+  data class Available(
+      val definitions: List<ResourceDefinition>,
+      /** All indexed resource XML files, including files that contribute only usages. */
+      val files: Set<Path>,
+  ) : ResourceSnapshot
+
+  data object Unavailable : ResourceSnapshot
+}
+
+/**
+ * Combines per-file extraction results after active documents and the current request have replaced
+ * their disk counterparts. Keeping this pure makes precedence testable without an Android module.
+ */
+internal fun snapshotDefinitions(
+    definitionsByFile: Map<Path, ResourceDefinitionExtractor.Extraction>,
+): ResourceSnapshot {
+  val definitions = mutableListOf<ResourceDefinition>()
+  definitionsByFile.values.forEach { extraction ->
+    when (extraction) {
+      is ResourceDefinitionExtractor.Extraction.Available -> definitions += extraction.definitions
+      ResourceDefinitionExtractor.Extraction.Unavailable -> return ResourceSnapshot.Unavailable
+    }
+  }
+  return ResourceSnapshot.Available(definitions, definitionsByFile.keys)
 }
