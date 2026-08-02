@@ -25,12 +25,14 @@ import com.tom.rv2ide.lsp.xml.diagnostics.XmlResourceResolver
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlTextDiagnosticRule
 import org.eclipse.lemminx.dom.DOMElement
 import org.eclipse.lemminx.dom.DOMText
+import org.slf4j.LoggerFactory
 
 /** AXML003: conservative complete resource-reference checks for attributes and plain text nodes. */
 internal object ResourceReferenceDiagnosticRule :
     XmlElementDiagnosticRule, XmlTextDiagnosticRule {
   override val id: String = "resource-reference"
 
+  private val log = LoggerFactory.getLogger(ResourceReferenceDiagnosticRule::class.java)
   private val resourceResolver = XmlResourceResolver()
 
   override fun supports(context: XmlDiagnosticContext): Boolean = true
@@ -55,8 +57,9 @@ internal object ResourceReferenceDiagnosticRule :
       if (isDeclaredLocally(reference, context.declaredIds)) {
         return@forEach
       }
-      if (resourceResolver.resolve(reference, context.moduleResourceIds) ==
-          XmlResourceResolver.Resolution.NotFound) {
+      val resolution = resourceResolver.resolve(reference, context.moduleResourceIds)
+      if (resolution == XmlResourceResolver.Resolution.NotFound) {
+        traceMissingFrameworkPrefix(reference)
         collector.errorValue(
             code = CODE_UNRESOLVED_RESOURCE,
             message = "Cannot resolve resource reference '${reference.text}'",
@@ -81,6 +84,7 @@ internal object ResourceReferenceDiagnosticRule :
       return
     }
 
+    traceMissingFrameworkPrefix(reference)
     collector.errorRange(
         code = CODE_UNRESOLVED_RESOURCE,
         message = "Cannot resolve resource reference '${reference.text}'",
@@ -111,6 +115,22 @@ internal object ResourceReferenceDiagnosticRule :
 
   internal fun shouldSkipAttribute(namespaceUri: String?): Boolean {
     return namespaceUri == TOOLS_NAMESPACE_URI
+  }
+
+  private fun traceMissingFrameworkPrefix(reference: XmlResourceReference) {
+    if (reference.packageName != null || reference.isThemeAttribute || reference.type == ID) {
+      return
+    }
+    val frameworkReference =
+        XmlResourceReference.parse("@android:${reference.type.tagName}/${reference.entry}") ?: return
+    val frameworkResolution = resourceResolver.resolve(frameworkReference)
+    log.warn(
+        "AXML003 framework-prefix trace: reference={} frameworkReference={} frameworkResolution={} suggestedReplacement={}",
+        reference.text,
+        frameworkReference.text,
+        frameworkResolution,
+        if (frameworkResolution == XmlResourceResolver.Resolution.Resolved) frameworkReference.text else null,
+    )
   }
 
   private fun isDeclaredLocally(
