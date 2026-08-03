@@ -42,7 +42,7 @@ enum class ReferenceRole {
  * [roles] is optional for compatibility with language servers that only provide locations. When
  * present, it must have the same order and size as [locations].
  */
-data class ReferenceResult(
+data class ReferenceResult @JvmOverloads constructor(
     var locations: List<Location>,
     var roles: List<ReferenceRole> = emptyList(),
 )
