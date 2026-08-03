@@ -53,6 +53,38 @@ class KotlinJvmAliasDeclarationIndexTest {
   }
 
   @Test
+  fun declarationIndex_exposesImportedAliasesUsingKotlinImportAlias() {
+    val root = Files.createTempDirectory("kotlin-alias-import-alias")
+    try {
+      val shared = root.resolve("shared").also { Files.createDirectories(it) }
+      val consumer = root.resolve("consumer").also { Files.createDirectories(it) }
+      write(shared.resolve("Aliases.kt"), """
+        package shared
+        typealias SourceName = String
+        typealias SourceList<T> = List<T>
+      """.trimIndent())
+      val consumerFile = consumer.resolve("Use.kt")
+      val consumerSource = """
+        package consumer
+        import shared.SourceName as LocalName
+        import shared.SourceList as LocalList
+      """.trimIndent()
+      write(consumerFile, consumerSource)
+
+      val index = KotlinJvmTypeIndex.AliasDeclarationIndex.build(listOf(root.toFile()))
+
+      val direct = index.visibleDirectAliases(consumerFile, consumerSource)
+      val generic = index.visibleGenericAliases(consumerFile, consumerSource)
+      assertEquals("String", direct["LocalName"])
+      assertFalse(direct.containsKey("SourceName"))
+      assertEquals("List", generic.getValue("LocalList").targetRawType)
+      assertFalse(generic.containsKey("SourceList"))
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
   fun declarationIndex_ignoresUnreferencedPackageBucketsDuringVisibilityLookup() {
     val root = Files.createTempDirectory("kotlin-alias-visible-packages")
     try {

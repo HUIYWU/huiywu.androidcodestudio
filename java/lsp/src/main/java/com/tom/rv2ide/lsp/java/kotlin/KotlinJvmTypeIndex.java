@@ -61,7 +61,7 @@ public final class KotlinJvmTypeIndex {
   private static final Pattern FILE_JVM_MULTIFILE_PATTERN =
       Pattern.compile("(?m)^\\s*@file:JvmMultifileClass(?:\\s|$)");
   private static final Pattern IMPORT_PATTERN = Pattern.compile(
-      "(?m)^\\s*import\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)(?:\\s+as\\s+[A-Za-z_$][\\w$]*)?\\s*$");
+      "(?m)^\\s*import\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)(?:\\s+as\\s+([A-Za-z_$][\\w$]*))?\\s*$");
   private static final Pattern TYPE_ALIAS_PATTERN = Pattern.compile(
       "(?m)^\\s*((?:(?:public|internal|private)\\s+)*)typealias\\s+([A-Za-z_][\\w]*)\\s*=\\s*([^\\r\\n]+?)\\s*$");
   private static final Pattern GENERIC_TYPE_ALIAS_PATTERN = Pattern.compile(
@@ -90,7 +90,11 @@ public final class KotlinJvmTypeIndex {
       final long revision = module.getSourceIndexVersion();
       final RevisionSnapshotStore<Set<String>> store = topLevelTypeSnapshotStore(module);
       final Set<String> cached = store.get(revision);
-      if (cached != null) return cached;
+      if (cached != null) {
+        LOG.debug("Reused Kotlin JVM top-level type index for module {} revision {}: types={}",
+            module.getPath(), revision, cached.size());
+        return cached;
+      }
 
       // Scanning every Kotlin source file is a cold/revision-change operation. Keep it per-module
       // so concurrent completion/import requests share one immutable published result.
@@ -136,16 +140,21 @@ public final class KotlinJvmTypeIndex {
     if (!isRecognitionEnabled() || module == null || consumerFile == null) {
       return Collections.emptyMap();
     }
-    final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
+    final String consumerSource = sourceForIndexedPath(consumerFile);
+    if (consumerSource == null) return Collections.emptyMap();
     final CachedAliases cached = aliasCacheWithDeclarationIndexForRevision(module);
     final java.util.Map<String, GenericTypeAlias> existing =
         cached.genericAliases.get(consumerFile, consumerSource);
     if (existing != null) {
+      LOG.debug("Reused Kotlin generic alias visibility for module {} revision {} consumer {}: aliases={}",
+          module.getPath(), module.getSourceIndexVersion(), normalizedPath(consumerFile), existing.size());
       return existing;
     }
     final java.util.Map<String, GenericTypeAlias> indexed =
         cached.declarationIndex.visibleGenericAliases(consumerFile, consumerSource);
     cached.genericAliases.put(consumerFile, consumerSource, indexed);
+    LOG.debug("Computed Kotlin generic alias visibility for module {} revision {} consumer {}: aliases={}",
+        module.getPath(), module.getSourceIndexVersion(), normalizedPath(consumerFile), indexed.size());
     return indexed;
   }
 
@@ -155,23 +164,10 @@ public final class KotlinJvmTypeIndex {
       return Collections.emptyMap();
     }
     final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
-    final Matcher packageMatcher = PACKAGE_PATTERN.matcher(consumerSource);
-    final String consumerPackage = packageMatcher.find() ? packageMatcher.group(1) : "";
-    final Set<String> explicitlyImported = new LinkedHashSet<>();
-    final Matcher importMatcher = IMPORT_PATTERN.matcher(consumerSource);
-    while (importMatcher.find()) explicitlyImported.add(importMatcher.group(1));
-    final java.util.Map<String, GenericTypeAlias> aliases = new java.util.LinkedHashMap<>();
-    for (java.io.File root : sourceRoots) {
-      if (root == null || !root.isDirectory()) continue;
-      try (Stream<Path> paths = Files.walk(root.toPath())) {
-        paths.filter(DocumentUtils::isKotlinFile).filter(path -> !path.equals(consumerFile))
-            .forEach(path -> collectVisibleGenericAliases(
-                path, consumerPackage, explicitlyImported, aliases));
-      } catch (IOException error) {
-        LOG.debug("Unable to scan Kotlin generic typealiases for {}", consumerFile, error);
-      }
-    }
-    return aliases.isEmpty() ? Collections.emptyMap() : Collections.unmodifiableMap(aliases);
+    // Keep this compatibility entry point semantically identical to the revision-indexed path,
+    // including Kotlin import aliases and conservative conflict handling.
+    return AliasDeclarationIndex.build(sourceRoots)
+        .visibleGenericAliases(consumerFile, consumerSource);
   }
 
   public static java.util.Map<String, String> visibleDirectTypeAliases(
@@ -179,16 +175,21 @@ public final class KotlinJvmTypeIndex {
     if (!isRecognitionEnabled() || module == null || consumerFile == null) {
       return Collections.emptyMap();
     }
-    final String consumerSource = FileManager.INSTANCE.getDocumentContents(consumerFile).toString();
+    final String consumerSource = sourceForIndexedPath(consumerFile);
+    if (consumerSource == null) return Collections.emptyMap();
     final CachedAliases cached = aliasCacheWithDeclarationIndexForRevision(module);
     final java.util.Map<String, String> existing =
         cached.directAliases.get(consumerFile, consumerSource);
     if (existing != null) {
+      LOG.debug("Reused Kotlin direct alias visibility for module {} revision {} consumer {}: aliases={}",
+          module.getPath(), module.getSourceIndexVersion(), normalizedPath(consumerFile), existing.size());
       return existing;
     }
     final java.util.Map<String, String> indexed =
         cached.declarationIndex.visibleDirectAliases(consumerFile, consumerSource);
     cached.directAliases.put(consumerFile, consumerSource, indexed);
+    LOG.debug("Computed Kotlin direct alias visibility for module {} revision {} consumer {}: aliases={}",
+        module.getPath(), module.getSourceIndexVersion(), normalizedPath(consumerFile), indexed.size());
     return indexed;
   }
 
@@ -197,25 +198,10 @@ public final class KotlinJvmTypeIndex {
     if (sourceRoots == null || consumerFile == null || consumerSource == null) {
       return Collections.emptyMap();
     }
-    final Matcher packageMatcher = PACKAGE_PATTERN.matcher(consumerSource);
-    final String consumerPackage = packageMatcher.find() ? packageMatcher.group(1) : "";
-    final Set<String> explicitlyImported = new LinkedHashSet<>();
-    final Matcher importMatcher = IMPORT_PATTERN.matcher(consumerSource);
-    while (importMatcher.find()) {
-      explicitlyImported.add(importMatcher.group(1));
-    }
-    final java.util.Map<String, String> aliases = new java.util.LinkedHashMap<>();
-    for (java.io.File root : sourceRoots) {
-      if (root == null || !root.isDirectory()) continue;
-      try (Stream<Path> paths = Files.walk(root.toPath())) {
-        paths.filter(DocumentUtils::isKotlinFile).filter(path -> !path.equals(consumerFile))
-            .forEach(path -> collectVisibleAliases(path, consumerPackage, explicitlyImported, aliases));
-      } catch (IOException error) {
-        LOG.debug("Unable to scan Kotlin typealiases for {}", consumerFile, error);
-      }
-    }
-    aliases.values().removeIf(aliases::containsKey);
-    return aliases.isEmpty() ? Collections.emptyMap() : Collections.unmodifiableMap(aliases);
+    // Keep this compatibility entry point semantically identical to the revision-indexed path,
+    // including Kotlin import aliases and conservative conflict handling.
+    return AliasDeclarationIndex.build(sourceRoots)
+        .visibleDirectAliases(consumerFile, consumerSource);
   }
 
   public static KotlinTypeDeclaration findDeclaration(ModuleProject module, String qualifiedName) {
@@ -235,7 +221,12 @@ public final class KotlinJvmTypeIndex {
       final long revision = module.getSourceIndexVersion();
       final RevisionSnapshotStore<CachedAliases> store = aliasSnapshotStore(module);
       final CachedAliases existing = store.get(revision);
-      if (existing != null) return existing;
+      if (existing != null) {
+        LOG.debug("Reused Kotlin typealias declaration index for module {} revision {}: direct={} generic={}",
+            module.getPath(), revision, existing.declarationIndex.directAliasCount(),
+            existing.declarationIndex.genericAliasCount());
+        return existing;
+      }
       // Index construction reads many source files. Serialize only this cold/revision-change path
       // per module so concurrent first consumers publish one complete immutable snapshot.
       synchronized (module) {
@@ -264,7 +255,11 @@ public final class KotlinJvmTypeIndex {
       final long revision = module.getSourceIndexVersion();
       final RevisionSnapshotStore<NavigationCandidateIndex> store = navigationSnapshotStore(module);
       final NavigationCandidateIndex existing = store.get(revision);
-      if (existing != null) return existing;
+      if (existing != null) {
+        LOG.debug("Reused Kotlin JVM navigation candidate index for module {} revision {}: declarations={} multifileDeclarations={}",
+            module.getPath(), revision, existing.declarationCount(), existing.multifileDeclarationCount());
+        return existing;
+      }
 
       synchronized (module) {
         final long lockedRevision = module.getSourceIndexVersion();
@@ -289,13 +284,24 @@ public final class KotlinJvmTypeIndex {
   private static List<Path> kotlinSourceFilesForRevision(ModuleProject module, long revision) {
     final RevisionSnapshotStore<List<Path>> store = sourceFileSnapshotStore(module);
     final List<Path> existing = store.get(revision);
-    if (existing != null) return existing;
+    if (existing != null) {
+      LOG.debug("Reused Kotlin source-file snapshot for module {} revision {}: files={}",
+          module.getPath(), revision, existing.size());
+      return existing;
+    }
 
     // Callers already hold the module lock while building a derived snapshot. Keeping this method
     // lock-free prevents lock-order surprises and lets all derived indexes share one file listing.
+    final long startedAt = System.nanoTime();
     final List<Path> immutable = kotlinSourceFiles(module.getCompileSourceDirectories());
+    final long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
     if (module.getSourceIndexVersion() == revision) {
       store.replace(revision, immutable);
+      LOG.debug("Built Kotlin source-file snapshot for module {} revision {}: files={} in {} ms",
+          module.getPath(), revision, immutable.size(), elapsedMillis);
+    } else {
+      LOG.debug("Discarded Kotlin source-file snapshot for module {} revision {} after {} ms; source revision changed during construction",
+          module.getPath(), revision, elapsedMillis);
     }
     return immutable;
   }
@@ -749,10 +755,12 @@ public final class KotlinJvmTypeIndex {
       for (java.util.List<DirectAliasDeclaration> declarations
           : visiblePackageDeclarations(directByPackage, visibility)) {
         for (DirectAliasDeclaration declaration : declarations) {
-          if (normalizedPath(declaration.file).equals(normalizedPath(consumerFile))
-              || !visibility.includes(declaration.packageName, declaration.qualifiedName)) continue;
-          if (result.putIfAbsent(declaration.name, declaration.target) != null) {
-            conflicts.add(declaration.name);
+          if (normalizedPath(declaration.file).equals(normalizedPath(consumerFile))) continue;
+          final String visibleName = visibility.visibleName(
+              declaration.packageName, declaration.qualifiedName, declaration.name);
+          if (visibleName == null) continue;
+          if (result.putIfAbsent(visibleName, declaration.target) != null) {
+            conflicts.add(visibleName);
           }
         }
       }
@@ -793,10 +801,12 @@ public final class KotlinJvmTypeIndex {
       for (java.util.List<GenericAliasDeclaration> declarations
           : visiblePackageDeclarations(genericByPackage, visibility)) {
         for (GenericAliasDeclaration declaration : declarations) {
-          if (normalizedPath(declaration.file).equals(normalizedPath(consumerFile))
-              || !visibility.includes(declaration.packageName, declaration.qualifiedName)) continue;
-          if (result.putIfAbsent(declaration.name, declaration.alias) != null) {
-            conflicts.add(declaration.name);
+          if (normalizedPath(declaration.file).equals(normalizedPath(consumerFile))) continue;
+          final String visibleName = visibility.visibleName(
+              declaration.packageName, declaration.qualifiedName, declaration.name);
+          if (visibleName == null) continue;
+          if (result.putIfAbsent(visibleName, declaration.alias) != null) {
+            conflicts.add(visibleName);
           }
         }
       }
@@ -864,9 +874,11 @@ public final class KotlinJvmTypeIndex {
 
   private static final class Visibility {
     final String consumerPackage;
-    final Set<String> explicitlyImported;
+    // Qualified alias declaration name -> name visible in this consumer. A plain import maps to
+    // its declared simple name; `import a.Name as Local` maps to Local.
+    final java.util.Map<String, String> explicitlyImported;
 
-    private Visibility(String consumerPackage, Set<String> explicitlyImported) {
+    private Visibility(String consumerPackage, java.util.Map<String, String> explicitlyImported) {
       this.consumerPackage = consumerPackage;
       this.explicitlyImported = explicitlyImported;
     }
@@ -874,24 +886,32 @@ public final class KotlinJvmTypeIndex {
     static Visibility from(String source) {
       final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
       final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
-      final Set<String> imports = new LinkedHashSet<>();
+      final java.util.Map<String, String> imports = new java.util.LinkedHashMap<>();
       final Matcher importMatcher = IMPORT_PATTERN.matcher(source);
-      while (importMatcher.find()) imports.add(importMatcher.group(1));
+      while (importMatcher.find()) {
+        final String qualifiedName = importMatcher.group(1);
+        final int separator = qualifiedName.lastIndexOf('.');
+        final String visibleName = importMatcher.group(2) != null
+            ? importMatcher.group(2)
+            : separator < 0 ? qualifiedName : qualifiedName.substring(separator + 1);
+        imports.put(qualifiedName, visibleName);
+      }
       return new Visibility(packageName, imports);
     }
 
     Set<String> referencedPackages() {
       final Set<String> packages = new LinkedHashSet<>();
       packages.add(consumerPackage);
-      for (String imported : explicitlyImported) {
+      for (String imported : explicitlyImported.keySet()) {
         final int separator = imported.lastIndexOf('.');
         if (separator >= 0) packages.add(imported.substring(0, separator));
       }
       return packages;
     }
 
-    boolean includes(String declarationPackage, String qualifiedName) {
-      return declarationPackage.equals(consumerPackage) || explicitlyImported.contains(qualifiedName);
+    String visibleName(String declarationPackage, String qualifiedName, String declarationName) {
+      if (declarationPackage.equals(consumerPackage)) return declarationName;
+      return explicitlyImported.get(qualifiedName);
     }
   }
 
