@@ -45,7 +45,7 @@ internal object ModuleResourceIndex {
         }
     caches[module.path] = cache
 
-    val extractionsByFile = cache.extractionsByFile.toMutableMap()
+    val entriesByFile = cache.entriesByFile.toMutableMap()
     val activeResourceFiles =
         FileManager.getActiveDocumentFiles().filter { file ->
           file.toString().endsWith(XML_SUFFIX) && directories.any { file.normalize().startsWith(it) }
@@ -53,16 +53,15 @@ internal object ModuleResourceIndex {
     for (file in activeResourceFiles) {
       val text = runCatching { FileManager.getDocumentContents(file) }.getOrNull()
           ?: return ResourceSnapshot.Unavailable
-      extractionsByFile[file.normalize()] = ResourceDefinitionExtractor.extract(file, text)
+      entriesByFile[file.normalize()] = ResourceFileEntry.create(file, text)
     }
 
     // The request's text is newer than FileManager until its document event has been published.
     if (directories.any { currentFile.normalize().startsWith(it) } &&
         currentFile.toString().endsWith(XML_SUFFIX)) {
-      extractionsByFile[currentFile.normalize()] =
-          ResourceDefinitionExtractor.extract(currentFile, currentText)
+      entriesByFile[currentFile.normalize()] = ResourceFileEntry.create(currentFile, currentText)
     }
-    return snapshotDefinitions(extractionsByFile)
+    return snapshotEntries(entriesByFile)
   }
 
   private fun refreshDisk(
@@ -85,18 +84,21 @@ internal object ModuleResourceIndex {
             }
           }
 
-          val extractionsByFile = mutableMapOf<Path, ResourceDefinitionExtractor.Extraction>()
+          val entriesByFile = mutableMapOf<Path, ResourceFileEntry>()
           signatures.forEach { (file, signature) ->
             val cached =
                 previous
                     ?.takeIf { it.directories == directories }
                     ?.takeIf { it.signatures[file] == signature }
-                    ?.extractionsByFile
+                    ?.entriesByFile
                     ?.get(file)
-            extractionsByFile[file] =
-                cached ?: ResourceDefinitionExtractor.extract(file, FileManager.getDocumentContents(file))
+            entriesByFile[file] =
+                cached
+                    ?: FileManager.getDocumentContents(file).let { text ->
+                      ResourceFileEntry.create(file, text)
+                    }
           }
-          ModuleCache(directories, signatures, extractionsByFile, refreshedAtMillis)
+          ModuleCache(directories, signatures, entriesByFile, refreshedAtMillis)
         }
         .getOrNull()
   }
@@ -104,7 +106,7 @@ internal object ModuleResourceIndex {
   private data class ModuleCache(
       val directories: Set<Path>,
       val signatures: Map<Path, FileSignature>,
-      val extractionsByFile: Map<Path, ResourceDefinitionExtractor.Extraction>,
+      val entriesByFile: Map<Path, ResourceFileEntry>,
       val refreshedAtMillis: Long,
   )
 

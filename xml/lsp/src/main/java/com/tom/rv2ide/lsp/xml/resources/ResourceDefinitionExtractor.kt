@@ -246,24 +246,28 @@ internal sealed interface ResourceSnapshot {
       val definitions: List<ResourceDefinition>,
       /** All indexed resource XML files, including files that contribute only usages. */
       val files: Set<Path>,
+      /** Complete-reference occurrences derived from the same per-file text snapshot as [definitions]. */
+      val occurrencesByFile: Map<Path, List<ResourceReferenceOccurrence>>,
   ) : ResourceSnapshot
 
   data object Unavailable : ResourceSnapshot
 }
 
 /**
- * Combines per-file extraction results after active documents and the current request have replaced
+ * Combines immutable per-file entries after active documents and the current request have replaced
  * their disk counterparts. Keeping this pure makes precedence testable without an Android module.
  */
-internal fun snapshotDefinitions(
-    definitionsByFile: Map<Path, ResourceDefinitionExtractor.Extraction>,
-): ResourceSnapshot {
+internal fun snapshotEntries(entriesByFile: Map<Path, ResourceFileEntry>): ResourceSnapshot {
   val definitions = mutableListOf<ResourceDefinition>()
-  definitionsByFile.values.forEach { extraction ->
-    when (extraction) {
-      is ResourceDefinitionExtractor.Extraction.Available -> definitions += extraction.definitions
-      ResourceDefinitionExtractor.Extraction.Unavailable -> return ResourceSnapshot.Unavailable
+  val occurrencesByFile = linkedMapOf<Path, List<ResourceReferenceOccurrence>>()
+  entriesByFile.forEach { (file, entry) ->
+    when (entry) {
+      is ResourceFileEntry.Available -> {
+        definitions += entry.definitions
+        occurrencesByFile[file] = entry.occurrences
+      }
+      ResourceFileEntry.Unavailable -> return ResourceSnapshot.Unavailable
     }
   }
-  return ResourceSnapshot.Available(definitions, definitionsByFile.keys)
+  return ResourceSnapshot.Available(definitions, entriesByFile.keys, occurrencesByFile)
 }

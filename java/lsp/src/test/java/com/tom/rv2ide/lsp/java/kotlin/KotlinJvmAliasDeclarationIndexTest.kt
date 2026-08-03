@@ -53,6 +53,41 @@ class KotlinJvmAliasDeclarationIndexTest {
   }
 
   @Test
+  fun declarationIndex_ignoresUnreferencedPackageBucketsDuringVisibilityLookup() {
+    val root = Files.createTempDirectory("kotlin-alias-visible-packages")
+    try {
+      val imported = root.resolve("imported").also { Files.createDirectories(it) }
+      val unrelated = root.resolve("unrelated").also { Files.createDirectories(it) }
+      val consumer = root.resolve("consumer").also { Files.createDirectories(it) }
+      write(imported.resolve("Aliases.kt"), """
+        package imported
+        typealias Shared = String
+        typealias GenericShared<T> = List<T>
+      """.trimIndent())
+      write(unrelated.resolve("Aliases.kt"), """
+        package unrelated
+        typealias Shared = Int
+        typealias GenericShared<T> = Set<T>
+      """.trimIndent())
+      val consumerFile = consumer.resolve("Use.kt")
+      val consumerSource = """
+        package consumer
+        import imported.Shared
+        import imported.GenericShared
+      """.trimIndent()
+      write(consumerFile, consumerSource)
+
+      val index = KotlinJvmTypeIndex.AliasDeclarationIndex.build(listOf(root.toFile()))
+
+      assertEquals("String", index.visibleDirectAliases(consumerFile, consumerSource)["Shared"])
+      assertEquals("List", index.visibleGenericAliases(consumerFile, consumerSource)
+        .getValue("GenericShared").targetRawType)
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
   fun declarationIndex_isImmutableUntilTheNextRevisionSnapshotIsBuilt() {
     val root = Files.createTempDirectory("kotlin-alias-declaration-revision")
     try {
@@ -100,6 +135,44 @@ class KotlinJvmAliasDeclarationIndexTest {
       assertEquals(2, navigation.declarationCount())
       assertEquals("Root.kt", navigation.declaration("sample.Root")!!.file.fileName.toString())
       assertEquals("Nested.kt", navigation.declaration("sample.Nested")!!.file.fileName.toString())
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
+  fun indexesSkipPathsDeletedAfterSourceFileSnapshot() {
+    val root = Files.createTempDirectory("kotlin-deleted-indexed-path")
+    try {
+      val surviving = root.resolve("Surviving.kt")
+      val deleted = root.resolve("Deleted.kt")
+      write(surviving, "package sample\nclass Surviving")
+      write(deleted, "package sample\ntypealias DeletedAlias = String")
+      val paths = KotlinJvmTypeIndex.kotlinSourceFiles(listOf(root.toFile()))
+      Files.delete(deleted)
+
+      val navigation = KotlinJvmTypeIndex.NavigationCandidateIndex.buildFromPaths(paths)
+      val aliases = KotlinJvmTypeIndex.AliasDeclarationIndex.buildFromPaths(paths)
+
+      assertEquals("Surviving.kt", navigation.declaration("sample.Surviving")!!.file.fileName.toString())
+      assertNull(navigation.declaration("sample.DeletedKt"))
+      assertTrue(aliases.visibleDirectAliases(surviving, "package sample").isEmpty())
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
+  fun kotlinSourceFiles_skipsMissingRootsWithoutDiscardingReachableRoots() {
+    val root = Files.createTempDirectory("kotlin-source-root-failure")
+    try {
+      val source = root.resolve("Reachable.kt")
+      write(source, "package sample\nclass Reachable")
+      val missing = root.resolve("missing")
+
+      val files = KotlinJvmTypeIndex.kotlinSourceFiles(listOf(missing.toFile(), root.toFile()))
+
+      assertEquals(listOf(source.toAbsolutePath().normalize()), files)
     } finally {
       root.toFile().deleteRecursively()
     }

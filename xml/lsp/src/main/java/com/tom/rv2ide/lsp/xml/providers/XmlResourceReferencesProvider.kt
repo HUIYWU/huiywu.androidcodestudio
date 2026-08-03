@@ -19,19 +19,24 @@ import com.tom.rv2ide.models.Position
 import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.FileManager
 import java.nio.file.Path
+import org.slf4j.LoggerFactory
 
 /** Provides conservative workspace-only XML resource references. */
 internal class XmlResourceReferencesProvider {
 
   fun findReferences(params: ReferenceParams): ReferenceResult {
+    val startedAtNanos = System.nanoTime()
     params.cancelChecker.abortIfCancelled()
     val currentText = runCatching { FileManager.getDocumentContents(params.file) }.getOrNull()
         ?: return ReferenceResult(emptyList())
     val cursor = params.position.requireIndex()
+    val snapshotStartedAtNanos = System.nanoTime()
     val snapshot = ModuleResourceIndex.snapshot(params.file, currentText) as? ResourceSnapshot.Available
         ?: return ReferenceResult(emptyList())
+    val snapshotMillis = elapsedMillis(snapshotStartedAtNanos)
     val target = targetFor(params.file, currentText, cursor, snapshot) ?: return ReferenceResult(emptyList())
 
+    val scanStartedAtNanos = System.nanoTime()
     val locations =
         findInSnapshot(
             target = target,
@@ -40,7 +45,17 @@ internal class XmlResourceReferencesProvider {
             readText = { file -> if (file.normalize() == params.file.normalize()) currentText else FileManager.getDocumentContents(file) },
             checkCancelled = params.cancelChecker::abortIfCancelled,
         ) ?: emptyList()
-    return ReferenceResult(locations, rolesFor(target, snapshot, locations))
+    val scanMillis = elapsedMillis(scanStartedAtNanos)
+    val roles = rolesFor(target, snapshot, locations)
+    log.debug(
+        "XML references performance: mode=scan snapshotMs={} scanMs={} totalMs={} files={} results={}",
+        snapshotMillis,
+        scanMillis,
+        elapsedMillis(startedAtNanos),
+        snapshot.files.size,
+        locations.size,
+    )
+    return ReferenceResult(locations, roles)
   }
 
   internal fun rolesFor(
@@ -81,6 +96,15 @@ internal class XmlResourceReferencesProvider {
         }
         ?: return null
     return definitionTarget(definition)
+  }
+
+  private companion object {
+    private const val NANOS_PER_MILLISECOND = 1_000_000L
+    private val log = LoggerFactory.getLogger(XmlResourceReferencesProvider::class.java)
+  }
+
+  private fun elapsedMillis(startedAtNanos: Long): Long {
+    return (System.nanoTime() - startedAtNanos) / NANOS_PER_MILLISECOND
   }
 
   private fun definitionTarget(definition: ResourceDefinition): ResourceReferenceOccurrence {

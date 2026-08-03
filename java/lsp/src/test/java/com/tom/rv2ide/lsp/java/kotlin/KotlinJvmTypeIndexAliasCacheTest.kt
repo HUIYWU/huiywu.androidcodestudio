@@ -119,6 +119,26 @@ class KotlinJvmTypeIndexAliasCacheTest {
   }
 
   @Test
+  fun consumerAliasCache_evictsPreviousEntriesWhenConsumerLimitIsReached() {
+    val cache = KotlinJvmTypeIndex.ConsumerAliasCache<String>()
+    val aliases = Collections.singletonMap("Name", "String")
+    val source = "package consumer"
+    val first = Paths.get("/consumer/Api0.kt")
+
+    for (index in 0 until KotlinJvmTypeIndex.ConsumerAliasCache.MAX_CACHED_CONSUMERS) {
+      cache.put(Paths.get("/consumer/Api$index.kt"), source, aliases)
+    }
+    assertEquals(KotlinJvmTypeIndex.ConsumerAliasCache.MAX_CACHED_CONSUMERS, cache.size())
+
+    val overflow = Paths.get("/consumer/Overflow.kt")
+    cache.put(overflow, source, aliases)
+
+    assertEquals(1, cache.size())
+    assertNull(cache.get(first, source))
+    assertSame(aliases, cache.get(overflow, source))
+  }
+
+  @Test
   fun consumerAliasCache_normalizesEquivalentPaths() {
     val cache = KotlinJvmTypeIndex.ConsumerAliasCache<String>()
     val aliases = Collections.singletonMap("Name", "String")

@@ -95,12 +95,12 @@ class ResourceDefinitionExtractorTest : TestCase() {
     val base = Paths.get("project/app/src/main/res/values/strings.xml")
     val qualified = Paths.get("project/app/src/main/res/values-v31/strings.xml")
     val usageOnly = Paths.get("project/app/src/main/res/layout/screen.xml")
-    val baseExtraction = ResourceDefinitionExtractor.extract(base, "<resources><string name=\"title\">Base</string></resources>")
-    val qualifiedExtraction = ResourceDefinitionExtractor.extract(qualified, "<resources><string name=\"title\">Qualified</string></resources>")
-    val usageOnlyExtraction = ResourceDefinitionExtractor.extract(usageOnly, "<View android:text=\"@string/title\" />")
+    val baseEntry = ResourceFileEntry.create(base, "<resources><string name=\"title\">Base</string></resources>")
+    val qualifiedEntry = ResourceFileEntry.create(qualified, "<resources><string name=\"title\">Qualified</string></resources>")
+    val usageOnlyEntry = ResourceFileEntry.create(usageOnly, "<View android:text=\"@string/title\" />")
 
-    val available = snapshotDefinitions(
-        linkedMapOf(base to baseExtraction, qualified to qualifiedExtraction, usageOnly to usageOnlyExtraction)
+    val available = snapshotEntries(
+        linkedMapOf(base to baseEntry, qualified to qualifiedEntry, usageOnly to usageOnlyEntry)
     )
     assertThat(available).isInstanceOf(ResourceSnapshot.Available::class.java)
     val snapshot = available as ResourceSnapshot.Available
@@ -108,7 +108,9 @@ class ResourceDefinitionExtractorTest : TestCase() {
     assertThat(snapshot.definitions.map { it.sourceFile }).containsExactly(base, qualified, usageOnly).inOrder()
     assertThat(snapshot.files).containsExactly(base, qualified, usageOnly)
 
-    assertThat(snapshotDefinitions(mapOf(base to ResourceDefinitionExtractor.Extraction.Unavailable)))
+    assertThat(snapshot.occurrencesByFile.getValue(usageOnly).map { it.reference.entry })
+        .containsExactly("title")
+    assertThat(snapshotEntries(mapOf(base to ResourceFileEntry.Unavailable)))
         .isEqualTo(ResourceSnapshot.Unavailable)
   }
 

@@ -310,7 +310,9 @@ public final class KotlinJvmTypeIndex {
               .filter(path -> path.getFileName().toString().endsWith(".kt"))
               .map(KotlinJvmTypeIndex::normalizedPath)
               .forEach(files::add);
-        } catch (IOException error) {
+        } catch (IOException | SecurityException error) {
+          // A generated, detached, or permission-restricted source root must not prevent the
+          // remaining module roots from supplying Java-visible Kotlin declarations.
           LOG.debug("Unable to list Kotlin source root {}", root, error);
         }
       }
@@ -410,8 +412,22 @@ public final class KotlinJvmTypeIndex {
     SOURCE_FILE_CACHE.clear();
   }
 
+  private static String sourceForIndexedPath(Path path) {
+    if (path == null) return null;
+    try {
+      if (!Files.isRegularFile(path)) return null;
+      return FileManager.INSTANCE.getDocumentContents(path).toString();
+    } catch (RuntimeException error) {
+      // A file can disappear after the immutable path snapshot is published. Preserve useful
+      // results from the other files; a source-index revision will rebuild this snapshot later.
+      LOG.debug("Unable to read Kotlin source path {} while building index", path, error);
+      return null;
+    }
+  }
+
   private static void indexFile(Path path, Set<String> result) {
-    final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
+    final String source = sourceForIndexedPath(path);
+    if (source == null) return;
 
     final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
     final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
@@ -622,7 +638,8 @@ public final class KotlinJvmTypeIndex {
         java.util.Map<String, KotlinTypeDeclaration> declarations,
         java.util.Map<String, List<KotlinTypeDeclaration>> multifile,
         Set<String> ambiguousDeclarations) {
-      final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
+      final String source = sourceForIndexedPath(path);
+      if (source == null) return;
       final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
       final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
       final List<KotlinJvmSyntaxParser.TopLevelTypeSyntax> syntaxTypes =
@@ -791,7 +808,8 @@ public final class KotlinJvmTypeIndex {
         Path path,
         java.util.Map<String, java.util.List<DirectAliasDeclaration>> direct,
         java.util.Map<String, java.util.List<GenericAliasDeclaration>> generic) {
-      final String source = FileManager.INSTANCE.getDocumentContents(path).toString();
+      final String source = sourceForIndexedPath(path);
+      if (source == null) return;
       final Matcher packageMatcher = PACKAGE_PATTERN.matcher(source);
       final String packageName = packageMatcher.find() ? packageMatcher.group(1) : "";
       final Matcher directMatcher = TYPE_ALIAS_PATTERN.matcher(source);
@@ -1086,6 +1104,9 @@ public final class KotlinJvmTypeIndex {
     // Alias visibility parsing is inexpensive compared with retaining an arbitrarily large editor
     // document. Large consumers remain correct but deliberately bypass this exact-source cache.
     static final int MAX_CACHED_CONSUMER_SOURCE_CHARS = 256 * 1024;
+    // There are independent direct and generic caches per module revision. Bound each one so a
+    // long editor session opening many distinct consumers cannot retain unbounded source strings.
+    static final int MAX_CACHED_CONSUMERS = 1024;
     private final ConcurrentHashMap<Path, CachedAliasResult<T>> results = new ConcurrentHashMap<>();
 
     java.util.Map<String, T> get(Path file, String consumerSource) {
@@ -1103,7 +1124,13 @@ public final class KotlinJvmTypeIndex {
         return;
       }
       if (aliases == null) return;
-      results.put(normalizedPath(file), new CachedAliasResult<>(consumerSource, aliases));
+      final Path normalizedFile = normalizedPath(file);
+      if (!results.containsKey(normalizedFile) && results.size() >= MAX_CACHED_CONSUMERS) {
+        // Keep the cache strictly bounded without introducing LRU bookkeeping or a lossy source
+        // hash. A full eviction only costs later cache misses; it cannot change projection output.
+        results.clear();
+      }
+      results.put(normalizedFile, new CachedAliasResult<>(consumerSource, aliases));
     }
 
     private static boolean isCacheable(Path file, String consumerSource) {

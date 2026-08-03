@@ -5,10 +5,10 @@ package com.tom.rv2ide.lsp.xml.providers
 
 import com.google.common.truth.Truth.assertThat
 import com.tom.rv2ide.lsp.models.ReferenceRole
-import com.tom.rv2ide.lsp.xml.resources.ResourceDefinitionExtractor
+import com.tom.rv2ide.lsp.xml.resources.ResourceFileEntry
 import com.tom.rv2ide.lsp.xml.resources.ResourceReferenceScanner
 import com.tom.rv2ide.lsp.xml.resources.ResourceSnapshot
-import com.tom.rv2ide.lsp.xml.resources.snapshotDefinitions
+import com.tom.rv2ide.lsp.xml.resources.snapshotEntries
 import java.nio.file.Path
 import java.nio.file.Paths
 import junit.framework.TestCase
@@ -103,33 +103,23 @@ class XmlResourceReferencesProviderTest : TestCase() {
     assertThat(innerReferenceTarget?.reference?.text).isEqualTo("@color/probe_color")
   }
 
-  fun testFailsClosedWhenAnyIndexedFileCannotBeScanned() {
+  fun testFailsClosedWhenAnyIndexedFileCannotBuildAnEntry() {
     val definitionsFile = Paths.get("project/app/src/main/res/values/strings.xml")
     val usage = Paths.get("project/app/src/main/res/layout/screen.xml")
     val broken = Paths.get("project/app/src/main/res/layout/broken.xml")
-    val texts =
+    val entries =
         linkedMapOf(
-            definitionsFile to "<resources><string name=\"title\">Title</string></resources>",
-            usage to "<View android:text=\"@string/title\" />",
-            broken to "<View android:text=\"@string/title\">",
+            definitionsFile to ResourceFileEntry.create(definitionsFile, "<resources><string name=\"title\">Title</string></resources>"),
+            usage to ResourceFileEntry.create(usage, "<View android:text=\"@string/title\" />"),
+            broken to ResourceFileEntry.create(broken, "<View android:text=\"@string/title\">"),
         )
-    val snapshot = snapshot(texts)
-    val target = scan(texts.getValue(usage)).single()
 
-    assertThat(
-            XmlResourceReferencesProvider().findInSnapshot(
-                target = target,
-                snapshot = snapshot,
-                includeDeclaration = true,
-                readText = texts::getValue,
-            )
-        )
-        .isNull()
+    assertThat(snapshotEntries(entries)).isEqualTo(ResourceSnapshot.Unavailable)
   }
 
   private fun snapshot(texts: Map<Path, String>): ResourceSnapshot.Available {
-    val extractions = texts.mapValues { (file, text) -> ResourceDefinitionExtractor.extract(file, text) }
-    return snapshotDefinitions(extractions) as ResourceSnapshot.Available
+    val entries = texts.mapValues { (file, text) -> ResourceFileEntry.create(file, text) }
+    return snapshotEntries(entries) as ResourceSnapshot.Available
   }
 
   private fun scan(text: String) =
