@@ -42,13 +42,12 @@ internal class XmlResourceReferencesProvider {
             target = target,
             snapshot = snapshot,
             includeDeclaration = params.includeDeclaration,
-            readText = { file -> if (file.normalize() == params.file.normalize()) currentText else FileManager.getDocumentContents(file) },
             checkCancelled = params.cancelChecker::abortIfCancelled,
-        ) ?: emptyList()
+        )
     val scanMillis = elapsedMillis(scanStartedAtNanos)
     val roles = rolesFor(target, snapshot, locations)
     log.debug(
-        "XML references performance: mode=scan snapshotMs={} scanMs={} totalMs={} files={} results={}",
+        "XML references performance: mode=cache snapshotMs={} scanMs={} totalMs={} files={} results={}",
         snapshotMillis,
         scanMillis,
         elapsedMillis(startedAtNanos),
@@ -144,22 +143,13 @@ internal class XmlResourceReferencesProvider {
       target: ResourceReferenceOccurrence,
       snapshot: ResourceSnapshot.Available,
       includeDeclaration: Boolean,
-      readText: (Path) -> String,
       checkCancelled: () -> Unit = {},
-  ): List<Location>? {
-    val occurrencesByFile = linkedMapOf<Path, List<ResourceReferenceOccurrence>>()
-    for (file in snapshot.files.sortedBy(Path::toString)) {
-      checkCancelled()
-      val scan = runCatching { ResourceReferenceScanner.scan(readText(file)) }.getOrNull()
-          as? ResourceReferenceScanner.ScanResult.Available
-          ?: return null
-      occurrencesByFile[file] = scan.occurrences
-    }
-    checkCancelled()
+  ): List<Location> {
+    snapshot.files.sortedBy(Path::toString).forEach { checkCancelled() }
     return ResourceReferencesQuery.find(
         target = target,
         definitions = snapshot.definitions,
-        occurrencesByFile = occurrencesByFile,
+        occurrencesByFile = snapshot.occurrencesByFile,
         includeDeclaration = includeDeclaration,
     )
   }

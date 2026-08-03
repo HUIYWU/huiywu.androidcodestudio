@@ -33,7 +33,6 @@ class XmlResourceReferencesProviderTest : TestCase() {
             target = target,
             snapshot = snapshot,
             includeDeclaration = true,
-            readText = texts::getValue,
         )
 
     assertThat(locations).isNotNull()
@@ -54,7 +53,7 @@ class XmlResourceReferencesProviderTest : TestCase() {
     val target = scan(texts.getValue(firstUsage)).single()
     val provider = XmlResourceReferencesProvider()
     val locations =
-        provider.findInSnapshot(target, snapshot, includeDeclaration = true, readText = texts::getValue)!!
+        provider.findInSnapshot(target, snapshot, includeDeclaration = true)
 
     assertThat(provider.rolesFor(target, snapshot, locations))
         .containsExactly(ReferenceRole.DEFINITION, ReferenceRole.USAGE, ReferenceRole.USAGE)
