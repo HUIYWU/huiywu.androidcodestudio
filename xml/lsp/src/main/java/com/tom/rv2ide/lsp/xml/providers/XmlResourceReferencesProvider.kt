@@ -5,6 +5,7 @@ package com.tom.rv2ide.lsp.xml.providers
 
 import com.tom.rv2ide.lsp.models.ReferenceParams
 import com.tom.rv2ide.lsp.models.ReferenceResult
+import com.tom.rv2ide.lsp.models.ReferenceRole
 import com.tom.rv2ide.lsp.xml.resources.ModuleResourceIndex
 import com.tom.rv2ide.lsp.xml.diagnostics.XmlResourceReference
 import com.tom.rv2ide.lsp.xml.resources.ResourceDefinition
@@ -31,7 +32,7 @@ internal class XmlResourceReferencesProvider {
         ?: return ReferenceResult(emptyList())
     val target = targetFor(params.file, currentText, cursor, snapshot) ?: return ReferenceResult(emptyList())
 
-    return ReferenceResult(
+    val locations =
         findInSnapshot(
             target = target,
             snapshot = snapshot,
@@ -39,7 +40,27 @@ internal class XmlResourceReferencesProvider {
             readText = { file -> if (file.normalize() == params.file.normalize()) currentText else FileManager.getDocumentContents(file) },
             checkCancelled = params.cancelChecker::abortIfCancelled,
         ) ?: emptyList()
-    )
+    return ReferenceResult(locations, rolesFor(target, snapshot, locations))
+  }
+
+  internal fun rolesFor(
+      target: ResourceReferenceOccurrence,
+      snapshot: ResourceSnapshot.Available,
+      locations: List<Location>,
+  ): List<ReferenceRole> {
+    val definitions =
+        snapshot.definitions
+            .asSequence()
+            .filter {
+              it.type == target.reference.type && it.name == target.reference.entry
+            }
+            .map { definition ->
+              Location(definition.sourceFile, definition.nameRange ?: Range(Position(0, 0), Position(0, 0)))
+            }
+            .toSet()
+    return locations.map { location ->
+      if (location in definitions) ReferenceRole.DEFINITION else ReferenceRole.USAGE
+    }
   }
 
   internal fun targetFor(

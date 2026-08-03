@@ -22,6 +22,7 @@ import com.tom.rv2ide.lsp.models.CodeActionItem;
 import com.tom.rv2ide.lsp.models.DiagnosticItem;
 import com.tom.rv2ide.lsp.models.DiagnosticResult;
 import com.tom.rv2ide.lsp.models.PerformCodeActionParams;
+import com.tom.rv2ide.lsp.models.ReferenceRole;
 import com.tom.rv2ide.lsp.models.ShowDocumentParams;
 import com.tom.rv2ide.lsp.models.ShowDocumentResult;
 import com.tom.rv2ide.models.Location;
@@ -95,4 +96,14 @@ public interface ILanguageClient {
    * @param locations The location to show.
    */
   void showLocations(List<Location> locations);
+
+  /**
+   * Shows reference locations with optional per-location roles.
+   *
+   * <p>The default preserves the legacy location-only result view for clients that do not support
+   * reference roles.
+   */
+  default void showReferences(List<Location> locations, List<ReferenceRole> roles) {
+    showLocations(locations);
+  }
 }

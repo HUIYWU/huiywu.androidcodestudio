@@ -440,6 +440,8 @@
   <string name="msg_no_overridable_methods">找不到任何可重写的方法</string>
   <string name="action_goto_definition">转到定义</string>
   <string name="action_find_references">查找引用</string>
+<string name="reference_role_definition">定义</string>
+<string name="reference_role_usage">使用</string>
   <string name="action_generate_toString">生成 toString()</string>
   <string name="action_remove_unused_imports">删除未使用的导入</string>
   <string name="action_organize_imports">整理导入</string>

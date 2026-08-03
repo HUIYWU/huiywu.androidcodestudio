@@ -23,11 +23,17 @@ public class SearchResult extends Range {
   public File file;
   public String line;
   public String match;
+  public String roleLabel;
 
   public SearchResult(Range src, File file, String line, String match) {
+    this(src, file, line, match, null);
+  }
+
+  public SearchResult(Range src, File file, String line, String match, String roleLabel) {
     super(src.getStart(), src.getEnd());
     this.file = file;
     this.line = line;
     this.match = match;
+    this.roleLabel = roleLabel;
   }
 }

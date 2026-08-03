@@ -39,6 +39,7 @@ import com.tom.rv2ide.lsp.models.DiagnosticResult;
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity;
 import com.tom.rv2ide.lsp.models.LineIndex;
 import com.tom.rv2ide.lsp.models.PerformCodeActionParams;
+import com.tom.rv2ide.lsp.models.ReferenceRole;
 import com.tom.rv2ide.lsp.models.ShowDocumentParams;
 import com.tom.rv2ide.lsp.models.ShowDocumentResult;
 import com.tom.rv2ide.lsp.models.TextEdit;
@@ -618,6 +619,15 @@ public class IDELanguageClientImpl implements ILanguageClient {
    */
   @Override
   public void showLocations(List<Location> locations) {
+    showLocations(locations, Collections.emptyList());
+  }
+
+  @Override
+  public void showReferences(List<Location> locations, List<ReferenceRole> roles) {
+    showLocations(locations, roles);
+  }
+
+  private void showLocations(List<Location> locations, List<ReferenceRole> roles) {
 
     // Cannot show anything if the activity() is null
     if (!canUseActivity()) {
@@ -667,7 +677,8 @@ public class IDELanguageClientImpl implements ILanguageClient {
                             loc.getRange().getStart().getColumn(),
                             loc.getRange().getEnd().getLine(),
                             loc.getRange().getEnd().getColumn())
-                        .toString()));
+                        .toString(),
+                    referenceRoleLabel(roles, i)));
         results.put(file, matches);
       } catch (Throwable th) {
         LOG.error("Failed to show file location", th);
@@ -675,6 +686,21 @@ public class IDELanguageClientImpl implements ILanguageClient {
     }
 
     activity.handleSearchResults(results);
+  }
+
+  @Nullable
+  private String referenceRoleLabel(List<ReferenceRole> roles, int index) {
+    if (roles == null || index < 0 || index >= roles.size()) {
+      return null;
+    }
+    final ReferenceRole role = roles.get(index);
+    if (role == ReferenceRole.DEFINITION) {
+      return activity.getString(string.reference_role_definition);
+    }
+    if (role == ReferenceRole.USAGE) {
+      return activity.getString(string.reference_role_usage);
+    }
+    return null;
   }
 
   private CodeEditorView findEditorByFile(File file) {

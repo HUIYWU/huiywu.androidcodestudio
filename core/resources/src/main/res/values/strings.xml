@@ -804,6 +804,8 @@
   <string name="msg_no_overridable_methods">Unable to find any overridable method</string>
   <string name="action_goto_definition">Go to definition</string>
   <string name="action_find_references">Find references</string>
+<string name="reference_role_definition">Definition</string>
+<string name="reference_role_usage">Usage</string>
   <string name="action_generate_toString">Generate toString()</string>
   <string name="action_remove_unused_imports">Remove unused imports</string>
   <string name="action_organize_imports">Organize imports</string>

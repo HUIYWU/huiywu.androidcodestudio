@@ -608,6 +608,12 @@ public final class KotlinJvmTypeIndex {
       // A qualified JVM name that maps to multiple normal Kotlin declarations is not safe to
       // navigate. Do not make the answer depend on source-root traversal order.
       ambiguousDeclarations.forEach(declarations::remove);
+      // A normal top-level type/file facade and a multifile facade must also never share a JVM
+      // name. Neither navigation API has a uniquely provable target in that situation.
+      final Set<String> normalMultifileConflicts = new LinkedHashSet<>(declarations.keySet());
+      normalMultifileConflicts.retainAll(multifile.keySet());
+      normalMultifileConflicts.forEach(declarations::remove);
+      normalMultifileConflicts.forEach(multifile::remove);
       return new NavigationCandidateIndex(declarations, multifile);
     }
 
@@ -723,7 +729,8 @@ public final class KotlinJvmTypeIndex {
       final Visibility visibility = Visibility.from(consumerSource);
       final java.util.Map<String, String> result = new java.util.LinkedHashMap<>();
       final Set<String> conflicts = new LinkedHashSet<>();
-      for (java.util.List<DirectAliasDeclaration> declarations : directByPackage.values()) {
+      for (java.util.List<DirectAliasDeclaration> declarations
+          : visiblePackageDeclarations(directByPackage, visibility)) {
         for (DirectAliasDeclaration declaration : declarations) {
           if (normalizedPath(declaration.file).equals(normalizedPath(consumerFile))
               || !visibility.includes(declaration.packageName, declaration.qualifiedName)) continue;
@@ -744,6 +751,18 @@ public final class KotlinJvmTypeIndex {
       return declarationCount(genericByPackage);
     }
 
+    private static <T> List<java.util.List<T>> visiblePackageDeclarations(
+        java.util.Map<String, java.util.List<T>> declarations,
+        Visibility visibility) {
+      final java.util.ArrayList<java.util.List<T>> result = new java.util.ArrayList<>();
+      final Set<String> packages = visibility.referencedPackages();
+      for (String packageName : packages) {
+        final java.util.List<T> entries = declarations.get(packageName);
+        if (entries != null && !entries.isEmpty()) result.add(entries);
+      }
+      return result;
+    }
+
     private static int declarationCount(java.util.Map<String, ? extends java.util.List<?>> declarations) {
       int count = 0;
       for (java.util.List<?> aliases : declarations.values()) count += aliases.size();
@@ -754,7 +773,8 @@ public final class KotlinJvmTypeIndex {
       final Visibility visibility = Visibility.from(consumerSource);
       final java.util.Map<String, GenericTypeAlias> result = new java.util.LinkedHashMap<>();
       final Set<String> conflicts = new LinkedHashSet<>();
-      for (java.util.List<GenericAliasDeclaration> declarations : genericByPackage.values()) {
+      for (java.util.List<GenericAliasDeclaration> declarations
+          : visiblePackageDeclarations(genericByPackage, visibility)) {
         for (GenericAliasDeclaration declaration : declarations) {
           if (normalizedPath(declaration.file).equals(normalizedPath(consumerFile))
               || !visibility.includes(declaration.packageName, declaration.qualifiedName)) continue;
@@ -840,6 +860,16 @@ public final class KotlinJvmTypeIndex {
       final Matcher importMatcher = IMPORT_PATTERN.matcher(source);
       while (importMatcher.find()) imports.add(importMatcher.group(1));
       return new Visibility(packageName, imports);
+    }
+
+    Set<String> referencedPackages() {
+      final Set<String> packages = new LinkedHashSet<>();
+      packages.add(consumerPackage);
+      for (String imported : explicitlyImported) {
+        final int separator = imported.lastIndexOf('.');
+        if (separator >= 0) packages.add(imported.substring(0, separator));
+      }
+      return packages;
     }
 
     boolean includes(String declarationPackage, String qualifiedName) {
@@ -1053,17 +1083,32 @@ public final class KotlinJvmTypeIndex {
   }
 
   static final class ConsumerAliasCache<T> {
+    // Alias visibility parsing is inexpensive compared with retaining an arbitrarily large editor
+    // document. Large consumers remain correct but deliberately bypass this exact-source cache.
+    static final int MAX_CACHED_CONSUMER_SOURCE_CHARS = 256 * 1024;
     private final ConcurrentHashMap<Path, CachedAliasResult<T>> results = new ConcurrentHashMap<>();
 
     java.util.Map<String, T> get(Path file, String consumerSource) {
-      if (file == null || consumerSource == null) return null;
+      if (!isCacheable(file, consumerSource)) return null;
       final CachedAliasResult<T> result = results.get(normalizedPath(file));
       return result != null && result.consumerSource.equals(consumerSource) ? result.aliases : null;
     }
 
     void put(Path file, String consumerSource, java.util.Map<String, T> aliases) {
-      if (file == null || consumerSource == null || aliases == null) return;
+      if (file == null || consumerSource == null) return;
+      if (!isCacheable(file, consumerSource)) {
+        // A previously cached small revision must not keep consuming memory after this editor
+        // document grows beyond the retention limit.
+        results.remove(normalizedPath(file));
+        return;
+      }
+      if (aliases == null) return;
       results.put(normalizedPath(file), new CachedAliasResult<>(consumerSource, aliases));
+    }
+
+    private static boolean isCacheable(Path file, String consumerSource) {
+      return file != null && consumerSource != null
+          && consumerSource.length() <= MAX_CACHED_CONSUMER_SOURCE_CHARS;
     }
 
     int size() {

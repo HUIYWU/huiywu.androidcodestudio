@@ -31,4 +31,18 @@ data class ReferenceParams(
     override val cancelChecker: ICancelChecker,
 ) : CancellableRequestParams
 
-data class ReferenceResult(var locations: List<Location>)
+enum class ReferenceRole {
+  DEFINITION,
+  USAGE,
+}
+
+/**
+ * Locations returned by a references request.
+ *
+ * [roles] is optional for compatibility with language servers that only provide locations. When
+ * present, it must have the same order and size as [locations].
+ */
+data class ReferenceResult(
+    var locations: List<Location>,
+    var roles: List<ReferenceRole> = emptyList(),
+)

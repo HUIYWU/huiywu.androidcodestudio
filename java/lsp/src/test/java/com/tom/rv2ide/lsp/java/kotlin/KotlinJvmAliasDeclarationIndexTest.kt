@@ -121,6 +121,31 @@ class KotlinJvmAliasDeclarationIndexTest {
   }
 
   @Test
+  fun navigationCandidateIndex_rejectsNormalAndMultifileFacadeJvmNameConflict() {
+    val root = Files.createTempDirectory("kotlin-navigation-facade-conflict")
+    try {
+      write(root.resolve("Normal.kt"), """
+        @file:JvmName("SharedFacade")
+        package sample
+        fun normal() = 1
+      """.trimIndent())
+      write(root.resolve("Multifile.kt"), """
+        @file:JvmName("SharedFacade")
+        @file:JvmMultifileClass
+        package sample
+        fun multifile() = 2
+      """.trimIndent())
+
+      val index = KotlinJvmTypeIndex.NavigationCandidateIndex.build(listOf(root.toFile()))
+
+      assertNull(index.declaration("sample.SharedFacade"))
+      assertTrue(index.multifileDeclarations("sample.SharedFacade").isEmpty())
+    } finally {
+      root.toFile().deleteRecursively()
+    }
+  }
+
+  @Test
   fun navigationCandidateIndex_reusesImmutableDeclarationAndMultifileMetadata() {
     val root = Files.createTempDirectory("kotlin-navigation-candidates")
     try {

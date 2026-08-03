@@ -4,6 +4,7 @@
 package com.tom.rv2ide.lsp.xml.providers
 
 import com.google.common.truth.Truth.assertThat
+import com.tom.rv2ide.lsp.models.ReferenceRole
 import com.tom.rv2ide.lsp.xml.resources.ResourceDefinitionExtractor
 import com.tom.rv2ide.lsp.xml.resources.ResourceReferenceScanner
 import com.tom.rv2ide.lsp.xml.resources.ResourceSnapshot
@@ -37,6 +38,27 @@ class XmlResourceReferencesProviderTest : TestCase() {
 
     assertThat(locations).isNotNull()
     assertThat(locations!!.map { it.file }).containsExactly(definitionsFile, firstUsage, secondUsage).inOrder()
+  }
+
+  fun testClassifiesDefinitionsAndUsagesInLocationOrder() {
+    val definitionsFile = Paths.get("project/app/src/main/res/values/strings.xml")
+    val firstUsage = Paths.get("project/app/src/main/res/layout/first.xml")
+    val secondUsage = Paths.get("project/app/src/main/res/layout/second.xml")
+    val texts =
+        linkedMapOf(
+            definitionsFile to "<resources><string name=\"title\">Title</string></resources>",
+            firstUsage to "<View android:text=\"@string/title\" />",
+            secondUsage to "<View android:contentDescription=\"@string/title\" />",
+        )
+    val snapshot = snapshot(texts)
+    val target = scan(texts.getValue(firstUsage)).single()
+    val provider = XmlResourceReferencesProvider()
+    val locations =
+        provider.findInSnapshot(target, snapshot, includeDeclaration = true, readText = texts::getValue)!!
+
+    assertThat(provider.rolesFor(target, snapshot, locations))
+        .containsExactly(ReferenceRole.DEFINITION, ReferenceRole.USAGE, ReferenceRole.USAGE)
+        .inOrder()
   }
 
   fun testResolvesValuesAndIdDefinitionNamesAsTargets() {

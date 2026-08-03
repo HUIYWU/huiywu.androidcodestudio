@@ -15,6 +15,7 @@
 package com.tom.rv2ide.adapters
 
 import android.graphics.PorterDuff.Mode.SRC_ATOP
+import android.text.SpannableStringBuilder
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -80,16 +81,20 @@ class SearchListAdapter(
         try {
           val scheme = SchemeAndroidIDE.newInstance(binding.text.context)
           val sb = JavaHighlighter().highlight(scheme, match.line, match.match)
-          ThreadUtils.runOnUiThread { binding.text.text = sb }
+          ThreadUtils.runOnUiThread { binding.text.text = rolePrefixed(match, sb) }
         } catch (e: Exception) {
-          ThreadUtils.runOnUiThread { binding.text.text = match.match }
+          ThreadUtils.runOnUiThread { binding.text.text = rolePrefixed(match, match.match) }
         }
       }
       binding.root.setOnClickListener { onMatchClick(match) }
     }
-
     override fun getItemCount(): Int {
       return matches.size
+    }
+
+    private fun rolePrefixed(match: SearchResult, text: CharSequence): CharSequence {
+      val role = match.roleLabel ?: return text
+      return SpannableStringBuilder().append('[').append(role).append("] ").append(text)
     }
   }
 

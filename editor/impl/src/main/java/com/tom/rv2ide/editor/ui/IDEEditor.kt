@@ -927,7 +927,7 @@ measureEditorInitStage("subscribeSelectionChange") {
           }
         }
 
-        languageClient.showLocations(result.locations)
+        languageClient.showReferences(result.locations, result.roles)
       }
   protected open fun dispatchDocumentOpenEvent() {
     if (isReleased) {

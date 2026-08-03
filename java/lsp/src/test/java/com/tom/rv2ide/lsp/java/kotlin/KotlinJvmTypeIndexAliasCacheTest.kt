@@ -23,6 +23,24 @@ class KotlinJvmTypeIndexAliasCacheTest {
   }
 
   @Test
+  fun consumerAliasCache_doesNotRetainOversizedConsumerSource() {
+    val cache = KotlinJvmTypeIndex.ConsumerAliasCache<String>()
+    val file = Paths.get("/consumer/LargeApi.kt")
+    val smallSource = "package consumer"
+    val source = "x".repeat(
+      KotlinJvmTypeIndex.ConsumerAliasCache.MAX_CACHED_CONSUMER_SOURCE_CHARS + 1)
+    val aliases = Collections.singletonMap("Name", "String")
+
+    cache.put(file, smallSource, aliases)
+    assertEquals(1, cache.size())
+    cache.put(file, source, aliases)
+
+    assertNull(cache.get(file, source))
+    assertNull(cache.get(file, smallSource))
+    assertEquals(0, cache.size())
+  }
+
+  @Test
   fun consumerAliasCache_replacesOldConsumerContentWithoutGrowing() {
     val cache = KotlinJvmTypeIndex.ConsumerAliasCache<String>()
     val file = Paths.get("/consumer/Api.kt")
