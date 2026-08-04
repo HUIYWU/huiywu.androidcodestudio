@@ -277,6 +277,62 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsReferenceArrayVarianceWithoutErasingComponentType() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        fun read(values: Array<out String>): String = values.joinToString()
+        fun write(values: Array<in String>): Int = values.size
+        fun unknown(values: Array<*>): Int = values.size
+        fun boxed(values: Array<Int>): Int = values.size
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.ArrayVarianceKt", "ArrayVariance.kt", source, emptySet(), mode)
+      assertNotNull("Array variance generation failed in $mode", stub)
+      assertContains(stub!!, "String read(String[] values)")
+      assertContains(stub, "int write(String[] values)")
+      assertContains(stub, "int unknown(Object[] values)")
+      assertContains(stub, "int boxed(Integer[] values)")
+      assertFalse(stub.contains("int boxed(int[] values)"))
+    }
+  }
+
+  @Test
+  fun generate_keepsDifferentReferenceArrayDimensionsAsLegalOverloads() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface ArrayDimensionOverloads<T> {
+          @JvmName("store")
+          fun storeSingle(values: Array<T>): String
+          @JvmName("store")
+          fun storeNested(values: Array<Array<Any>>): String
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.ArrayDimensionOverloads", "ArrayDimensionOverloads.kt", source,
+          emptySet(), mode)
+      assertNotNull("Array dimension overload generation failed in $mode", stub)
+      assertContains(stub!!, "String store(T[] values);")
+      assertContains(stub, "String store(Object[][] values);")
+    }
+  }
+
+  @Test
   fun generate_rejectsVarargAndReferenceArrayJvmSurfaceConflict() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

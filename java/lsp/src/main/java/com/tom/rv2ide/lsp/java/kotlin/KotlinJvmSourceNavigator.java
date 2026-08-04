@@ -554,6 +554,15 @@ public final class KotlinJvmSourceNavigator {
       if (expandedAlias != null) {
         return navigationJavaType(expandedAlias);
       }
+      if ("Array".equals(application.rawType) || "kotlin.Array".equals(application.rawType)) {
+        if (application.arguments.size() != 1) return null;
+        String element = application.arguments.get(0).trim();
+        if ("*".equals(element)) return null;
+        if (element.startsWith("out ")) element = element.substring(4).trim();
+        else if (element.startsWith("in ")) element = element.substring(3).trim();
+        final String javaElement = navigationJavaType(element);
+        return javaElement == null ? null : boxedNavigationType(javaElement) + "[]";
+      }
       final String rawType = KotlinJvmTypeProjection.javaCollectionType(application.rawType);
       if (rawType == null || application.arguments.isEmpty()) {
         return null;

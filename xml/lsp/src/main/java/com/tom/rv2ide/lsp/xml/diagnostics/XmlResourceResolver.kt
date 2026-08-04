@@ -117,6 +117,7 @@ internal data class XmlResourceReference(
     private val expression =
         Regex("^([@?])(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_.-]*)$")
     private val specialValues = setOf("@", "@null", "@empty")
+    private val resourceTypesByTagName = AaptResourceType.values().associateBy { it.tagName }
 
     fun isSpecialValue(value: String): Boolean = value in specialValues
 
@@ -131,7 +132,7 @@ internal data class XmlResourceReference(
       if (marker == "?" && typeName != AaptResourceType.ATTR.tagName) {
         return null
       }
-      val type = AaptResourceType.values().firstOrNull { it.tagName == typeName } ?: return null
+      val type = resourceTypesByTagName[typeName] ?: return null
       if (type == AaptResourceType.UNKNOWN) {
         return null
       }

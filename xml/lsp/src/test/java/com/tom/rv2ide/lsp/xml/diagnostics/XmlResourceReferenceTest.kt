@@ -61,6 +61,11 @@ class XmlResourceReferenceTest : TestCase() {
     assertThat(XmlResourceReference.parse("?color/primary")).isNull()
   }
 
+  fun testRejectsUnknownResourceTypes() {
+    assertThat(XmlResourceReference.parse("@not_a_resource_type/title")).isNull()
+    assertThat(XmlResourceReference.parse("?not_a_resource_type/title")).isNull()
+  }
+
   fun testParsesIdReferenceAfterCreatingMarkerIsRemoved() {
     val reference = XmlResourceReference.parse("id/title")
 

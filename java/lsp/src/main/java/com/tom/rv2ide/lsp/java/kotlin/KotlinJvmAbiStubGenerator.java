@@ -2555,7 +2555,10 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static String javaReferenceArrayType(String kotlinElementType) {
-    final String elementType = boxedTypeArgument(javaType(kotlinElementType));
+    String element = kotlinElementType == null ? "" : kotlinElementType.trim();
+    if (element.startsWith("out ")) element = element.substring(4).trim();
+    else if (element.startsWith("in ")) element = element.substring(3).trim();
+    final String elementType = boxedTypeArgument(javaType(element));
     return "void".equals(elementType) || elementType.contains("?") ? "Object[]" : elementType + "[]";
   }
 

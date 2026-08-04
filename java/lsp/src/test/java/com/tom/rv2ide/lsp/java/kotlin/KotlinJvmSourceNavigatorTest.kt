@@ -892,6 +892,56 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun facadeNavigation_resolvesReferenceArrayVarianceWithoutStarProjectionGuessing() {
+    val file = Paths.get("/navigation/ArrayVarianceNavigation.kt")
+    val kotlinSource =
+        """
+        package navigation
+
+        fun readValues(values: Array<out String>): String = values.joinToString()
+        fun writeValues(values: Array<in String>): Int = values.size
+        fun unknownValues(values: Array<*>): Int = values.size
+        """.trimIndent()
+
+    val read = compileMethod(
+        """
+        package navigation;
+        abstract class ArrayVarianceNavigationKt {
+          abstract String readValues(String[] values);
+        }
+        """.trimIndent(),
+        "navigation.ArrayVarianceNavigationKt", "readValues")
+    val write = compileMethod(
+        """
+        package navigation;
+        abstract class ArrayVarianceNavigationKt {
+          abstract int writeValues(String[] values);
+        }
+        """.trimIndent(),
+        "navigation.ArrayVarianceNavigationKt", "writeValues")
+    val unknown = compileMethod(
+        """
+        package navigation;
+        abstract class ArrayVarianceNavigationKt {
+          abstract int unknownValues(Object[] values);
+        }
+        """.trimIndent(),
+        "navigation.ArrayVarianceNavigationKt", "unknownValues")
+
+    assertEquals("readValues", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, read)))
+    assertEquals("writeValues", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, write)))
+    // Array<*> has no exact component-type proof. The navigator nevertheless retains an otherwise
+    // unique candidate; it only rejects unknown signatures when multiple declarations survive.
+    assertEquals("unknownValues", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, unknown)))
+  }
+
+  // Array<*> and Array<out Any> cannot be declared as same-name overloads: both erase to Object[].
+  // Keep ambiguity coverage to source combinations with a valid, distinct Kotlin/JVM declaration set.
+
+  @Test
   fun multifileNavigation_usesAliasContextOfEachPart() {
     val firstPath = Paths.get("/navigation/AliasFirst.kt")
     val secondPath = Paths.get("/navigation/AliasSecond.kt")
