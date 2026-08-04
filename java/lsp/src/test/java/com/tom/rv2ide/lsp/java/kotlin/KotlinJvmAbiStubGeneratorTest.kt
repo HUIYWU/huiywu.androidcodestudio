@@ -642,6 +642,36 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generate_projectsNamedCompanionUsingItsJvmNestedOwnerName() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class NamedCompanionOwner {
+          companion object Factory {
+            fun ordinary(value: String): String = value
+            @JvmStatic fun create(value: Int): Int = value
+          }
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.NamedCompanionOwner", "NamedCompanionOwner.kt", source, emptySet(), mode)
+      assertNotNull("Named companion generation failed in $mode", stub)
+      assertContains(stub!!, "public static final class Factory")
+      assertContains(stub, "public static final Factory Factory")
+      assertContains(stub, "public String ordinary(String value)")
+      assertContains(stub, "public static int create(int value)")
+      assertFalse("Anonymous companion owner leaked in $mode:\n$stub", stub.contains("class Companion"))
+    }
+  }
+
+  @Test
   fun generate_projectsCompanionJvmStaticPropertyHonorsSyntheticAccessors() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

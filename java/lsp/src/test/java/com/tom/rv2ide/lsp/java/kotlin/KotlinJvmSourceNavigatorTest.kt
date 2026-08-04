@@ -348,6 +348,57 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesNamedCompanionJvmOwnerAndHostBridge() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class NamedCompanionNavigation {
+        companion object Factory {
+          fun ordinary(value: String): String = value
+          @JvmStatic fun create(value: Int): Int = value
+        }
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class NamedCompanionNavigation {
+        static int create(int value) { return value; }
+        static class Factory {
+          String ordinary(java.lang.String value) { return value; }
+          int create(int value) { return value; }
+        }
+      }
+      """.trimIndent()
+    val hostCreate = compileMethod(javaSource, "navigation.NamedCompanionNavigation", "create")
+    val factoryOrdinary = compileMethod(
+      javaSource, "navigation.NamedCompanionNavigation.Factory", "ordinary")
+    val factoryCreate = compileMethod(
+      javaSource, "navigation.NamedCompanionNavigation.Factory", "create")
+    val incorrectAnonymousOwner = compileMethod(
+      """
+      package navigation;
+      class NamedCompanionNavigation {
+        static class Companion { String ordinary(java.lang.String value) { return value; } }
+      }
+      """.trimIndent(),
+      "navigation.NamedCompanionNavigation.Companion",
+      "ordinary",
+    )
+    val file = Paths.get("/navigation/NamedCompanionNavigation.kt")
+
+    assertEquals("create", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, hostCreate)!!))
+    assertEquals("ordinary", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, factoryOrdinary)!!))
+    assertEquals("create", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, factoryCreate)!!))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(
+      file, kotlinSource, incorrectAnonymousOwner))
+  }
+
+  @Test
   fun typeNavigation_rejectsSyntheticCompanionJvmStaticSetter() {
     val kotlinSource =
       """

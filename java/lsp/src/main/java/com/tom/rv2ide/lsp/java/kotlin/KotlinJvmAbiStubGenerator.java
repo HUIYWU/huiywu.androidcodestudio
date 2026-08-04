@@ -260,7 +260,7 @@ private static final Pattern PROPERTY_PATTERN =
     }
     appendSyntaxMembers(out, syntax.members, isInterface, false);
     if (syntax.companionBody != null) {
-      appendCompanionSyntax(out, syntax.companionMembers);
+      appendCompanionSyntax(out, syntax.companionName, syntax.companionMembers);
     }
     appendNestedTypes(out, syntax.nestedTypes);
     out.append("}\n");
@@ -351,8 +351,8 @@ private static final Pattern PROPERTY_PATTERN =
         }
         appendSyntaxMembers(out, nested.members, interfaceType, false);
         if (nested.companionBody != null) {
-          appendCompanionSyntax(out, nested.companionMembers);
-        }
+        appendCompanionSyntax(out, nested.companionName, nested.companionMembers);
+      }
         appendNestedTypes(out, nested.nestedTypes);
         out.append("  }\n");
       } finally {
@@ -805,7 +805,7 @@ private static final Pattern PROPERTY_PATTERN =
     // Anchor the declaration at the beginning of a source line so examples such as
     // `// companion object {` do not shadow the real companion declared later in the class.
     final Matcher companion =
-        Pattern.compile("(?m)^\\s*companion\\s+object(?:\\s+[A-Za-z_][\\w]*)?\\s*\\{")
+        Pattern.compile("(?m)^\\s*companion\\s+object(?:\\s+([A-Za-z_][\\w]*))?\\s*\\{")
             .matcher(body);
     if (!companion.find()) {
       return;
@@ -816,19 +816,22 @@ private static final Pattern PROPERTY_PATTERN =
       return;
     }
     final String companionBody = body.substring(bodyStart + 1, bodyEnd);
-    appendCompanionBody(out, companionBody);
+    appendCompanionBody(out, companion.group(1), companionBody);
   }
 
-  private static void appendCompanionBody(StringBuilder out, String companionBody) {
-    // Kotlin exposes the companion itself as Foo.Companion. Keep that normal JVM surface in
-    // addition to the direct host-class methods created only for @JvmStatic declarations.
-    out.append("  public static final class Companion {\n");
+  private static void appendCompanionBody(
+      StringBuilder out, String companionName, String companionBody) {
+    final String jvmName = companionName == null || companionName.isEmpty() ? "Companion" : companionName;
+    // Kotlin exposes the companion object using its source name, or Companion when unnamed. Keep
+    // that normal JVM surface in addition to host-class methods created only for @JvmStatic.
+    out.append("  public static final class ").append(jvmName).append(" {\n");
     // @JvmField exposes a backing field on the host class, not Companion accessors. Remove its
     // declaration from this fallback companion pass; appendJvmFields emits the host field below.
     appendMembers(
         out, withoutJvmFieldProperties(companionBody).replace("@JvmStatic", ""), false, false);
     out.append("  }\n");
-    out.append("  public static final Companion Companion = null;\n");
+    out.append("  public static final ").append(jvmName).append(' ')
+        .append(jvmName).append(" = null;\n");
     // Do not depend on annotations and declarations sharing a particular line layout. Kotlin permits
     // @JvmStatic, its use-site arguments, whitespace and the declaration to span separate lines.
     final Matcher staticFunction = JVM_STATIC_FUNCTION_PATTERN.matcher(companionBody);
@@ -868,15 +871,19 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static void appendCompanionSyntax(
-      StringBuilder out, List<KotlinJvmSyntaxParser.MemberSyntax> members) {
-    out.append("  public static final class Companion {\n");
+      StringBuilder out,
+      String companionName,
+      List<KotlinJvmSyntaxParser.MemberSyntax> members) {
+    final String jvmName = companionName == null || companionName.isEmpty() ? "Companion" : companionName;
+    out.append("  public static final class ").append(jvmName).append(" {\n");
     for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
       // @JvmField has only the host-class field projection; do not invent Companion accessors.
       if (!member.function() && member.jvmField) continue;
       appendSyntaxMembers(out, Collections.singletonList(member), false, false);
     }
     out.append("  }\n");
-    out.append("  public static final Companion Companion = null;\n");
+    out.append("  public static final ").append(jvmName).append(' ')
+        .append(jvmName).append(" = null;\n");
     for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
       if (member.privateMember || member.declarationText.isEmpty() || member.jvmSynthetic
           || member.function() && member.suspendFunction) {

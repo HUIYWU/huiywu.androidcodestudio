@@ -125,6 +125,10 @@ internal object ModuleResourceIndex {
           var valuesDefinitions = 0
           var fileResourceDefinitions = 0
           var valuesDefinitionNanos = 0L
+          var largestValuesDefinitionCount = 0
+          var largestValuesDefinitionNanos = 0L
+          var valuesFilesOver100Definitions = 0
+          var valuesFilesOver1000Definitions = 0
           var fileResourceDefinitionNanos = 0L
           val entriesByFile = mutableMapOf<Path, ResourceFileEntry>()
           signatures.forEach { (file, signature) ->
@@ -153,6 +157,15 @@ internal object ModuleResourceIndex {
                     valuesFiles++
                     valuesDefinitions += definitionCount
                     valuesDefinitionNanos += measured.definitionNanos
+                    largestValuesDefinitionCount = maxOf(largestValuesDefinitionCount, definitionCount)
+                    largestValuesDefinitionNanos =
+                        maxOf(largestValuesDefinitionNanos, measured.definitionNanos)
+                    if (definitionCount > VALUES_DEFINITIONS_LARGE_FILE_THRESHOLD) {
+                      valuesFilesOver100Definitions++
+                    }
+                    if (definitionCount > VALUES_DEFINITIONS_VERY_LARGE_FILE_THRESHOLD) {
+                      valuesFilesOver1000Definitions++
+                    }
                   }
                   ResourceDefinitionExtractor.Category.FILE -> {
                     fileResourceFiles++
@@ -169,7 +182,7 @@ internal object ModuleResourceIndex {
           }
           if (measureEntries) {
             log.debug(
-                "XML resource snapshot refresh: files={} reusedEntries={} rebuiltEntries={} walkMs={} readMs={} definitionMs={} occurrenceMs={} valuesFiles={} valuesDefinitions={} valuesDefinitionMs={} fileResourceFiles={} fileResourceDefinitions={} fileResourceDefinitionMs={} totalMs={}",
+                "XML resource snapshot refresh: files={} reusedEntries={} rebuiltEntries={} walkMs={} readMs={} definitionMs={} occurrenceMs={} valuesFiles={} valuesDefinitions={} valuesDefinitionMs={} largestValuesDefinitionCount={} largestValuesDefinitionMs={} valuesFilesOver100Definitions={} valuesFilesOver1000Definitions={} fileResourceFiles={} fileResourceDefinitions={} fileResourceDefinitionMs={} totalMs={}",
                 signatures.size,
                 reusedEntries,
                 rebuiltEntries,
@@ -180,6 +193,10 @@ internal object ModuleResourceIndex {
                 valuesFiles,
                 valuesDefinitions,
                 nanosToMillis(valuesDefinitionNanos),
+                largestValuesDefinitionCount,
+                nanosToMillis(largestValuesDefinitionNanos),
+                valuesFilesOver100Definitions,
+                valuesFilesOver1000Definitions,
                 fileResourceFiles,
                 fileResourceDefinitions,
                 nanosToMillis(fileResourceDefinitionNanos),
@@ -210,6 +227,8 @@ internal object ModuleResourceIndex {
   private fun nanosToMillis(nanos: Long): Long = nanos / NANOS_PER_MILLISECOND
 
   private const val NANOS_PER_MILLISECOND = 1_000_000L
+  private const val VALUES_DEFINITIONS_LARGE_FILE_THRESHOLD = 100
+  private const val VALUES_DEFINITIONS_VERY_LARGE_FILE_THRESHOLD = 1_000
   private const val DISK_REFRESH_INTERVAL_MILLIS = 1_000L
   private const val XML_SUFFIX = ".xml"
 }

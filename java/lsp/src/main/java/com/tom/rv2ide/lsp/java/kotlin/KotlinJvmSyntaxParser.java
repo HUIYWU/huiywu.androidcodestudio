@@ -170,6 +170,8 @@ final class KotlinJvmSyntaxParser {
             ? constructorParametersFallback(parameterFallbackText)
             : parsedConstructorParameters;
     final TSNode companion = bodyNode == null ? null : directChild(bodyNode, "companion_object");
+    final TSNode companionNameNode = fieldChild(companion, "name", "type_identifier");
+    final String companionName = companionNameNode == null ? "Companion" : text(source, companionNameNode);
     final TSNode companionBodyNode = fieldChild(companion, "body", "class_body");
     final List<TypeSyntax> nestedTypes = new ArrayList<>();
     collectDirectNestedTypes(source, bodyNode, nestedTypes);
@@ -189,6 +191,7 @@ final class KotlinJvmSyntaxParser {
         constructorVisibility(source, constructor),
         hasJvmOverloads(source, constructor),
         secondaryConstructors(source, bodyNode),
+        companionBodyNode == null ? null : companionName,
         companionBodyNode == null ? null : innerBody(text(source, companionBodyNode)),
         members(source, companionBodyNode),
         hasDirectToken(declaration, "interface"),
@@ -968,6 +971,7 @@ final class KotlinJvmSyntaxParser {
     final String constructorVisibility;
     final boolean constructorJvmOverloads;
     final List<ConstructorSyntax> secondaryConstructors;
+    final String companionName;
     final String companionBody;
     final List<MemberSyntax> companionMembers;
     final boolean interfaceType;
@@ -993,6 +997,7 @@ final class KotlinJvmSyntaxParser {
         String constructorVisibility,
         boolean constructorJvmOverloads,
         List<ConstructorSyntax> secondaryConstructors,
+        String companionName,
         String companionBody,
         List<MemberSyntax> companionMembers,
         boolean interfaceType,
@@ -1016,6 +1021,7 @@ final class KotlinJvmSyntaxParser {
       this.constructorVisibility = constructorVisibility;
       this.constructorJvmOverloads = constructorJvmOverloads;
       this.secondaryConstructors = secondaryConstructors;
+      this.companionName = companionName;
       this.companionBody = companionBody;
       this.companionMembers = companionMembers;
       this.interfaceType = interfaceType;

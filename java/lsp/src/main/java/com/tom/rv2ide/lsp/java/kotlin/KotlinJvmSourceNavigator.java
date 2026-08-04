@@ -47,11 +47,7 @@ public final class KotlinJvmSourceNavigator {
     if (module == null || owner == null) {
       return null;
     }
-    final boolean companionOwner = "Companion".contentEquals(owner.getSimpleName())
-        && owner.getEnclosingElement() instanceof TypeElement;
-    if (companionOwner) {
-      owner = (TypeElement) owner.getEnclosingElement();
-    }
+    final TypeElement declaredOwner = owner;
     final TypeElement topLevelOwner = topLevelOwner(owner);
     final String qualifiedName = topLevelOwner.getQualifiedName().toString();
     final List<KotlinTypeDeclaration> multifileDeclarations =
@@ -99,6 +95,10 @@ public final class KotlinJvmSourceNavigator {
     try {
       final KotlinJvmSyntaxParser.TypeSyntax topLevelType =
           KotlinJvmSyntaxParser.findTopLevelType(source, topLevelOwner.getSimpleName().toString());
+      final boolean companionOwner = isCompanionOwner(declaredOwner, topLevelType, topLevelOwner);
+      if (companionOwner) {
+        owner = (TypeElement) declaredOwner.getEnclosingElement();
+      }
       final KotlinJvmSyntaxParser.TypeSyntax type =
           nestedType(topLevelType, owner, topLevelOwner);
       if (element instanceof TypeElement && type != null && type.nameOffset >= 0) {
@@ -202,14 +202,14 @@ public final class KotlinJvmSourceNavigator {
     if (owner == null) {
       return null;
     }
-    final boolean companionOwner = "Companion".contentEquals(owner.getSimpleName())
-        && owner.getEnclosingElement() instanceof TypeElement;
-    if (companionOwner) {
-      owner = (TypeElement) owner.getEnclosingElement();
-    }
+    final TypeElement declaredOwner = owner;
     final TypeElement topLevelOwner = topLevelOwner(owner);
     final KotlinJvmSyntaxParser.TypeSyntax topLevelType =
         KotlinJvmSyntaxParser.findTopLevelType(source, topLevelOwner.getSimpleName().toString());
+    final boolean companionOwner = isCompanionOwner(declaredOwner, topLevelType, topLevelOwner);
+    if (companionOwner) {
+      owner = (TypeElement) declaredOwner.getEnclosingElement();
+    }
     final KotlinJvmSyntaxParser.TypeSyntax type = nestedType(topLevelType, owner, topLevelOwner);
     if (type == null) {
       return null;
@@ -693,6 +693,21 @@ public final class KotlinJvmSourceNavigator {
   }
 
   // TypeApplication is defined by KotlinJvmTypeProjection.
+
+  private static boolean isCompanionOwner(
+      TypeElement owner,
+      KotlinJvmSyntaxParser.TypeSyntax topLevelType,
+      TypeElement topLevelOwner) {
+    if (owner == null || topLevelType == null || owner.equals(topLevelOwner)
+        || !(owner.getEnclosingElement() instanceof TypeElement)) {
+      return false;
+    }
+    final TypeElement enclosing = (TypeElement) owner.getEnclosingElement();
+    final KotlinJvmSyntaxParser.TypeSyntax enclosingSyntax =
+        nestedType(topLevelType, enclosing, topLevelOwner);
+    return enclosingSyntax != null && enclosingSyntax.companionBody != null
+        && owner.getSimpleName().contentEquals(enclosingSyntax.companionName);
+  }
 
   private static TypeElement topLevelOwner(TypeElement owner) {
     TypeElement current = owner;
