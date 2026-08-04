@@ -625,6 +625,7 @@ public class JavaCompilerService implements CompilerProvider {
     }
   }
   private CompileBatch performCompilation(CompilationRequest request) {
+    final long compilationStartedAtNanos = System.nanoTime();
     final CompilationRequest expandedRequest =
         compilationWorkingSetBuilder.expand(this, request);
     Collection<? extends JavaFileObject> sources = expandedRequest.sources;
@@ -670,6 +671,7 @@ public class JavaCompilerService implements CompilerProvider {
 
 
     if (addFiles.isEmpty()) {
+      logWorkingSetCompilation(request, sources, compilationStartedAtNanos, 0);
       return firstAttempt;
     }
 
@@ -689,7 +691,28 @@ public class JavaCompilerService implements CompilerProvider {
       }
     }
  
-    return new CompileBatch(this, moreSources, expandedRequest);
+    final CompileBatch retry = new CompileBatch(this, moreSources, expandedRequest);
+    logWorkingSetCompilation(request, moreSources, compilationStartedAtNanos, addFiles.size());
+    return retry;
+  }
+
+  private void logWorkingSetCompilation(
+      @NonNull final CompilationRequest request,
+      @NonNull final Collection<? extends JavaFileObject> sources,
+      final long startedAtNanos,
+      final int additionalSources) {
+    if (!IdeLogConfig.shouldLogDebug()) {
+      return;
+    }
+    final long elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000L;
+    LOG.debug(
+        "JAVA_WORKING_SET_COMPILE enabled={} requestedSources={} compiledSources={} additionalSources={} diagnostics={} elapsedMs={}",
+        JavaPreferences.INSTANCE.isJavaCompilationWorkingSetEnabled(),
+        request.sources.size(),
+        sources.size(),
+        additionalSources,
+        diagnostics.size(),
+        elapsedMs);
   }
 
   @NonNull

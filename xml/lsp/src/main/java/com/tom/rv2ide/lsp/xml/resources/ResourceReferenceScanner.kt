@@ -16,20 +16,39 @@ import org.eclipse.lemminx.uriresolver.URIResolverExtensionManager
 /** Finds only complete, editable XML resource references in one document. */
 internal object ResourceReferenceScanner {
 
-  fun scan(text: String): ScanResult {
+  fun scan(text: String): ScanResult = scanInternal(text, null).scan
+
+  internal fun scanMeasured(text: String): MeasuredScan {
+    val timing = OccurrenceTiming()
+    val scan = scanInternal(text, timing).scan
+    return MeasuredScan(scan, timing)
+  }
+
+  private fun scanInternal(text: String, timing: OccurrenceTiming?): ScanWithTiming {
+    val parseStartedAtNanos = timing?.let { System.nanoTime() }
     val document =
         runCatching {
               DOMParser.getInstance()
                   .parse(text, ANDROID_NAMESPACE_URI, URIResolverExtensionManager())
             }
             .getOrNull()
-            ?: return ScanResult.Unavailable
-    if (hasSyntaxRecovery(document)) return ScanResult.Unavailable
+    if (timing != null) timing.domParseNanos += System.nanoTime() - checkNotNull(parseStartedAtNanos)
+    document ?: return ScanWithTiming(ScanResult.Unavailable)
+
+    val recoveryStartedAtNanos = timing?.let { System.nanoTime() }
+    val hasRecovery = hasSyntaxRecovery(document)
+    if (timing != null) timing.syntaxRecoveryNanos += System.nanoTime() - checkNotNull(recoveryStartedAtNanos)
+    if (hasRecovery) return ScanWithTiming(ScanResult.Unavailable)
 
     val positions = PositionIndex(text)
     val occurrences = mutableListOf<ResourceReferenceOccurrence>()
-    collect(document, text, positions, occurrences)
-    return ScanResult.Available(occurrences.sortedBy { it.startOffset })
+    val traversalStartedAtNanos = timing?.let { System.nanoTime() }
+    collect(document, text, positions, occurrences, timing)
+    if (timing != null) timing.traversalNanos += System.nanoTime() - checkNotNull(traversalStartedAtNanos)
+    val sortStartedAtNanos = timing?.let { System.nanoTime() }
+    val sortedOccurrences = occurrences.sortedBy { it.startOffset }
+    if (timing != null) timing.sortNanos += System.nanoTime() - checkNotNull(sortStartedAtNanos)
+    return ScanWithTiming(ScanResult.Available(sortedOccurrences))
   }
 
   fun targetAt(text: String, offset: Int): ResourceReferenceOccurrence? {
@@ -43,16 +62,29 @@ internal object ResourceReferenceScanner {
       text: String,
       positions: PositionIndex,
       occurrences: MutableList<ResourceReferenceOccurrence>,
+      timing: OccurrenceTiming?,
   ) {
     if (node is org.eclipse.lemminx.dom.DOMElement) {
       node.attributeNodes.orEmpty().forEach { attribute ->
-        attributeOccurrence(attribute, text, positions)?.let(occurrences::add)
+        attributeOccurrence(attribute, text, positions)?.let { occurrence ->
+          occurrences += occurrence
+          if (timing != null) {
+            timing.attributeOccurrences++
+            if (occurrence.isCreatingId) timing.creatingIdOccurrences++
+          }
+        }
       }
     }
     if (node is DOMText) {
-      textOccurrence(node, text, positions)?.let(occurrences::add)
+      textOccurrence(node, text, positions)?.let { occurrence ->
+        occurrences += occurrence
+        if (timing != null) {
+          timing.textOccurrences++
+          if (occurrence.isCreatingId) timing.creatingIdOccurrences++
+        }
+      }
     }
-    node.children.forEach { child -> collect(child, text, positions, occurrences) }
+    node.children.forEach { child -> collect(child, text, positions, occurrences, timing) }
   }
 
   private fun attributeOccurrence(
@@ -163,6 +195,23 @@ internal object ResourceReferenceScanner {
       return starts.toIntArray()
     }
   }
+
+  internal data class MeasuredScan(
+      val scan: ScanResult,
+      val timing: OccurrenceTiming,
+  )
+
+  internal data class OccurrenceTiming(
+      var domParseNanos: Long = 0L,
+      var syntaxRecoveryNanos: Long = 0L,
+      var traversalNanos: Long = 0L,
+      var sortNanos: Long = 0L,
+      var attributeOccurrences: Int = 0,
+      var textOccurrences: Int = 0,
+      var creatingIdOccurrences: Int = 0,
+  )
+
+  private data class ScanWithTiming(val scan: ScanResult)
 
   internal sealed interface ScanResult {
     data class Available(val occurrences: List<ResourceReferenceOccurrence>) : ScanResult

@@ -34,6 +34,27 @@ class ResourceReferenceScannerTest : TestCase() {
     assertThat(occurrences[1].reference.text).isEqualTo("@id/content")
   }
 
+  fun testMeasuredScanKeepsResultsAndCountsEquivalent() {
+    val text =
+        """
+        <View android:text="@string/title" android:id="@+id/content">
+          @color/primary
+        </View>
+        """
+            .trimIndent()
+
+    val measured = ResourceReferenceScanner.scanMeasured(text)
+
+    assertThat(measured.scan).isEqualTo(ResourceReferenceScanner.scan(text))
+    assertThat(measured.timing.domParseNanos).isAtLeast(0L)
+    assertThat(measured.timing.syntaxRecoveryNanos).isAtLeast(0L)
+    assertThat(measured.timing.traversalNanos).isAtLeast(0L)
+    assertThat(measured.timing.sortNanos).isAtLeast(0L)
+    assertThat(measured.timing.attributeOccurrences).isEqualTo(2)
+    assertThat(measured.timing.textOccurrences).isEqualTo(1)
+    assertThat(measured.timing.creatingIdOccurrences).isEqualTo(1)
+  }
+
   fun testPreservesMultilineOccurrencePositions() {
     val text =
         """

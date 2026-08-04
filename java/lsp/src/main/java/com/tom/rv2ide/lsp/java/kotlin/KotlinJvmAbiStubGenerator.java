@@ -484,9 +484,17 @@ private static final Pattern PROPERTY_PATTERN =
 
   private static Map<String, String> generatedTypeVariableErasures(String header) {
     final Map<String, String> result = new LinkedHashMap<>();
-    final int open = header.lastIndexOf('<');
-    final int close = open < 0 ? -1 : header.indexOf('>', open + 1);
-    if (open < 0 || close <= open) return result;
+    final int interfaceKeyword = header.lastIndexOf(" interface ");
+    final int classKeyword = header.lastIndexOf(" class ");
+    final int keyword = Math.max(interfaceKeyword, classKeyword);
+    if (keyword < 0) return result;
+    int index = keyword + (keyword == interfaceKeyword ? " interface ".length() : " class ".length());
+    while (index < header.length() && Character.isJavaIdentifierPart(header.charAt(index))) index++;
+    while (index < header.length() && Character.isWhitespace(header.charAt(index))) index++;
+    if (index >= header.length() || header.charAt(index) != '<') return result;
+    final int open = index;
+    final int close = matchingAngleBracket(header, open);
+    if (close <= open) return result;
     for (String parameter : splitParameters(header.substring(open + 1, close))) {
       final String trimmed = parameter.trim();
       if (trimmed.isEmpty()) continue;
@@ -2826,6 +2834,16 @@ private static final Pattern PROPERTY_PATTERN =
       char current = source.charAt(i);
       if (current == '{') depth++;
       else if (current == '}' && --depth == 0) return i;
+    }
+    return -1;
+  }
+
+  private static int matchingAngleBracket(String source, int start) {
+    int depth = 0;
+    for (int index = start; index < source.length(); index++) {
+      final char current = source.charAt(index);
+      if (current == '<') depth++;
+      else if (current == '>' && --depth == 0) return index;
     }
     return -1;
   }

@@ -39,6 +39,7 @@ internal class JavaCodeConfigurations(
     addPreference(GoogleCodeStyle())
     addPreference(JavaDiagnosticsEnabled())
     addPreference(JavaKotlinRecognitionEnabled())
+    addPreference(JavaCompilationWorkingSetEnabled())
     addPreference(JavaIncrementalReparseEnabled())
 
   }
@@ -90,6 +91,27 @@ private class JavaKotlinRecognitionEnabled(
     SourceFileManager.clearCache()
     KotlinJvmTypeIndex.clear()
     KotlinClassOutputProvider.clearCache()
+    return true
+  }
+}
+
+@Parcelize
+private class JavaCompilationWorkingSetEnabled(
+    override val key: String = JavaPreferences.JAVA_COMPILATION_WORKING_SET_ENABLED,
+    override val title: Int = R.string.idepref_java_compilationWorkingSetEnabled_title,
+    override val summary: Int? = R.string.idepref_java_compilationWorkingSetEnabled_summary,
+    override val icon: Int? = drawable.ic_compilation_error,
+) :
+    SwitchPreference(
+        getValue = JavaPreferences::isJavaCompilationWorkingSetEnabled::get,
+        setValue = JavaPreferences::isJavaCompilationWorkingSetEnabled::set,
+    ) {
+  override fun onPreferenceChanged(preference: Preference, newValue: Any?): Boolean {
+    JavaPreferences.isJavaCompilationWorkingSetEnabled =
+        newValue as? Boolean ?: JavaPreferences.isJavaCompilationWorkingSetEnabled
+    // A cached javac task can retain sources from the previous mode. Recreate it so the next
+    // diagnostics, completion, navigation, or code-action request is a clean A/B sample.
+    JavaCompilerProvider.getInstance().destroy()
     return true
   }
 }

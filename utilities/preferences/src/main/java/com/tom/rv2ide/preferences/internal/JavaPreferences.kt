@@ -24,6 +24,7 @@ object JavaPreferences {
   const val GOOGLE_CODE_STYLE = "idepref_editor_java_googleCodeStyle"
   const val JAVA_DIAGNOSTICS_ENABLED = "idepref_editor_java_diagnosticsEnabled"
   const val JAVA_INCREMENTAL_REPARSE_ENABLED = "idepref_editor_java_incrementalReparseEnabled"
+  const val JAVA_COMPILATION_WORKING_SET_ENABLED = "idepref_editor_java_compilationWorkingSetEnabled"
   const val JAVA_KOTLIN_RECOGNITION_ENABLED = "idepref_editor_java_kotlinRecognitionEnabled"
 
   var googleCodeStyle: Boolean
@@ -43,6 +44,17 @@ object JavaPreferences {
     get() = prefManager.getBoolean(JAVA_INCREMENTAL_REPARSE_ENABLED, false)
     set(value) {
       prefManager.putBoolean(JAVA_INCREMENTAL_REPARSE_ENABLED, value)
+    }
+
+  /**
+   * Whether full single-file javac requests include related project Java sources.
+   *
+   * This remains enabled by default for compatibility; the switch supports on-device A/B validation.
+   */
+  var isJavaCompilationWorkingSetEnabled: Boolean
+    get() = prefManager.getBoolean(JAVA_COMPILATION_WORKING_SET_ENABLED, true)
+    set(value) {
+      prefManager.putBoolean(JAVA_COMPILATION_WORKING_SET_ENABLED, value)
     }
 
   /** Whether Java language services may discover JVM-visible Kotlin source declarations. */

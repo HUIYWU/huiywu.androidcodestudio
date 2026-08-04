@@ -32,13 +32,14 @@ internal sealed interface ResourceFileEntry {
       val measuredExtraction = ResourceDefinitionExtractor.extractMeasured(file, text)
       val definitionNanos = System.nanoTime() - definitionStartedAtNanos
       val occurrenceStartedAtNanos = System.nanoTime()
-      val scan = ResourceReferenceScanner.scan(text)
+      val measuredScan = ResourceReferenceScanner.scanMeasured(text)
       val occurrenceNanos = System.nanoTime() - occurrenceStartedAtNanos
       return MeasuredEntry(
-          entryOf(measuredExtraction.extraction, scan),
+          entryOf(measuredExtraction.extraction, measuredScan.scan),
           definitionNanos,
           occurrenceNanos,
           measuredExtraction.valuesTiming,
+          measuredScan.timing,
       )
     }
 
@@ -59,5 +60,6 @@ internal sealed interface ResourceFileEntry {
       val definitionNanos: Long,
       val occurrenceNanos: Long,
       val valuesTiming: ResourceDefinitionExtractor.ValuesTiming?,
+      val occurrenceTiming: ResourceReferenceScanner.OccurrenceTiming,
   )
 }

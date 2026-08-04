@@ -326,6 +326,94 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesBoundedGenericInterfaceExtensionPropertyWithoutBoundGuessing() {
+    val kotlinSource =
+      """
+      package navigation
+
+      interface BoundedExtensionPropertyNavigation<T : CharSequence> {
+        @get:JvmName("readPayload")
+        @set:JvmName("writePayload")
+        var T.payload: T
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      interface BoundedExtensionPropertyNavigation<T extends java.lang.CharSequence> {
+        T readPayload(T receiver);
+        void writePayload(T receiver, T value);
+      }
+      """.trimIndent()
+    val erasedSource =
+      """
+      package navigation;
+      interface BoundErasedExtensionPropertyNavigation {
+        java.lang.CharSequence readPayload(java.lang.CharSequence receiver);
+        void writePayload(java.lang.CharSequence receiver, java.lang.CharSequence value);
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/BoundedExtensionPropertyNavigation.kt")
+    val getter = compileMethod(javaSource, "navigation.BoundedExtensionPropertyNavigation", "readPayload")
+    val setter = compileMethod(javaSource, "navigation.BoundedExtensionPropertyNavigation", "writePayload")
+    val erasedGetter = compileMethod(
+      erasedSource, "navigation.BoundErasedExtensionPropertyNavigation", "readPayload")
+    val erasedSetter = compileMethod(
+      erasedSource, "navigation.BoundErasedExtensionPropertyNavigation", "writePayload")
+
+    assertEquals("payload", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, getter)!!))
+    assertEquals("payload", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, setter)!!))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, erasedGetter))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, erasedSetter))
+  }
+
+  @Test
+  fun typeNavigation_resolvesGenericInterfaceExtensionPropertyAccessorsWithoutErasedObjectGuessing() {
+    val kotlinSource =
+      """
+      package navigation
+
+      interface GenericExtensionPropertyNavigation<T> {
+        @get:JvmName("readPayload")
+        @set:JvmName("writePayload")
+        var T.payload: T
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      interface GenericExtensionPropertyNavigation<T> {
+        T readPayload(T receiver);
+        void writePayload(T receiver, T value);
+      }
+      """.trimIndent()
+    val erasedSource =
+      """
+      package navigation;
+      interface ErasedExtensionPropertyNavigation {
+        java.lang.Object readPayload(java.lang.Object receiver);
+        void writePayload(java.lang.Object receiver, java.lang.Object value);
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/GenericExtensionPropertyNavigation.kt")
+    val getter = compileMethod(javaSource, "navigation.GenericExtensionPropertyNavigation", "readPayload")
+    val setter = compileMethod(javaSource, "navigation.GenericExtensionPropertyNavigation", "writePayload")
+    val erasedGetter = compileMethod(
+      erasedSource, "navigation.ErasedExtensionPropertyNavigation", "readPayload")
+    val erasedSetter = compileMethod(
+      erasedSource, "navigation.ErasedExtensionPropertyNavigation", "writePayload")
+
+    assertEquals("payload", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, getter)!!))
+    assertEquals("payload", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, setter)!!))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, erasedGetter))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, erasedSetter))
+  }
+
+  @Test
   fun typeNavigation_resolvesInterfaceExtensionPropertyAccessorsByReceiverSignature() {
     val kotlinSource =
       """

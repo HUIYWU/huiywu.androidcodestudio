@@ -582,6 +582,86 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generate_keepsOwnerTypeErasureWhenGenericInterfaceHasParameterizedSupertype() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface Parent<T>
+        interface InheritedExtensionPropertyConflict<T : CharSequence> : Parent<String> {
+          @get:JvmName("read")
+          val T.payload: String
+          fun read(receiver: CharSequence): String
+          fun read(receiver: String): String
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.InheritedExtensionPropertyConflict", "InheritedExtensionPropertyConflict.kt", source,
+        emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull(stub)
+    assertContains(stub!!,
+        "public interface InheritedExtensionPropertyConflict<T extends CharSequence> extends Parent<String>")
+    assertFalse("Owner T erasure was lost behind parameterized supertype:\n$stub",
+        stub.contains("read(T receiver)") || stub.contains("read(CharSequence receiver)"))
+    assertContains(stub, "String read(String receiver);")
+  }
+
+  @Test
+  fun generate_rejectsBoundedGenericInterfaceExtensionReceiverErasureConflict() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface BoundedExtensionPropertyConflict<T : CharSequence> {
+          @get:JvmName("read")
+          val T.payload: String
+          fun read(receiver: CharSequence): String
+          fun read(receiver: String): String
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.BoundedExtensionPropertyConflict", "BoundedExtensionPropertyConflict.kt", source,
+        emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull(stub)
+    assertFalse("Erased CharSequence receiver surface leaked:\n$stub",
+        stub!!.contains("read(T receiver)")
+            || stub.contains("read(CharSequence receiver)"))
+    assertContains(stub, "String read(String receiver);")
+  }
+
+  @Test
+  fun generate_rejectsGenericInterfaceExtensionPropertySetterErasureConflict() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface GenericExtensionSetterConflict<T> {
+          @set:JvmName("assign")
+          var T.payload: T
+          fun assign(receiver: Any, value: Any)
+          fun assign(receiver: Any, value: String)
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.GenericExtensionSetterConflict", "GenericExtensionSetterConflict.kt", source,
+        emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull(stub)
+    assertFalse("Erased Object,Object setter surface leaked:\n$stub",
+        stub!!.contains("assign(T receiver, T value)")
+            || stub.contains("assign(Object receiver, Object value)"))
+    assertContains(stub, "void assign(Object receiver, String value);")
+  }
+
+  @Test
   fun generate_rejectsGenericInterfaceExtensionPropertyReceiverErasureConflict() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
