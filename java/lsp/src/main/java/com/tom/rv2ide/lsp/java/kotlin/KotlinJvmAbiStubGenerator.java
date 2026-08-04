@@ -17,6 +17,7 @@
 package com.tom.rv2ide.lsp.java.kotlin;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -195,11 +196,12 @@ private static final Pattern PROPERTY_PATTERN =
         }
         final String structured = generateType(packageName, simpleName, syntax);
         if (generationMode() != GenerationMode.AUTO) {
-          return structured;
+          return rejectConflictingJvmSurfaces(structured);
         }
         final String fallback = generateTypeFallbackIfPresent(
             packageName, simpleName, source);
-        return fallback == null ? structured : mergeGeneratedStubs(structured, fallback);
+        return rejectConflictingJvmSurfaces(
+            fallback == null ? structured : mergeGeneratedStubs(structured, fallback));
       }
 
       // Retain the previous scanner as a compatibility fallback when the native grammar is
@@ -207,7 +209,7 @@ private static final Pattern PROPERTY_PATTERN =
       if (fallbackGenerationEnabled()) {
         final String fallback = generateTypeFallbackIfPresent(packageName, simpleName, source);
         if (fallback != null) {
-          return fallback;
+          return rejectConflictingJvmSurfaces(fallback);
         }
       }
       return isFacadeName(simpleName, kotlinFileName, source)
@@ -413,6 +415,36 @@ private static final Pattern PROPERTY_PATTERN =
       if (!member.text.endsWith("\n")) out.append('\n');
     }
     return out.append(structured.substring(structuredClose)).toString();
+  }
+
+  private static String rejectConflictingJvmSurfaces(String stub) {
+    if (stub == null) return null;
+    final int open = stub.indexOf('{');
+    final int close = open < 0 ? -1 : matchingBrace(stub, open);
+    if (close <= open) return stub;
+    final List<GeneratedMember> members = generatedMembers(stub.substring(open + 1, close));
+    final Map<String, Integer> counts = new LinkedHashMap<>();
+    for (GeneratedMember member : members) {
+      if (member.typeName == null) counts.merge(member.key, 1, Integer::sum);
+    }
+    boolean changed = false;
+    final StringBuilder body = new StringBuilder();
+    for (GeneratedMember member : members) {
+      if (member.typeName != null) {
+        final String nested = rejectConflictingJvmSurfaces(member.text);
+        changed |= !nested.equals(member.text);
+        body.append(nested);
+      } else if (counts.get(member.key) == 1) {
+        body.append(member.text);
+      } else {
+        // Multiple Kotlin declarations claim one owner/name/parameter JVM surface. There is no
+        // deterministic Java declaration or navigation target, so expose none of them.
+        changed = true;
+      }
+    }
+    return changed
+        ? stub.substring(0, open + 1) + '\n' + body + stub.substring(close)
+        : stub;
   }
 
   private static List<GeneratedMember> generatedMembers(String body) {
@@ -746,12 +778,13 @@ private static final Pattern PROPERTY_PATTERN =
       appendSyntaxMembers(structured, members, false, true);
       structured.append("}\n");
       if (generationMode() != GenerationMode.AUTO) {
-        return structured.toString();
+        return rejectConflictingJvmSurfaces(structured.toString());
       }
       final StringBuilder fallback = facadeHeader(packageName, simpleName);
       appendMembers(fallback, source, false, true);
       fallback.append("}\n");
-      return mergeGeneratedStubs(structured.toString(), fallback.toString());
+      return rejectConflictingJvmSurfaces(
+          mergeGeneratedStubs(structured.toString(), fallback.toString()));
     }
     if (!fallbackGenerationEnabled()) {
       return null;
@@ -759,7 +792,7 @@ private static final Pattern PROPERTY_PATTERN =
     final StringBuilder fallback = facadeHeader(packageName, simpleName);
     appendMembers(fallback, source, false, true);
     fallback.append("}\n");
-    return fallback.toString();
+    return rejectConflictingJvmSurfaces(fallback.toString());
   }
 
   private static StringBuilder facadeHeader(String packageName, String simpleName) {
@@ -790,8 +823,10 @@ private static final Pattern PROPERTY_PATTERN =
     // Kotlin exposes the companion itself as Foo.Companion. Keep that normal JVM surface in
     // addition to the direct host-class methods created only for @JvmStatic declarations.
     out.append("  public static final class Companion {\n");
+    // @JvmField exposes a backing field on the host class, not Companion accessors. Remove its
+    // declaration from this fallback companion pass; appendJvmFields emits the host field below.
     appendMembers(
-        out, companionBody.replace("@JvmStatic", "").replace("@JvmField", ""), false, false);
+        out, withoutJvmFieldProperties(companionBody).replace("@JvmStatic", ""), false, false);
     out.append("  }\n");
     out.append("  public static final Companion Companion = null;\n");
     // Do not depend on annotations and declarations sharing a particular line layout. Kotlin permits
@@ -835,7 +870,11 @@ private static final Pattern PROPERTY_PATTERN =
   private static void appendCompanionSyntax(
       StringBuilder out, List<KotlinJvmSyntaxParser.MemberSyntax> members) {
     out.append("  public static final class Companion {\n");
-    appendSyntaxMembers(out, members, false, false);
+    for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
+      // @JvmField has only the host-class field projection; do not invent Companion accessors.
+      if (!member.function() && member.jvmField) continue;
+      appendSyntaxMembers(out, Collections.singletonList(member), false, false);
+    }
     out.append("  }\n");
     out.append("  public static final Companion Companion = null;\n");
     for (KotlinJvmSyntaxParser.MemberSyntax member : members) {
@@ -1124,6 +1163,15 @@ private static final Pattern PROPERTY_PATTERN =
     out.append("  public static ").append(javaAbiType(function.group(4))).append(' ')
         .append(name).append(javaAbiParameterList(parameters))
         .append(methodBody(function.group(4)));
+  }
+
+  private static String withoutJvmFieldProperties(String companionBody) {
+    if (companionBody == null || companionBody.isEmpty()) return companionBody;
+    final Matcher field = JVM_FIELD_PROPERTY_PATTERN.matcher(companionBody);
+    final StringBuffer filtered = new StringBuffer();
+    while (field.find()) field.appendReplacement(filtered, "");
+    field.appendTail(filtered);
+    return filtered.toString();
   }
 
   private static void appendJvmFields(StringBuilder out, String companionBody) {

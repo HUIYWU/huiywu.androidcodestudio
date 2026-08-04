@@ -181,6 +181,41 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun facadeNavigation_resolvesJvmNamedBooleanAccessorAndRejectsSyntheticGetter() {
+    val kotlinSource =
+      """
+      package navigation
+
+      @get:JvmName("readReady")
+      @set:JvmName("writeReady")
+      var isReady: Boolean = false
+
+      @get:JvmSynthetic
+      var isInternal: Boolean = false
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      abstract class BooleanNavigationApiKt {
+        abstract boolean readReady();
+        abstract void writeReady(boolean value);
+        abstract boolean isInternal();
+        abstract void setInternal(boolean value);
+      }
+      """.trimIndent()
+    val getter = compileMethod(javaSource, "navigation.BooleanNavigationApiKt", "readReady")
+    val setter = compileMethod(javaSource, "navigation.BooleanNavigationApiKt", "writeReady")
+    val syntheticGetter = compileMethod(javaSource, "navigation.BooleanNavigationApiKt", "isInternal")
+    val visibleSetter = compileMethod(javaSource, "navigation.BooleanNavigationApiKt", "setInternal")
+    val file = Paths.get("/navigation/BooleanNavigationApi.kt")
+
+    assertNotNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, getter))
+    assertNotNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, setter))
+    assertNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, syntheticGetter))
+    assertNotNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, visibleSetter))
+  }
+
+  @Test
   fun typeNavigation_distinguishesPrimaryAndSecondaryConstructors() {
     val kotlinSource =
       """
@@ -315,6 +350,38 @@ class KotlinJvmSourceNavigatorTest {
       val constructor = compileConstructor(javaSource, "navigation.OverloadedNavigation", parameters)
       assertNotNull(KotlinJvmSourceNavigator.findTypeMemberLocation(
         Paths.get("/navigation/OverloadedNavigation.kt"), kotlinSource, constructor))
+    }
+  }
+
+  @Test
+  fun typeNavigation_resolvesJvmOverloadsSecondaryConstructorVariants() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class SecondaryOverloadedNavigation private constructor(val value: String) {
+        @JvmOverloads
+        constructor(code: Int, enabled: Boolean = true, label: String = "") :
+          this(code.toString())
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class SecondaryOverloadedNavigation {
+        SecondaryOverloadedNavigation(int code, boolean enabled, java.lang.String label) {}
+        SecondaryOverloadedNavigation(int code, boolean enabled) {}
+        SecondaryOverloadedNavigation(int code) {}
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/SecondaryOverloadedNavigation.kt")
+
+    for (parameters in listOf("int,boolean,java.lang.String", "int,boolean", "int")) {
+      val constructor = compileConstructor(
+        javaSource, "navigation.SecondaryOverloadedNavigation", parameters)
+      val location = KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, constructor)
+      assertNotNull("Secondary overload did not navigate for $parameters", location)
+      assertEquals("constructor", sourceTextAt(kotlinSource, location!!))
     }
   }
 

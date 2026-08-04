@@ -15,6 +15,7 @@ import com.tom.rv2ide.projects.android.AndroidModule
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
+import org.slf4j.LoggerFactory
 
 /**
  * Cached editable-resource snapshot for the active Android module.
@@ -25,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal object ModuleResourceIndex {
   private val caches = ConcurrentHashMap<String, ModuleCache>()
+  private val log = LoggerFactory.getLogger(ModuleResourceIndex::class.java)
 
   /** Releases all module snapshots when the owning XML language server is shut down. */
   fun clear() {
@@ -32,21 +34,24 @@ internal object ModuleResourceIndex {
   }
 
   /** Exact lightweight-entry counts for cache observation; this intentionally does not estimate bytes. */
-  fun stats(): CacheStats {
+  fun stats(): CacheStats = statsFor(caches.values.map { it.entriesByFile })
+
+  internal fun statsFor(entriesByModule: Collection<Map<Path, ResourceFileEntry>>): CacheStats {
     var files = 0
     var definitions = 0
     var occurrences = 0
-    caches.values.forEach { cache ->
-      files += cache.entriesByFile.size
-      cache.entriesByFile.values.forEach { entry ->
+    entriesByModule.forEach { entriesByFile ->
+      files += entriesByFile.size
+      entriesByFile.values.forEach { entry ->
         if (entry is ResourceFileEntry.Available) {
           definitions += entry.definitions.size
           occurrences += entry.occurrences.size
         }
       }
     }
-    return CacheStats(caches.size, files, definitions, occurrences)
+    return CacheStats(entriesByModule.size, files, definitions, occurrences)
   }
+
 
   fun snapshot(currentFile: Path, currentText: String): ResourceSnapshot {
     val module =
@@ -92,7 +97,10 @@ internal object ModuleResourceIndex {
       refreshedAtMillis: Long,
   ): ModuleCache? {
     return runCatching {
+          val measureEntries = log.isDebugEnabled
+          val totalStartedAtNanos = if (measureEntries) System.nanoTime() else 0L
           val signatures = mutableMapOf<Path, FileSignature>()
+          val walkStartedAtNanos = if (measureEntries) System.nanoTime() else 0L
           directories.forEach { directory ->
             if (!Files.exists(directory)) return@forEach
             Files.walk(directory).use { paths ->
@@ -105,7 +113,13 @@ internal object ModuleResourceIndex {
                   }
             }
           }
+          val walkNanos = if (measureEntries) System.nanoTime() - walkStartedAtNanos else 0L
 
+          var reusedEntries = 0
+          var rebuiltEntries = 0
+          var readNanos = 0L
+          var definitionNanos = 0L
+          var occurrenceNanos = 0L
           val entriesByFile = mutableMapOf<Path, ResourceFileEntry>()
           signatures.forEach { (file, signature) ->
             val cached =
@@ -114,11 +128,36 @@ internal object ModuleResourceIndex {
                     ?.takeIf { it.signatures[file] == signature }
                     ?.entriesByFile
                     ?.get(file)
-            entriesByFile[file] =
-                cached
-                    ?: FileManager.getDocumentContents(file).let { text ->
-                      ResourceFileEntry.create(file, text)
-                    }
+            if (cached != null) {
+              reusedEntries++
+              entriesByFile[file] = cached
+            } else {
+              rebuiltEntries++
+              val readStartedAtNanos = if (measureEntries) System.nanoTime() else 0L
+              val text = FileManager.getDocumentContents(file)
+              if (measureEntries) readNanos += System.nanoTime() - readStartedAtNanos
+              if (measureEntries) {
+                val measured = ResourceFileEntry.createMeasured(file, text)
+                definitionNanos += measured.definitionNanos
+                occurrenceNanos += measured.occurrenceNanos
+                entriesByFile[file] = measured.entry
+              } else {
+                entriesByFile[file] = ResourceFileEntry.create(file, text)
+              }
+            }
+          }
+          if (measureEntries) {
+            log.debug(
+                "XML resource snapshot refresh: files={} reusedEntries={} rebuiltEntries={} walkMs={} readMs={} definitionMs={} occurrenceMs={} totalMs={}",
+                signatures.size,
+                reusedEntries,
+                rebuiltEntries,
+                nanosToMillis(walkNanos),
+                nanosToMillis(readNanos),
+                nanosToMillis(definitionNanos),
+                nanosToMillis(occurrenceNanos),
+                nanosToMillis(System.nanoTime() - totalStartedAtNanos),
+            )
           }
           ModuleCache(directories, signatures, entriesByFile, refreshedAtMillis)
         }
@@ -141,6 +180,9 @@ internal object ModuleResourceIndex {
 
   private data class FileSignature(val modifiedMillis: Long, val size: Long)
 
+  private fun nanosToMillis(nanos: Long): Long = nanos / NANOS_PER_MILLISECOND
+
+  private const val NANOS_PER_MILLISECOND = 1_000_000L
   private const val DISK_REFRESH_INTERVAL_MILLIS = 1_000L
   private const val XML_SUFFIX = ".xml"
 }

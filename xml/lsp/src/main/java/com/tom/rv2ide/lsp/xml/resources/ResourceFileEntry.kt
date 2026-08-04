@@ -24,6 +24,23 @@ internal sealed interface ResourceFileEntry {
     fun create(file: Path, text: String): ResourceFileEntry {
       val extraction = ResourceDefinitionExtractor.extract(file, text)
       val scan = ResourceReferenceScanner.scan(text)
+      return entryOf(extraction, scan)
+    }
+
+    internal fun createMeasured(file: Path, text: String): MeasuredEntry {
+      val definitionStartedAtNanos = System.nanoTime()
+      val extraction = ResourceDefinitionExtractor.extract(file, text)
+      val definitionNanos = System.nanoTime() - definitionStartedAtNanos
+      val occurrenceStartedAtNanos = System.nanoTime()
+      val scan = ResourceReferenceScanner.scan(text)
+      val occurrenceNanos = System.nanoTime() - occurrenceStartedAtNanos
+      return MeasuredEntry(entryOf(extraction, scan), definitionNanos, occurrenceNanos)
+    }
+
+    private fun entryOf(
+        extraction: ResourceDefinitionExtractor.Extraction,
+        scan: ResourceReferenceScanner.ScanResult,
+    ): ResourceFileEntry {
       if (extraction !is ResourceDefinitionExtractor.Extraction.Available ||
           scan !is ResourceReferenceScanner.ScanResult.Available) {
         return Unavailable
@@ -31,4 +48,10 @@ internal sealed interface ResourceFileEntry {
       return Available(extraction.definitions, scan.occurrences)
     }
   }
+
+  data class MeasuredEntry(
+      val entry: ResourceFileEntry,
+      val definitionNanos: Long,
+      val occurrenceNanos: Long,
+  )
 }

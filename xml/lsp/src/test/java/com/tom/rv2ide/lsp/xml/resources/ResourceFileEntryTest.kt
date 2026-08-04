@@ -47,6 +47,17 @@ class ResourceFileEntryTest : TestCase() {
     assertThat(entry.occurrences.first().isCreatingId).isTrue()
   }
 
+  fun testMeasuredCreationKeepsTheSameEntryContract() {
+    val file = Paths.get("project/app/src/main/res/values/references.xml")
+    val text = "<resources><string name=\"title\">@string/other</string></resources>"
+
+    val measured = ResourceFileEntry.createMeasured(file, text)
+
+    assertThat(measured.entry).isEqualTo(ResourceFileEntry.create(file, text))
+    assertThat(measured.definitionNanos).isAtLeast(0L)
+    assertThat(measured.occurrenceNanos).isAtLeast(0L)
+  }
+
   fun testFailsClosedWhenScannerCannotReliablyReadDocument() {
     val entry =
         ResourceFileEntry.create(

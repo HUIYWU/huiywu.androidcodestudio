@@ -247,7 +247,67 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
-fun generate_projectsRestrictedSameFileGenericTypeAliases() {
+  fun generate_rejectsConflictingJvmMethodSurfacesWithoutDroppingLegalOverloads() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @JvmName("duplicate")
+        fun first(value: String): String = value
+        @JvmName("duplicate")
+        fun second(value: String): Int = value.length
+        @JvmName("duplicate")
+        fun overloaded(value: Int): Int = value
+        fun retained(value: Boolean): Boolean = value
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.ConflictApiKt", "ConflictApi.kt", source, emptySet(), mode)
+      assertNotNull("Conflict facade generation failed in $mode", stub)
+      assertFalse("Conflicting JVM surface leaked in $mode:\n$stub", stub!!.contains("duplicate(String value)"))
+      assertContains(stub, "int duplicate(int value)")
+      assertContains(stub, "boolean retained(boolean value)")
+    }
+  }
+
+  @Test
+  fun generate_projectsBooleanIsPropertyAccessorNamesAndSyntheticVisibility() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @get:JvmName("readReady")
+        @set:JvmName("writeReady")
+        var isReady: Boolean = false
+
+        @get:JvmSynthetic
+        var isInternal: Boolean = false
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.BooleanPropertiesKt", "BooleanProperties.kt", source, emptySet(), mode)
+      assertNotNull("Boolean property facade generation failed in $mode", stub)
+      assertContains(stub!!, "boolean readReady()")
+      assertContains(stub, "void writeReady(boolean value)")
+      assertFalse("Default Boolean getter leaked in $mode:\n$stub", stub.contains("isReady()"))
+      assertFalse("Default Boolean setter leaked in $mode:\n$stub", stub.contains("setReady("))
+      assertFalse("Synthetic getter leaked in $mode:\n$stub", stub.contains("isInternal()"))
+      assertContains(stub, "void setInternal(boolean value)")
+    }
+  }
+
+  @Test
+  fun generate_projectsRestrictedSameFileGenericTypeAliases() {
 TreeSitter.loadLibrary()
 System.loadLibrary("tree-sitter-kotlin")
 val source =
@@ -547,6 +607,9 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
     assertContains(classStub, "public static boolean readOnline()")
     assertContains(classStub, "public static void writeOnline(boolean value)")
     assertContains(classStub, "public static int VERSION;")
+    // @JvmField exposes the backing field, not generated Companion/host accessor methods.
+    assertFalse(classStub.contains("getVERSION("))
+    assertFalse(classStub.contains("setVERSION("))
     assertContains(classStub, "public String ordinary()")
   }
 
