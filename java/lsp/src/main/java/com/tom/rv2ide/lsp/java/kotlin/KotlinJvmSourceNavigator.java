@@ -347,7 +347,7 @@ public final class KotlinJvmSourceNavigator {
       final boolean nameMatches = javaName.equals(jvmMemberName);
       final boolean matchesElement = member.function()
           ? nameMatches && functionSignatureMatches(member, executable)
-          : propertyJavaNameMatches(member, javaName, element.getKind());
+          : propertyJavaNameMatches(member, javaName, element);
       if (matchesElement) {
         match = new SourceRange(member.nameOffset, member.nameLength);
         matches++;
@@ -389,21 +389,40 @@ public final class KotlinJvmSourceNavigator {
   }
 
   private static boolean propertyJavaNameMatches(
-      KotlinJvmSyntaxParser.MemberSyntax member, String javaName, ElementKind kind) {
-    if (kind == ElementKind.FIELD && javaName.equals(member.name)) {
+      KotlinJvmSyntaxParser.MemberSyntax member, String javaName, Element element) {
+    if (element.getKind() == ElementKind.FIELD && member.receiverType == null
+        && javaName.equals(member.name)) {
       return true;
     }
-    if (kind != ElementKind.METHOD || member.name.isEmpty()) {
+    if (element.getKind() != ElementKind.METHOD || member.name.isEmpty()
+        || !(element instanceof ExecutableElement)) {
       return false;
     }
+    final ExecutableElement executable = (ExecutableElement) element;
     final String getter = member.getterJvmName == null
         ? propertyGetterName(member.name, member.declaredType)
         : member.getterJvmName;
     final String setter = member.setterJvmName == null
         ? propertySetterName(member.name, member.declaredType)
         : member.setterJvmName;
-    return (!member.getterJvmSynthetic && javaName.equals(getter))
-        || (member.mutableProperty && !member.setterJvmSynthetic && javaName.equals(setter));
+    final boolean getterMatches = !member.getterJvmSynthetic && javaName.equals(getter)
+        && propertyAccessorParametersMatch(member, executable, false);
+    final boolean setterMatches = member.mutableProperty && !member.setterJvmSynthetic
+        && javaName.equals(setter) && propertyAccessorParametersMatch(member, executable, true);
+    return getterMatches || setterMatches;
+  }
+
+  private static boolean propertyAccessorParametersMatch(
+      KotlinJvmSyntaxParser.MemberSyntax member, ExecutableElement executable, boolean setter) {
+    final int receiverCount = member.receiverType == null ? 0 : 1;
+    final int expectedCount = receiverCount + (setter ? 1 : 0);
+    if (executable.getParameters().size() != expectedCount) return false;
+    if (receiverCount == 1 && !parameterTypeMatches(
+        member.receiverType, false, executable.getParameters().get(0).asType().toString())) {
+      return false;
+    }
+    return !setter || parameterTypeMatches(member.declaredType, false,
+        executable.getParameters().get(receiverCount).asType().toString());
   }
 
   private static String propertyGetterName(String name, String kotlinType) {

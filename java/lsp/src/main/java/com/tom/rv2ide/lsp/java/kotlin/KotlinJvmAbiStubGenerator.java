@@ -987,7 +987,7 @@ private static final Pattern PROPERTY_PATTERN =
       KotlinJvmSyntaxParser.MemberSyntax property,
       boolean interfaceType,
       boolean topLevel) {
-    if (property.name == null || property.receiverType != null
+    if (property.name == null || property.receiverType != null && !topLevel
         || !canProjectValueClassProperty(
             property.getterJvmName, property.setterJvmName, property.mutableProperty, property.declaredType)) {
       return;
@@ -1004,17 +1004,24 @@ private static final Pattern PROPERTY_PATTERN =
       if (topLevel) {
         out.append("static ");
       }
-      out.append(type).append(' ').append(getter).append("()")
-          .append(interfaceType && !topLevel
-              ? ";\n"
-              : " { return " + defaultValue(property.declaredType) + "; }\n");
+      out.append(type).append(' ').append(getter).append('(');
+      if (property.receiverType != null) {
+        out.append(javaAbiType(property.receiverType)).append(" receiver");
+      }
+      out.append(')').append(interfaceType && !topLevel
+          ? ";\n"
+          : " { return " + defaultValue(property.declaredType) + "; }\n");
     }
     if (property.mutableProperty && !property.setterJvmSynthetic) {
       out.append("  public ");
       if (topLevel) {
         out.append("static ");
       }
-      out.append("void ").append(setter).append('(').append(type).append(" value)")
+      out.append("void ").append(setter).append('(');
+      if (property.receiverType != null) {
+        out.append(javaAbiType(property.receiverType)).append(" receiver, ");
+      }
+      out.append(type).append(" value)")
           .append(interfaceType && !topLevel ? ";\n" : " {}\n");
     }
   }

@@ -642,6 +642,63 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generate_structuredProjectsTopLevelExtensionPropertyAccessors() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        val String.initial: Char
+          get() = first()
+
+        var String.label: String
+          get() = this
+          set(value) {}
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ExtensionPropertiesKt", "ExtensionProperties.kt", source, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull("Extension property facade generation failed", stub)
+    assertContains(stub!!, "static char getInitial(String receiver)")
+    assertContains(stub, "static String getLabel(String receiver)")
+    assertContains(stub, "static void setLabel(String receiver, String value)")
+  }
+
+  @Test
+  fun generate_structuredProjectsJvmNamedSyntheticExtensionPropertyAccessors() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @get:JvmName("readLabel")
+        @set:JvmName("writeLabel")
+        var String.label: String
+          get() = this
+          set(value) {}
+
+        @get:JvmSynthetic
+        var String.hidden: String
+          get() = this
+          set(value) {}
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.NamedExtensionPropertiesKt", "NamedExtensionProperties.kt", source, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull("Named extension property facade generation failed", stub)
+    assertContains(stub!!, "static String readLabel(String receiver)")
+    assertContains(stub, "static void writeLabel(String receiver, String value)")
+    assertFalse(stub.contains("getLabel(String receiver)"))
+    assertFalse(stub.contains("setLabel(String receiver, String value)"))
+    assertFalse("Synthetic extension getter leaked:\n$stub", stub.contains("getHidden(String receiver)"))
+    assertContains(stub, "static void setHidden(String receiver, String value)")
+  }
+
+  @Test
   fun generate_projectsNamedCompanionUsingItsJvmNestedOwnerName() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

@@ -75,6 +75,26 @@ class ResourceDefinitionExtractorTest : TestCase() {
     assertNameRange(text, definitions[1], "content")
   }
 
+  fun testMeasuredExtractionKeepsValuesAndFileResultsEquivalent() {
+    val values = Paths.get("project/app/src/main/res/values/strings.xml")
+    val valuesText = "<resources><string name=\"title\">Title</string></resources>"
+    val measuredValues = ResourceDefinitionExtractor.extractMeasured(values, valuesText)
+
+    assertThat(measuredValues.extraction).isEqualTo(ResourceDefinitionExtractor.extract(values, valuesText))
+    val valuesTiming = checkNotNull(measuredValues.valuesTiming)
+    assertThat(valuesTiming.domParseNanos).isAtLeast(0L)
+    assertThat(valuesTiming.syntaxRecoveryNanos).isAtLeast(0L)
+    assertThat(valuesTiming.elementTraversalNanos).isAtLeast(0L)
+    assertThat(valuesTiming.creatingIdNanos).isAtLeast(0L)
+
+    val layout = Paths.get("project/app/src/main/res/layout/screen.xml")
+    val layoutText = "<View />"
+    val measuredLayout = ResourceDefinitionExtractor.extractMeasured(layout, layoutText)
+
+    assertThat(measuredLayout.extraction).isEqualTo(ResourceDefinitionExtractor.extract(layout, layoutText))
+    assertThat(measuredLayout.valuesTiming).isNull()
+  }
+
   fun testClassifiesPathsWithTheSameRulesAsExtraction() {
     assertThat(ResourceDefinitionExtractor.categoryOf(Paths.get("project/app/src/main/res/values-v31/strings.xml")))
         .isEqualTo(ResourceDefinitionExtractor.Category.VALUES)

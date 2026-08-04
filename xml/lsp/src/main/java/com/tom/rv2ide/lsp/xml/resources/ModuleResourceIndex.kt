@@ -125,6 +125,10 @@ internal object ModuleResourceIndex {
           var valuesDefinitions = 0
           var fileResourceDefinitions = 0
           var valuesDefinitionNanos = 0L
+          var valuesDomParseNanos = 0L
+          var valuesSyntaxRecoveryNanos = 0L
+          var valuesElementTraversalNanos = 0L
+          var valuesCreatingIdNanos = 0L
           var largestValuesDefinitionCount = 0
           var largestValuesDefinitionNanos = 0L
           var valuesFilesOver100Definitions = 0
@@ -157,6 +161,11 @@ internal object ModuleResourceIndex {
                     valuesFiles++
                     valuesDefinitions += definitionCount
                     valuesDefinitionNanos += measured.definitionNanos
+                    val valuesTiming = checkNotNull(measured.valuesTiming)
+                    valuesDomParseNanos += valuesTiming.domParseNanos
+                    valuesSyntaxRecoveryNanos += valuesTiming.syntaxRecoveryNanos
+                    valuesElementTraversalNanos += valuesTiming.elementTraversalNanos
+                    valuesCreatingIdNanos += valuesTiming.creatingIdNanos
                     largestValuesDefinitionCount = maxOf(largestValuesDefinitionCount, definitionCount)
                     largestValuesDefinitionNanos =
                         maxOf(largestValuesDefinitionNanos, measured.definitionNanos)
@@ -182,7 +191,7 @@ internal object ModuleResourceIndex {
           }
           if (measureEntries) {
             log.debug(
-                "XML resource snapshot refresh: files={} reusedEntries={} rebuiltEntries={} walkMs={} readMs={} definitionMs={} occurrenceMs={} valuesFiles={} valuesDefinitions={} valuesDefinitionMs={} largestValuesDefinitionCount={} largestValuesDefinitionMs={} valuesFilesOver100Definitions={} valuesFilesOver1000Definitions={} fileResourceFiles={} fileResourceDefinitions={} fileResourceDefinitionMs={} totalMs={}",
+                "XML resource snapshot refresh: files={} reusedEntries={} rebuiltEntries={} walkMs={} readMs={} definitionMs={} occurrenceMs={} valuesFiles={} valuesDefinitions={} valuesDefinitionMs={} valuesDomParseMs={} valuesSyntaxRecoveryMs={} valuesElementTraversalMs={} valuesCreatingIdMs={} largestValuesDefinitionCount={} largestValuesDefinitionMs={} valuesFilesOver100Definitions={} valuesFilesOver1000Definitions={} fileResourceFiles={} fileResourceDefinitions={} fileResourceDefinitionMs={} totalMs={}",
                 signatures.size,
                 reusedEntries,
                 rebuiltEntries,
@@ -193,6 +202,10 @@ internal object ModuleResourceIndex {
                 valuesFiles,
                 valuesDefinitions,
                 nanosToMillis(valuesDefinitionNanos),
+                nanosToMillis(valuesDomParseNanos),
+                nanosToMillis(valuesSyntaxRecoveryNanos),
+                nanosToMillis(valuesElementTraversalNanos),
+                nanosToMillis(valuesCreatingIdNanos),
                 largestValuesDefinitionCount,
                 nanosToMillis(largestValuesDefinitionNanos),
                 valuesFilesOver100Definitions,

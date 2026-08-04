@@ -34,6 +34,18 @@ internal object ResourceDefinitionExtractor {
     }
   }
 
+  /** Debug-only extraction details; normal callers use [extract] and do not perform timing. */
+  internal fun extractMeasured(file: Path, text: String): MeasuredExtraction {
+    return when (val resourcePath = resourcePath(file)) {
+      null -> MeasuredExtraction(Extraction.Available(emptyList()), null)
+      ResourcePath.Values -> {
+        val valuesTiming = ValuesTiming()
+        MeasuredExtraction(valuesDefinitions(file, text, valuesTiming), valuesTiming)
+      }
+      is ResourcePath.File -> MeasuredExtraction(fileDefinitions(file, text, resourcePath), null)
+    }
+  }
+
   /** Classifies a path with the same resource-directory rules used by [extract]. */
   internal fun categoryOf(file: Path): Category {
     return when (resourcePath(file)) {
@@ -43,18 +55,29 @@ internal object ResourceDefinitionExtractor {
     }
   }
 
-  private fun valuesDefinitions(file: Path, text: String): Extraction {
+  private fun valuesDefinitions(
+      file: Path,
+      text: String,
+      timing: ValuesTiming? = null,
+  ): Extraction {
+    val parseStartedAtNanos = timing?.let { System.nanoTime() }
     val document =
         runCatching {
               DOMParser.getInstance()
                   .parse(text, ANDROID_NAMESPACE_URI, URIResolverExtensionManager())
             }
             .getOrNull()
-            ?: return Extraction.Unavailable
-    if (hasSyntaxRecovery(document)) return Extraction.Unavailable
+    if (timing != null) timing.domParseNanos += System.nanoTime() - checkNotNull(parseStartedAtNanos)
+    document ?: return Extraction.Unavailable
+
+    val recoveryStartedAtNanos = timing?.let { System.nanoTime() }
+    val hasRecovery = hasSyntaxRecovery(document)
+    if (timing != null) timing.syntaxRecoveryNanos += System.nanoTime() - checkNotNull(recoveryStartedAtNanos)
+    if (hasRecovery) return Extraction.Unavailable
 
     val root = document.documentElement ?: return Extraction.Available(emptyList())
     if (root.tagName != VALUES_ROOT_TAG) return Extraction.Available(emptyList())
+    val traversalStartedAtNanos = timing?.let { System.nanoTime() }
     val valueDefinitions =
         root.children.filterIsInstance<DOMElement>().mapNotNull { element ->
           val type = valueType(element) ?: return@mapNotNull null
@@ -70,7 +93,11 @@ internal object ResourceDefinitionExtractor {
               },
           )
         }
-    return Extraction.Available(valueDefinitions + creatingIdDefinitions(file, text, document))
+    if (timing != null) timing.elementTraversalNanos += System.nanoTime() - checkNotNull(traversalStartedAtNanos)
+    val creatingIdsStartedAtNanos = timing?.let { System.nanoTime() }
+    val creatingIds = creatingIdDefinitions(file, text, document)
+    if (timing != null) timing.creatingIdNanos += System.nanoTime() - checkNotNull(creatingIdsStartedAtNanos)
+    return Extraction.Available(valueDefinitions + creatingIds)
   }
 
   private fun fileDefinitions(file: Path, text: String, path: ResourcePath.File): Extraction {
@@ -205,6 +232,18 @@ internal object ResourceDefinitionExtractor {
     }
     return Position(line, offset - lineStart)
   }
+
+  internal data class MeasuredExtraction(
+      val extraction: Extraction,
+      val valuesTiming: ValuesTiming?,
+  )
+
+  internal data class ValuesTiming(
+      var domParseNanos: Long = 0L,
+      var syntaxRecoveryNanos: Long = 0L,
+      var elementTraversalNanos: Long = 0L,
+      var creatingIdNanos: Long = 0L,
+  )
 
   internal enum class Category {
     VALUES,

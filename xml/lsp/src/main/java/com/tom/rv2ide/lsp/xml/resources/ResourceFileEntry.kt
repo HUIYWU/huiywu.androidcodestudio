@@ -29,12 +29,17 @@ internal sealed interface ResourceFileEntry {
 
     internal fun createMeasured(file: Path, text: String): MeasuredEntry {
       val definitionStartedAtNanos = System.nanoTime()
-      val extraction = ResourceDefinitionExtractor.extract(file, text)
+      val measuredExtraction = ResourceDefinitionExtractor.extractMeasured(file, text)
       val definitionNanos = System.nanoTime() - definitionStartedAtNanos
       val occurrenceStartedAtNanos = System.nanoTime()
       val scan = ResourceReferenceScanner.scan(text)
       val occurrenceNanos = System.nanoTime() - occurrenceStartedAtNanos
-      return MeasuredEntry(entryOf(extraction, scan), definitionNanos, occurrenceNanos)
+      return MeasuredEntry(
+          entryOf(measuredExtraction.extraction, scan),
+          definitionNanos,
+          occurrenceNanos,
+          measuredExtraction.valuesTiming,
+      )
     }
 
     private fun entryOf(
@@ -53,5 +58,6 @@ internal sealed interface ResourceFileEntry {
       val entry: ResourceFileEntry,
       val definitionNanos: Long,
       val occurrenceNanos: Long,
+      val valuesTiming: ResourceDefinitionExtractor.ValuesTiming?,
   )
 }

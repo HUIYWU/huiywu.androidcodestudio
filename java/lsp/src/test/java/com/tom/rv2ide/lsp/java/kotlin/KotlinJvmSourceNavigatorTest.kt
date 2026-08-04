@@ -104,6 +104,89 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun facadeNavigation_resolvesJvmNamedExtensionAccessorAndRejectsSyntheticGetter() {
+    val kotlinSource =
+      """
+      package navigation
+
+      @get:JvmName("readLabel")
+      @set:JvmName("writeLabel")
+      var String.label: String
+        get() = this
+        set(value) {}
+
+      @get:JvmSynthetic
+      var String.hidden: String
+        get() = this
+        set(value) {}
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      abstract class NamedExtensionPropertyNavigationKt {
+        static java.lang.String readLabel(java.lang.String receiver) { return receiver; }
+        static void writeLabel(java.lang.String receiver, java.lang.String value) {}
+        static java.lang.String getHidden(java.lang.String receiver) { return receiver; }
+        static void setHidden(java.lang.String receiver, java.lang.String value) {}
+      }
+      """.trimIndent()
+    val getter = compileMethod(javaSource, "navigation.NamedExtensionPropertyNavigationKt", "readLabel")
+    val setter = compileMethod(javaSource, "navigation.NamedExtensionPropertyNavigationKt", "writeLabel")
+    val syntheticGetter = compileMethod(
+      javaSource, "navigation.NamedExtensionPropertyNavigationKt", "getHidden")
+    val visibleSetter = compileMethod(
+      javaSource, "navigation.NamedExtensionPropertyNavigationKt", "setHidden")
+    val file = Paths.get("/navigation/NamedExtensionPropertyNavigation.kt")
+
+    assertEquals("label", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, getter)!!))
+    assertEquals("label", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, setter)!!))
+    assertNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, syntheticGetter))
+    assertEquals("hidden", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, visibleSetter)!!))
+  }
+
+  @Test
+  fun facadeNavigation_resolvesExtensionPropertyAccessorsByReceiverSignature() {
+    val kotlinSource =
+      """
+      package navigation
+
+      var String.label: String
+        get() = this
+        set(value) {}
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      abstract class ExtensionPropertyNavigationKt {
+        static java.lang.String getLabel(java.lang.String receiver) { return receiver; }
+        static void setLabel(java.lang.String receiver, java.lang.String value) {}
+      }
+      """.trimIndent()
+    val getter = compileMethod(javaSource, "navigation.ExtensionPropertyNavigationKt", "getLabel")
+    val setter = compileMethod(javaSource, "navigation.ExtensionPropertyNavigationKt", "setLabel")
+    val missingReceiver = compileMethod(
+      """
+      package navigation;
+      abstract class MissingReceiverApiKt {
+        static java.lang.String getLabel() { return null; }
+      }
+      """.trimIndent(),
+      "navigation.MissingReceiverApiKt",
+      "getLabel",
+    )
+    val file = Paths.get("/navigation/ExtensionPropertyNavigation.kt")
+
+    assertEquals("label", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, getter)!!))
+    assertEquals("label", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, setter)!!))
+    assertNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, missingReceiver))
+  }
+
+  @Test
   fun facadeNavigation_resolvesJvmNamedFunction() {
     val kotlinSource =
       """
