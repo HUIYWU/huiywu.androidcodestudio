@@ -77,6 +77,7 @@ internal object ResourceDefinitionExtractor {
 
     val root = document.documentElement ?: return Extraction.Available(emptyList())
     if (root.tagName != VALUES_ROOT_TAG) return Extraction.Available(emptyList())
+    val positions = PositionIndex(text)
     val traversalStartedAtNanos = timing?.let { System.nanoTime() }
     val valueDefinitions =
         root.children.filterIsInstance<DOMElement>().mapNotNull { element ->
@@ -91,11 +92,12 @@ internal object ResourceDefinitionExtractor {
               } else {
                 ResourceDefinitionKind.VALUE_ELEMENT
               },
+              positions,
           )
         }
     if (timing != null) timing.elementTraversalNanos += System.nanoTime() - checkNotNull(traversalStartedAtNanos)
     val creatingIdsStartedAtNanos = timing?.let { System.nanoTime() }
-    val creatingIds = creatingIdDefinitions(file, text, document)
+    val creatingIds = creatingIdDefinitions(file, text, document, positions)
     if (timing != null) timing.creatingIdNanos += System.nanoTime() - checkNotNull(creatingIdsStartedAtNanos)
     return Extraction.Available(valueDefinitions + creatingIds)
   }
@@ -132,6 +134,7 @@ internal object ResourceDefinitionExtractor {
       file: Path,
       text: String,
       document: DOMNode,
+      positions: PositionIndex? = null,
   ): List<ResourceDefinition> {
     val definitions = mutableListOf<ResourceDefinition>()
 
@@ -147,7 +150,11 @@ internal object ResourceDefinitionExtractor {
                   type = AaptResourceType.ID,
                   name = match.groupValues[1],
                   sourceFile = file,
-                  nameRange = Range(offsetToPosition(text, nameStart), offsetToPosition(text, nameEnd)),
+                  nameRange =
+                      Range(
+                          positions?.positionAt(nameStart) ?: offsetToPosition(text, nameStart),
+                          positions?.positionAt(nameEnd) ?: offsetToPosition(text, nameEnd),
+                      ),
                   kind = ResourceDefinitionKind.ID_DECLARATION,
               )
         }
@@ -185,13 +192,18 @@ internal object ResourceDefinitionExtractor {
       type: AaptResourceType,
       attribute: DOMAttr?,
       kind: ResourceDefinitionKind,
+      positions: PositionIndex? = null,
   ): ResourceDefinition? {
     val name = attribute?.value?.takeIf { RESOURCE_NAME.matches(it) } ?: return null
-    val range = attributeValueRange(text, attribute) ?: return null
+    val range = attributeValueRange(text, attribute, positions) ?: return null
     return ResourceDefinition(type, name, file, range, kind)
   }
 
-  private fun attributeValueRange(text: String, attribute: DOMAttr): Range? {
+  private fun attributeValueRange(
+      text: String,
+      attribute: DOMAttr,
+      positions: PositionIndex? = null,
+  ): Range? {
     val value = attribute.nodeAttrValue ?: return null
     var start = value.start.coerceIn(0, text.length)
     var end = value.end.coerceIn(start, text.length)
@@ -199,7 +211,10 @@ internal object ResourceDefinitionExtractor {
       start++
       end--
     }
-    return Range(offsetToPosition(text, start), offsetToPosition(text, end))
+    return Range(
+        positions?.positionAt(start) ?: offsetToPosition(text, start),
+        positions?.positionAt(end) ?: offsetToPosition(text, end),
+    )
   }
 
   private fun resourcePath(file: Path): ResourcePath? {
@@ -219,6 +234,36 @@ internal object ResourceDefinitionExtractor {
       return true
     }
     return node.children.any(::hasSyntaxRecovery)
+  }
+
+  private class PositionIndex(text: String) {
+    private val lineStarts = buildLineStarts(text)
+
+    fun positionAt(offset: Int): Position {
+      val boundedOffset = offset.coerceIn(0, textLength)
+      var low = 0
+      var high = lineStarts.lastIndex
+      while (low <= high) {
+        val middle = (low + high) ushr 1
+        if (lineStarts[middle] <= boundedOffset) {
+          low = middle + 1
+        } else {
+          high = middle - 1
+        }
+      }
+      return Position(high, boundedOffset - lineStarts[high])
+    }
+
+    private val textLength = text.length
+
+    private fun buildLineStarts(text: String): IntArray {
+      val starts = ArrayList<Int>()
+      starts += 0
+      text.forEachIndexed { index, character ->
+        if (character == '\n') starts += index + 1
+      }
+      return starts.toIntArray()
+    }
   }
 
   private fun offsetToPosition(text: String, offset: Int): Position {

@@ -554,6 +554,73 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generate_projectsInterfacePropertyAccessorJvmSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface PropertyContract {
+          val title: String
+          var isReady: Boolean
+          @get:JvmName("readMode")
+          @set:JvmName("writeMode")
+          var mode: String
+          @get:JvmSynthetic
+          var internal: String
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.PropertyContract", "PropertyContract.kt", source, emptySet(), mode)
+      assertNotNull("Interface property generation failed in $mode", stub)
+      assertContains(stub!!, "String getTitle();")
+      assertContains(stub, "boolean isReady();")
+      assertContains(stub, "void setReady(boolean value);")
+      assertContains(stub, "String readMode();")
+      assertContains(stub, "void writeMode(String value);")
+      assertFalse("Synthetic interface getter leaked in $mode:\n$stub", stub.contains("getInternal();"))
+      assertContains(stub, "void setInternal(String value);")
+    }
+  }
+
+  @Test
+  fun generate_keepsInterfacePropertyAccessorBodiesAbstractWithoutJvmDefaultEvidence() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface DefaultPropertyContract {
+          val title: String
+            get() = "default"
+          var enabled: Boolean
+            get() = true
+            set(value) {}
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.DefaultPropertyContract", "DefaultPropertyContract.kt", source, emptySet(), mode)
+      assertNotNull("Default interface property generation failed in $mode", stub)
+      assertContains(stub!!, "String getTitle();")
+      assertContains(stub, "boolean getEnabled();")
+      assertContains(stub, "void setEnabled(boolean value);")
+      assertFalse("Source accessor body was incorrectly emitted as Java default in $mode:\n$stub",
+          stub.contains("getTitle() { return") || stub.contains("getEnabled() { return")
+              || stub.contains("setEnabled(boolean value) {}"))
+    }
+  }
+
+  @Test
   fun generate_projectsTopLevelMembersIntoDefaultFileFacade() {
     val source =
         """

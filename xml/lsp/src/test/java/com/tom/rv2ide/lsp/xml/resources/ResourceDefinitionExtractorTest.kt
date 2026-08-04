@@ -95,6 +95,21 @@ class ResourceDefinitionExtractorTest : TestCase() {
     assertThat(measuredLayout.valuesTiming).isNull()
   }
 
+  fun testExtractsCreatingIdsFromValuesWithExactNameRanges() {
+    val text =
+        """
+        <resources>
+          <item type="id" name="content" />
+          <string name="label" android:id="@+id/label_view">Label</string>
+        </resources>
+        """
+            .trimIndent()
+    val definitions = extract("project/app/src/main/res/values/references.xml", text)
+
+    assertThat(definitions.map { it.name }).containsExactly("content", "label", "label_view").inOrder()
+    assertNameRange(text, definitions[2], "label_view")
+  }
+
   fun testClassifiesPathsWithTheSameRulesAsExtraction() {
     assertThat(ResourceDefinitionExtractor.categoryOf(Paths.get("project/app/src/main/res/values-v31/strings.xml")))
         .isEqualTo(ResourceDefinitionExtractor.Category.VALUES)

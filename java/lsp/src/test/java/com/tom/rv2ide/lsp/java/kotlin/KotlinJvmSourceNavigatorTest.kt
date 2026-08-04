@@ -326,6 +326,46 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesInterfacePropertyAccessorsAndRejectsSyntheticGetter() {
+    val kotlinSource =
+      """
+      package navigation
+
+      interface PropertyNavigationContract {
+        val title: String
+        var isReady: Boolean
+        @get:JvmName("readMode")
+        @set:JvmName("writeMode")
+        var mode: String
+        @get:JvmSynthetic
+        var internal: String
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      interface PropertyNavigationContract {
+        java.lang.String getTitle();
+        boolean isReady();
+        void setReady(boolean value);
+        java.lang.String readMode();
+        void writeMode(java.lang.String value);
+        java.lang.String getInternal();
+        void setInternal(java.lang.String value);
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/PropertyNavigationContract.kt")
+
+    for (name in listOf("getTitle", "isReady", "setReady", "readMode", "writeMode", "setInternal")) {
+      val method = compileMethod(javaSource, "navigation.PropertyNavigationContract", name)
+      assertNotNull("Interface accessor did not navigate: $name",
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, method))
+    }
+    val syntheticGetter = compileMethod(javaSource, "navigation.PropertyNavigationContract", "getInternal")
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, syntheticGetter))
+  }
+
+  @Test
   fun typeNavigation_distinguishesPrimaryAndSecondaryConstructors() {
     val kotlinSource =
       """
