@@ -276,6 +276,34 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_rejectsConflictingPropertyAccessorJvmSurfaces() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @get:JvmName("readShared")
+        val first: String = "first"
+        fun readShared(): String = "function"
+        @get:JvmName("readShared")
+        val second: Int = 2
+        fun retained(value: Int): Int = value
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.AccessorConflictKt", "AccessorConflict.kt", source, emptySet(), mode)
+      assertNotNull("Accessor conflict facade generation failed in $mode", stub)
+      assertFalse("Conflicting accessor/function surface leaked in $mode:\n$stub",
+          stub!!.contains("readShared()"))
+      assertContains(stub, "int retained(int value)")
+    }
+  }
+
+  @Test
   fun generate_projectsBooleanIsPropertyAccessorNamesAndSyntheticVisibility() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
@@ -611,6 +639,62 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
     assertFalse(classStub.contains("getVERSION("))
     assertFalse(classStub.contains("setVERSION("))
     assertContains(classStub, "public String ordinary()")
+  }
+
+  @Test
+  fun generate_projectsCompanionJvmStaticPropertyHonorsSyntheticAccessors() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class SyntheticStaticProperty {
+          companion object {
+            @get:JvmSynthetic
+            @JvmStatic
+            var secret: String = "secret"
+          }
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.SyntheticStaticProperty", "SyntheticStaticProperty.kt", source, emptySet(), mode)
+      assertNotNull("Synthetic static property generation failed in $mode", stub)
+      assertFalse("Synthetic static getter leaked in $mode:\n$stub", stub!!.contains("getSecret()"))
+      assertContains(stub, "static void setSecret(String value)")
+    }
+  }
+
+  @Test
+  fun generate_projectsCompanionJvmStaticPropertyHonorsSyntheticSetter() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class SyntheticStaticSetter {
+          companion object {
+            @set:JvmSynthetic
+            @JvmStatic
+            var visible: String = "visible"
+          }
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.SyntheticStaticSetter", "SyntheticStaticSetter.kt", source, emptySet(), mode)
+      assertNotNull("Synthetic static setter generation failed in $mode", stub)
+      assertContains(stub!!, "static String getVisible()")
+      assertFalse("Synthetic static setter leaked in $mode:\n$stub", stub.contains("setVisible(String value)"))
+    }
   }
 
   @Test

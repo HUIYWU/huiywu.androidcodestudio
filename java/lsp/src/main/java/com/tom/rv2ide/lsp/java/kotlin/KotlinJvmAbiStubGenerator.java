@@ -94,9 +94,9 @@ private static final Pattern PROPERTY_PATTERN =
               + "([A-Za-z_][\\w]*)\\s*\\(([^)]*)\\)\\s*(?::\\s*([^=\\{]+))?");
   private static final Pattern JVM_STATIC_PROPERTY_PATTERN =
       Pattern.compile(
-          "(?s)(?:@(?:get:|set:)?JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)\\s*)*"
+          "(?s)(?:(?:@(?:get:|set:)?JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)|@(?:get:|set:)?JvmSynthetic(?:\\s*\\([^)]*\\))?)\\s*)*"
               + "@JvmStatic\\s*(?:\\([^)]*\\))?\\s*"
-              + "(?:@(?:get:|set:)?JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)\\s*)*"
+              + "(?:(?:@(?:get:|set:)?JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)|@(?:get:|set:)?JvmSynthetic(?:\\s*\\([^)]*\\))?)\\s*)*"
               + "((?:(?:public|protected|internal|private|open|override|const|lateinit)\\s+)*)"
               + "(val|var)\\s+([A-Za-z_][\\w]*)\\s*(?::\\s*([^=\\{]+))?");
   private static final Pattern JVM_FIELD_PROPERTY_PATTERN =
@@ -1241,6 +1241,10 @@ private static final Pattern PROPERTY_PATTERN =
         "@set:JvmName\\s*\\(\\s*\\\"([A-Za-z_$][\\w$]*)\\\"\\s*\\)").matcher(property.group());
     final String getterJvmName = getterJvmNameMatcher.find() ? getterJvmNameMatcher.group(1) : null;
     final String setterJvmName = setterJvmNameMatcher.find() ? setterJvmNameMatcher.group(1) : null;
+    final boolean getterJvmSynthetic = Pattern.compile("@get:JvmSynthetic(?:\\s|\\(|$)")
+        .matcher(property.group()).find();
+    final boolean setterJvmSynthetic = Pattern.compile("@set:JvmSynthetic(?:\\s|\\(|$)")
+        .matcher(property.group()).find();
     final boolean mutable = "var".equals(property.group(2));
     if (!canProjectValueClassProperty(getterJvmName, setterJvmName, mutable, property.group(4))) {
       return;
@@ -1250,9 +1254,11 @@ private static final Pattern PROPERTY_PATTERN =
         ? propertyGetterName(name, property.group(4)) : getterJvmName;
     final String setter = setterJvmName == null
         ? propertySetterName(name, property.group(4)) : setterJvmName;
-    out.append("  public static ").append(type).append(' ').append(getter).append("()")
-        .append(" { return ").append(defaultValue(property.group(4))).append("; }\n");
-    if ("var".equals(property.group(2))) {
+    if (!getterJvmSynthetic) {
+      out.append("  public static ").append(type).append(' ').append(getter).append("()")
+          .append(" { return ").append(defaultValue(property.group(4))).append("; }\n");
+    }
+    if ("var".equals(property.group(2)) && !setterJvmSynthetic) {
       out.append("  public static void ").append(setter).append('(').append(type)
           .append(" value) {}\n");
     }

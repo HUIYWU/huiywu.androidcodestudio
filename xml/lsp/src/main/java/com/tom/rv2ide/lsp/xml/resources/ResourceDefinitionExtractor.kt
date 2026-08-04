@@ -34,6 +34,15 @@ internal object ResourceDefinitionExtractor {
     }
   }
 
+  /** Classifies a path with the same resource-directory rules used by [extract]. */
+  internal fun categoryOf(file: Path): Category {
+    return when (resourcePath(file)) {
+      ResourcePath.Values -> Category.VALUES
+      is ResourcePath.File -> Category.FILE
+      null -> Category.NONE
+    }
+  }
+
   private fun valuesDefinitions(file: Path, text: String): Extraction {
     val document =
         runCatching {
@@ -195,6 +204,12 @@ internal object ResourceDefinitionExtractor {
       }
     }
     return Position(line, offset - lineStart)
+  }
+
+  internal enum class Category {
+    VALUES,
+    FILE,
+    NONE,
   }
 
   internal sealed interface Extraction {

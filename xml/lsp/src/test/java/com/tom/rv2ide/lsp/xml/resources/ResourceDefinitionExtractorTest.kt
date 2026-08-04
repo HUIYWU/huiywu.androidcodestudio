@@ -75,6 +75,15 @@ class ResourceDefinitionExtractorTest : TestCase() {
     assertNameRange(text, definitions[1], "content")
   }
 
+  fun testClassifiesPathsWithTheSameRulesAsExtraction() {
+    assertThat(ResourceDefinitionExtractor.categoryOf(Paths.get("project/app/src/main/res/values-v31/strings.xml")))
+        .isEqualTo(ResourceDefinitionExtractor.Category.VALUES)
+    assertThat(ResourceDefinitionExtractor.categoryOf(Paths.get("project/app/src/main/res/layout-land/screen.xml")))
+        .isEqualTo(ResourceDefinitionExtractor.Category.FILE)
+    assertThat(ResourceDefinitionExtractor.categoryOf(Paths.get("project/app/src/main/assets/screen.xml")))
+        .isEqualTo(ResourceDefinitionExtractor.Category.NONE)
+  }
+
   fun testIgnoresNonResourceAndInvalidFileNames() {
     assertThat(extract("project/src/main/layout/screen.xml", "<View />")).isEmpty()
     assertThat(extract("project/src/main/res/layout/Bad-Name.xml", "<View />")).isEmpty()

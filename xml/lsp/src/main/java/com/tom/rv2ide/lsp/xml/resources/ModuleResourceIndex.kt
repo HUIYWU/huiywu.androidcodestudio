@@ -120,6 +120,12 @@ internal object ModuleResourceIndex {
           var readNanos = 0L
           var definitionNanos = 0L
           var occurrenceNanos = 0L
+          var valuesFiles = 0
+          var fileResourceFiles = 0
+          var valuesDefinitions = 0
+          var fileResourceDefinitions = 0
+          var valuesDefinitionNanos = 0L
+          var fileResourceDefinitionNanos = 0L
           val entriesByFile = mutableMapOf<Path, ResourceFileEntry>()
           signatures.forEach { (file, signature) ->
             val cached =
@@ -140,6 +146,21 @@ internal object ModuleResourceIndex {
                 val measured = ResourceFileEntry.createMeasured(file, text)
                 definitionNanos += measured.definitionNanos
                 occurrenceNanos += measured.occurrenceNanos
+                val definitionCount =
+                    (measured.entry as? ResourceFileEntry.Available)?.definitions?.size ?: 0
+                when (ResourceDefinitionExtractor.categoryOf(file)) {
+                  ResourceDefinitionExtractor.Category.VALUES -> {
+                    valuesFiles++
+                    valuesDefinitions += definitionCount
+                    valuesDefinitionNanos += measured.definitionNanos
+                  }
+                  ResourceDefinitionExtractor.Category.FILE -> {
+                    fileResourceFiles++
+                    fileResourceDefinitions += definitionCount
+                    fileResourceDefinitionNanos += measured.definitionNanos
+                  }
+                  ResourceDefinitionExtractor.Category.NONE -> Unit
+                }
                 entriesByFile[file] = measured.entry
               } else {
                 entriesByFile[file] = ResourceFileEntry.create(file, text)
@@ -148,7 +169,7 @@ internal object ModuleResourceIndex {
           }
           if (measureEntries) {
             log.debug(
-                "XML resource snapshot refresh: files={} reusedEntries={} rebuiltEntries={} walkMs={} readMs={} definitionMs={} occurrenceMs={} totalMs={}",
+                "XML resource snapshot refresh: files={} reusedEntries={} rebuiltEntries={} walkMs={} readMs={} definitionMs={} occurrenceMs={} valuesFiles={} valuesDefinitions={} valuesDefinitionMs={} fileResourceFiles={} fileResourceDefinitions={} fileResourceDefinitionMs={} totalMs={}",
                 signatures.size,
                 reusedEntries,
                 rebuiltEntries,
@@ -156,6 +177,12 @@ internal object ModuleResourceIndex {
                 nanosToMillis(readNanos),
                 nanosToMillis(definitionNanos),
                 nanosToMillis(occurrenceNanos),
+                valuesFiles,
+                valuesDefinitions,
+                nanosToMillis(valuesDefinitionNanos),
+                fileResourceFiles,
+                fileResourceDefinitions,
+                nanosToMillis(fileResourceDefinitionNanos),
                 nanosToMillis(System.nanoTime() - totalStartedAtNanos),
             )
           }

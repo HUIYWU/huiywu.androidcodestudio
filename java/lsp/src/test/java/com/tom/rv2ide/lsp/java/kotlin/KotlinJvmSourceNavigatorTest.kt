@@ -77,6 +77,33 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun facadeNavigation_refusesConflictingPropertyAccessorJvmSurface() {
+    val kotlinSource =
+      """
+      package navigation
+
+      @get:JvmName("readShared")
+      val first: String = "first"
+      fun readShared(): String = "function"
+      @get:JvmName("readShared")
+      val second: Int = 2
+      """.trimIndent()
+    val method = compileMethod(
+      """
+      package navigation;
+      abstract class AccessorConflictApiKt {
+        abstract java.lang.String readShared();
+      }
+      """.trimIndent(),
+      "navigation.AccessorConflictApiKt",
+      "readShared",
+    )
+
+    assertNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(
+      Paths.get("/navigation/AccessorConflictApi.kt"), kotlinSource, method))
+  }
+
+  @Test
   fun facadeNavigation_resolvesJvmNamedFunction() {
     val kotlinSource =
       """
@@ -318,6 +345,88 @@ class KotlinJvmSourceNavigatorTest {
 
     assertNotNull(KotlinJvmSourceNavigator.findTypeMemberLocation(
       Paths.get("/navigation/CompanionNavigation.kt"), kotlinSource, method))
+  }
+
+  @Test
+  fun typeNavigation_rejectsSyntheticCompanionJvmStaticSetter() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class SyntheticStaticSetterNavigation {
+        companion object {
+          @set:JvmSynthetic
+          @JvmStatic
+          var visible: String = "visible"
+        }
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class SyntheticStaticSetterNavigation {
+        static String getVisible() { return null; }
+        static void setVisible(java.lang.String value) {}
+      }
+      """.trimIndent()
+    val getter = compileMethod(javaSource, "navigation.SyntheticStaticSetterNavigation", "getVisible")
+    val syntheticSetter = compileMethod(
+      javaSource, "navigation.SyntheticStaticSetterNavigation", "setVisible")
+    val file = Paths.get("/navigation/SyntheticStaticSetterNavigation.kt")
+
+    assertEquals("visible", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, getter)!!))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, syntheticSetter))
+  }
+
+  @Test
+  fun typeNavigation_keepsCompanionAndHostStaticSurfacesSeparate() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class CompanionOwnerNavigation {
+        companion object {
+          fun ordinary(value: String): String = value
+          @JvmStatic fun bridged(value: Int): Int = value
+        }
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class CompanionOwnerNavigation {
+        static int bridged(int value) { return value; }
+        static class Companion {
+          String ordinary(java.lang.String value) { return value; }
+          int bridged(int value) { return value; }
+        }
+      }
+      """.trimIndent()
+    val hostBridge = compileMethod(javaSource, "navigation.CompanionOwnerNavigation", "bridged")
+    val companionOrdinary = compileMethod(
+      javaSource, "navigation.CompanionOwnerNavigation.Companion", "ordinary")
+    val companionBridge = compileMethod(
+      javaSource, "navigation.CompanionOwnerNavigation.Companion", "bridged")
+    val incorrectHostOrdinary = compileMethod(
+      """
+      package navigation;
+      class CompanionOwnerNavigation {
+        static String ordinary(java.lang.String value) { return value; }
+      }
+      """.trimIndent(),
+      "navigation.CompanionOwnerNavigation",
+      "ordinary",
+    )
+    val file = Paths.get("/navigation/CompanionOwnerNavigation.kt")
+
+    assertEquals("bridged", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, hostBridge)!!))
+    assertEquals("ordinary", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, companionOrdinary)!!))
+    assertEquals("bridged", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, companionBridge)!!))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, incorrectHostOrdinary))
   }
 
   @Test
