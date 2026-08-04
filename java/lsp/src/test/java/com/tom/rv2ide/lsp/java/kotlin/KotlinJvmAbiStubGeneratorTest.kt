@@ -247,6 +247,153 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_rejectsTypeVariableReferenceArrayErasureConflict() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface GenericArrayConflict<T> {
+          @JvmName("store")
+          fun storeGeneric(values: Array<T>): String
+          @JvmName("store")
+          fun storeAny(values: Array<Any>): String
+          @JvmName("store")
+          fun storeStrings(values: Array<String>): String
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.GenericArrayConflict", "GenericArrayConflict.kt", source, emptySet(), mode)
+      assertNotNull("Generic array conflict generation failed in $mode", stub)
+      assertFalse("Erased Object[] surface leaked in $mode:\n$stub",
+          stub!!.contains("store(T[] values)") || stub.contains("store(Object[] values)"))
+      assertContains(stub, "String store(String[] values);")
+    }
+  }
+
+  @Test
+  fun generate_rejectsVarargAndReferenceArrayJvmSurfaceConflict() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @JvmName("join")
+        fun joinVararg(vararg values: String): String = values.joinToString()
+        @JvmName("join")
+        fun joinArray(values: Array<String>): String = values.joinToString()
+        @JvmName("join")
+        fun joinInts(values: IntArray): String = values.joinToString()
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.ArrayErasureConflictKt", "ArrayErasureConflict.kt", source, emptySet(), mode)
+      assertNotNull("Vararg/array conflict generation failed in $mode", stub)
+      assertFalse("String[] JVM surface leaked in $mode:\n$stub",
+          stub!!.contains("join(String... values)") || stub.contains("join(String[] values)"))
+      assertContains(stub, "String join(int[] values)")
+    }
+  }
+
+  @Test
+  fun generate_rejectsParameterizedArgumentErasureConflictWithoutDroppingDifferentRawTypes() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @JvmName("consume")
+        fun consumeStrings(value: List<String>): String = value.joinToString()
+        @JvmName("consume")
+        fun consumeInts(value: List<Int>): String = value.joinToString()
+        @JvmName("consume")
+        fun consumeSet(value: Set<String>): String = value.joinToString()
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.ParameterizedErasureConflictKt", "ParameterizedErasureConflict.kt", source,
+          emptySet(), mode)
+      assertNotNull("Parameterized erasure conflict generation failed in $mode", stub)
+      assertFalse("Conflicting List JVM surfaces leaked in $mode:\n$stub",
+          stub!!.contains("consume(java.util.List<String> value)")
+              || stub.contains("consume(java.util.List<Integer> value)"))
+      assertContains(stub, "String consume(java.util.Set<String> value)")
+    }
+  }
+
+  @Test
+  fun generate_usesBoundedMethodTypeParameterErasureBeforeSameNamedOwnerVariable() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface MethodTypeShadowingConflict<T : Number> {
+          @JvmName("submit")
+          fun <T : CharSequence> generic(value: T): T
+          fun submit(value: CharSequence): CharSequence
+          fun submit(value: Number): Number
+          fun submit(value: String): String
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.MethodTypeShadowingConflict", "MethodTypeShadowingConflict.kt", source,
+          emptySet(), mode)
+      assertNotNull("Bounded method shadowing conflict generation failed in $mode", stub)
+      assertFalse("Method T was incorrectly erased through owner T in $mode:\n$stub",
+          stub!!.contains("submit(T value)") || stub.contains("submit(CharSequence value)"))
+      assertContains(stub, "Number submit(Number value);")
+      assertContains(stub, "String submit(String value);")
+    }
+  }
+
+  @Test
+  fun generate_rejectsMethodTypeParameterErasureConflictWithoutTreatingReturnGenericsAsParameters() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @JvmName("put")
+        fun <T> generic(value: T): T = value
+        fun put(value: Any): Any = value
+        fun put(value: String): String = value
+        fun collection(value: String): List<String> = listOf(value)
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.MethodErasureConflictKt", "MethodErasureConflict.kt", source, emptySet(), mode)
+      assertNotNull("Method type-parameter conflict generation failed in $mode", stub)
+      assertFalse("Erased Object put surface leaked in $mode:\n$stub",
+          stub!!.contains("put(T value)") || stub.contains("put(Object value)"))
+      assertContains(stub, "String put(String value)")
+      assertContains(stub, "java.util.List<String> collection(String value)")
+    }
+  }
+
+  @Test
   fun generate_rejectsConflictingJvmMethodSurfacesWithoutDroppingLegalOverloads() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

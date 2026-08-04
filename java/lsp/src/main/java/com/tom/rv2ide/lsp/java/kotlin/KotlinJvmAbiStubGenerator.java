@@ -508,6 +508,26 @@ private static final Pattern PROPERTY_PATTERN =
     return result;
   }
 
+  private static Map<String, String> generatedMethodTypeVariableErasures(
+      String declarationPrefix, Map<String, String> outerErasures) {
+    final Map<String, String> result = new LinkedHashMap<>();
+    final Matcher typeParameters = Pattern.compile("\\bpublic\\s+(?:static\\s+)?<").matcher(declarationPrefix);
+    if (!typeParameters.find()) return result;
+    final int open = typeParameters.end() - 1;
+    final int close = matchingAngleBracket(declarationPrefix, open);
+    if (open < 0 || close <= open) return result;
+    for (String parameter : splitParameters(declarationPrefix.substring(open + 1, close))) {
+      final String trimmed = parameter.trim();
+      final int extendsIndex = trimmed.indexOf(" extends ");
+      final String name = (extendsIndex < 0 ? trimmed : trimmed.substring(0, extendsIndex)).trim();
+      if (!JAVA_TYPE_NAME_PATTERN.matcher(name).matches()) continue;
+      final String bound = extendsIndex < 0 ? "Object"
+          : trimmed.substring(extendsIndex + " extends ".length()).split("\\s*&\\s*", 2)[0].trim();
+      result.put(name, erasedJvmParameterType(bound, outerErasures));
+    }
+    return result;
+  }
+
   private static String generatedMemberKey(
       String declaration, Map<String, String> typeVariableErasures) {
     final int open = declaration.indexOf('(');
@@ -516,11 +536,17 @@ private static final Pattern PROPERTY_PATTERN =
       final String before = declaration.substring(0, open).trim();
       final Matcher name = Pattern.compile("([A-Za-z_$][\\w$]*)$").matcher(before);
       if (name.find()) {
+        final Map<String, String> erasures = new LinkedHashMap<>(typeVariableErasures);
+        erasures.putAll(generatedMethodTypeVariableErasures(before, erasures));
         final List<String> parameterTypes = new ArrayList<>();
         for (String parameter : splitParameters(declaration.substring(open + 1, close))) {
           final String normalized = parameter.trim().replaceAll(
               "\\s+[A-Za-z_$][\\w$]*$", "").replaceAll("\\s+", " ");
-          parameterTypes.add(erasedJvmParameterType(normalized, typeVariableErasures));
+          parameterTypes.add(erasedJvmParameterType(
+              normalized.endsWith("...")
+                  ? normalized.substring(0, normalized.length() - 3).trim() + "[]"
+                  : normalized,
+              erasures));
         }
         return "M:" + name.group(1) + "(" + String.join(",", parameterTypes) + ")";
       }
@@ -534,10 +560,14 @@ private static final Pattern PROPERTY_PATTERN =
   private static String erasedJvmParameterType(
       String javaType, Map<String, String> typeVariableErasures) {
     if (javaType == null || javaType.trim().isEmpty()) return "Object";
-    final String type = javaType.trim();
+    String type = javaType.trim();
+    final StringBuilder arraySuffix = new StringBuilder();
+    while (type.endsWith("[]")) {
+      arraySuffix.append("[]");
+      type = type.substring(0, type.length() - 2).trim();
+    }
     final int genericStart = type.indexOf('<');
     final String raw = genericStart < 0 ? type : type.substring(0, genericStart).trim();
-    final String arraySuffix = genericStart < 0 ? "" : type.substring(type.lastIndexOf('>') + 1).trim();
     final String erased = typeVariableErasures.get(raw);
     return (erased == null ? raw : erased) + arraySuffix;
   }

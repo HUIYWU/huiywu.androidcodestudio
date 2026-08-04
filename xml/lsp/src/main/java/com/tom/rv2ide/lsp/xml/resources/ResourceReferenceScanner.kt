@@ -40,7 +40,9 @@ internal object ResourceReferenceScanner {
     if (timing != null) timing.syntaxRecoveryNanos += System.nanoTime() - checkNotNull(recoveryStartedAtNanos)
     if (hasRecovery) return ScanWithTiming(ScanResult.Unavailable)
 
+    val positionIndexStartedAtNanos = timing?.let { System.nanoTime() }
     val positions = PositionIndex(text)
+    if (timing != null) timing.positionIndexNanos += System.nanoTime() - checkNotNull(positionIndexStartedAtNanos)
     val occurrences = mutableListOf<ResourceReferenceOccurrence>()
     val traversalStartedAtNanos = timing?.let { System.nanoTime() }
     collect(document, text, positions, occurrences, timing)
@@ -66,7 +68,7 @@ internal object ResourceReferenceScanner {
   ) {
     if (node is org.eclipse.lemminx.dom.DOMElement) {
       node.attributeNodes.orEmpty().forEach { attribute ->
-        attributeOccurrence(attribute, text, positions)?.let { occurrence ->
+        attributeOccurrence(attribute, text, positions, timing)?.let { occurrence ->
           occurrences += occurrence
           if (timing != null) {
             timing.attributeOccurrences++
@@ -76,7 +78,7 @@ internal object ResourceReferenceScanner {
       }
     }
     if (node is DOMText) {
-      textOccurrence(node, text, positions)?.let { occurrence ->
+      textOccurrence(node, text, positions, timing)?.let { occurrence ->
         occurrences += occurrence
         if (timing != null) {
           timing.textOccurrences++
@@ -91,19 +93,21 @@ internal object ResourceReferenceScanner {
       attribute: DOMAttr,
       text: String,
       positions: PositionIndex,
+      timing: OccurrenceTiming?,
   ): ResourceReferenceOccurrence? {
     if (attribute.namespaceURI == TOOLS_NAMESPACE_URI) return null
     val value = attribute.value ?: return null
     if (value.startsWith(DATA_BINDING_PREFIX) || value.startsWith(TWO_WAY_DATA_BINDING_PREFIX)) return null
-    val reference = parseReference(value) ?: return null
+    val reference = parseMeasuredReference(value, timing) ?: return null
     val range = attributeValueOffsets(attribute, text) ?: return null
-    return occurrence(reference, positions, range.first, range.second)
+    return buildMeasuredOccurrence(reference, positions, range.first, range.second, timing)
   }
 
   private fun textOccurrence(
       textNode: DOMText,
       text: String,
       positions: PositionIndex,
+      timing: OccurrenceTiming?,
   ): ResourceReferenceOccurrence? {
     if (!textNode.isText) return null
     val raw = textNode.data
@@ -111,10 +115,20 @@ internal object ResourceReferenceScanner {
     if (value.isEmpty() || value.startsWith(DATA_BINDING_PREFIX) || value.startsWith(TWO_WAY_DATA_BINDING_PREFIX)) {
       return null
     }
-    val reference = parseReference(value) ?: return null
+    val reference = parseMeasuredReference(value, timing) ?: return null
     val leading = raw.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)
     val start = textNode.startContent + leading
-    return occurrence(reference, positions, start, start + value.length)
+    return buildMeasuredOccurrence(reference, positions, start, start + value.length, timing)
+  }
+
+  private fun parseMeasuredReference(
+      value: String,
+      timing: OccurrenceTiming?,
+  ): ParsedReference? {
+    val startedAtNanos = timing?.let { System.nanoTime() }
+    val reference = parseReference(value)
+    if (timing != null) timing.referenceParseNanos += System.nanoTime() - checkNotNull(startedAtNanos)
+    return reference
   }
 
   private fun parseReference(value: String): ParsedReference? {
@@ -128,6 +142,19 @@ internal object ResourceReferenceScanner {
       return null
     }
     return XmlResourceReference.parse(value)?.let { ParsedReference(it, false) }
+  }
+
+  private fun buildMeasuredOccurrence(
+      parsed: ParsedReference,
+      positions: PositionIndex,
+      start: Int,
+      end: Int,
+      timing: OccurrenceTiming?,
+  ): ResourceReferenceOccurrence? {
+    val startedAtNanos = timing?.let { System.nanoTime() }
+    val occurrence = occurrence(parsed, positions, start, end)
+    if (timing != null) timing.occurrenceBuildNanos += System.nanoTime() - checkNotNull(startedAtNanos)
+    return occurrence
   }
 
   private fun occurrence(
@@ -205,6 +232,9 @@ internal object ResourceReferenceScanner {
       var domParseNanos: Long = 0L,
       var syntaxRecoveryNanos: Long = 0L,
       var traversalNanos: Long = 0L,
+      var positionIndexNanos: Long = 0L,
+      var referenceParseNanos: Long = 0L,
+      var occurrenceBuildNanos: Long = 0L,
       var sortNanos: Long = 0L,
       var attributeOccurrences: Int = 0,
       var textOccurrences: Int = 0,

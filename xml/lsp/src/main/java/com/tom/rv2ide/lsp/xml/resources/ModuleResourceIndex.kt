@@ -123,6 +123,9 @@ internal object ModuleResourceIndex {
           var occurrenceDomParseNanos = 0L
           var occurrenceSyntaxRecoveryNanos = 0L
           var occurrenceTraversalNanos = 0L
+          var occurrencePositionIndexNanos = 0L
+          var occurrenceReferenceParseNanos = 0L
+          var occurrenceBuildNanos = 0L
           var occurrenceSortNanos = 0L
           var attributeOccurrences = 0
           var textOccurrences = 0
@@ -165,6 +168,9 @@ internal object ModuleResourceIndex {
                 occurrenceDomParseNanos += occurrenceTiming.domParseNanos
                 occurrenceSyntaxRecoveryNanos += occurrenceTiming.syntaxRecoveryNanos
                 occurrenceTraversalNanos += occurrenceTiming.traversalNanos
+                occurrencePositionIndexNanos += occurrenceTiming.positionIndexNanos
+                occurrenceReferenceParseNanos += occurrenceTiming.referenceParseNanos
+                occurrenceBuildNanos += occurrenceTiming.occurrenceBuildNanos
                 occurrenceSortNanos += occurrenceTiming.sortNanos
                 attributeOccurrences += occurrenceTiming.attributeOccurrences
                 textOccurrences += occurrenceTiming.textOccurrences
@@ -205,8 +211,11 @@ internal object ModuleResourceIndex {
             }
           }
           if (measureEntries) {
+            val occurrenceDomWalkNanos =
+                (occurrenceTraversalNanos - occurrenceReferenceParseNanos - occurrenceBuildNanos)
+                    .coerceAtLeast(0L)
             log.debug(
-                "XML resource snapshot refresh: files={} reusedEntries={} rebuiltEntries={} walkMs={} readMs={} definitionMs={} occurrenceMs={} occurrenceDomParseMs={} occurrenceSyntaxRecoveryMs={} occurrenceTraversalMs={} occurrenceSortMs={} attributeOccurrences={} textOccurrences={} creatingIdOccurrences={} valuesFiles={} valuesDefinitions={} valuesDefinitionMs={} valuesDomParseMs={} valuesSyntaxRecoveryMs={} valuesElementTraversalMs={} valuesCreatingIdMs={} largestValuesDefinitionCount={} largestValuesDefinitionMs={} valuesFilesOver100Definitions={} valuesFilesOver1000Definitions={} fileResourceFiles={} fileResourceDefinitions={} fileResourceDefinitionMs={} totalMs={}",
+                "XML resource snapshot refresh: files={} reusedEntries={} rebuiltEntries={} walkMs={} readMs={} definitionMs={} occurrenceMs={} occurrenceDomParseMs={} occurrenceSyntaxRecoveryMs={} occurrenceTraversalMs={} occurrencePositionIndexMs={} occurrenceReferenceParseMs={} occurrenceBuildMs={} occurrenceDomWalkMs={} occurrenceSortMs={} attributeOccurrences={} textOccurrences={} creatingIdOccurrences={} valuesFiles={} valuesDefinitions={} valuesDefinitionMs={} valuesDomParseMs={} valuesSyntaxRecoveryMs={} valuesElementTraversalMs={} valuesCreatingIdMs={} largestValuesDefinitionCount={} largestValuesDefinitionMs={} valuesFilesOver100Definitions={} valuesFilesOver1000Definitions={} fileResourceFiles={} fileResourceDefinitions={} fileResourceDefinitionMs={} totalMs={}",
                 signatures.size,
                 reusedEntries,
                 rebuiltEntries,
@@ -217,6 +226,10 @@ internal object ModuleResourceIndex {
                 nanosToMillis(occurrenceDomParseNanos),
                 nanosToMillis(occurrenceSyntaxRecoveryNanos),
                 nanosToMillis(occurrenceTraversalNanos),
+                nanosToMillis(occurrencePositionIndexNanos),
+                nanosToMillis(occurrenceReferenceParseNanos),
+                nanosToMillis(occurrenceBuildNanos),
+                nanosToMillis(occurrenceDomWalkNanos),
                 nanosToMillis(occurrenceSortNanos),
                 attributeOccurrences,
                 textOccurrences,
