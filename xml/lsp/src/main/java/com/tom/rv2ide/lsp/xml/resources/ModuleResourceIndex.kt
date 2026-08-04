@@ -31,6 +31,23 @@ internal object ModuleResourceIndex {
     caches.clear()
   }
 
+  /** Exact lightweight-entry counts for cache observation; this intentionally does not estimate bytes. */
+  fun stats(): CacheStats {
+    var files = 0
+    var definitions = 0
+    var occurrences = 0
+    caches.values.forEach { cache ->
+      files += cache.entriesByFile.size
+      cache.entriesByFile.values.forEach { entry ->
+        if (entry is ResourceFileEntry.Available) {
+          definitions += entry.definitions.size
+          occurrences += entry.occurrences.size
+        }
+      }
+    }
+    return CacheStats(caches.size, files, definitions, occurrences)
+  }
+
   fun snapshot(currentFile: Path, currentText: String): ResourceSnapshot {
     val module =
         Lookup.getDefault().lookup(ModuleProject.COMPLETION_MODULE_KEY) as? AndroidModule
@@ -113,6 +130,13 @@ internal object ModuleResourceIndex {
       val signatures: Map<Path, FileSignature>,
       val entriesByFile: Map<Path, ResourceFileEntry>,
       val refreshedAtMillis: Long,
+  )
+
+  internal data class CacheStats(
+      val moduleCount: Int,
+      val fileCount: Int,
+      val definitionCount: Int,
+      val occurrenceCount: Int,
   )
 
   private data class FileSignature(val modifiedMillis: Long, val size: Long)

@@ -46,14 +46,21 @@ internal class XmlResourceReferencesProvider {
         )
     val scanMillis = elapsedMillis(scanStartedAtNanos)
     val roles = rolesFor(target, snapshot, locations)
-    log.debug(
-        "XML references performance: mode=cache snapshotMs={} scanMs={} totalMs={} files={} results={}",
-        snapshotMillis,
-        scanMillis,
-        elapsedMillis(startedAtNanos),
-        snapshot.files.size,
-        locations.size,
-    )
+    if (log.isDebugEnabled) {
+      val cacheStats = ModuleResourceIndex.stats()
+      log.debug(
+          "XML references performance: mode=cache snapshotMs={} scanMs={} totalMs={} files={} results={} cachedModules={} cachedFiles={} cachedDefinitions={} cachedOccurrences={}",
+          snapshotMillis,
+          scanMillis,
+          elapsedMillis(startedAtNanos),
+          snapshot.files.size,
+          locations.size,
+          cacheStats.moduleCount,
+          cacheStats.fileCount,
+          cacheStats.definitionCount,
+          cacheStats.occurrenceCount,
+      )
+    }
     return ReferenceResult(locations, roles)
   }
 
