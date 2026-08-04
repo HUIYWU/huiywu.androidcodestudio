@@ -94,6 +94,24 @@ class ResourceReferenceScannerTest : TestCase() {
     assertThat(scan(text)).isEmpty()
   }
 
+  fun testFastRejectsPlainValuesAndKeepsThemeReferences() {
+    val text =
+        """
+        <View
+            android:layout_width="match_parent"
+            android:tag="plain_value"
+            android:textColor="?attr/textColorPrimary" />
+        """
+            .trimIndent()
+
+    val occurrences = scan(text)
+
+    assertThat(occurrences).hasSize(1)
+    assertThat(occurrences.single().reference.entry).isEqualTo("textColorPrimary")
+    assertThat(occurrences.single().reference.isThemeAttribute).isTrue()
+    assertOccurrenceRange(text, occurrences.single(), "?attr/textColorPrimary")
+  }
+
   fun testTargetAtAcceptsOnlyReferenceRange() {
     val text = "<View android:text=\"@string/title\" />"
     val referenceOffset = text.indexOf("title") + 2

@@ -942,6 +942,101 @@ class KotlinJvmSourceNavigatorTest {
   // Keep ambiguity coverage to source combinations with a valid, distinct Kotlin/JVM declaration set.
 
   @Test
+  fun facadeNavigation_resolvesNullableReferenceArrayComponentsAndDimensions() {
+    val file = Paths.get("/navigation/NullableArrayNavigation.kt")
+    val kotlinSource =
+        """
+        package navigation
+
+        fun nullableNumbers(values: Array<Int?>): Int = values.size
+        fun nullableLabels(values: Array<String?>): Int = values.size
+        fun nullableNested(values: Array<Array<Int?>?>): Int = values.size
+        """.trimIndent()
+    val numbers = compileMethod(
+        """
+        package navigation;
+        abstract class NullableArrayNavigationKt {
+          abstract int nullableNumbers(Integer[] values);
+        }
+        """.trimIndent(),
+        "navigation.NullableArrayNavigationKt", "nullableNumbers")
+    val labels = compileMethod(
+        """
+        package navigation;
+        abstract class NullableArrayNavigationKt {
+          abstract int nullableLabels(String[] values);
+        }
+        """.trimIndent(),
+        "navigation.NullableArrayNavigationKt", "nullableLabels")
+    val nested = compileMethod(
+        """
+        package navigation;
+        abstract class NullableArrayNavigationKt {
+          abstract int nullableNested(Integer[][] values);
+        }
+        """.trimIndent(),
+        "navigation.NullableArrayNavigationKt", "nullableNested")
+    val primitiveMismatch = compileMethod(
+        """
+        package navigation;
+        abstract class NullableArrayNavigationKt {
+          abstract int nullableNumbers(int[] values);
+        }
+        """.trimIndent(),
+        "navigation.NullableArrayNavigationKt", "nullableNumbers")
+
+    assertEquals("nullableNumbers", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, numbers)))
+    assertEquals("nullableLabels", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, labels)))
+    assertEquals("nullableNested", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, nested)))
+    assertNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, primitiveMismatch))
+  }
+
+  @Test
+  fun facadeNavigation_resolvesReferenceAndPrimitiveVarargsByJvmArraySurface() {
+    val file = Paths.get("/navigation/VarargNavigation.kt")
+    val kotlinSource =
+        """
+        package navigation
+
+        fun labels(vararg values: String): String = values.joinToString()
+        fun numbers(vararg values: Int): Int = values.sum()
+        """.trimIndent()
+    val labels = compileMethod(
+        """
+        package navigation;
+        abstract class VarargNavigationKt {
+          abstract String labels(String... values);
+        }
+        """.trimIndent(),
+        "navigation.VarargNavigationKt", "labels")
+    val numbers = compileMethod(
+        """
+        package navigation;
+        abstract class VarargNavigationKt {
+          abstract int numbers(int... values);
+        }
+        """.trimIndent(),
+        "navigation.VarargNavigationKt", "numbers")
+    val wrongDimensions = compileMethod(
+        """
+        package navigation;
+        abstract class VarargNavigationKt {
+          abstract String labels(String[][] values);
+        }
+        """.trimIndent(),
+        "navigation.VarargNavigationKt", "labels")
+
+    assertEquals("labels", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, labels)))
+    assertEquals("numbers", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, numbers)))
+    assertNull(KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, wrongDimensions))
+  }
+
+  @Test
   fun multifileNavigation_usesAliasContextOfEachPart() {
     val firstPath = Paths.get("/navigation/AliasFirst.kt")
     val secondPath = Paths.get("/navigation/AliasSecond.kt")

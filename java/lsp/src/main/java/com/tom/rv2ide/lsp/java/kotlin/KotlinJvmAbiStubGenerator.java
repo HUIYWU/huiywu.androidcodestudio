@@ -2307,7 +2307,11 @@ private static final Pattern PROPERTY_PATTERN =
     boolean usesValueClass = containsValueClassType(receiverType) || containsValueClassType(returnType);
     if (parameters != null) {
       for (KotlinJvmSyntaxParser.ParameterSyntax parameter : parameters) {
-        usesValueClass |= containsValueClassType(parameter.type);
+        final boolean parameterUsesValueClass = containsValueClassType(parameter.type);
+        // A value-class vararg is an array surface whose boxing/mangling cannot be proven from
+        // source alone. Do not incorrectly reuse direct-parameter unboxing for its component.
+        if (parameter.vararg && parameterUsesValueClass) return false;
+        usesValueClass |= parameterUsesValueClass;
       }
     }
     return !usesValueClass || jvmName != null;
@@ -2319,7 +2323,13 @@ private static final Pattern PROPERTY_PATTERN =
     if (parameters != null) {
       for (String parameter : parameters) {
         final int colon = topLevelIndexOf(parameter, ':');
-        usesValueClass |= colon >= 0 && containsValueClassType(parameter.substring(colon + 1));
+        final boolean parameterUsesValueClass =
+            colon >= 0 && containsValueClassType(parameter.substring(colon + 1));
+        if (parameterUsesValueClass
+            && Pattern.compile("(?:^|\\s)vararg(?:\\s|$)").matcher(parameter).find()) {
+          return false;
+        }
+        usesValueClass |= parameterUsesValueClass;
       }
     }
     return !usesValueClass || jvmName != null;

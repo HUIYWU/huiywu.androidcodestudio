@@ -132,6 +132,7 @@ internal object ResourceReferenceScanner {
   }
 
   private fun parseReference(value: String): ParsedReference? {
+    if (value.isEmpty() || (value[0] != RESOURCE_MARKER && value[0] != THEME_MARKER)) return null
     if (XmlResourceReference.isSpecialValue(value)) return null
     if (value.startsWith(CREATING_ID_PREFIX)) {
       val normalized = "@${value.removePrefix(CREATING_ID_PREFIX)}"
@@ -253,6 +254,8 @@ internal object ResourceReferenceScanner {
 
   private const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
   private const val TOOLS_NAMESPACE_URI = "http://schemas.android.com/tools"
+  private const val RESOURCE_MARKER = '@'
+  private const val THEME_MARKER = '?'
   private const val CREATING_ID_PREFIX = "@+"
   private const val DATA_BINDING_PREFIX = "@{"
   private const val TWO_WAY_DATA_BINDING_PREFIX = "@={"

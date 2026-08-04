@@ -101,6 +101,12 @@ class KotlinJvmAbiStubGeneratorTest {
         @JvmName("boxedList")
         fun list(ids: List<UserId>): List<UserId> = ids
 
+        @JvmName("boxedArray")
+        fun array(ids: Array<UserId>): Int = ids.size
+
+        @JvmName("unsafeVararg")
+        fun varargs(vararg ids: UserId): Int = ids.size
+
         fun UserId.hiddenExtension(): UserId = this
 
         @JvmName("renderRaw")
@@ -124,6 +130,10 @@ class KotlinJvmAbiStubGeneratorTest {
       assertContains(stub, "String findRaw(String id)")
       assertContains(stub, "UserId nullableRaw(UserId id)")
       assertContains(stub, "java.util.List<UserId> boxedList(java.util.List<UserId> ids)")
+      assertContains(stub, "int boxedArray(UserId[] ids)")
+      assertFalse("Value-class vararg leaked in $mode:\n$stub", stub.contains("unsafeVararg("))
+      assertFalse(stub.contains("unsafeVararg(String... ids)"))
+      assertFalse(stub.contains("unsafeVararg(String[] ids)"))
       assertContains(stub, "String renderRaw(String receiver)")
       assertContains(stub, "String readRaw()")
     }
@@ -247,6 +257,66 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_rejectsBoundedOwnerTypeVariableArrayErasureConflict() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface BoundedOwnerArrayConflict<T : CharSequence> {
+          @JvmName("store")
+          fun generic(values: Array<T>): String
+          fun store(values: Array<CharSequence>): String
+          fun store(values: Array<String>): String
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.BoundedOwnerArrayConflict", "BoundedOwnerArrayConflict.kt", source,
+          emptySet(), mode)
+      assertNotNull("Bounded owner array conflict generation failed in $mode", stub)
+      assertFalse("Erased CharSequence[] owner surface leaked in $mode:\n$stub",
+          stub!!.contains("store(T[] values)") || stub.contains("store(CharSequence[] values)"))
+      assertContains(stub, "String store(String[] values);")
+    }
+  }
+
+  @Test
+  fun generate_usesMethodArrayBoundBeforeSameNamedOwnerVariable() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface MethodArrayShadowConflict<T : Number> {
+          @JvmName("submit")
+          fun <T : CharSequence> generic(values: Array<T>): String
+          fun submit(values: Array<CharSequence>): String
+          fun submit(values: Array<Number>): String
+          fun submit(values: Array<String>): String
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.MethodArrayShadowConflict", "MethodArrayShadowConflict.kt", source,
+          emptySet(), mode)
+      assertNotNull("Method array shadow conflict generation failed in $mode", stub)
+      assertFalse("Method array T used the wrong erasure in $mode:\n$stub",
+          stub!!.contains("submit(T[] values)") || stub.contains("submit(CharSequence[] values)"))
+      assertContains(stub, "String submit(Number[] values);")
+      assertContains(stub, "String submit(String[] values);")
+    }
+  }
+
+  @Test
   fun generate_rejectsTypeVariableReferenceArrayErasureConflict() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
@@ -288,6 +358,9 @@ class KotlinJvmAbiStubGeneratorTest {
         fun write(values: Array<in String>): Int = values.size
         fun unknown(values: Array<*>): Int = values.size
         fun boxed(values: Array<Int>): Int = values.size
+        fun nullableNumbers(values: Array<Int?>): Int = values.size
+        fun nullableLabels(values: Array<String?>): Int = values.size
+        fun nullableNested(values: Array<Array<Int?>?>): Int = values.size
         """.trimIndent()
 
     for (mode in listOf(
@@ -301,6 +374,9 @@ class KotlinJvmAbiStubGeneratorTest {
       assertContains(stub, "int unknown(Object[] values)")
       assertContains(stub, "int boxed(Integer[] values)")
       assertFalse(stub.contains("int boxed(int[] values)"))
+      assertContains(stub, "int nullableNumbers(Integer[] values)")
+      assertContains(stub, "int nullableLabels(String[] values)")
+      assertContains(stub, "int nullableNested(Integer[][] values)")
     }
   }
 
