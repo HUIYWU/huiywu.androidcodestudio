@@ -45,6 +45,7 @@ import com.tom.rv2ide.lsp.xml.diagnostics.XmlDiagnosticsService
 import com.tom.rv2ide.lsp.util.LSPEditorActions
 import com.tom.rv2ide.lsp.xml.actions.XmlCodeActionsMenu
 import com.tom.rv2ide.lsp.xml.models.XMLServerSettings
+import com.tom.rv2ide.lsp.xml.resources.ModuleResourceIndex
 import com.tom.rv2ide.lsp.xml.providers.AdvancedEditProvider.onContentChange
 import com.tom.rv2ide.lsp.xml.providers.CodeFormatProvider
 import com.tom.rv2ide.lsp.xml.providers.XmlCompletionProvider
@@ -95,6 +96,7 @@ class XMLLanguageServer : ILanguageServer {
   override fun shutdown() {
     diagnosticHandler.removeCallbacks(analyzeRunnable)
     selectedFile = null
+    ModuleResourceIndex.clear()
     if (EventBus.getDefault().isRegistered(this)) {
       EventBus.getDefault().unregister(this)
     }

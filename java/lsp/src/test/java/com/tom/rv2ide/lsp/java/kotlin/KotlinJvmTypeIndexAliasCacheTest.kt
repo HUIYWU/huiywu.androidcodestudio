@@ -57,6 +57,30 @@ class KotlinJvmTypeIndexAliasCacheTest {
   }
 
   @Test
+  fun compileSourceRevision_isIndependentOfDependencyIterationOrder() {
+    val first = linkedMapOf(":mobile" to 2L, ":core:data" to 4L)
+    val reversed = linkedMapOf(":core:data" to 4L, ":mobile" to 2L)
+
+    assertEquals(
+      KotlinJvmTypeIndex.CompileSourceRevision.from(first),
+      KotlinJvmTypeIndex.CompileSourceRevision.from(reversed))
+  }
+
+  @Test
+  fun revisionSnapshotStore_missesWhenCompileDependencyRevisionChanges() {
+    val store = KotlinJvmTypeIndex.RevisionSnapshotStore<String>()
+    val revisionOne = KotlinJvmTypeIndex.CompileSourceRevision.from(
+      linkedMapOf(":mobile" to 2L, ":core:data" to 2L))
+    val dependencyChanged = KotlinJvmTypeIndex.CompileSourceRevision.from(
+      linkedMapOf(":mobile" to 2L, ":core:data" to 3L))
+
+    store.replace(revisionOne, "snapshot-one")
+
+    assertEquals("snapshot-one", store.get(revisionOne))
+    assertNull(store.get(dependencyChanged))
+  }
+
+  @Test
   fun revisionSnapshotStore_replacesSnapshotsAcrossSourceRevisions() {
     val store = KotlinJvmTypeIndex.RevisionSnapshotStore<String>()
     val revisionOne = store.replace(41L, "snapshot-one")

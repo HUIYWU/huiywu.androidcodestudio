@@ -26,6 +26,11 @@ import java.util.concurrent.ConcurrentHashMap
 internal object ModuleResourceIndex {
   private val caches = ConcurrentHashMap<String, ModuleCache>()
 
+  /** Releases all module snapshots when the owning XML language server is shut down. */
+  fun clear() {
+    caches.clear()
+  }
+
   fun snapshot(currentFile: Path, currentText: String): ResourceSnapshot {
     val module =
         Lookup.getDefault().lookup(ModuleProject.COMPLETION_MODULE_KEY) as? AndroidModule

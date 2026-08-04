@@ -23,7 +23,9 @@ import com.tom.rv2ide.utils.DocumentUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -87,7 +89,7 @@ public final class KotlinJvmTypeIndex {
     }
 
     while (true) {
-      final long revision = module.getSourceIndexVersion();
+      final CompileSourceRevision revision = compileSourceRevision(module);
       final RevisionSnapshotStore<Set<String>> store = topLevelTypeSnapshotStore(module);
       final Set<String> cached = store.get(revision);
       if (cached != null) {
@@ -99,7 +101,7 @@ public final class KotlinJvmTypeIndex {
       // Scanning every Kotlin source file is a cold/revision-change operation. Keep it per-module
       // so concurrent completion/import requests share one immutable published result.
       synchronized (module) {
-        final long lockedRevision = module.getSourceIndexVersion();
+        final CompileSourceRevision lockedRevision = compileSourceRevision(module);
         final Set<String> lockedCached = store.get(lockedRevision);
         if (lockedCached != null) return lockedCached;
 
@@ -110,8 +112,8 @@ public final class KotlinJvmTypeIndex {
         }
 
         final long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
-        if (module.getSourceIndexVersion() != lockedRevision) {
-          LOG.debug("Discarded Kotlin JVM top-level type index for module {} revision {} after {} ms; source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
+        if (!lockedRevision.equals(compileSourceRevision(module))) {
+          LOG.debug("Discarded Kotlin JVM top-level type index for module {} revision {} after {} ms; compile source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
           continue;
         }
         final Set<String> immutable = Collections.unmodifiableSet(indexed);
@@ -147,14 +149,14 @@ public final class KotlinJvmTypeIndex {
         cached.genericAliases.get(consumerFile, consumerSource);
     if (existing != null) {
       LOG.debug("Reused Kotlin generic alias visibility for module {} revision {} consumer {}: aliases={}",
-          module.getPath(), module.getSourceIndexVersion(), normalizedPath(consumerFile), existing.size());
+          module.getPath(), compileSourceRevision(module), normalizedPath(consumerFile), existing.size());
       return existing;
     }
     final java.util.Map<String, GenericTypeAlias> indexed =
         cached.declarationIndex.visibleGenericAliases(consumerFile, consumerSource);
     cached.genericAliases.put(consumerFile, consumerSource, indexed);
     LOG.debug("Computed Kotlin generic alias visibility for module {} revision {} consumer {}: aliases={}",
-        module.getPath(), module.getSourceIndexVersion(), normalizedPath(consumerFile), indexed.size());
+        module.getPath(), compileSourceRevision(module), normalizedPath(consumerFile), indexed.size());
     return indexed;
   }
 
@@ -182,14 +184,14 @@ public final class KotlinJvmTypeIndex {
         cached.directAliases.get(consumerFile, consumerSource);
     if (existing != null) {
       LOG.debug("Reused Kotlin direct alias visibility for module {} revision {} consumer {}: aliases={}",
-          module.getPath(), module.getSourceIndexVersion(), normalizedPath(consumerFile), existing.size());
+          module.getPath(), compileSourceRevision(module), normalizedPath(consumerFile), existing.size());
       return existing;
     }
     final java.util.Map<String, String> indexed =
         cached.declarationIndex.visibleDirectAliases(consumerFile, consumerSource);
     cached.directAliases.put(consumerFile, consumerSource, indexed);
     LOG.debug("Computed Kotlin direct alias visibility for module {} revision {} consumer {}: aliases={}",
-        module.getPath(), module.getSourceIndexVersion(), normalizedPath(consumerFile), indexed.size());
+        module.getPath(), compileSourceRevision(module), normalizedPath(consumerFile), indexed.size());
     return indexed;
   }
 
@@ -218,7 +220,7 @@ public final class KotlinJvmTypeIndex {
 
   private static CachedAliases aliasCacheWithDeclarationIndexForRevision(ModuleProject module) {
     while (true) {
-      final long revision = module.getSourceIndexVersion();
+      final CompileSourceRevision revision = compileSourceRevision(module);
       final RevisionSnapshotStore<CachedAliases> store = aliasSnapshotStore(module);
       final CachedAliases existing = store.get(revision);
       if (existing != null) {
@@ -230,7 +232,7 @@ public final class KotlinJvmTypeIndex {
       // Index construction reads many source files. Serialize only this cold/revision-change path
       // per module so concurrent first consumers publish one complete immutable snapshot.
       synchronized (module) {
-        final long lockedRevision = module.getSourceIndexVersion();
+        final CompileSourceRevision lockedRevision = compileSourceRevision(module);
         final CachedAliases lockedExisting = store.get(lockedRevision);
         if (lockedExisting != null) return lockedExisting;
         final long startedAt = System.nanoTime();
@@ -238,8 +240,8 @@ public final class KotlinJvmTypeIndex {
             kotlinSourceFilesForRevision(module, lockedRevision));
         final long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
         // Do not publish a snapshot that was built while the module source revision changed.
-        if (module.getSourceIndexVersion() != lockedRevision) {
-          LOG.debug("Discarded Kotlin typealias declaration index for module {} revision {} after {} ms; source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
+        if (!lockedRevision.equals(compileSourceRevision(module))) {
+          LOG.debug("Discarded Kotlin typealias declaration index for module {} revision {} after {} ms; compile source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
           continue;
         }
         final CachedAliases replacement = new CachedAliases(indexed);
@@ -252,7 +254,7 @@ public final class KotlinJvmTypeIndex {
 
   private static NavigationCandidateIndex navigationCandidatesForRevision(ModuleProject module) {
     while (true) {
-      final long revision = module.getSourceIndexVersion();
+      final CompileSourceRevision revision = compileSourceRevision(module);
       final RevisionSnapshotStore<NavigationCandidateIndex> store = navigationSnapshotStore(module);
       final NavigationCandidateIndex existing = store.get(revision);
       if (existing != null) {
@@ -262,7 +264,7 @@ public final class KotlinJvmTypeIndex {
       }
 
       synchronized (module) {
-        final long lockedRevision = module.getSourceIndexVersion();
+        final CompileSourceRevision lockedRevision = compileSourceRevision(module);
         final NavigationCandidateIndex lockedExisting = store.get(lockedRevision);
         if (lockedExisting != null) return lockedExisting;
 
@@ -270,8 +272,8 @@ public final class KotlinJvmTypeIndex {
         final NavigationCandidateIndex indexed = NavigationCandidateIndex.buildFromPaths(
             kotlinSourceFilesForRevision(module, lockedRevision));
         final long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
-        if (module.getSourceIndexVersion() != lockedRevision) {
-          LOG.debug("Discarded Kotlin JVM navigation candidate index for module {} revision {} after {} ms; source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
+        if (!lockedRevision.equals(compileSourceRevision(module))) {
+          LOG.debug("Discarded Kotlin JVM navigation candidate index for module {} revision {} after {} ms; compile source revision changed during construction", module.getPath(), lockedRevision, elapsedMillis);
           continue;
         }
         store.replace(lockedRevision, indexed);
@@ -281,7 +283,105 @@ public final class KotlinJvmTypeIndex {
     }
   }
 
-  private static List<Path> kotlinSourceFilesForRevision(ModuleProject module, long revision) {
+  /**
+   * Returns a deterministic revision key for every module whose own source directory can enter
+   * {@link ModuleProject#getCompileSourceDirectories()}. A consumer module may index Kotlin from
+   * transitive compile dependencies, so its own revision alone is not a sufficient cache gate.
+   */
+  static CompileSourceRevision compileSourceRevision(ModuleProject module) {
+    if (module == null) return CompileSourceRevision.empty();
+    final java.util.LinkedHashMap<String, Long> revisions = new java.util.LinkedHashMap<>();
+    collectCompileSourceRevision(module, revisions);
+    try {
+      for (ModuleProject dependency : module.getCompileModuleProjects()) {
+        collectCompileSourceRevision(dependency, revisions);
+      }
+    } catch (RuntimeException error) {
+      // A transient workspace/dependency-model failure must not block Java LSP. The consumer's own
+      // revision remains a safe lower bound and the next request can obtain the complete graph.
+      LOG.debug("Unable to enumerate compile source dependencies for module {}", module.getPath(), error);
+    }
+    return CompileSourceRevision.from(revisions);
+  }
+
+  private static void collectCompileSourceRevision(
+      ModuleProject module, java.util.Map<String, Long> revisions) {
+    if (module == null || module.getPath() == null) return;
+    revisions.put(module.getPath(), module.getSourceIndexVersion());
+  }
+
+  /** Immutable, collision-free compile-source revision vector, ordered by Gradle module path. */
+  static final class CompileSourceRevision {
+    private static final CompileSourceRevision EMPTY = new CompileSourceRevision(Collections.emptyList());
+    private final List<ModuleRevision> modules;
+
+    private CompileSourceRevision(List<ModuleRevision> modules) {
+      this.modules = modules;
+    }
+
+    static CompileSourceRevision empty() {
+      return EMPTY;
+    }
+
+    static CompileSourceRevision from(java.util.Map<String, Long> revisions) {
+      if (revisions == null || revisions.isEmpty()) return EMPTY;
+      final ArrayList<ModuleRevision> result = new ArrayList<>();
+      for (java.util.Map.Entry<String, Long> entry : revisions.entrySet()) {
+        if (entry.getKey() != null && entry.getValue() != null) {
+          result.add(new ModuleRevision(entry.getKey(), entry.getValue()));
+        }
+      }
+      result.sort(Comparator.comparing((ModuleRevision entry) -> entry.path));
+      return result.isEmpty() ? EMPTY : new CompileSourceRevision(
+          Collections.unmodifiableList(result));
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return other instanceof CompileSourceRevision
+          && modules.equals(((CompileSourceRevision) other).modules);
+    }
+
+    @Override
+    public int hashCode() {
+      return modules.hashCode();
+    }
+
+    @Override
+    public String toString() {
+      return modules.toString();
+    }
+  }
+
+  private static final class ModuleRevision {
+    final String path;
+    final long revision;
+
+    ModuleRevision(String path, long revision) {
+      this.path = path;
+      this.revision = revision;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (!(other instanceof ModuleRevision)) return false;
+      final ModuleRevision that = (ModuleRevision) other;
+      return revision == that.revision && path.equals(that.path);
+    }
+
+    @Override
+    public int hashCode() {
+      return 31 * path.hashCode() + Long.hashCode(revision);
+    }
+
+    @Override
+    public String toString() {
+      return path + "@" + revision;
+    }
+  }
+
+  private static List<Path> kotlinSourceFilesForRevision(
+      ModuleProject module, CompileSourceRevision revision) {
     final RevisionSnapshotStore<List<Path>> store = sourceFileSnapshotStore(module);
     final List<Path> existing = store.get(revision);
     if (existing != null) {
@@ -295,7 +395,7 @@ public final class KotlinJvmTypeIndex {
     final long startedAt = System.nanoTime();
     final List<Path> immutable = kotlinSourceFiles(module.getCompileSourceDirectories());
     final long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
-    if (module.getSourceIndexVersion() == revision) {
+    if (revision.equals(compileSourceRevision(module))) {
       store.replace(revision, immutable);
       LOG.debug("Built Kotlin source-file snapshot for module {} revision {}: files={} in {} ms",
           module.getPath(), revision, immutable.size(), elapsedMillis);
@@ -375,12 +475,13 @@ public final class KotlinJvmTypeIndex {
     // new revision together with the previous snapshot to a concurrent reader between writes.
     private volatile RevisionSnapshot<T> current;
 
-    T get(long requestedRevision) {
+    T get(Object requestedRevision) {
       final RevisionSnapshot<T> snapshot = current;
-      return snapshot != null && snapshot.revision == requestedRevision ? snapshot.value : null;
+      return snapshot != null && snapshot.revision.equals(requestedRevision) ? snapshot.value : null;
     }
 
-    synchronized T replace(long requestedRevision, T replacement) {
+    synchronized T replace(Object requestedRevision, T replacement) {
+      if (requestedRevision == null) throw new IllegalArgumentException("requestedRevision == null");
       if (replacement == null) throw new IllegalArgumentException("replacement == null");
       current = new RevisionSnapshot<>(requestedRevision, replacement);
       return replacement;
@@ -392,10 +493,10 @@ public final class KotlinJvmTypeIndex {
   }
 
   private static final class RevisionSnapshot<T> {
-    final long revision;
+    final Object revision;
     final T value;
 
-    RevisionSnapshot(long revision, T value) {
+    RevisionSnapshot(Object revision, T value) {
       this.revision = revision;
       this.value = value;
     }
