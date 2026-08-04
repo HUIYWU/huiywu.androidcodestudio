@@ -326,6 +326,46 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesInterfaceExtensionPropertyAccessorsByReceiverSignature() {
+    val kotlinSource =
+      """
+      package navigation
+
+      interface ExtensionPropertyNavigationContract {
+        @get:JvmName("readLabel")
+        @set:JvmName("writeLabel")
+        var String.label: String
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      interface ExtensionPropertyNavigationContract {
+        java.lang.String readLabel(java.lang.String receiver);
+        void writeLabel(java.lang.String receiver, java.lang.String value);
+      }
+      """.trimIndent()
+    val missingReceiverSource =
+      """
+      package navigation;
+      interface MissingReceiverExtensionPropertyContract {
+        java.lang.String readLabel();
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/ExtensionPropertyNavigationContract.kt")
+    val getter = compileMethod(javaSource, "navigation.ExtensionPropertyNavigationContract", "readLabel")
+    val setter = compileMethod(javaSource, "navigation.ExtensionPropertyNavigationContract", "writeLabel")
+    val missingReceiver = compileMethod(
+      missingReceiverSource, "navigation.MissingReceiverExtensionPropertyContract", "readLabel")
+
+    assertEquals("label", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, getter)!!))
+    assertEquals("label", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, setter)!!))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, missingReceiver))
+  }
+
+  @Test
   fun typeNavigation_resolvesInterfacePropertyAccessorsAndRejectsSyntheticGetter() {
     val kotlinSource =
       """

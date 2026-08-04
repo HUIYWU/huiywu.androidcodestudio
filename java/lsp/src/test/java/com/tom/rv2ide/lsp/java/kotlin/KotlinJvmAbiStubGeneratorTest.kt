@@ -554,6 +554,101 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generate_rejectsGenericInterfacePropertyAccessorErasureConflict() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface GenericPropertyConflict<T> {
+          @set:JvmName("assign")
+          var value: T
+          fun assign(value: Any)
+          fun assign(value: String)
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.GenericPropertyConflict", "GenericPropertyConflict.kt", source, emptySet(), mode)
+      assertNotNull("Generic interface conflict generation failed in $mode", stub)
+      assertFalse("Erased Object JVM surface leaked in $mode:\n$stub",
+          stub!!.contains("assign(T value)") || stub.contains("assign(Object value)"))
+      assertContains(stub, "void assign(String value);")
+    }
+  }
+
+  @Test
+  fun generate_rejectsGenericInterfaceExtensionPropertyReceiverErasureConflict() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface GenericExtensionPropertyConflict<T> {
+          @get:JvmName("access")
+          val T.payload: String
+          fun access(receiver: Any): String
+          fun access(receiver: String): String
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.GenericExtensionPropertyConflict", "GenericExtensionPropertyConflict.kt", source,
+        emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull(stub)
+    assertFalse("Erased Object receiver surface leaked:\n$stub",
+        stub!!.contains("access(T receiver)") || stub.contains("access(Object receiver)"))
+    assertContains(stub, "String access(String receiver);")
+
+    val fallback = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.GenericExtensionPropertyConflict", "GenericExtensionPropertyConflict.kt", source,
+        emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)
+    assertNotNull(fallback)
+    assertFalse("Fallback must continue to omit interface extension properties:\n$fallback",
+        fallback!!.contains("access(T receiver)"))
+  }
+
+  @Test
+  fun generate_structuredProjectsInterfaceExtensionPropertyAccessors() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface ExtensionPropertyContract {
+          val String.initial: Char
+          @get:JvmName("readLabel")
+          @set:JvmName("writeLabel")
+          var String.label: String
+        }
+        """.trimIndent()
+
+    val structured = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ExtensionPropertyContract", "ExtensionPropertyContract.kt", source, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull(structured)
+    assertContains(structured!!, "char getInitial(String receiver);")
+    assertContains(structured, "String readLabel(String receiver);")
+    assertContains(structured, "void writeLabel(String receiver, String value);")
+    assertFalse(structured.contains("getInitial();"))
+    assertFalse(structured.contains("readLabel();"))
+
+    val fallback = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ExtensionPropertyContract", "ExtensionPropertyContract.kt", source, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)
+    assertNotNull(fallback)
+    assertFalse("Fallback must not invent an interface extension accessor:\n$fallback",
+        fallback!!.contains("getInitial(") || fallback.contains("readLabel(")
+            || fallback.contains("writeLabel("))
+  }
+
+  @Test
   fun generate_projectsInterfacePropertyAccessorJvmSurface() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

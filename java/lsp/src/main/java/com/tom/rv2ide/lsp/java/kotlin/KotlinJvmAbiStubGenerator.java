@@ -83,7 +83,7 @@ final class KotlinJvmAbiStubGenerator {
 private static final Pattern PROPERTY_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|override|const|lateinit)\\s+)*)"
-              + "(val|var)\\s+([A-Za-z_][\\w]*)\\s*(?::\\s*([^=\\{]+))?.*$");
+              + "(val|var)\\s+([A-Za-z_][\\w]*)(?![\\w.])\\s*(?::\\s*([^=\\{]+))?.*$");
   private static final Pattern JVM_STATIC_FUNCTION_PATTERN =
       Pattern.compile(
           "(?s)(?:@JvmName\\s*\\(\\s*\\\"[A-Za-z_$][\\w$]*\\\"\\s*\\)\\s*)?"
@@ -384,9 +384,11 @@ private static final Pattern PROPERTY_PATTERN =
       return structured;
     }
     final List<GeneratedMember> primary = generatedMembers(
-        structured.substring(structuredOpen + 1, structuredClose));
+        structured.substring(structuredOpen + 1, structuredClose),
+        generatedTypeVariableErasures(structured.substring(0, structuredOpen)));
     final List<GeneratedMember> supplemental = generatedMembers(
-        fallback.substring(fallbackOpen + 1, fallbackClose));
+        fallback.substring(fallbackOpen + 1, fallbackClose),
+        generatedTypeVariableErasures(fallback.substring(0, fallbackOpen)));
     final Map<String, GeneratedMember> byKey = new LinkedHashMap<>();
     for (GeneratedMember member : primary) {
       byKey.putIfAbsent(member.key, member);
@@ -422,7 +424,8 @@ private static final Pattern PROPERTY_PATTERN =
     final int open = stub.indexOf('{');
     final int close = open < 0 ? -1 : matchingBrace(stub, open);
     if (close <= open) return stub;
-    final List<GeneratedMember> members = generatedMembers(stub.substring(open + 1, close));
+    final List<GeneratedMember> members = generatedMembers(
+        stub.substring(open + 1, close), generatedTypeVariableErasures(stub.substring(0, open)));
     final Map<String, Integer> counts = new LinkedHashMap<>();
     for (GeneratedMember member : members) {
       if (member.typeName == null) counts.merge(member.key, 1, Integer::sum);
@@ -447,7 +450,8 @@ private static final Pattern PROPERTY_PATTERN =
         : stub;
   }
 
-  private static List<GeneratedMember> generatedMembers(String body) {
+  private static List<GeneratedMember> generatedMembers(
+      String body, Map<String, String> typeVariableErasures) {
     final List<GeneratedMember> result = new ArrayList<>();
     int index = 0;
     while (index < body.length()) {
@@ -470,14 +474,34 @@ private static final Pattern PROPERTY_PATTERN =
         }
       }
       if (!line.isEmpty()) {
-        result.add(new GeneratedMember(generatedMemberKey(line), null, line + "\n"));
+        result.add(new GeneratedMember(
+            generatedMemberKey(line, typeVariableErasures), null, line + "\n"));
       }
       index = lineEndIndex < 0 ? body.length() : lineEndIndex + 1;
     }
     return result;
   }
 
-  private static String generatedMemberKey(String declaration) {
+  private static Map<String, String> generatedTypeVariableErasures(String header) {
+    final Map<String, String> result = new LinkedHashMap<>();
+    final int open = header.lastIndexOf('<');
+    final int close = open < 0 ? -1 : header.indexOf('>', open + 1);
+    if (open < 0 || close <= open) return result;
+    for (String parameter : splitParameters(header.substring(open + 1, close))) {
+      final String trimmed = parameter.trim();
+      if (trimmed.isEmpty()) continue;
+      final int extendsIndex = trimmed.indexOf(" extends ");
+      final String name = (extendsIndex < 0 ? trimmed : trimmed.substring(0, extendsIndex)).trim();
+      if (!JAVA_TYPE_NAME_PATTERN.matcher(name).matches()) continue;
+      final String bound = extendsIndex < 0 ? "Object"
+          : trimmed.substring(extendsIndex + " extends ".length()).split("\\s*&\\s*", 2)[0].trim();
+      result.put(name, erasedJvmParameterType(bound, result));
+    }
+    return result;
+  }
+
+  private static String generatedMemberKey(
+      String declaration, Map<String, String> typeVariableErasures) {
     final int open = declaration.indexOf('(');
     final int close = open < 0 ? -1 : declaration.lastIndexOf(')');
     if (open >= 0 && close > open) {
@@ -488,7 +512,7 @@ private static final Pattern PROPERTY_PATTERN =
         for (String parameter : splitParameters(declaration.substring(open + 1, close))) {
           final String normalized = parameter.trim().replaceAll(
               "\\s+[A-Za-z_$][\\w$]*$", "").replaceAll("\\s+", " ");
-          parameterTypes.add(normalized);
+          parameterTypes.add(erasedJvmParameterType(normalized, typeVariableErasures));
         }
         return "M:" + name.group(1) + "(" + String.join(",", parameterTypes) + ")";
       }
@@ -497,6 +521,17 @@ private static final Pattern PROPERTY_PATTERN =
         .replaceFirst(";\\s*$", "").trim();
     final Matcher name = Pattern.compile("([A-Za-z_$][\\w$]*)$").matcher(field);
     return name.find() ? "F:" + name.group(1) : "U:" + declaration;
+  }
+
+  private static String erasedJvmParameterType(
+      String javaType, Map<String, String> typeVariableErasures) {
+    if (javaType == null || javaType.trim().isEmpty()) return "Object";
+    final String type = javaType.trim();
+    final int genericStart = type.indexOf('<');
+    final String raw = genericStart < 0 ? type : type.substring(0, genericStart).trim();
+    final String arraySuffix = genericStart < 0 ? "" : type.substring(type.lastIndexOf('>') + 1).trim();
+    final String erased = typeVariableErasures.get(raw);
+    return (erased == null ? raw : erased) + arraySuffix;
   }
 
   private static final class GeneratedMember {
@@ -987,7 +1022,7 @@ private static final Pattern PROPERTY_PATTERN =
       KotlinJvmSyntaxParser.MemberSyntax property,
       boolean interfaceType,
       boolean topLevel) {
-    if (property.name == null || property.receiverType != null && !topLevel
+    if (property.name == null || property.receiverType != null && !topLevel && !interfaceType
         || !canProjectValueClassProperty(
             property.getterJvmName, property.setterJvmName, property.mutableProperty, property.declaredType)) {
       return;

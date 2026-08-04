@@ -34,6 +34,26 @@ class ResourceReferenceScannerTest : TestCase() {
     assertThat(occurrences[1].reference.text).isEqualTo("@id/content")
   }
 
+  fun testPreservesMultilineOccurrencePositions() {
+    val text =
+        """
+        <View
+            android:text="@string/title">
+          @color/primary
+        </View>
+        """
+            .trimIndent()
+    val occurrences = scan(text)
+
+    assertThat(occurrences.map { it.reference.type to it.reference.entry })
+        .containsExactly(STRING to "title", COLOR to "primary")
+        .inOrder()
+    assertThat(occurrences[0].range.start.line).isEqualTo(1)
+    assertThat(occurrences[0].range.start.column).isEqualTo(18)
+    assertThat(occurrences[1].range.start.line).isEqualTo(2)
+    assertThat(occurrences[1].range.start.column).isEqualTo(2)
+  }
+
   fun testSkipsToolsDataBindingSpecialAndPartialReferences() {
     val text =
         """

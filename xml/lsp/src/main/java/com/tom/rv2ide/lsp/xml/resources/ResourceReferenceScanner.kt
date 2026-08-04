@@ -26,8 +26,9 @@ internal object ResourceReferenceScanner {
             ?: return ScanResult.Unavailable
     if (hasSyntaxRecovery(document)) return ScanResult.Unavailable
 
+    val positions = PositionIndex(text)
     val occurrences = mutableListOf<ResourceReferenceOccurrence>()
-    collect(document, text, occurrences)
+    collect(document, text, positions, occurrences)
     return ScanResult.Available(occurrences.sortedBy { it.startOffset })
   }
 
@@ -40,32 +41,38 @@ internal object ResourceReferenceScanner {
   private fun collect(
       node: DOMNode,
       text: String,
+      positions: PositionIndex,
       occurrences: MutableList<ResourceReferenceOccurrence>,
   ) {
     if (node is org.eclipse.lemminx.dom.DOMElement) {
       node.attributeNodes.orEmpty().forEach { attribute ->
-        attributeOccurrence(attribute, text)?.let(occurrences::add)
+        attributeOccurrence(attribute, text, positions)?.let(occurrences::add)
       }
     }
     if (node is DOMText) {
-      textOccurrence(node, text)?.let(occurrences::add)
+      textOccurrence(node, text, positions)?.let(occurrences::add)
     }
-    node.children.forEach { child -> collect(child, text, occurrences) }
+    node.children.forEach { child -> collect(child, text, positions, occurrences) }
   }
 
   private fun attributeOccurrence(
       attribute: DOMAttr,
       text: String,
+      positions: PositionIndex,
   ): ResourceReferenceOccurrence? {
     if (attribute.namespaceURI == TOOLS_NAMESPACE_URI) return null
     val value = attribute.value ?: return null
     if (value.startsWith(DATA_BINDING_PREFIX) || value.startsWith(TWO_WAY_DATA_BINDING_PREFIX)) return null
     val reference = parseReference(value) ?: return null
     val range = attributeValueOffsets(attribute, text) ?: return null
-    return occurrence(reference, text, range.first, range.second)
+    return occurrence(reference, positions, range.first, range.second)
   }
 
-  private fun textOccurrence(textNode: DOMText, text: String): ResourceReferenceOccurrence? {
+  private fun textOccurrence(
+      textNode: DOMText,
+      text: String,
+      positions: PositionIndex,
+  ): ResourceReferenceOccurrence? {
     if (!textNode.isText) return null
     val raw = textNode.data
     val value = raw.trim()
@@ -75,7 +82,7 @@ internal object ResourceReferenceScanner {
     val reference = parseReference(value) ?: return null
     val leading = raw.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)
     val start = textNode.startContent + leading
-    return occurrence(reference, text, start, start + value.length)
+    return occurrence(reference, positions, start, start + value.length)
   }
 
   private fun parseReference(value: String): ParsedReference? {
@@ -93,14 +100,14 @@ internal object ResourceReferenceScanner {
 
   private fun occurrence(
       parsed: ParsedReference,
-      text: String,
+      positions: PositionIndex,
       start: Int,
       end: Int,
   ): ResourceReferenceOccurrence? {
-    if (start !in 0..text.length || end !in start..text.length) return null
+    if (!positions.contains(start) || !positions.contains(end) || end < start) return null
     return ResourceReferenceOccurrence(
         reference = parsed.reference,
-        range = Range(offsetToPosition(text, start), offsetToPosition(text, end)),
+        range = Range(positions.positionAt(start), positions.positionAt(end)),
         startOffset = start,
         endOffset = end,
         isCreatingId = parsed.isCreatingId,
@@ -127,16 +134,34 @@ internal object ResourceReferenceScanner {
     return node.children.any(::hasSyntaxRecovery)
   }
 
-  private fun offsetToPosition(text: String, offset: Int): Position {
-    var line = 0
-    var lineStart = 0
-    for (index in 0 until offset) {
-      if (text[index] == '\n') {
-        line++
-        lineStart = index + 1
+  private class PositionIndex(text: String) {
+    private val textLength = text.length
+    private val lineStarts = buildLineStarts(text)
+
+    fun contains(offset: Int): Boolean = offset in 0..textLength
+
+    fun positionAt(offset: Int): Position {
+      var low = 0
+      var high = lineStarts.lastIndex
+      while (low <= high) {
+        val middle = (low + high) ushr 1
+        if (lineStarts[middle] <= offset) {
+          low = middle + 1
+        } else {
+          high = middle - 1
+        }
       }
+      return Position(high, offset - lineStarts[high])
     }
-    return Position(line, offset - lineStart)
+
+    private fun buildLineStarts(text: String): IntArray {
+      val starts = ArrayList<Int>()
+      starts += 0
+      text.forEachIndexed { index, character ->
+        if (character == '\n') starts += index + 1
+      }
+      return starts.toIntArray()
+    }
   }
 
   internal sealed interface ScanResult {
