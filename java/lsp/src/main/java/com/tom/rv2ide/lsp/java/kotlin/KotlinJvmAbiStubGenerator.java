@@ -1426,9 +1426,10 @@ private static final Pattern PROPERTY_PATTERN =
     }
     for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : secondaryConstructors) {
       final String parameters = javaSyntaxParameterList(constructor.parameters, true);
-      if (!emittedParameters.add(secondaryConstructorSignature(constructor.parameters))) {
-        continue;
-      }
+      // Keep every real Kotlin constructor declaration. If it shares a JVM parameter vector
+      // with the primary constructor (or another secondary constructor), the final owner-level
+      // conflict registry must see both and reject the entire ambiguous surface.
+      emittedParameters.add(secondaryConstructorSignature(constructor.parameters));
       out.append("  ").append(javaConstructorVisibility(constructor.visibility)).append(' ')
           .append(simpleName).append(parameters).append(" {}\n");
       if (constructor.jvmOverloads) {
@@ -1473,11 +1474,12 @@ private static final Pattern PROPERTY_PATTERN =
     }
     for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
       final List<KotlinJvmSyntaxParser.ParameterSyntax> overload = parameters.subList(0, count);
-      if (!emittedParameters.add(secondaryConstructorSignature(overload))) {
-        continue;
-      }
+      // Derived @JvmOverloads constructors also claim a real JVM surface. Do not hide a
+      // collision with an earlier primary/secondary constructor; the final registry must reject
+      // every declaration that shares that owner/name/parameter vector.
+      emittedParameters.add(secondaryConstructorSignature(overload));
       out.append("  ").append(javaConstructorVisibility(constructor.visibility)).append(' ')
-          .append(simpleName).append(javaSyntaxParameterList(overload, false)).append(" {}\n");
+          .append(simpleName).append(javaSyntaxParameterList(overload, true)).append(" {}\n");
     }
   }
 
@@ -1494,8 +1496,10 @@ private static final Pattern PROPERTY_PATTERN =
   private static String primaryConstructorSignature(
       List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> parameters) {
     final List<String> types = new ArrayList<>();
-    for (KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter : parameters) {
-      types.add(javaType(parameter.type));
+    for (int index = 0; index < parameters.size(); index++) {
+      final KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter = parameters.get(index);
+      final String type = javaType(parameter.type);
+      types.add(parameter.vararg ? type + "[]" : type);
     }
     return "(" + String.join(",", types) + ")";
   }
@@ -1506,7 +1510,7 @@ private static final Pattern PROPERTY_PATTERN =
     for (int index = 0; index < parameters.size(); index++) {
       final KotlinJvmSyntaxParser.ParameterSyntax parameter = parameters.get(index);
       final String type = javaType(parameter.type);
-      types.add(parameter.vararg && index == parameters.size() - 1 ? type + "[]" : type);
+      types.add(parameter.vararg ? type + "[]" : type);
     }
     return "(" + String.join(",", types) + ")";
   }
@@ -1620,10 +1624,11 @@ private static final Pattern PROPERTY_PATTERN =
         if (constructor.matches()) {
           final List<String> kotlinParameters = splitParameters(constructor.group(2));
           final String parameters = javaParameterList(kotlinParameters);
-          if (emittedParameters.add(parameters)) {
-            out.append("  ").append(javaConstructorVisibility(constructor.group(1).trim()))
-                .append(' ').append(simpleName).append(parameters).append(" {}\n");
-          }
+          // Preserve every source-declared secondary constructor. A duplicate JVM signature must
+          // remain visible to the final owner-level registry so it can reject all claimants.
+          emittedParameters.add(parameters);
+          out.append("  ").append(javaConstructorVisibility(constructor.group(1).trim()))
+              .append(' ').append(simpleName).append(parameters).append(" {}\n");
           if (jvmOverloads) {
             appendConstructorOverloadsFallback(
                 out,
@@ -1653,10 +1658,13 @@ private static final Pattern PROPERTY_PATTERN =
       firstOmittable = index;
     }
     for (int count = parameters.size() - 1; count >= firstOmittable; count--) {
-      final String overload = javaParameterList(parameters.subList(0, count), false);
-      if (!emittedParameters.add(overload)) {
-        continue;
-      }
+      // The sub-list is the actual generated @JvmOverloads constructor signature. A Kotlin
+      // vararg that becomes its final parameter may use Java `...`; only non-final parameters
+      // in that generated signature must remain `[]`.
+      final String overload = javaParameterList(parameters.subList(0, count));
+      // A generated @JvmOverloads variant is also a JVM surface claimant. Preserve collisions
+      // for final owner-level conflict rejection instead of retaining whichever was emitted first.
+      emittedParameters.add(overload);
       out.append("  ").append(javaConstructorVisibility(visibility)).append(' ')
           .append(simpleName).append(overload).append(" {}\n");
     }
@@ -1697,7 +1705,10 @@ private static final Pattern PROPERTY_PATTERN =
     final List<String> parameters = new ArrayList<>();
     for (int index = 0; index < kotlinParameters.size(); index++) {
       final KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter = kotlinParameters.get(index);
-      parameters.add(javaType(parameter.type) + " " + safeName(parameter.name, index));
+      final String type = javaType(parameter.type);
+      parameters.add((parameter.vararg
+          ? varargJavaType(type, index == kotlinParameters.size() - 1)
+          : type) + " " + safeName(parameter.name, index));
     }
     return "(" + String.join(", ", parameters) + ")";
   }

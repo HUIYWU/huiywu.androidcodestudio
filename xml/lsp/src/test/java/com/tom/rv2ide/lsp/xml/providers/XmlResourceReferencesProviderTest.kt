@@ -80,6 +80,25 @@ class XmlResourceReferencesProviderTest : TestCase() {
     assertThat(idTarget?.reference?.text).isEqualTo("@id/probe_id")
   }
 
+  fun testFindsThemeAndResourceAttrUsagesFromAttrDefinition() {
+    val attributes = Paths.get("project/app/src/main/res/values/attrs.xml")
+    val layout = Paths.get("project/app/src/main/res/layout/screen.xml")
+    val attributesText = "<resources><attr name=\"brand_color\" format=\"color\" /></resources>"
+    val layoutText =
+        "<View android:background=\"?attr/brand_color\" android:foreground=\"@attr/brand_color\" />"
+    val snapshot = snapshot(linkedMapOf(attributes to attributesText, layout to layoutText))
+    val provider = XmlResourceReferencesProvider()
+    val target = provider.targetFor(attributes, attributesText, attributesText.indexOf("brand_color") + 2, snapshot)
+
+    val resolvedTarget = checkNotNull(target)
+    assertThat(resolvedTarget.reference.text).isEqualTo("@attr/brand_color")
+    val locations = provider.findInSnapshot(resolvedTarget, snapshot, includeDeclaration = true)
+    assertThat(locations.map { it.file }).containsExactly(attributes, layout, layout).inOrder()
+    assertThat(provider.rolesFor(resolvedTarget, snapshot, locations))
+        .containsExactly(ReferenceRole.DEFINITION, ReferenceRole.USAGE, ReferenceRole.USAGE)
+        .inOrder()
+  }
+
   fun testResolvesFileDefinitionOnlyWhenCursorIsNotOnInnerReference() {
     val drawable = Paths.get("project/app/src/main/res/drawable/probe_background.xml")
     val values = Paths.get("project/app/src/main/res/values/colors.xml")

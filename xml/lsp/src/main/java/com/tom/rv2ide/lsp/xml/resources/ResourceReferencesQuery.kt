@@ -22,7 +22,10 @@ internal object ResourceReferencesQuery {
       occurrencesByFile: Map<Path, List<ResourceReferenceOccurrence>>,
       includeDeclaration: Boolean,
   ): List<Location> {
-    if (target.reference.packageName != null || target.reference.isThemeAttribute) return emptyList()
+    // Local theme references (`?attr/name`) identify the same workspace ATTR resource as
+    // `@attr/name`. Package-qualified references remain outside the workspace-only index.
+    if (target.reference.packageName != null) return emptyList()
+
     val targetType = target.reference.type
     val targetName = target.reference.entry
     val matchingDefinitions = definitions.filter { definition ->
@@ -39,7 +42,6 @@ internal object ResourceReferencesQuery {
           .asSequence()
           .filter { occurrence ->
             occurrence.reference.packageName == null &&
-                !occurrence.reference.isThemeAttribute &&
                 occurrence.reference.type == targetType &&
                 occurrence.reference.entry == targetName
           }

@@ -554,7 +554,8 @@ final class KotlinJvmSyntaxParser {
           propertyKind != null
               ? containsToken(propertyKind, "var")
               : hasBindingPattern(parameter, "var"),
-          defaultValue != null || hasDefaultValue(source, parameter)));
+          defaultValue != null || hasDefaultValue(source, parameter),
+           containsToken(parameter, "vararg")));
     }
     return Collections.unmodifiableList(result);
   }
@@ -744,7 +745,8 @@ final class KotlinJvmSyntaxParser {
         type = type.substring(0, equals).trim();
       }
       result.add(new ConstructorParameterSyntax(
-          name, type, -1, 0, property, mutable, equals >= 0));
+          name, type, -1, 0, property, mutable, equals >= 0,
+          declaration.matches("(?s)(?:^|.*\\s)vararg\\s+[A-Za-z_$][\\w$]*$")));
     }
     return Collections.unmodifiableList(result);
   }
@@ -1168,6 +1170,7 @@ final class KotlinJvmSyntaxParser {
     final boolean property;
     final boolean mutableProperty;
     final boolean defaultValue;
+    final boolean vararg;
 
     ConstructorParameterSyntax(
         String name,
@@ -1176,7 +1179,8 @@ final class KotlinJvmSyntaxParser {
         int nameLength,
         boolean readOnlyProperty,
         boolean mutableProperty,
-        boolean defaultValue) {
+        boolean defaultValue,
+        boolean vararg) {
       this.name = name;
       this.type = type;
       this.nameOffset = nameOffset;
@@ -1184,6 +1188,7 @@ final class KotlinJvmSyntaxParser {
       this.property = readOnlyProperty || mutableProperty;
       this.mutableProperty = mutableProperty;
       this.defaultValue = defaultValue;
+      this.vararg = vararg;
     }
   }
 

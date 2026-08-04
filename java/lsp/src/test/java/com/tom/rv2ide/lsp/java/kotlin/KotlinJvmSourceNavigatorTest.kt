@@ -494,6 +494,99 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesPrimaryConstructorVarargByJvmArraySurface() {
+    val kotlinSource =
+        """
+        package navigation
+
+        class PrimaryVarargNavigation(vararg values: String)
+        """.trimIndent()
+    val javaSource =
+        """
+        package navigation;
+        class PrimaryVarargNavigation {
+          PrimaryVarargNavigation(String... values) {}
+        }
+        """.trimIndent()
+    val constructor = compileConstructor(
+        javaSource, "navigation.PrimaryVarargNavigation", "java.lang.String[]")
+    val file = Paths.get("/navigation/PrimaryVarargNavigation.kt")
+
+    assertEquals("PrimaryVarargNavigation", sourceTextAt(
+        kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, constructor)))
+  }
+
+  @Test
+  fun typeNavigation_resolvesNestedArrayPrimaryVarargByTwoDimensionalJvmSurface() {
+    val kotlinSource =
+        """
+        package navigation
+
+        class NestedPrimaryVarargNavigation(vararg values: Array<Int?>)
+        """.trimIndent()
+    val constructor = compileConstructor(
+        """
+        package navigation;
+        class NestedPrimaryVarargNavigation {
+          NestedPrimaryVarargNavigation(Integer[]... values) {}
+        }
+        """.trimIndent(),
+        "navigation.NestedPrimaryVarargNavigation", "java.lang.Integer[][]")
+    val file = Paths.get("/navigation/NestedPrimaryVarargNavigation.kt")
+
+    assertEquals("NestedPrimaryVarargNavigation", sourceTextAt(
+        kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, constructor)))
+  }
+
+  @Test
+  fun typeNavigation_resolvesNullablePrimaryConstructorVarargByBoxedArraySurface() {
+    val kotlinSource =
+        """
+        package navigation
+
+        class NullablePrimaryVarargNavigation(vararg values: Int?)
+        """.trimIndent()
+    val constructor = compileConstructor(
+        """
+        package navigation;
+        class NullablePrimaryVarargNavigation {
+          NullablePrimaryVarargNavigation(Integer... values) {}
+        }
+        """.trimIndent(),
+        "navigation.NullablePrimaryVarargNavigation", "java.lang.Integer[]")
+    val file = Paths.get("/navigation/NullablePrimaryVarargNavigation.kt")
+
+    assertEquals("NullablePrimaryVarargNavigation", sourceTextAt(
+        kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, constructor)))
+  }
+
+  @Test
+  fun typeNavigation_resolvesGenericPrimaryConstructorVarargByTypeVariableArraySurface() {
+    val kotlinSource =
+        """
+        package navigation
+
+        class GenericPrimaryVarargNavigation<T>(vararg values: T)
+        """.trimIndent()
+    val genericConstructor = compileConstructor(
+        """
+        package navigation;
+        class GenericPrimaryVarargNavigation<T> {
+          GenericPrimaryVarargNavigation(T... values) {}
+        }
+        """.trimIndent(),
+        "navigation.GenericPrimaryVarargNavigation", "T[]")
+    val file = Paths.get("/navigation/GenericPrimaryVarargNavigation.kt")
+
+    assertEquals("GenericPrimaryVarargNavigation", sourceTextAt(
+        kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, genericConstructor)))
+  }
+
+  @Test
   fun typeNavigation_distinguishesPrimaryAndSecondaryConstructors() {
     val kotlinSource =
       """
@@ -761,6 +854,113 @@ class KotlinJvmSourceNavigatorTest {
       val constructor = compileConstructor(javaSource, "navigation.OverloadedNavigation", parameters)
       assertNotNull(KotlinJvmSourceNavigator.findTypeMemberLocation(
         Paths.get("/navigation/OverloadedNavigation.kt"), kotlinSource, constructor))
+    }
+  }
+
+  @Test
+  fun typeNavigation_resolvesNullableJvmOverloadsPrimaryConstructorWithNonTrailingVararg() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class NullablePrimaryVarargOverloads @JvmOverloads constructor(
+        vararg values: Int?,
+        suffix: String = ""
+      )
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class NullablePrimaryVarargOverloads {
+        NullablePrimaryVarargOverloads(java.lang.Integer[] values, java.lang.String suffix) {}
+        NullablePrimaryVarargOverloads(java.lang.Integer... values) {}
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/NullablePrimaryVarargOverloads.kt")
+
+    for (parameters in listOf("java.lang.Integer[],java.lang.String", "java.lang.Integer[]")) {
+      val constructor = compileConstructor(
+          javaSource, "navigation.NullablePrimaryVarargOverloads", parameters)
+      assertEquals("NullablePrimaryVarargOverloads", sourceTextAt(kotlinSource,
+          KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, constructor)))
+    }
+  }
+
+  @Test
+  fun typeNavigation_resolvesGenericJvmOverloadsPrimaryConstructorWithNonTrailingVararg() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class GenericPrimaryVarargOverloads<T> @JvmOverloads constructor(
+        vararg values: T,
+        suffix: String = ""
+      )
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class GenericPrimaryVarargOverloads<T> {
+        GenericPrimaryVarargOverloads(T[] values, java.lang.String suffix) {}
+        GenericPrimaryVarargOverloads(T... values) {}
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/GenericPrimaryVarargOverloads.kt")
+
+    for (parameters in listOf("T[],java.lang.String", "T[]")) {
+      val constructor = compileConstructor(
+          javaSource, "navigation.GenericPrimaryVarargOverloads", parameters)
+      assertEquals("GenericPrimaryVarargOverloads", sourceTextAt(kotlinSource,
+          KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, constructor)))
+    }
+  }
+
+  @Test
+  fun typeNavigation_resolvesJvmOverloadsConstructorsWithNonTrailingVararg() {
+    val primarySource =
+      """
+      package navigation
+
+      class PrimaryVarargOverloads @JvmOverloads constructor(
+        vararg values: String,
+        suffix: String = ""
+      )
+      """.trimIndent()
+    val primaryJava =
+      """
+      package navigation;
+      class PrimaryVarargOverloads {
+        PrimaryVarargOverloads(java.lang.String[] values, java.lang.String suffix) {}
+        PrimaryVarargOverloads(java.lang.String... values) {}
+      }
+      """.trimIndent()
+    val secondarySource =
+      """
+      package navigation
+
+      class SecondaryVarargOverloads private constructor() {
+        @JvmOverloads
+        constructor(vararg values: String, suffix: String = "") : this()
+      }
+      """.trimIndent()
+    val secondaryJava =
+      """
+      package navigation;
+      class SecondaryVarargOverloads {
+        SecondaryVarargOverloads(java.lang.String[] values, java.lang.String suffix) {}
+        SecondaryVarargOverloads(java.lang.String... values) {}
+      }
+      """.trimIndent()
+
+    for (parameters in listOf("java.lang.String[],java.lang.String", "java.lang.String[]")) {
+      val primary = compileConstructor(primaryJava, "navigation.PrimaryVarargOverloads", parameters)
+      assertEquals("PrimaryVarargOverloads", sourceTextAt(primarySource,
+          KotlinJvmSourceNavigator.findTypeMemberLocation(
+              Paths.get("/navigation/PrimaryVarargOverloads.kt"), primarySource, primary)))
+      val secondary = compileConstructor(secondaryJava, "navigation.SecondaryVarargOverloads", parameters)
+      assertEquals("constructor", sourceTextAt(secondarySource,
+          KotlinJvmSourceNavigator.findTypeMemberLocation(
+              Paths.get("/navigation/SecondaryVarargOverloads.kt"), secondarySource, secondary)))
     }
   }
 

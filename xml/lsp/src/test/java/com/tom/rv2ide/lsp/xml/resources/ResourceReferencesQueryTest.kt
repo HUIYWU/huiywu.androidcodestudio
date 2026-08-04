@@ -51,8 +51,26 @@ class ResourceReferencesQueryTest : TestCase() {
         )
         .inOrder()
   }
+  fun testFindsLocalAttrAndThemeAttrReferences() {
+    val attributes = Paths.get("project/app/src/main/res/values/attrs.xml")
+    val layout = Paths.get("project/app/src/main/res/layout/screen.xml")
+    val attributesText = "<resources><attr name=\"brand_color\" format=\"color\" /></resources>"
+    val layoutText =
+        "<View android:background=\"?attr/brand_color\" android:foreground=\"@attr/brand_color\" />"
+    val definitions = definitions(attributes.toString() to attributesText)
+    val occurrences = mapOf(layout to scan(layoutText))
+    val themeTarget = occurrences.getValue(layout).first { it.reference.isThemeAttribute }
+    val resourceTarget = occurrences.getValue(layout).first { !it.reference.isThemeAttribute }
+
+    val themeLocations = ResourceReferencesQuery.find(themeTarget, definitions, occurrences, true)
+    val resourceLocations = ResourceReferencesQuery.find(resourceTarget, definitions, occurrences, true)
+
+    assertThat(themeLocations).isEqualTo(resourceLocations)
+    assertThat(themeLocations.map { it.file }).containsExactly(attributes, layout, layout).inOrder()
+  }
 
   fun testCreatingIdIsReturnedOnlyAsExactDeclarationWhenRequested() {
+
     val layout = Paths.get("project/app/src/main/res/layout/screen.xml")
     val other = Paths.get("project/app/src/main/res/layout/other.xml")
     val layoutText = "<View android:id=\"@+id/content\" />"

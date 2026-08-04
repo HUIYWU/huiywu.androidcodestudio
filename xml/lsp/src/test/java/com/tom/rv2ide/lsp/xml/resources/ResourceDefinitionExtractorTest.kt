@@ -2,8 +2,9 @@
  *  This file is part of AndroidCodeStudio.
  */
 package com.tom.rv2ide.lsp.xml.resources
-
+import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.COLOR
+
 import com.android.aaptcompiler.AaptResourceType.DRAWABLE
 import com.android.aaptcompiler.AaptResourceType.ID
 import com.android.aaptcompiler.AaptResourceType.LAYOUT
@@ -40,6 +41,16 @@ class ResourceDefinitionExtractorTest : TestCase() {
     assertNameRange(text, definitions[0], "title")
     assertNameRange(text, definitions[1], "primary")
     assertNameRange(text, definitions[2], "content")
+  }
+
+  fun testExtractsAttrDefinitionsButNotDeclareStyleableNames() {
+    val text =
+        "<resources><attr name=\"brand_color\" format=\"color\" /><declare-styleable name=\"Widget\" /></resources>"
+
+    val definitions = extract("project/app/src/main/res/values/attrs.xml", text)
+
+    assertThat(definitions.map { it.type to it.name }).containsExactly(ATTR to "brand_color")
+    assertNameRange(text, definitions.single(), "brand_color")
   }
 
   fun testExtractsFileResourcesFromQualifiedDirectoriesWithoutTextRange() {

@@ -48,6 +48,172 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_projectsPrimaryConstructorVarargsAsJvmArrays() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class Labels(vararg values: String)
+        class Numbers(vararg values: Int)
+        class NullableNumbers(vararg values: Int?)
+        class NestedNullableNumbers(vararg values: Array<Int?>)
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val labels = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.Labels", "PrimaryVarargs.kt", source, emptySet(), mode)
+      val numbers = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.Numbers", "PrimaryVarargs.kt", source, emptySet(), mode)
+      val nullableNumbers = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.NullableNumbers", "PrimaryVarargs.kt", source, emptySet(), mode)
+      val nestedNullableNumbers = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.NestedNullableNumbers", "PrimaryVarargs.kt", source, emptySet(), mode)
+      assertNotNull("Primary reference vararg generation failed in $mode", labels)
+      assertNotNull("Primary primitive vararg generation failed in $mode", numbers)
+      assertNotNull("Primary nullable vararg generation failed in $mode", nullableNumbers)
+      assertNotNull("Primary nested nullable vararg generation failed in $mode", nestedNullableNumbers)
+      assertContains(labels!!, "public Labels(String... values)")
+      assertContains(numbers!!, "public Numbers(int... values)")
+      assertContains(nullableNumbers!!, "public NullableNumbers(Integer... values)")
+      assertContains(nestedNullableNumbers!!, "public NestedNullableNumbers(Integer[]... values)")
+      assertFalse(labels.contains("public Labels(String values)"))
+      assertFalse(numbers.contains("public Numbers(int values)"))
+      assertFalse(nullableNumbers.contains("public NullableNumbers(int... values)"))
+    }
+  }
+
+  @Test
+  fun generate_projectsJvmOverloadsPrimaryConstructorWithNonTrailingVararg() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class PrimaryVarargOverloads @JvmOverloads constructor(
+          vararg values: String,
+          suffix: String = ""
+        )
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.PrimaryVarargOverloads", "PrimaryVarargOverloads.kt", source, emptySet(), mode)
+      assertNotNull("Primary non-trailing vararg overload generation failed in $mode", stub)
+      assertContains(stub!!,
+          "public PrimaryVarargOverloads(String[] values, String suffix)")
+      assertContains(stub, "public PrimaryVarargOverloads(String... values)")
+      assertFalse("Non-trailing vararg was rendered as Java varargs in $mode:\n$stub",
+          stub.contains("PrimaryVarargOverloads(String... values, String suffix)"))
+    }
+  }
+
+  @Test
+  fun generate_projectsGenericJvmOverloadsPrimaryConstructorWithNonTrailingVararg() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class GenericPrimaryVarargOverloads<T> @JvmOverloads constructor(
+          vararg values: T,
+          suffix: String = ""
+        )
+        class BoundedPrimaryVarargOverloads<T : CharSequence> @JvmOverloads constructor(
+          vararg values: T,
+          suffix: String = ""
+        )
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val generic = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.GenericPrimaryVarargOverloads", "GenericPrimaryVarargOverloads.kt", source,
+          emptySet(), mode)
+      val bounded = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.BoundedPrimaryVarargOverloads", "GenericPrimaryVarargOverloads.kt", source,
+          emptySet(), mode)
+      assertNotNull("Generic non-trailing primary vararg generation failed in $mode", generic)
+      assertNotNull("Bounded non-trailing primary vararg generation failed in $mode", bounded)
+      assertContains(generic!!,
+          "public GenericPrimaryVarargOverloads(T[] values, String suffix)")
+      assertContains(generic, "public GenericPrimaryVarargOverloads(T... values)")
+      assertContains(bounded!!,
+          "public BoundedPrimaryVarargOverloads(T[] values, String suffix)")
+      assertContains(bounded, "public BoundedPrimaryVarargOverloads(T... values)")
+      assertFalse(generic.contains("GenericPrimaryVarargOverloads(Object... values)"))
+      assertFalse(bounded.contains("BoundedPrimaryVarargOverloads(CharSequence... values)"))
+    }
+  }
+
+  @Test
+  fun generate_projectsNullableJvmOverloadsPrimaryConstructorWithNonTrailingVararg() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class NullablePrimaryVarargOverloads @JvmOverloads constructor(
+          vararg values: Int?,
+          suffix: String = ""
+        )
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.NullablePrimaryVarargOverloads", "NullablePrimaryVarargOverloads.kt", source,
+          emptySet(), mode)
+      assertNotNull("Nullable non-trailing primary vararg generation failed in $mode", stub)
+      assertContains(stub!!,
+          "public NullablePrimaryVarargOverloads(Integer[] values, String suffix)")
+      assertContains(stub, "public NullablePrimaryVarargOverloads(Integer... values)")
+      assertFalse(stub.contains("NullablePrimaryVarargOverloads(int[] values, String suffix)"))
+      assertFalse(stub.contains("NullablePrimaryVarargOverloads(int... values)"))
+    }
+  }
+
+  @Test
+  fun generate_projectsGenericPrimaryConstructorVarargsWithoutErasingComponents() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class GenericLabels<T>(vararg values: T)
+        class BoundedLabels<T : CharSequence>(vararg values: T)
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val generic = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.GenericLabels", "GenericPrimaryVarargs.kt", source, emptySet(), mode)
+      val bounded = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.BoundedLabels", "GenericPrimaryVarargs.kt", source, emptySet(), mode)
+      assertNotNull("Generic primary vararg generation failed in $mode", generic)
+      assertNotNull("Bounded primary vararg generation failed in $mode", bounded)
+      assertContains(generic!!, "public class GenericLabels<T>")
+      assertContains(generic, "public GenericLabels(T... values)")
+      assertContains(bounded!!, "public class BoundedLabels<T extends CharSequence>")
+      assertContains(bounded, "public BoundedLabels(T... values)")
+      assertFalse(generic.contains("public GenericLabels(Object... values)"))
+      assertFalse(bounded.contains("public BoundedLabels(CharSequence... values)"))
+    }
+  }
+
+  @Test
   fun generate_projectsValueClassesAsOpaqueNonConstructibleBoxedTypes() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
@@ -406,6 +572,78 @@ class KotlinJvmAbiStubGeneratorTest {
       assertContains(stub!!, "String store(T[] values);")
       assertContains(stub, "String store(Object[][] values);")
     }
+  }
+
+  @Test
+  fun generate_rejectsPrimaryAndSecondaryConstructorArrayVarargJvmSurfaceConflict() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class ConstructorArrayConflict(vararg values: String) {
+          constructor(values: Array<String>) : this(*values)
+          constructor(values: IntArray) : this()
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ConstructorArrayConflict", "ConstructorArrayConflict.kt", source, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull("Constructor array/vararg conflict generation failed", stub)
+    assertFalse("Conflicting String[] constructors leaked:\n$stub",
+        stub!!.contains("ConstructorArrayConflict(String... values)")
+            || stub.contains("ConstructorArrayConflict(String[] values)"))
+    assertContains(stub, "public ConstructorArrayConflict(int[] values)")
+  }
+
+  @Test
+  fun generate_rejectsNonTrailingVarargConstructorArrayJvmSurfaceConflict() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class NonTrailingVarargConstructorConflict(vararg values: String, suffix: String) {
+          constructor(values: Array<String>, suffix: String) : this(*values, suffix)
+          constructor(values: Array<String>, count: Int) : this(*values, count.toString())
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.NonTrailingVarargConstructorConflict", "NonTrailingVarargConstructorConflict.kt",
+        source, emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull("Non-trailing vararg constructor conflict generation failed", stub)
+    assertFalse("Conflicting (String[], String) constructors leaked:\n$stub",
+        stub!!.contains("NonTrailingVarargConstructorConflict(String[] values, String suffix)"))
+    assertContains(stub, "public NonTrailingVarargConstructorConflict(String[] values, int count)")
+  }
+
+  @Test
+  fun generate_fallbackRejectsPrimaryJvmOverloadsVariantConflictingWithSecondaryConstructor() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class FallbackOverloadConstructorConflict @JvmOverloads constructor(
+          val value: String,
+          retries: Int = 0
+        ) {
+          constructor(value: String) : this(value, 0)
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.FallbackOverloadConstructorConflict", "FallbackOverloadConstructorConflict.kt", source,
+        emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)
+    assertNotNull("Fallback constructor conflict generation failed", stub)
+    assertFalse("Conflicting String constructor surface leaked:\n$stub",
+        stub!!.contains("FallbackOverloadConstructorConflict(String value)"))
+    assertContains(stub, "public FallbackOverloadConstructorConflict(String value, int retries)")
   }
 
   @Test
@@ -1549,6 +1787,57 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
     assertContains(legacyStub!!, "protected Legacy()")
     assertContains(legacyStub, "public Legacy(String value)")
     assertFalse(legacyStub.contains("public Legacy()"))
+  }
+
+  @Test
+  fun generate_rejectsSecondaryJvmOverloadsConstructorSurfaceConflictingWithPrimary() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class OverloadConstructorConflict(val value: String) {
+          @JvmOverloads
+          constructor(value: String, retries: Int = 0) : this(value)
+        }
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.OverloadConstructorConflict", "OverloadConstructorConflict.kt", source, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull("Secondary @JvmOverloads conflict generation failed", stub)
+    assertFalse("Conflicting String constructor surface leaked:\n$stub",
+        stub!!.contains("OverloadConstructorConflict(String value)"))
+    assertContains(stub, "public OverloadConstructorConflict(String value, int retries)")
+  }
+
+  @Test
+  fun generate_projectsSecondaryJvmOverloadsWithNonTrailingVararg() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class SecondaryVarargOverloads private constructor() {
+          @JvmOverloads
+          constructor(vararg values: String, suffix: String = "") : this()
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.SecondaryVarargOverloads", "SecondaryVarargOverloads.kt", source, emptySet(), mode)
+      assertNotNull("Secondary non-trailing vararg overload generation failed in $mode", stub)
+      assertContains(stub!!,
+          "public SecondaryVarargOverloads(String[] values, String suffix)")
+      assertContains(stub, "public SecondaryVarargOverloads(String... values)")
+      assertFalse("Non-trailing secondary vararg was rendered as Java varargs in $mode:\n$stub",
+          stub.contains("SecondaryVarargOverloads(String... values, String suffix)"))
+    }
   }
 
   @Test

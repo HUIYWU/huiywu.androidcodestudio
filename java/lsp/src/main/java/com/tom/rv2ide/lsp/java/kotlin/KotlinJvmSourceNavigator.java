@@ -463,7 +463,7 @@ public final class KotlinJvmSourceNavigator {
     for (int index = 0; index < parameterCount; index++) {
       if (!parameterTypeMatches(
           type.constructorParameters.get(index).type,
-          false,
+          type.constructorParameters.get(index).vararg,
           executable.getParameters().get(index).asType().toString())) {
         return false;
       }
@@ -485,7 +485,7 @@ public final class KotlinJvmSourceNavigator {
     for (int index = 0; index < parameterCount; index++) {
       if (!parameterTypeMatches(
           parameters.get(index).type,
-          parameters.get(index).vararg && index == parameters.size() - 1,
+          parameters.get(index).vararg,
           executable.getParameters().get(index).asType().toString())) {
         return false;
       }
