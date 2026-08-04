@@ -1400,9 +1400,15 @@ private static final Pattern PROPERTY_PATTERN =
       List<KotlinJvmSyntaxParser.ConstructorSyntax> secondaryConstructors,
       boolean allowSyntheticBridge) {
     final Set<String> emittedParameters = new LinkedHashSet<>();
-    boolean hasRealNoArgConstructor = primaryConstructorPresent && kotlinParameters.isEmpty();
-    hasRealNoArgConstructor |= primaryJvmOverloads && allConstructorParametersDefault(kotlinParameters);
+    final boolean primaryProjectable = canProjectValueClassConstructorParameters(kotlinParameters);
+    boolean hasRealNoArgConstructor =
+        primaryProjectable && primaryConstructorPresent && kotlinParameters.isEmpty();
+    hasRealNoArgConstructor |= primaryProjectable
+        && primaryJvmOverloads && allConstructorParametersDefault(kotlinParameters);
     for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : secondaryConstructors) {
+      if (!canProjectValueClassSyntaxParameters(constructor.parameters)) {
+        continue;
+      }
       hasRealNoArgConstructor |= constructor.parameters.isEmpty();
       hasRealNoArgConstructor |=
           constructor.jvmOverloads && allParametersDefault(constructor.parameters);
@@ -1414,7 +1420,7 @@ private static final Pattern PROPERTY_PATTERN =
       appendSyntheticNoArgConstructor(out, simpleName);
       emittedParameters.add("()");
     }
-    if (primaryConstructorPresent || secondaryConstructors.isEmpty()) {
+    if (primaryProjectable && (primaryConstructorPresent || secondaryConstructors.isEmpty())) {
       final String primaryParameters = javaConstructorParameterList(kotlinParameters);
       out.append("  ").append(javaConstructorVisibility(primaryVisibility)).append(' ')
           .append(simpleName).append(primaryParameters).append(" {}\n");
@@ -1425,6 +1431,9 @@ private static final Pattern PROPERTY_PATTERN =
       }
     }
     for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : secondaryConstructors) {
+      if (!canProjectValueClassSyntaxParameters(constructor.parameters)) {
+        continue;
+      }
       final String parameters = javaSyntaxParameterList(constructor.parameters, true);
       // Keep every real Kotlin constructor declaration. If it shares a JVM parameter vector
       // with the primary constructor (or another secondary constructor), the final owner-level
@@ -1550,24 +1559,29 @@ private static final Pattern PROPERTY_PATTERN =
       boolean hasNoArgSecondaryConstructor,
       boolean allowSyntheticBridge) {
     final String parameters = parameterList(kotlinParameters);
-    final boolean overloadCreatesNoArg = primaryJvmOverloads
+    final List<String> primaryKotlinParameters = kotlinParameters == null
+        ? Collections.emptyList()
+        : splitParameters(kotlinParameters.substring(1, kotlinParameters.length() - 1));
+    final boolean primaryProjectable =
+        canProjectFallbackValueClassConstructorParameters(primaryKotlinParameters);
+    final boolean overloadCreatesNoArg = primaryProjectable
+        && primaryJvmOverloads
         && kotlinParameters != null
-        && allParametersDefaultFallback(
-            splitParameters(kotlinParameters.substring(1, kotlinParameters.length() - 1)));
+        && allParametersDefaultFallback(primaryKotlinParameters);
     if (allowSyntheticBridge
         && !hasNoArgSecondaryConstructor
         && !overloadCreatesNoArg
         && (!"()".equals(parameters) || (kotlinParameters == null && hasSecondaryConstructors))) {
       appendSyntheticNoArgConstructor(out, simpleName);
     }
-    if (kotlinParameters != null || !hasSecondaryConstructors) {
+    if (primaryProjectable && (kotlinParameters != null || !hasSecondaryConstructors)) {
       out.append("  ").append(javaConstructorVisibility(primaryVisibility)).append(' ')
           .append(simpleName).append(parameters).append(" {}\n");
       if (primaryJvmOverloads && kotlinParameters != null) {
         appendConstructorOverloadsFallback(
             out,
             simpleName,
-            splitParameters(kotlinParameters.substring(1, kotlinParameters.length() - 1)),
+            primaryKotlinParameters,
             primaryVisibility,
             new LinkedHashSet<>(java.util.Collections.singleton(parameters)));
       }
@@ -1594,11 +1608,13 @@ private static final Pattern PROPERTY_PATTERN =
         final boolean jvmOverloads = line.contains("@JvmOverloads");
         final Matcher constructor = SECONDARY_CONSTRUCTOR_PATTERN.matcher(
             line.replace("@JvmOverloads", "").trim());
-        if (constructor.matches()
-            && (constructor.group(2).trim().isEmpty()
-                || (jvmOverloads
-                    && allParametersDefaultFallback(splitParameters(constructor.group(2)))))) {
-          return true;
+        if (constructor.matches()) {
+          final List<String> parameters = splitParameters(constructor.group(2));
+          if (canProjectFallbackValueClassConstructorParameters(parameters)
+              && (parameters.isEmpty()
+                  || (jvmOverloads && allParametersDefaultFallback(parameters)))) {
+            return true;
+          }
         }
       }
       depth = Math.max(0, depth + braceDelta(line));
@@ -1623,6 +1639,11 @@ private static final Pattern PROPERTY_PATTERN =
         final Matcher constructor = SECONDARY_CONSTRUCTOR_PATTERN.matcher(declarationLine);
         if (constructor.matches()) {
           final List<String> kotlinParameters = splitParameters(constructor.group(2));
+          if (!canProjectFallbackValueClassConstructorParameters(kotlinParameters)) {
+            jvmOverloads = false;
+            depth = Math.max(0, depth + braceDelta(line));
+            continue;
+          }
           final String parameters = javaParameterList(kotlinParameters);
           // Preserve every source-declared secondary constructor. A duplicate JVM signature must
           // remain visible to the final owner-level registry so it can reject all claimants.
@@ -1718,7 +1739,8 @@ private static final Pattern PROPERTY_PATTERN =
       List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> kotlinParameters) {
     for (int index = 0; index < kotlinParameters.size(); index++) {
       final KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter = kotlinParameters.get(index);
-      if (!parameter.property || parameter.name == null || parameter.name.isEmpty()) {
+      if (!parameter.property || parameter.name == null || parameter.name.isEmpty()
+          || isScalarValueClassType(parameter.type)) {
         continue;
       }
       final String name = safeName(parameter.name, index);
@@ -1755,6 +1777,9 @@ private static final Pattern PROPERTY_PATTERN =
         continue;
       }
       final String kotlinType = declaration.substring(colon + 1);
+      if (isScalarValueClassType(kotlinType)) {
+        continue;
+      }
       final String type = javaType(kotlinType);
       final String getter = propertyGetterName(name, kotlinType);
       final String setter = propertySetterName(name, kotlinType);
@@ -2362,6 +2387,56 @@ private static final Pattern PROPERTY_PATTERN =
       }
     }
     return false;
+  }
+
+  /**
+   * Constructor declarations with a scalar value-class parameter have no public non-synthetic JVM
+   * constructor in Kotlin 2.1.0. Arrays and generic containers remain boxed Java-visible surfaces.
+   */
+  private static boolean isScalarValueClassType(String kotlinType) {
+    if (kotlinType == null) {
+      return false;
+    }
+    String type = stripDefaultValue(kotlinType.trim());
+    if (type.endsWith("?")) {
+      type = type.substring(0, type.length() - 1).trim();
+    }
+    if (type.indexOf('<') >= 0 || type.indexOf('>') >= 0
+        || type.indexOf('(') >= 0 || type.indexOf(')') >= 0 || type.indexOf('[') >= 0) {
+      return false;
+    }
+    final TypeResolutionContext context = TYPE_CONTEXT.get();
+    return context != null && context.valueClassUnderlyingTypes.containsKey(type);
+  }
+
+  private static boolean canProjectValueClassConstructorParameters(
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> parameters) {
+    for (KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter : parameters) {
+      if (isScalarValueClassType(parameter.type)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static boolean canProjectValueClassSyntaxParameters(
+      List<KotlinJvmSyntaxParser.ParameterSyntax> parameters) {
+    for (KotlinJvmSyntaxParser.ParameterSyntax parameter : parameters) {
+      if (isScalarValueClassType(parameter.type)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static boolean canProjectFallbackValueClassConstructorParameters(List<String> parameters) {
+    for (String parameter : parameters) {
+      final int colon = topLevelIndexOf(parameter, ':');
+      if (colon >= 0 && isScalarValueClassType(parameter.substring(colon + 1))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** Returns true only for a non-null, non-generic direct value-class occurrence. */

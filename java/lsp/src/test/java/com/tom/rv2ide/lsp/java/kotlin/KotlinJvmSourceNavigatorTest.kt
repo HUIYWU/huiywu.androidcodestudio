@@ -825,6 +825,141 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_rejectsScalarValueClassConstructorPropertiesButResolvesBoxedContainers() {
+    val kotlinSource =
+      """
+      package navigation
+
+      @JvmInline
+      value class UserId(val raw: String)
+
+      class ScalarProperty(val id: UserId)
+      class NullableScalarProperty(var id: UserId?)
+      class ArrayProperty(var ids: Array<UserId>)
+      class GenericProperty(var ids: List<UserId>)
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      final class UserId {}
+      class ScalarProperty { String getId() { return null; } }
+      class NullableScalarProperty {
+        String getId() { return null; }
+        void setId(String value) {}
+      }
+      class ArrayProperty {
+        UserId[] getIds() { return null; }
+        void setIds(UserId[] value) {}
+      }
+      class GenericProperty {
+        java.util.List<UserId> getIds() { return null; }
+        void setIds(java.util.List<UserId> value) {}
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/ValueClassConstructorProperties.kt")
+    for ((owner, method) in listOf(
+      "navigation.ScalarProperty" to "getId",
+      "navigation.NullableScalarProperty" to "getId",
+      "navigation.NullableScalarProperty" to "setId",
+    )) {
+      val accessor = compileMethod(javaSource, owner, method)
+      assertNull(
+        "Scalar value-class accessor must not be treated as an ordinary Java property: $owner#$method",
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, accessor),
+      )
+    }
+
+    for ((owner, method) in listOf(
+      "navigation.ArrayProperty" to "getIds",
+      "navigation.ArrayProperty" to "setIds",
+      "navigation.GenericProperty" to "getIds",
+      "navigation.GenericProperty" to "setIds",
+    )) {
+      val accessor = compileMethod(javaSource, owner, method)
+      assertEquals("ids", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, accessor)!!))
+    }
+  }
+
+  @Test
+  fun typeNavigation_rejectsScalarValueClassConstructorButResolvesBoxedArraySurface() {
+    val kotlinSource =
+      """
+      package navigation
+
+      @JvmInline
+      value class UserId(val raw: String)
+
+      class ValueClassSecondary private constructor() {
+        constructor(id: UserId) : this()
+        constructor(ids: Array<UserId>) : this()
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      final class UserId {}
+      class ValueClassSecondary {
+        ValueClassSecondary(java.lang.String id) {}
+        ValueClassSecondary(UserId[] ids) {}
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/ValueClassSecondary.kt")
+
+    val scalar = compileConstructor(
+      javaSource, "navigation.ValueClassSecondary", "java.lang.String")
+    val array = compileConstructor(
+      javaSource, "navigation.ValueClassSecondary", "navigation.UserId[]")
+
+    assertEquals(
+      "ValueClassSecondary",
+      sourceTextAt(kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, scalar)),
+    )
+    assertEquals(
+      "constructor",
+      sourceTextAt(kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, array)),
+    )
+  }
+
+  @Test
+  fun typeNavigation_resolvesJvmOverloadsValueClassArrayPrimaryConstructorVariants() {
+    val kotlinSource =
+      """
+      package navigation
+
+      @JvmInline
+      value class UserId(val raw: String)
+
+      class ValueClassArrayOverloaded @JvmOverloads constructor(
+        val ids: Array<UserId>,
+        val count: Int = 0,
+      )
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      final class UserId {}
+      class ValueClassArrayOverloaded {
+        ValueClassArrayOverloaded(UserId[] ids, int count) {}
+        ValueClassArrayOverloaded(UserId[] ids) {}
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/ValueClassArrayOverloaded.kt")
+
+    for (parameters in listOf("navigation.UserId[],int", "navigation.UserId[]")) {
+      val constructor = compileConstructor(
+        javaSource, "navigation.ValueClassArrayOverloaded", parameters)
+      assertEquals(
+        "ValueClassArrayOverloaded",
+        sourceTextAt(kotlinSource,
+          KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, constructor)),
+      )
+    }
+  }
+
+  @Test
   fun typeNavigation_resolvesJvmOverloadsPrimaryConstructorVariants() {
     val kotlinSource =
       """

@@ -246,6 +246,82 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generate_omitsScalarValueClassConstructorsButKeepsBoxedContainerSurfaces() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @JvmInline
+        value class UserId(val raw: String)
+
+        class DirectHolder(val id: UserId)
+        class NullableHolder(var id: UserId?)
+        class DefaultedHolder @JvmOverloads constructor(val id: UserId, count: Int = 0)
+        class ArrayHolder @JvmOverloads constructor(var ids: Array<UserId>, count: Int = 0)
+        class GenericHolder(var ids: List<UserId>)
+
+        class SecondaryHolder private constructor() {
+          constructor(id: UserId) : this()
+          constructor(ids: Array<UserId>) : this()
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val direct = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.DirectHolder", "ValueClassConstructors.kt", source, emptySet(), mode)
+      val nullable = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.NullableHolder", "ValueClassConstructors.kt", source, emptySet(), mode)
+      val defaulted = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.DefaultedHolder", "ValueClassConstructors.kt", source, emptySet(), mode)
+      val array = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.ArrayHolder", "ValueClassConstructors.kt", source, emptySet(), mode)
+      val generic = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.GenericHolder", "ValueClassConstructors.kt", source, emptySet(), mode)
+      val secondary = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.SecondaryHolder", "ValueClassConstructors.kt", source, emptySet(), mode)
+
+      assertNotNull("Direct value-class constructor generation failed in $mode", direct)
+      assertNotNull("Nullable value-class constructor generation failed in $mode", nullable)
+      assertNotNull("Defaulted value-class constructor generation failed in $mode", defaulted)
+      assertNotNull("Value-class array constructor generation failed in $mode", array)
+      assertNotNull("Generic value-class constructor generation failed in $mode", generic)
+      assertNotNull("Secondary value-class constructor generation failed in $mode", secondary)
+
+      assertFalse("Direct scalar constructor leaked in $mode:\n$direct",
+          direct!!.contains("public DirectHolder("))
+      assertFalse("Nullable scalar constructor leaked in $mode:\n$nullable",
+          nullable!!.contains("public NullableHolder("))
+      assertFalse("Defaulted scalar constructor leaked in $mode:\n$defaulted",
+          defaulted!!.contains("public DefaultedHolder("))
+      assertFalse("Scalar property getter leaked in $mode:\n$direct",
+          direct.contains("getId()"))
+      assertFalse("Nullable scalar property getter leaked in $mode:\n$nullable",
+          nullable.contains("getId()"))
+      assertFalse("Nullable scalar property setter leaked in $mode:\n$nullable",
+          nullable.contains("setId("))
+ 
+      assertContains(array!!, "public ArrayHolder(UserId[] ids, int count)")
+      assertContains(array, "public ArrayHolder(UserId[] ids)")
+      assertContains(array, "public UserId[] getIds()")
+      assertContains(array, "public void setIds(UserId[] value)")
+      assertContains(generic!!, "public GenericHolder(java.util.List<UserId> ids)")
+      assertContains(generic, "public java.util.List<UserId> getIds()")
+      assertContains(generic, "public void setIds(java.util.List<UserId> value)")
+
+      assertContains(secondary!!, "private SecondaryHolder()")
+      assertContains(secondary, "public SecondaryHolder(UserId[] ids)")
+      assertFalse("Scalar secondary constructor leaked in $mode:\n$secondary",
+          secondary.contains("public SecondaryHolder(UserId id)"))
+      assertFalse("Underlying scalar secondary constructor leaked in $mode:\n$secondary",
+          secondary.contains("public SecondaryHolder(String id)"))
+    }
+  }
+
+  @Test
   fun generate_projectsValueClassUsesOnlyWithExplicitJvmNames() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
@@ -619,6 +695,38 @@ class KotlinJvmAbiStubGeneratorTest {
     assertFalse("Conflicting (String[], String) constructors leaked:\n$stub",
         stub!!.contains("NonTrailingVarargConstructorConflict(String[] values, String suffix)"))
     assertContains(stub, "public NonTrailingVarargConstructorConflict(String[] values, int count)")
+  }
+
+  @Test
+  fun generate_rejectsGenericArrayPrimaryJvmOverloadsVariantConflictingWithSecondaryConstructor() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        class GenericArrayOverloadConstructorConflict<T> @JvmOverloads constructor(
+          values: Array<T>,
+          suffix: String = ""
+        ) {
+          constructor(values: Array<Any>) : this(emptyArray<T>())
+          constructor(values: Array<Array<Any>>) : this(emptyArray())
+        }
+        """.trimIndent()
+
+    for (mode in listOf(
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+        KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+          "sample.GenericArrayOverloadConstructorConflict",
+          "GenericArrayOverloadConstructorConflict.kt", source, emptySet(), mode)
+      assertNotNull("Generic-array constructor conflict generation failed in $mode", stub)
+      assertFalse("Conflicting Object[] constructor surface leaked in $mode:\n$stub",
+          stub!!.contains("GenericArrayOverloadConstructorConflict(T[] values)")
+              || stub.contains("GenericArrayOverloadConstructorConflict(Object[] values)"))
+      assertContains(stub,
+          "public GenericArrayOverloadConstructorConflict(Object[][] values)")
+    }
   }
 
   @Test

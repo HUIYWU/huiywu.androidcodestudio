@@ -14,8 +14,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import jdkx.lang.model.element.Element;
@@ -33,6 +35,8 @@ public final class KotlinJvmSourceNavigator {
           "(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*<([^<>]+)>\\s*=\\s*([^\\r\\n]+?)\\s*$");
   private static final Pattern TYPE_NAME_PATTERN =
       Pattern.compile("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*");
+  private static final Pattern VALUE_CLASS_DECLARATION_PATTERN =
+      Pattern.compile("\\bvalue\\s+class\\s+([A-Za-z_][\\w]*)");
   private static final ThreadLocal<Map<String, String>> TYPE_ALIASES = new ThreadLocal<>();
   private static final ThreadLocal<Map<String, GenericTypeAlias>> GENERIC_TYPE_ALIASES =
       new ThreadLocal<>();
@@ -111,7 +115,7 @@ public final class KotlinJvmSourceNavigator {
           ? findFacadeMember(source, element)
           : companionOwner
               ? findMember(type.companionMembers, element, false)
-              : findTypeMember(type, declaration, element);
+              : findTypeMember(type, declaration, source, element);
       if (range != null) {
         return location(declaration.file, source, range.offset, range.length);
       }
@@ -135,12 +139,14 @@ public final class KotlinJvmSourceNavigator {
   private static SourceRange findTypeMember(
       KotlinJvmSyntaxParser.TypeSyntax type,
       KotlinTypeDeclaration typeDeclaration,
+      String source,
       Element element) {
     if (element.getKind() == ElementKind.CONSTRUCTOR && element instanceof ExecutableElement) {
       if (KotlinAbiSyntheticMembers.isSyntheticConstructor(element)) {
         return null;
       }
       final ExecutableElement executable = (ExecutableElement) element;
+      final Set<String> valueClassTypes = collectValueClassTypes(source);
       final SourceRange typeRange = type.nameOffset >= 0
           ? new SourceRange(type.nameOffset, type.nameLength)
           : new SourceRange(typeDeclaration.offset, typeDeclaration.length);
@@ -148,13 +154,13 @@ public final class KotlinJvmSourceNavigator {
       int matches = 0;
       for (KotlinJvmSyntaxParser.ConstructorSyntax constructor : type.secondaryConstructors) {
         if (constructorMatches(
-            constructor.parameters, constructor.jvmOverloads, executable)) {
+            constructor.parameters, constructor.jvmOverloads, valueClassTypes, executable)) {
           match = new SourceRange(constructor.nameOffset, constructor.nameLength);
           matches++;
         }
       }
       if (type.primaryConstructorPresent
-          && primaryConstructorMatches(type, executable)) {
+          && primaryConstructorMatches(type, valueClassTypes, executable)) {
         match = typeRange;
         matches++;
       }
@@ -165,7 +171,8 @@ public final class KotlinJvmSourceNavigator {
     if (range != null) {
       return range;
     }
-    range = findConstructorProperty(type.constructorParameters, element);
+    range = findConstructorProperty(
+        type.constructorParameters, collectValueClassTypes(source), element);
     if (range != null) {
       return range;
     }
@@ -173,10 +180,13 @@ public final class KotlinJvmSourceNavigator {
   }
 
   private static SourceRange findConstructorProperty(
-      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> parameters, Element element) {
+      List<KotlinJvmSyntaxParser.ConstructorParameterSyntax> parameters,
+      Set<String> valueClassTypes,
+      Element element) {
     final String javaName = element.getSimpleName().toString();
     for (KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter : parameters) {
-      if (!parameter.property || parameter.nameOffset < 0 || parameter.name.isEmpty()) {
+      if (!parameter.property || parameter.nameOffset < 0 || parameter.name.isEmpty()
+          || isScalarValueClassType(parameter.type, valueClassTypes)) {
         continue;
       }
       final String getter = propertyGetterName(parameter.name, parameter.type);
@@ -226,7 +236,7 @@ public final class KotlinJvmSourceNavigator {
           file, Math.max(0, type.nameOffset), Math.max(1, type.nameLength));
       final SourceRange range = companionOwner
           ? findMember(type.companionMembers, element, false)
-          : findTypeMember(type, declaration, element);
+          : findTypeMember(type, declaration, source, element);
       return range == null ? null : location(file, source, range.offset, range.length);
     } finally {
       if (previousAliases == null) {
@@ -451,7 +461,14 @@ public final class KotlinJvmSourceNavigator {
   }
 
   private static boolean primaryConstructorMatches(
-      KotlinJvmSyntaxParser.TypeSyntax type, ExecutableElement executable) {
+      KotlinJvmSyntaxParser.TypeSyntax type,
+      Set<String> valueClassTypes,
+      ExecutableElement executable) {
+    for (KotlinJvmSyntaxParser.ConstructorParameterSyntax parameter : type.constructorParameters) {
+      if (isScalarValueClassType(parameter.type, valueClassTypes)) {
+        return false;
+      }
+    }
     final int parameterCount = executable.getParameters().size();
     final int fullCount = type.constructorParameters.size();
     if (parameterCount != fullCount
@@ -474,7 +491,13 @@ public final class KotlinJvmSourceNavigator {
   private static boolean constructorMatches(
       List<KotlinJvmSyntaxParser.ParameterSyntax> parameters,
       boolean jvmOverloads,
+      Set<String> valueClassTypes,
       ExecutableElement executable) {
+    for (KotlinJvmSyntaxParser.ParameterSyntax parameter : parameters) {
+      if (isScalarValueClassType(parameter.type, valueClassTypes)) {
+        return false;
+      }
+    }
     final int parameterCount = executable.getParameters().size();
     if (parameterCount != parameters.size()
         && (!jvmOverloads
@@ -491,6 +514,35 @@ public final class KotlinJvmSourceNavigator {
       }
     }
     return true;
+  }
+
+  private static Set<String> collectValueClassTypes(String source) {
+    final Set<String> result = new LinkedHashSet<>();
+    if (source == null || source.isEmpty()) {
+      return result;
+    }
+    final Matcher matcher = VALUE_CLASS_DECLARATION_PATTERN.matcher(source);
+    while (matcher.find()) {
+      result.add(matcher.group(1));
+    }
+    return result;
+  }
+
+  private static boolean isScalarValueClassType(String kotlinType, Set<String> valueClassTypes) {
+    if (kotlinType == null || valueClassTypes == null || valueClassTypes.isEmpty()) {
+      return false;
+    }
+    String type = kotlinType.trim();
+    if (type.endsWith("?")) {
+      type = type.substring(0, type.length() - 1).trim();
+    }
+    if (type.indexOf('<') >= 0 || type.indexOf('>') >= 0
+        || type.indexOf('(') >= 0 || type.indexOf(')') >= 0 || type.indexOf('[') >= 0) {
+      return false;
+    }
+    final int separator = type.lastIndexOf('.');
+    final String simpleName = separator < 0 ? type : type.substring(separator + 1);
+    return valueClassTypes.contains(simpleName);
   }
 
   private static int trailingDefaultStart(
