@@ -390,8 +390,6 @@ class KotlinJvmSourceNavigatorTest {
       package navigation
 
       interface BoundedExtensionPropertyNavigation<T : CharSequence> {
-        @get:JvmName("readPayload")
-        @set:JvmName("writePayload")
         var T.payload: T
       }
       """.trimIndent()
@@ -399,25 +397,25 @@ class KotlinJvmSourceNavigatorTest {
       """
       package navigation;
       interface BoundedExtensionPropertyNavigation<T extends java.lang.CharSequence> {
-        T readPayload(T receiver);
-        void writePayload(T receiver, T value);
+        T getPayload(T receiver);
+        void setPayload(T receiver, T value);
       }
       """.trimIndent()
     val erasedSource =
       """
       package navigation;
       interface BoundErasedExtensionPropertyNavigation {
-        java.lang.CharSequence readPayload(java.lang.CharSequence receiver);
-        void writePayload(java.lang.CharSequence receiver, java.lang.CharSequence value);
+        java.lang.CharSequence getPayload(java.lang.CharSequence receiver);
+        void setPayload(java.lang.CharSequence receiver, java.lang.CharSequence value);
       }
       """.trimIndent()
     val file = Paths.get("/navigation/BoundedExtensionPropertyNavigation.kt")
-    val getter = compileMethod(javaSource, "navigation.BoundedExtensionPropertyNavigation", "readPayload")
-    val setter = compileMethod(javaSource, "navigation.BoundedExtensionPropertyNavigation", "writePayload")
+    val getter = compileMethod(javaSource, "navigation.BoundedExtensionPropertyNavigation", "getPayload")
+    val setter = compileMethod(javaSource, "navigation.BoundedExtensionPropertyNavigation", "setPayload")
     val erasedGetter = compileMethod(
-      erasedSource, "navigation.BoundErasedExtensionPropertyNavigation", "readPayload")
+      erasedSource, "navigation.BoundErasedExtensionPropertyNavigation", "getPayload")
     val erasedSetter = compileMethod(
-      erasedSource, "navigation.BoundErasedExtensionPropertyNavigation", "writePayload")
+      erasedSource, "navigation.BoundErasedExtensionPropertyNavigation", "setPayload")
 
     assertEquals("payload", sourceTextAt(
       kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, getter)!!))
@@ -434,8 +432,6 @@ class KotlinJvmSourceNavigatorTest {
       package navigation
 
       interface GenericExtensionPropertyNavigation<T> {
-        @get:JvmName("readPayload")
-        @set:JvmName("writePayload")
         var T.payload: T
       }
       """.trimIndent()
@@ -443,25 +439,25 @@ class KotlinJvmSourceNavigatorTest {
       """
       package navigation;
       interface GenericExtensionPropertyNavigation<T> {
-        T readPayload(T receiver);
-        void writePayload(T receiver, T value);
+        T getPayload(T receiver);
+        void setPayload(T receiver, T value);
       }
       """.trimIndent()
     val erasedSource =
       """
       package navigation;
       interface ErasedExtensionPropertyNavigation {
-        java.lang.Object readPayload(java.lang.Object receiver);
-        void writePayload(java.lang.Object receiver, java.lang.Object value);
+        java.lang.Object getPayload(java.lang.Object receiver);
+        void setPayload(java.lang.Object receiver, java.lang.Object value);
       }
       """.trimIndent()
     val file = Paths.get("/navigation/GenericExtensionPropertyNavigation.kt")
-    val getter = compileMethod(javaSource, "navigation.GenericExtensionPropertyNavigation", "readPayload")
-    val setter = compileMethod(javaSource, "navigation.GenericExtensionPropertyNavigation", "writePayload")
+    val getter = compileMethod(javaSource, "navigation.GenericExtensionPropertyNavigation", "getPayload")
+    val setter = compileMethod(javaSource, "navigation.GenericExtensionPropertyNavigation", "setPayload")
     val erasedGetter = compileMethod(
-      erasedSource, "navigation.ErasedExtensionPropertyNavigation", "readPayload")
+      erasedSource, "navigation.ErasedExtensionPropertyNavigation", "getPayload")
     val erasedSetter = compileMethod(
-      erasedSource, "navigation.ErasedExtensionPropertyNavigation", "writePayload")
+      erasedSource, "navigation.ErasedExtensionPropertyNavigation", "setPayload")
 
     assertEquals("payload", sourceTextAt(
       kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, getter)!!))
@@ -472,14 +468,46 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_rejectsPlainInterfaceValueClassExtensionAccessorSurfaces() {
+    val kotlinSource =
+      """
+      package navigation
+
+      @JvmInline
+      value class UserId(val raw: String)
+
+      interface ValueClassExtensionNavigationContract {
+        var UserId.label: String
+        var String.id: UserId
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      interface ValueClassExtensionNavigationContract {
+        java.lang.String getLabel(java.lang.String receiver);
+        void setLabel(java.lang.String receiver, java.lang.String value);
+        java.lang.String getId(java.lang.String receiver);
+        void setId(java.lang.String receiver, java.lang.String value);
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/ValueClassExtensionNavigationContract.kt")
+
+    for (name in listOf("getLabel", "setLabel", "getId", "setId")) {
+      val accessor = compileMethod(
+        javaSource, "navigation.ValueClassExtensionNavigationContract", name)
+      assertNull("Mangled interface value-class accessor must not match plain Java name: $name",
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, accessor))
+    }
+  }
+
+  @Test
   fun typeNavigation_resolvesInterfaceExtensionPropertyAccessorsByReceiverSignature() {
     val kotlinSource =
       """
       package navigation
 
       interface ExtensionPropertyNavigationContract {
-        @get:JvmName("readLabel")
-        @set:JvmName("writeLabel")
         var String.label: String
       }
       """.trimIndent()
@@ -487,22 +515,22 @@ class KotlinJvmSourceNavigatorTest {
       """
       package navigation;
       interface ExtensionPropertyNavigationContract {
-        java.lang.String readLabel(java.lang.String receiver);
-        void writeLabel(java.lang.String receiver, java.lang.String value);
+        java.lang.String getLabel(java.lang.String receiver);
+        void setLabel(java.lang.String receiver, java.lang.String value);
       }
       """.trimIndent()
     val missingReceiverSource =
       """
       package navigation;
       interface MissingReceiverExtensionPropertyContract {
-        java.lang.String readLabel();
+        java.lang.String getLabel();
       }
       """.trimIndent()
     val file = Paths.get("/navigation/ExtensionPropertyNavigationContract.kt")
-    val getter = compileMethod(javaSource, "navigation.ExtensionPropertyNavigationContract", "readLabel")
-    val setter = compileMethod(javaSource, "navigation.ExtensionPropertyNavigationContract", "writeLabel")
+    val getter = compileMethod(javaSource, "navigation.ExtensionPropertyNavigationContract", "getLabel")
+    val setter = compileMethod(javaSource, "navigation.ExtensionPropertyNavigationContract", "setLabel")
     val missingReceiver = compileMethod(
-      missingReceiverSource, "navigation.MissingReceiverExtensionPropertyContract", "readLabel")
+      missingReceiverSource, "navigation.MissingReceiverExtensionPropertyContract", "getLabel")
 
     assertEquals("label", sourceTextAt(
       kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, getter)!!))

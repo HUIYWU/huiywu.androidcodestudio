@@ -501,6 +501,33 @@ class KotlinCompilerJvmAbiProbeTest {
       })
   }
 
+  @Test
+  fun interfaceValueClassExtensionProperties_preserveDefaultAccessorManglingBoundaries() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      @JvmInline
+      value class UserId(val raw: String)
+
+      interface ValueClassExtensionContract {
+        var UserId.label: String
+        var String.id: UserId
+        var UserId.other: UserId
+      }
+      """.trimIndent(),
+      "InterfaceValueClassExtensionProperties.kt",
+    ).associateBy { it.internalName }
+
+    val contract = surfaces.getValue("evidence/ValueClassExtensionContract")
+    assertMangledAccessor(contract, "getLabel-", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertMangledAccessor(contract, "setLabel-", "(Ljava/lang/String;Ljava/lang/String;)V")
+    assertMangledAccessor(contract, "getId-", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertMangledAccessor(contract, "setId-", "(Ljava/lang/String;Ljava/lang/String;)V")
+    assertMangledAccessor(contract, "getOther-", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertMangledAccessor(contract, "setOther-", "(Ljava/lang/String;Ljava/lang/String;)V")
+  }
+
   private fun assertMangledAccessor(
     surface: KotlinCompilerJvmAbiProbe.ClassSurface,
     namePrefix: String,

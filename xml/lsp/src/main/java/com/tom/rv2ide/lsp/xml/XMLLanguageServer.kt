@@ -179,7 +179,6 @@ class XMLLanguageServer : ILanguageServer {
     if (!isWorkspaceXmlFile(event.changedFile)) {
       return
     }
-    event.newText?.let { text -> ModuleResourceIndex.recordDocumentOverlay(event.changedFile, text) }
     onContentChange(event)
     selectedFile = event.changedFile
     scheduleDiagnosticAnalysis()
@@ -211,7 +210,6 @@ class XMLLanguageServer : ILanguageServer {
     if (!DocumentUtils.isXmlFile(event.closedFile)) {
       return
     }
-    ModuleResourceIndex.removeDocumentOverlay(event.closedFile)
     if (selectedFile == event.closedFile) {
       selectedFile = null
       analyzeGeneration.incrementAndGet()

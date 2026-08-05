@@ -1586,7 +1586,6 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
 
         interface Parent<T>
         interface InheritedExtensionPropertyConflict<T : CharSequence> : Parent<String> {
-          @get:JvmName("read")
           val T.payload: String
           fun read(receiver: CharSequence): String
           fun read(receiver: String): String
@@ -1599,8 +1598,7 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
     assertNotNull(stub)
     assertContains(stub!!,
         "public interface InheritedExtensionPropertyConflict<T extends CharSequence> extends Parent<String>")
-    assertFalse("Owner T erasure was lost behind parameterized supertype:\n$stub",
-        stub.contains("read(T receiver)") || stub.contains("read(CharSequence receiver)"))
+    assertContains(stub!!, "String read(CharSequence receiver);")
     assertContains(stub, "String read(String receiver);")
   }
 
@@ -1613,7 +1611,6 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         package sample
 
         interface BoundedExtensionPropertyConflict<T : CharSequence> {
-          @get:JvmName("read")
           val T.payload: String
           fun read(receiver: CharSequence): String
           fun read(receiver: String): String
@@ -1624,9 +1621,7 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         "sample.BoundedExtensionPropertyConflict", "BoundedExtensionPropertyConflict.kt", source,
         emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
     assertNotNull(stub)
-    assertFalse("Erased CharSequence receiver surface leaked:\n$stub",
-        stub!!.contains("read(T receiver)")
-            || stub.contains("read(CharSequence receiver)"))
+    assertContains(stub!!, "String read(CharSequence receiver);")
     assertContains(stub, "String read(String receiver);")
   }
 
@@ -1639,7 +1634,6 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         package sample
 
         interface GenericExtensionSetterConflict<T> {
-          @set:JvmName("assign")
           var T.payload: T
           fun assign(receiver: Any, value: Any)
           fun assign(receiver: Any, value: String)
@@ -1650,9 +1644,7 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         "sample.GenericExtensionSetterConflict", "GenericExtensionSetterConflict.kt", source,
         emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
     assertNotNull(stub)
-    assertFalse("Erased Object,Object setter surface leaked:\n$stub",
-        stub!!.contains("assign(T receiver, T value)")
-            || stub.contains("assign(Object receiver, Object value)"))
+    assertContains(stub!!, "void assign(Object receiver, Object value);")
     assertContains(stub, "void assign(Object receiver, String value);")
   }
 
@@ -1665,7 +1657,6 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         package sample
 
         interface GenericExtensionPropertyConflict<T> {
-          @get:JvmName("access")
           val T.payload: String
           fun access(receiver: Any): String
           fun access(receiver: String): String
@@ -1676,8 +1667,7 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         "sample.GenericExtensionPropertyConflict", "GenericExtensionPropertyConflict.kt", source,
         emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
     assertNotNull(stub)
-    assertFalse("Erased Object receiver surface leaked:\n$stub",
-        stub!!.contains("access(T receiver)") || stub.contains("access(Object receiver)"))
+    assertContains(stub!!, "String access(Object receiver);")
     assertContains(stub, "String access(String receiver);")
 
     val fallback = KotlinJvmAbiStubGenerator.generateForTest(
@@ -1698,8 +1688,6 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
 
         interface ExtensionPropertyContract {
           val String.initial: Char
-          @get:JvmName("readLabel")
-          @set:JvmName("writeLabel")
           var String.label: String
         }
         """.trimIndent()
@@ -1709,18 +1697,18 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
     assertNotNull(structured)
     assertContains(structured!!, "char getInitial(String receiver);")
-    assertContains(structured, "String readLabel(String receiver);")
-    assertContains(structured, "void writeLabel(String receiver, String value);")
+    assertContains(structured, "String getLabel(String receiver);")
+    assertContains(structured, "void setLabel(String receiver, String value);")
     assertFalse(structured.contains("getInitial();"))
-    assertFalse(structured.contains("readLabel();"))
+    assertFalse(structured.contains("getLabel();"))
 
     val fallback = KotlinJvmAbiStubGenerator.generateForTest(
         "sample.ExtensionPropertyContract", "ExtensionPropertyContract.kt", source, emptySet(),
         KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)
     assertNotNull(fallback)
     assertFalse("Fallback must not invent an interface extension accessor:\n$fallback",
-        fallback!!.contains("getInitial(") || fallback.contains("readLabel(")
-            || fallback.contains("writeLabel("))
+        fallback!!.contains("getInitial(") || fallback.contains("getLabel(")
+            || fallback.contains("setLabel("))
   }
 
   @Test
@@ -1778,8 +1766,6 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
 
         interface ConsumerExtensionContract {
           val String.initial: Char
-          @get:JvmName("readLabel")
-          @set:JvmName("writeLabel")
           var String.label: String
         }
         """.trimIndent()
@@ -1816,8 +1802,8 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
             String mode = properties.readMode();
             properties.writeMode(mode);
             char initial = extensions.getInitial("value");
-            String label = extensions.readLabel("value");
-            extensions.writeLabel("value", label);
+            String label = extensions.getLabel("value");
+            extensions.setLabel("value", label);
           }
         }
         """.trimIndent(),
@@ -1825,7 +1811,7 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
     )
     val unsupportedMethods = listOf(
       "void use(ConsumerExtensionContract value) { value.getInitial(); }",
-      "void use(ConsumerExtensionContract value) { value.readLabel(); }",
+      "void use(ConsumerExtensionContract value) { value.getLabel(); }", 
       "void use(ConsumerPropertyContract value) { value.getInternal(); }",
     )
     for ((index, method) in unsupportedMethods.withIndex()) {

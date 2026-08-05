@@ -1064,9 +1064,15 @@ private static final Pattern PROPERTY_PATTERN =
       return;
     }
     final boolean extensionProperty = property.receiverType != null;
+    // Kotlin 2.1.0 rejects @get/@set:JvmName on interface member extension properties. Do not
+    // project an ABI surface for a source declaration the compiler itself will not accept.
+    if (interfaceType && extensionProperty
+        && (property.getterJvmName != null || property.setterJvmName != null)) {
+      return;
+    }
     final boolean getterProjectable = extensionProperty
         ? canProjectValueClassExtensionGetter(
-            property.getterJvmName, property.receiverType, property.declaredType)
+            property.getterJvmName, property.receiverType, property.declaredType, interfaceType)
         : canProjectValueClassProperty(
             property.getterJvmName, property.setterJvmName, property.mutableProperty, property.declaredType);
     final boolean setterProjectable = !property.mutableProperty ? false : extensionProperty
@@ -2345,10 +2351,17 @@ private static final Pattern PROPERTY_PATTERN =
    * until their representation has dedicated compiler evidence.
    */
   private static boolean canProjectValueClassExtensionGetter(
-      String getterJvmName, String receiverType, String returnType) {
-    return getterJvmName != null
-        || !isScalarValueClassType(receiverType)
-            && (!containsValueClassType(returnType) || isDirectValueClassType(returnType));
+      String getterJvmName, String receiverType, String returnType, boolean interfaceMember) {
+    if (getterJvmName != null) {
+      return true;
+    }
+    if (isScalarValueClassType(receiverType)) {
+      return false;
+    }
+    // Unlike top-level extensions, an interface member extension getter with a scalar value-class
+    // return is mangled by Kotlin 2.1.0 and cannot be represented by a stable ordinary JVM name.
+    return !containsValueClassType(returnType)
+        || !interfaceMember && isDirectValueClassType(returnType);
   }
 
   /** Extension setters are mangled for either a scalar receiver or scalar value parameter. */

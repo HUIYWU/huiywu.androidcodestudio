@@ -55,6 +55,7 @@ import com.tom.rv2ide.xml.utils.attrValue_qualifiedRef
 import com.tom.rv2ide.xml.utils.attrValue_qualifiedRefWithIncompletePckOrType
 import com.tom.rv2ide.xml.utils.attrValue_qualifiedRefWithIncompleteType
 import com.tom.rv2ide.xml.utils.attrValue_unqualifiedRef
+import java.util.concurrent.atomic.AtomicBoolean
 import org.eclipse.lemminx.dom.DOMDocument
 
 /**
@@ -97,6 +98,11 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
     val tableResult = completeValue(namespace = namespace, prefix = prefix, attrName = attrName)
     val value = attrAtCursor.value.orEmpty()
     val workspaceQuery = parseWorkspaceResourceCompletionQuery(value) ?: return tableResult
+    if (workspaceCompletionUnsavedDocumentWarningLogged.compareAndSet(false, true)) {
+      log.warn(
+          "Workspace XML resource completion reads cross-document unsaved definitions through FileManager active documents; definitions not yet visible there are unavailable until saved"
+      )
+    }
     params.cancelChecker.abortIfCancelled()
     val snapshot =
         ModuleResourceIndex.snapshot(params.file, document.textDocument.text) as? ResourceSnapshot.Available
@@ -562,6 +568,7 @@ internal fun mergeWorkspaceResourceCompletions(
   }
 }
 
+private val workspaceCompletionUnsavedDocumentWarningLogged = AtomicBoolean(false)
 private val RESOURCE_COMPLETION_TYPE = Regex("[A-Za-z_][A-Za-z0-9_]*")
 private val RESOURCE_COMPLETION_ENTRY_PREFIX = Regex("[A-Za-z0-9_.-]*")
 

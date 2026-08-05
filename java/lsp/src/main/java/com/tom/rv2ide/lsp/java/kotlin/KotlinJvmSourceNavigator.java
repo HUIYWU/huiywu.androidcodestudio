@@ -367,7 +367,8 @@ public final class KotlinJvmSourceNavigator {
       final boolean matchesElement = member.function()
           ? nameMatches && functionSignatureMatches(member, executable)
           : propertyJavaNameMatches(
-              member, javaName, element, valueClassContext.types, valueClassContext.underlyingTypes);
+              member, javaName, element, isInterfaceMember(element), valueClassContext.types,
+               valueClassContext.underlyingTypes);
       if (matchesElement) {
         match = new SourceRange(member.nameOffset, member.nameLength);
         matches++;
@@ -412,6 +413,7 @@ public final class KotlinJvmSourceNavigator {
       KotlinJvmSyntaxParser.MemberSyntax member,
       String javaName,
       Element element,
+      boolean interfaceMember,
       Set<String> valueClassTypes,
       Map<String, String> valueClassUnderlyingTypes) {
     if (element.getKind() == ElementKind.FIELD && member.receiverType == null
@@ -430,6 +432,11 @@ public final class KotlinJvmSourceNavigator {
         ? propertySetterName(member.name, member.declaredType)
         : member.setterJvmName;
     final boolean extensionProperty = member.receiverType != null;
+    // Kotlin 2.1.0 rejects @get/@set:JvmName on interface member extension properties.
+    if (interfaceMember && extensionProperty
+        && (member.getterJvmName != null || member.setterJvmName != null)) {
+      return false;
+    }
     final boolean propertyProjectable = canNavigateValueClassProperty(
         member.getterJvmName,
         member.setterJvmName,
@@ -438,11 +445,11 @@ public final class KotlinJvmSourceNavigator {
         valueClassTypes);
     final boolean getterProjectable = extensionProperty
         ? canNavigateValueClassExtensionGetter(
-            member.getterJvmName, member.receiverType, member.declaredType, valueClassTypes)
+            member.getterJvmName, member.receiverType, member.declaredType, interfaceMember, valueClassTypes)
         : propertyProjectable;
     final boolean setterProjectable = member.mutableProperty && (extensionProperty
         ? canNavigateValueClassExtensionSetter(
-            member.setterJvmName, member.receiverType, member.declaredType, valueClassTypes)
+            member.setterJvmName, member.receiverType, member.declaredType, interfaceMember, valueClassTypes)
         : propertyProjectable);
     final boolean getterMatches = getterProjectable && !member.getterJvmSynthetic
         && javaName.equals(getter) && propertyAccessorParametersMatch(
@@ -575,17 +582,20 @@ public final class KotlinJvmSourceNavigator {
       String getterJvmName,
       String receiverType,
       String returnType,
+      boolean interfaceMember,
       Set<String> valueClassTypes) {
-    return getterJvmName != null
-        || !isScalarValueClassType(receiverType, valueClassTypes)
-            && (!containsValueClassType(returnType, valueClassTypes)
-                || isDirectValueClassType(returnType, valueClassTypes));
+    if (getterJvmName != null || isScalarValueClassType(receiverType, valueClassTypes)) {
+      return getterJvmName != null;
+    }
+    return !containsValueClassType(returnType, valueClassTypes)
+        || !interfaceMember && isDirectValueClassType(returnType, valueClassTypes);
   }
 
   private static boolean canNavigateValueClassExtensionSetter(
       String setterJvmName,
       String receiverType,
       String valueType,
+      boolean interfaceMember,
       Set<String> valueClassTypes) {
     return setterJvmName != null
         || !isScalarValueClassType(receiverType, valueClassTypes)
@@ -946,6 +956,11 @@ public final class KotlinJvmSourceNavigator {
       result = match;
     }
     return result;
+  }
+
+  private static boolean isInterfaceMember(Element element) {
+    final TypeElement owner = ownerType(element);
+    return owner != null && owner.getKind() == ElementKind.INTERFACE;
   }
 
   private static TypeElement ownerType(Element element) {

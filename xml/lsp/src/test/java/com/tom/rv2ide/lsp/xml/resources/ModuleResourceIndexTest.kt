@@ -4,7 +4,6 @@
 package com.tom.rv2ide.lsp.xml.resources
 
 import com.google.common.truth.Truth.assertThat
-import java.nio.file.Path
 import java.nio.file.Paths
 import junit.framework.TestCase
 
@@ -39,29 +38,6 @@ class ModuleResourceIndexTest : TestCase() {
     assertThat(stats.fileCount).isEqualTo(3)
     assertThat(stats.definitionCount).isEqualTo(3)
     assertThat(stats.occurrenceCount).isEqualTo(2)
-  }
-
-  fun testDocumentOverlaysReplaceIndexedEntriesOnlyInsideResourceDirectories() {
-    val resourceDirectory = Paths.get("project/app/src/main/res")
-    val values = resourceDirectory.resolve("values/strings.xml")
-    val outside = Paths.get("project/other/values/strings.xml")
-    val entries =
-        mutableMapOf<Path, ResourceFileEntry>(
-            values to ResourceFileEntry.create(values, "<resources><string name=\"disk_title\">Disk</string></resources>")
-        )
-
-    ModuleResourceIndex.applyDocumentOverlays(
-        entries,
-        setOf(resourceDirectory),
-        mapOf(
-            values to "<resources><string name=\"unsaved_title\">Unsaved</string></resources>",
-            outside to "<resources><string name=\"outside\">Outside</string></resources>",
-        ),
-    )
-
-    val snapshot = snapshotEntries(entries) as ResourceSnapshot.Available
-    assertThat(snapshot.definitions.map { it.name }).containsExactly("unsaved_title")
-    assertThat(snapshot.files).containsExactly(values)
   }
 
   fun testStatsForEmptyCacheAndClearAreZero() {
