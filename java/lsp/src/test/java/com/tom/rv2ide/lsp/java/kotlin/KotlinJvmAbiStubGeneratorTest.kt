@@ -587,6 +587,111 @@ class KotlinJvmAbiStubGeneratorTest {
   }
 
   @Test
+  fun generatedConflictingJvmSurfaces_areNotAttributableByJavac() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val functionConflictSource =
+        """
+        package sample
+
+        @JvmName("duplicate")
+        fun first(value: String): String = value
+        @JvmName("duplicate")
+        fun second(value: String): Int = value.length
+        @JvmName("duplicate")
+        fun overloaded(value: Int): Int = value
+        fun retained(value: Boolean): Boolean = value
+        """.trimIndent()
+    val functionConflictStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.ConflictApiKt",
+      "ConflictApi.kt",
+      functionConflictSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    )
+    assertNotNull(functionConflictStub)
+    val functionStubs = mapOf("sample.ConflictApiKt" to functionConflictStub!!)
+    assertTrue(
+      "Legal overloads must remain attributable after conflicting surface rejection:\n$functionConflictStub",
+      javacSucceeds(
+        functionStubs,
+        "consumer.SupportedFunctionConflict",
+        """
+        package consumer;
+        import sample.ConflictApiKt;
+        class SupportedFunctionConflict {
+          int useInt() { return ConflictApiKt.duplicate(1); }
+          boolean useBoolean() { return ConflictApiKt.retained(true); }
+        }
+        """.trimIndent(),
+      ),
+    )
+    assertFalse(
+      "Conflicting duplicate(String) surface must not be attributable:\n$functionConflictStub",
+      javacSucceeds(
+        functionStubs,
+        "consumer.UnsupportedFunctionConflict",
+        """
+        package consumer;
+        import sample.ConflictApiKt;
+        class UnsupportedFunctionConflict {
+          String use() { return ConflictApiKt.duplicate("value"); }
+        }
+        """.trimIndent(),
+      ),
+    )
+
+    val accessorConflictSource =
+        """
+        package sample
+
+        @get:JvmName("readShared")
+        val first: String = "first"
+        fun readShared(): String = "function"
+        @get:JvmName("readShared")
+        val second: Int = 2
+        fun retained(value: Int): Int = value
+        """.trimIndent()
+    val accessorConflictStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.AccessorConflictKt",
+      "AccessorConflict.kt",
+      accessorConflictSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    )
+    assertNotNull(accessorConflictStub)
+    val accessorStubs = mapOf("sample.AccessorConflictKt" to accessorConflictStub!!)
+    assertTrue(
+      "Non-conflicting accessor facade surface must remain attributable:\n$accessorConflictStub",
+      javacSucceeds(
+        accessorStubs,
+        "consumer.SupportedAccessorConflict",
+        """
+        package consumer;
+        import sample.AccessorConflictKt;
+        class SupportedAccessorConflict {
+          int use() { return AccessorConflictKt.retained(1); }
+        }
+        """.trimIndent(),
+      ),
+    )
+    assertFalse(
+      "Conflicting readShared() surface must not be attributable:\n$accessorConflictStub",
+      javacSucceeds(
+        accessorStubs,
+        "consumer.UnsupportedAccessorConflict",
+        """
+        package consumer;
+        import sample.AccessorConflictKt;
+        class UnsupportedAccessorConflict {
+          String use() { return AccessorConflictKt.readShared(); }
+        }
+        """.trimIndent(),
+      ),
+    )
+  }
+
+  @Test
   fun generate_projectsValueClassUsesOnlyWithExplicitJvmNames() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
@@ -1654,6 +1759,95 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generatedStructuredInterfacePropertyStubs_controlJavacConsumerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        interface ConsumerPropertyContract {
+          val title: String
+          var isReady: Boolean
+          @get:JvmName("readMode")
+          @set:JvmName("writeMode")
+          var mode: String
+          @get:JvmSynthetic
+          var internal: String
+        }
+
+        interface ConsumerExtensionContract {
+          val String.initial: Char
+          @get:JvmName("readLabel")
+          @set:JvmName("writeLabel")
+          var String.label: String
+        }
+        """.trimIndent()
+    val stubs = mapOf(
+      "sample.ConsumerPropertyContract" to KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ConsumerPropertyContract",
+        "ConsumerPropertyContract.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      )!!,
+      "sample.ConsumerExtensionContract" to KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ConsumerExtensionContract",
+        "ConsumerExtensionContract.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      )!!,
+    )
+    assertTrue(
+      "Proven structured interface property surfaces must be attributable:\n$stubs",
+      javacSucceeds(
+        stubs,
+        "consumer.SupportedInterfaceProperties",
+        """
+        package consumer;
+        import sample.ConsumerExtensionContract;
+        import sample.ConsumerPropertyContract;
+        class SupportedInterfaceProperties {
+          void use(ConsumerPropertyContract properties, ConsumerExtensionContract extensions) {
+            String title = properties.getTitle();
+            boolean ready = properties.isReady();
+            properties.setReady(ready);
+            String mode = properties.readMode();
+            properties.writeMode(mode);
+            char initial = extensions.getInitial("value");
+            String label = extensions.readLabel("value");
+            extensions.writeLabel("value", label);
+          }
+        }
+        """.trimIndent(),
+      ),
+    )
+    val unsupportedMethods = listOf(
+      "void use(ConsumerExtensionContract value) { value.getInitial(); }",
+      "void use(ConsumerExtensionContract value) { value.readLabel(); }",
+      "void use(ConsumerPropertyContract value) { value.getInternal(); }",
+    )
+    for ((index, method) in unsupportedMethods.withIndex()) {
+      assertFalse(
+        "Unprojected interface accessor must not be attributable: $method\n$stubs",
+        javacSucceeds(
+          stubs,
+          "consumer.UnsupportedInterfaceProperties$index",
+          """
+          package consumer;
+          import sample.ConsumerExtensionContract;
+          import sample.ConsumerPropertyContract;
+          class UnsupportedInterfaceProperties$index {
+            $method
+          }
+          """.trimIndent(),
+        ),
+      )
+    }
+  }
+
+  @Test
   fun generate_keepsInterfacePropertyAccessorBodiesAbstractWithoutJvmDefaultEvidence() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
@@ -1933,6 +2127,60 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
     assertFalse(stub.contains("setLabel(String receiver, String value)"))
     assertFalse("Synthetic extension getter leaked:\n$stub", stub.contains("getHidden(String receiver)"))
     assertContains(stub, "static void setHidden(String receiver, String value)")
+  }
+
+  @Test
+  fun generatedNamedCompanionStub_controlsJavacOwnerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        class NamedCompanionConsumer {
+          companion object Factory {
+            fun ordinary(value: String): String = value
+            @JvmStatic fun create(value: Int): Int = value
+            @get:JvmName("readMode")
+            @set:JvmName("writeMode")
+            @JvmStatic var mode: String = "default"
+            @JvmField val VERSION: Int = 1
+          }
+        }
+        """.trimIndent()
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.NamedCompanionConsumer",
+      "NamedCompanionConsumer.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    )
+    assertNotNull(stub)
+    assertTrue(
+      "Named companion host and nested owner surfaces must be attributable:\n$stub",
+      javacSucceeds(
+        mapOf("sample.NamedCompanionConsumer" to stub!!),
+        "consumer.NamedCompanionConsumerUse",
+        """
+        package consumer;
+        import sample.NamedCompanionConsumer;
+        class NamedCompanionConsumerUse {
+          String ordinary() {
+            return NamedCompanionConsumer.Factory.ordinary("value");
+          }
+          int create() { return NamedCompanionConsumer.create(1); }
+          String mode() {
+            String mode = NamedCompanionConsumer.readMode();
+            NamedCompanionConsumer.writeMode(mode);
+            return mode;
+          }
+          int version() { return NamedCompanionConsumer.VERSION; }
+        }
+        """.trimIndent(),
+      ),
+    )
+    assertFalse("Named companion must not fabricate an anonymous owner:\n$stub",
+      stub.contains("class Companion"))
   }
 
   @Test

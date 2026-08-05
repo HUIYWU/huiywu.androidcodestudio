@@ -801,6 +801,78 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesNamedCompanionPropertyOwnersAndHostSurfaces() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class NamedCompanionPropertyNavigation {
+        companion object Factory {
+          @get:JvmName("readMode")
+          @set:JvmName("writeMode")
+          @JvmStatic var mode: String = "default"
+          @JvmField val VERSION: Int = 1
+        }
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class NamedCompanionPropertyNavigation {
+        static String readMode() { return null; }
+        static void writeMode(String value) {}
+        static int VERSION;
+        static class Factory {
+          String readMode() { return null; }
+          void writeMode(String value) {}
+        }
+      }
+      """.trimIndent()
+    val hostGetter = compileMethod(
+      javaSource, "navigation.NamedCompanionPropertyNavigation", "readMode")
+    val hostSetter = compileMethod(
+      javaSource, "navigation.NamedCompanionPropertyNavigation", "writeMode")
+    val hostField = compileField(
+      javaSource, "navigation.NamedCompanionPropertyNavigation", "VERSION")
+    val factoryGetter = compileMethod(
+      javaSource, "navigation.NamedCompanionPropertyNavigation.Factory", "readMode")
+    val factorySetter = compileMethod(
+      javaSource, "navigation.NamedCompanionPropertyNavigation.Factory", "writeMode")
+    val incorrectHostDefaultGetter = compileMethod(
+      """
+      package navigation;
+      class NamedCompanionPropertyNavigation {
+        static String getMode() { return null; }
+      }
+      """.trimIndent(),
+      "navigation.NamedCompanionPropertyNavigation",
+      "getMode",
+    )
+    val incorrectAnonymousOwner = compileMethod(
+      """
+      package navigation;
+      class NamedCompanionPropertyNavigation {
+        static class Companion { String readMode() { return null; } }
+      }
+      """.trimIndent(),
+      "navigation.NamedCompanionPropertyNavigation.Companion",
+      "readMode",
+    )
+    val file = Paths.get("/navigation/NamedCompanionPropertyNavigation.kt")
+
+    for (element in listOf(hostGetter, hostSetter, factoryGetter, factorySetter)) {
+      assertEquals("mode", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, element)!!))
+    }
+    assertEquals("VERSION", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, hostField)!!))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(
+      file, kotlinSource, incorrectHostDefaultGetter))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(
+      file, kotlinSource, incorrectAnonymousOwner))
+  }
+
+  @Test
   fun typeNavigation_rejectsSyntheticCompanionJvmStaticSetter() {
     val kotlinSource =
       """

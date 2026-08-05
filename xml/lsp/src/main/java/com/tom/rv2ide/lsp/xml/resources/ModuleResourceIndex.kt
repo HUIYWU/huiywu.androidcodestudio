@@ -26,11 +26,23 @@ import org.slf4j.LoggerFactory
  */
 internal object ModuleResourceIndex {
   private val caches = ConcurrentHashMap<String, ModuleCache>()
+  // Event payloads are the authoritative cross-document unsaved-text source for XML LSP requests.
+  // FileManager remains a fallback because its EventBus subscription may be observed later.
+  private val documentOverlays = ConcurrentHashMap<Path, String>()
   private val log = LoggerFactory.getLogger(ModuleResourceIndex::class.java)
 
   /** Releases all module snapshots when the owning XML language server is shut down. */
   fun clear() {
     caches.clear()
+    documentOverlays.clear()
+  }
+
+  internal fun recordDocumentOverlay(file: Path, text: String) {
+    documentOverlays[file.normalize()] = text
+  }
+
+  internal fun removeDocumentOverlay(file: Path) {
+    documentOverlays.remove(file.normalize())
   }
 
   /** Exact lightweight-entry counts for cache observation; this intentionally does not estimate bytes. */
@@ -82,6 +94,7 @@ internal object ModuleResourceIndex {
           ?: return ResourceSnapshot.Unavailable
       entriesByFile[file.normalize()] = ResourceFileEntry.create(file, text)
     }
+    applyDocumentOverlays(entriesByFile, directories, documentOverlays)
 
     // The request's text is newer than FileManager until its document event has been published.
     if (directories.any { currentFile.normalize().startsWith(it) } &&
@@ -89,6 +102,19 @@ internal object ModuleResourceIndex {
       entriesByFile[currentFile.normalize()] = ResourceFileEntry.create(currentFile, currentText)
     }
     return snapshotEntries(entriesByFile)
+  }
+
+  internal fun applyDocumentOverlays(
+      entriesByFile: MutableMap<Path, ResourceFileEntry>,
+      directories: Set<Path>,
+      overlays: Map<Path, String>,
+  ) {
+    overlays.forEach { (file, text) ->
+      val normalized = file.normalize()
+      if (normalized.toString().endsWith(XML_SUFFIX) && directories.any { normalized.startsWith(it) }) {
+        entriesByFile[normalized] = ResourceFileEntry.create(normalized, text)
+      }
+    }
   }
 
   private fun refreshDisk(
