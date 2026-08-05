@@ -130,8 +130,8 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
                 "${workspaceQuery.marker}${definition.type.tagName}/${definition.name}" in workspaceOnlyKeys
               }
               .mapNotNull { definition ->
-                FileManager.getActiveDocument(definition.sourceFile)?.let { document ->
-                  "${definition.sourceFile} (version=${document.version}, modified=${document.modified})"
+                FileManager.getActiveDocumentSnapshot(definition.sourceFile)?.let { document ->
+                  "${definition.sourceFile} (version=${document.version}, revision=${document.revision}, modified=${document.modified})"
                 }
               }
               .distinct()

@@ -17,8 +17,11 @@
 
 package com.tom.rv2ide.xml.internal.resources
 
+import com.android.aaptcompiler.AaptResourceType.STRING
 import com.android.aaptcompiler.AaptResourceType.STYLE
 import com.google.common.truth.Truth.assertThat
+import com.tom.rv2ide.xml.resources.ResourceTableFileInput
+import com.tom.rv2ide.xml.resources.ResourceTableInputSnapshot
 import java.io.File
 import java.nio.file.Files
 import org.junit.After
@@ -103,6 +106,104 @@ class DefaultResourceTableRegistryTest {
     assertThat(result).isSameInstanceAs(first)
     assertThat(registry.getGeneration(PACKAGE_NAME)).isEqualTo(firstGeneration)
     assertThat(registry.forPackage(PACKAGE_NAME, resDir)).isSameInstanceAs(first)
+  }
+
+  @Test
+  fun refreshPackageUsesMemoryInputAndItsRevisionForCaching() {
+    val resDir = File(root, "res").apply { mkdirs() }
+    val valuesDir = File(resDir, "values").apply { mkdirs() }
+    val strings = File(valuesDir, "strings.xml").apply {
+      writeText("<resources><string name=\"saved_title\">Saved</string></resources>")
+    }
+    val initial = registry.forPackage(PACKAGE_NAME, resDir)!!
+    val memoryV1 =
+        ResourceTableInputSnapshot.of(
+            mapOf(
+                strings.toPath() to
+                    ResourceTableFileInput(
+                        "<resources><string name=\"unsaved_title\">Unsaved</string></resources>",
+                        revision = 1L,
+                    )
+            )
+        )
+
+    val replacement = registry.refreshPackage(PACKAGE_NAME, memoryV1, resDir)!!
+    val generation = registry.getGeneration(PACKAGE_NAME)
+    val reused = registry.refreshPackage(PACKAGE_NAME, memoryV1, resDir)
+    val memoryV2 =
+        ResourceTableInputSnapshot.of(
+            mapOf(
+                strings.toPath() to
+                    ResourceTableFileInput(
+                        "<resources><string name=\"newer_unsaved_title\">Newer</string></resources>",
+                        revision = 2L,
+                    )
+            )
+        )
+    val newer = registry.refreshPackage(PACKAGE_NAME, memoryV2, resDir)!!
+
+    assertThat(replacement).isNotSameInstanceAs(initial)
+    assertThat(replacement.findPackage(PACKAGE_NAME)?.findGroup(STRING)?.findEntry("unsaved_title"))
+        .isNotNull()
+    assertThat(replacement.findPackage(PACKAGE_NAME)?.findGroup(STRING)?.findEntry("saved_title"))
+        .isNull()
+    assertThat(reused).isSameInstanceAs(replacement)
+    assertThat(registry.getGeneration(PACKAGE_NAME)).isEqualTo(generation + 1L)
+    assertThat(newer).isNotSameInstanceAs(replacement)
+    assertThat(newer.findPackage(PACKAGE_NAME)?.findGroup(STRING)?.findEntry("newer_unsaved_title"))
+        .isNotNull()
+  }
+
+  @Test
+  fun refreshPackageWithoutMemoryInputFallsBackToDisk() {
+    val resDir = File(root, "res").apply { mkdirs() }
+    val valuesDir = File(resDir, "values").apply { mkdirs() }
+    val strings = File(valuesDir, "strings.xml").apply {
+      writeText("<resources><string name=\"saved_title\">Saved</string></resources>")
+    }
+    registry.forPackage(PACKAGE_NAME, resDir)
+    val memory =
+        ResourceTableInputSnapshot.of(
+            mapOf(
+                strings.toPath() to
+                    ResourceTableFileInput(
+                        "<resources><string name=\"unsaved_title\">Unsaved</string></resources>",
+                        revision = 1L,
+                    )
+            )
+        )
+    val active = registry.refreshPackage(PACKAGE_NAME, memory, resDir)!!
+
+    val disk = registry.refreshPackage(PACKAGE_NAME, ResourceTableInputSnapshot.EMPTY, resDir)!!
+
+    assertThat(disk).isNotSameInstanceAs(active)
+    assertThat(disk.findPackage(PACKAGE_NAME)?.findGroup(STRING)?.findEntry("saved_title"))
+        .isNotNull()
+    assertThat(disk.findPackage(PACKAGE_NAME)?.findGroup(STRING)?.findEntry("unsaved_title"))
+        .isNull()
+  }
+
+  @Test
+  fun invalidMemoryInputRetainsPublishedTableAndGeneration() {
+    val resDir = File(root, "res").apply { mkdirs() }
+    val valuesDir = File(resDir, "values").apply { mkdirs() }
+    val strings = File(valuesDir, "strings.xml").apply {
+      writeText("<resources><string name=\"saved_title\">Saved</string></resources>")
+    }
+    val initial = registry.forPackage(PACKAGE_NAME, resDir)!!
+    val generation = registry.getGeneration(PACKAGE_NAME)
+    val invalid =
+        ResourceTableInputSnapshot.of(
+            mapOf(
+                strings.toPath() to ResourceTableFileInput("<not-resources />", revision = 1L)
+            )
+        )
+
+    val result = registry.refreshPackage(PACKAGE_NAME, invalid, resDir)
+
+    assertThat(result).isSameInstanceAs(initial)
+    assertThat(registry.getGeneration(PACKAGE_NAME)).isEqualTo(generation)
+    assertThat(registry.forPackage(PACKAGE_NAME, resDir)).isSameInstanceAs(initial)
   }
 
   @Test

@@ -454,6 +454,132 @@ class KotlinCompilerJvmAbiProbeTest {
   }
 
   @Test
+  fun companionJvmFieldProperties_ignoreAccessorJvmAnnotationsWithoutCreatingAccessors() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      class FieldAnnotationContract {
+        companion object {
+          @get:JvmSynthetic
+          @JvmField
+          val syntheticField: String = "synthetic"
+        }
+      }
+      """.trimIndent(),
+      "JvmFieldAccessorAnnotations.kt",
+    ).associateBy { it.internalName }
+
+    val host = surfaces.getValue("evidence/FieldAnnotationContract")
+    val field = host.fieldsNamed("syntheticField").singleOrNull {
+      it.descriptor == "Ljava/lang/String;"
+    }
+    assertNotNull("Expected @JvmField host field; actual=${host.fields}", field)
+    assertTrue("Expected @JvmField field to be public: $field",
+      field!!.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("Expected @JvmField field to be static: $field",
+      field.access and Opcodes.ACC_STATIC != 0)
+    assertTrue("Accessor annotation must not make the field synthetic: $field",
+      field.access and Opcodes.ACC_SYNTHETIC == 0)
+    assertTrue("@JvmField must not create a host getter: ${host.members}",
+      host.methodsNamed("getSyntheticField").isEmpty())
+
+    val companion = surfaces.getValue("evidence/FieldAnnotationContract\$Companion")
+    assertTrue("@JvmField must not create a Companion getter: ${companion.members}",
+      companion.methodsNamed("getSyntheticField").isEmpty())
+  }
+
+  @Test
+  fun companionJvmFieldProperties_ignoreAccessorJvmNamesWithoutCreatingAccessors() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      class NamedFieldAnnotationContract {
+        companion object {
+          @get:JvmName("readNamedField")
+          @JvmField
+          val namedField: String = "field"
+        }
+      }
+      """.trimIndent(),
+      "JvmFieldAccessorJvmNames.kt",
+    ).associateBy { it.internalName }
+
+    val host = surfaces.getValue("evidence/NamedFieldAnnotationContract")
+    val field = host.fieldsNamed("namedField").singleOrNull {
+      it.descriptor == "Ljava/lang/String;"
+    }
+    assertNotNull("Expected @JvmField host field; actual=${host.fields}", field)
+    assertTrue("Expected @JvmField field to be public: $field",
+      field!!.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("Expected @JvmField field to be static: $field",
+      field.access and Opcodes.ACC_STATIC != 0)
+    assertTrue("@JvmField must not create a default host getter: ${host.members}",
+      host.methodsNamed("getNamedField").isEmpty())
+    assertTrue("@JvmField must not create a named host getter: ${host.members}",
+      host.methodsNamed("readNamedField").isEmpty())
+
+    val companion = surfaces.getValue("evidence/NamedFieldAnnotationContract\$Companion")
+    assertTrue("@JvmField must not create a named Companion getter: ${companion.members}",
+      companion.methodsNamed("readNamedField").isEmpty())
+  }
+
+  @Test
+  fun companionJvmFieldMutableProperties_ignoreSetterAnnotationsWithoutCreatingAccessors() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      class MutableFieldAnnotationContract {
+        companion object {
+          @set:JvmSynthetic
+          @JvmField
+          var syntheticMutableField: String = "synthetic"
+
+          @set:JvmName("writeNamedMutableField")
+          @JvmField
+          var namedMutableField: String = "named"
+        }
+      }
+      """.trimIndent(),
+      "JvmFieldMutableAccessorAnnotations.kt",
+    ).associateBy { it.internalName }
+
+    val host = surfaces.getValue("evidence/MutableFieldAnnotationContract")
+    for (fieldName in listOf("syntheticMutableField", "namedMutableField")) {
+      val field = host.fieldsNamed(fieldName).singleOrNull {
+        it.descriptor == "Ljava/lang/String;"
+      }
+      assertNotNull("Expected @JvmField host field $fieldName; actual=${host.fields}", field)
+      assertTrue("Expected @JvmField field to be public: $field",
+        field!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("Expected @JvmField field to be static: $field",
+        field.access and Opcodes.ACC_STATIC != 0)
+      assertTrue("Setter annotation must not make the field synthetic: $field",
+        field.access and Opcodes.ACC_SYNTHETIC == 0)
+    }
+
+    assertTrue("@JvmField must not create a default host getter: ${host.members}",
+      host.methodsNamed("getSyntheticMutableField").isEmpty() &&
+        host.methodsNamed("getNamedMutableField").isEmpty())
+    assertTrue("@JvmField must not create a default host setter: ${host.members}",
+      host.methodsNamed("setSyntheticMutableField").isEmpty() &&
+        host.methodsNamed("setNamedMutableField").isEmpty())
+    assertTrue("@JvmField must not create a named host setter: ${host.members}",
+      host.methodsNamed("writeNamedMutableField").isEmpty())
+
+    val companion = surfaces.getValue("evidence/MutableFieldAnnotationContract\$Companion")
+    assertTrue("@JvmField must not create Companion getters: ${companion.members}",
+      companion.methodsNamed("getSyntheticMutableField").isEmpty() &&
+        companion.methodsNamed("getNamedMutableField").isEmpty())
+    assertTrue("@JvmField must not create default or named Companion setters: ${companion.members}",
+      companion.methodsNamed("setSyntheticMutableField").isEmpty() &&
+        companion.methodsNamed("setNamedMutableField").isEmpty() &&
+        companion.methodsNamed("writeNamedMutableField").isEmpty())
+  }
+
+  @Test
   fun companionJvmStaticProperties_preserveSyntheticAccessorFlags() {
     val surfaces = KotlinCompilerJvmAbiProbe.compile(
       """

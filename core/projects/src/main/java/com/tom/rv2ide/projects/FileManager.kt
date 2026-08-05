@@ -24,6 +24,7 @@ import com.tom.rv2ide.eventbus.events.file.FileDeletionEvent
 import com.tom.rv2ide.eventbus.events.file.FileRenameEvent
 import com.tom.rv2ide.progress.ProgressManager
 import com.tom.rv2ide.projects.models.ActiveDocument
+import com.tom.rv2ide.projects.models.ActiveDocumentSnapshot
 import java.io.BufferedReader
 import java.io.InputStream
 import java.net.URI
@@ -34,6 +35,7 @@ import java.nio.file.Paths
 import java.time.Instant
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import org.apache.commons.io.FileUtils
 import org.slf4j.LoggerFactory
 
@@ -46,6 +48,7 @@ object FileManager {
 
   private val log = LoggerFactory.getLogger(FileManager::class.java)
   private val activeDocuments = ConcurrentHashMap<Path, ActiveDocument>()
+  private val documentRevision = AtomicLong()
 
   fun isActive(uri: URI): Boolean {
     return isActive(Paths.get(uri))
@@ -59,6 +62,16 @@ object FileManager {
     return this.activeDocuments[file.normalize()]
   }
 
+  fun getActiveDocumentSnapshot(file: Path): ActiveDocumentSnapshot? {
+    return getActiveDocument(file)?.snapshot()
+  }
+
+  fun getActiveDocumentSnapshots(files: Collection<Path>): Map<Path, ActiveDocumentSnapshot> {
+    return files.mapNotNull { file ->
+      getActiveDocumentSnapshot(file)?.let { snapshot -> snapshot.file.normalize() to snapshot }
+    }.toMap()
+  }
+
   fun getActiveDocumentCount(): Int {
     return this.activeDocuments.size
   }
@@ -69,7 +82,7 @@ object FileManager {
   }
 
   fun getDocumentContents(file: Path): String {
-    val document = getActiveDocument(file)
+    val document = getActiveDocumentSnapshot(file)
     if (document != null) {
       return document.content
     }
@@ -78,7 +91,7 @@ object FileManager {
   }
 
   fun getLastModified(file: Path): Instant {
-    val document = getActiveDocument(file)
+    val document = getActiveDocumentSnapshot(file)
     if (document != null) {
       return document.modified
     }
@@ -119,9 +132,13 @@ object FileManager {
       return
     }
 
-    document.version = event.version
-    document.modified = Instant.now()
-    document.content = event.newText ?: document.content
+    val current = document.snapshot()
+    document.update(
+        version = event.version,
+        modified = Instant.now(),
+        content = event.newText ?: current.content,
+        revision = documentRevision.incrementAndGet(),
+    )
   }
 
   fun onDocumentClose(event: DocumentCloseEvent) {
@@ -131,7 +148,16 @@ object FileManager {
   fun onFileRenamed(event: FileRenameEvent) {
     val document = activeDocuments.remove(event.file.toPath().normalize())
     if (document != null) {
-      activeDocuments[event.newFile.toPath().normalize()] = document
+      val snapshot = document.snapshot()
+      val newPath = event.newFile.toPath().normalize()
+      activeDocuments[newPath] =
+          ActiveDocument(
+              file = newPath,
+              version = snapshot.version,
+              modified = Instant.now(),
+              content = snapshot.content,
+              revision = documentRevision.incrementAndGet(),
+          )
     }
   }
 
@@ -149,10 +175,11 @@ object FileManager {
       event.text = initialContent
     }
     return ActiveDocument(
-        file = event.openedFile,
+        file = event.openedFile.normalize(),
         version = event.version,
         modified = Instant.now(),
         content = initialContent,
+        revision = documentRevision.incrementAndGet(),
     )
   }
 
@@ -176,10 +203,11 @@ object FileManager {
   private fun createDocument(event: DocumentChangeEvent): ActiveDocument {
     val initialContent = event.newText ?: getFileContents(event.changedFile)
     return ActiveDocument(
-        file = event.changedFile,
+        file = event.changedFile.normalize(),
         version = event.version,
         modified = Instant.now(),
         content = initialContent,
+        revision = documentRevision.incrementAndGet(),
     )
   }
 

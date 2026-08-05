@@ -32,16 +32,44 @@ open class ActiveDocument(
     var version: Int,
     var modified: Instant,
     content: String = "",
+    revision: Long = 0L,
 ) {
 
   var content: String = content
     internal set
 
+  var revision: Long = revision
+    internal set
+
+  internal fun update(version: Int, modified: Instant, content: String, revision: Long) {
+    synchronized(this) {
+      this.version = version
+      this.modified = modified
+      this.content = content
+      this.revision = revision
+    }
+  }
+
+  fun snapshot(): ActiveDocumentSnapshot {
+    return synchronized(this) {
+      ActiveDocumentSnapshot(file, version, modified, content, revision)
+    }
+  }
+
   fun inputStream(): BufferedInputStream {
-    return content.byteInputStream().buffered()
+    return snapshot().content.byteInputStream().buffered()
   }
 
   fun reader(): BufferedReader {
-    return content.reader().buffered()
+    return snapshot().content.reader().buffered()
   }
 }
+
+/** One coherent immutable view of an active document. */
+data class ActiveDocumentSnapshot(
+    val file: Path,
+    val version: Int,
+    val modified: Instant,
+    val content: String,
+    val revision: Long,
+)

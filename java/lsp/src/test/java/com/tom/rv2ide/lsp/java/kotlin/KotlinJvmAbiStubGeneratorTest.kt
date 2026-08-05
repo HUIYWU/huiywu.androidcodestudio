@@ -2300,6 +2300,218 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generatedCompanionJvmFieldAccessorAnnotations_controlJavacConsumerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        class FieldAnnotationConsumer {
+          companion object {
+            @get:JvmSynthetic
+            @JvmField
+            val syntheticField: String = "field"
+          }
+        }
+        """.trimIndent()
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.FieldAnnotationConsumer",
+      "FieldAnnotationConsumer.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for FieldAnnotationConsumer")
+    val stubs = mapOf("sample.FieldAnnotationConsumer" to stub)
+
+    assertTrue(
+      "@JvmField host surface must be attributable:\n$stub",
+      javacSucceeds(
+        stubs,
+        "consumer.SupportedFieldAnnotationConsumer",
+        """
+        package consumer;
+        import sample.FieldAnnotationConsumer;
+        class SupportedFieldAnnotationConsumer {
+          String read() { return FieldAnnotationConsumer.syntheticField; }
+        }
+        """.trimIndent(),
+      ),
+    )
+
+    val unsupportedMethods = listOf(
+      "String read() { return FieldAnnotationConsumer.getSyntheticField(); }",
+      "String read() { return FieldAnnotationConsumer.Companion.getSyntheticField(); }",
+    )
+    for ((index, method) in unsupportedMethods.withIndex()) {
+      assertFalse(
+        "@JvmField must not expose an accessor despite accessor annotations: $method\n$stub",
+        javacSucceeds(
+          stubs,
+          "consumer.UnsupportedFieldAnnotationConsumer$index",
+          """
+          package consumer;
+          import sample.FieldAnnotationConsumer;
+          class UnsupportedFieldAnnotationConsumer$index {
+            $method
+          }
+          """.trimIndent(),
+        ),
+      )
+    }
+  }
+
+  @Test
+  fun generatedCompanionJvmFieldAccessorJvmNames_controlJavacConsumerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        class NamedFieldAnnotationConsumer {
+          companion object {
+            @get:JvmName("readNamedField")
+            @JvmField
+            val namedField: String = "field"
+          }
+        }
+        """.trimIndent()
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.NamedFieldAnnotationConsumer",
+      "NamedFieldAnnotationConsumer.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for NamedFieldAnnotationConsumer")
+    val stubs = mapOf("sample.NamedFieldAnnotationConsumer" to stub)
+
+    assertTrue(
+      "@JvmField host surface must be attributable despite accessor @JvmName:\n$stub",
+      javacSucceeds(
+        stubs,
+        "consumer.SupportedNamedFieldAnnotationConsumer",
+        """
+        package consumer;
+        import sample.NamedFieldAnnotationConsumer;
+        class SupportedNamedFieldAnnotationConsumer {
+          String read() { return NamedFieldAnnotationConsumer.namedField; }
+        }
+        """.trimIndent(),
+      ),
+    )
+
+    val unsupportedMethods = listOf(
+      "String read() { return NamedFieldAnnotationConsumer.getNamedField(); }",
+      "String read() { return NamedFieldAnnotationConsumer.readNamedField(); }",
+      "String read() { return NamedFieldAnnotationConsumer.Companion.readNamedField(); }",
+    )
+    for ((index, method) in unsupportedMethods.withIndex()) {
+      assertFalse(
+        "@JvmField must not expose an accessor despite accessor @JvmName: $method\n$stub",
+        javacSucceeds(
+          stubs,
+          "consumer.UnsupportedNamedFieldAnnotationConsumer$index",
+          """
+          package consumer;
+          import sample.NamedFieldAnnotationConsumer;
+          class UnsupportedNamedFieldAnnotationConsumer$index {
+            $method
+          }
+          """.trimIndent(),
+        ),
+      )
+    }
+  }
+
+  @Test
+  fun generatedCompanionJvmStaticSyntheticAccessors_controlJavacConsumerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        class SyntheticGetterConsumer {
+          companion object {
+            @get:JvmSynthetic
+            @JvmStatic
+            var secret: String = "secret"
+          }
+        }
+
+        class SyntheticSetterConsumer {
+          companion object {
+            @set:JvmSynthetic
+            @JvmStatic
+            var visible: String = "visible"
+          }
+        }
+        """.trimIndent()
+    val stubs = mapOf(
+      "sample.SyntheticGetterConsumer" to KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.SyntheticGetterConsumer",
+        "SyntheticGetterConsumer.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      )!!,
+      "sample.SyntheticSetterConsumer" to KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.SyntheticSetterConsumer",
+        "SyntheticSetterConsumer.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      )!!,
+    )
+
+    assertTrue(
+      "Non-synthetic companion accessors must be attributable on host and nested owners:\n$stubs",
+      javacSucceeds(
+        stubs,
+        "consumer.SupportedSyntheticCompanionAccessors",
+        """
+        package consumer;
+        import sample.SyntheticGetterConsumer;
+        import sample.SyntheticSetterConsumer;
+        class SupportedSyntheticCompanionAccessors {
+          void use() {
+            SyntheticGetterConsumer.setSecret("secret");
+            SyntheticGetterConsumer.Companion.setSecret("secret");
+            String visible = SyntheticSetterConsumer.getVisible();
+            String nestedVisible = SyntheticSetterConsumer.Companion.getVisible();
+          }
+        }
+        """.trimIndent(),
+      ),
+    )
+
+    val unsupportedMethods = listOf(
+      "void use() { SyntheticGetterConsumer.getSecret(); }",
+      "void use() { SyntheticGetterConsumer.Companion.getSecret(); }",
+      "void use() { SyntheticSetterConsumer.setVisible(\"visible\"); }",
+      "void use() { SyntheticSetterConsumer.Companion.setVisible(\"visible\"); }",
+    )
+    for ((index, method) in unsupportedMethods.withIndex()) {
+      assertFalse(
+        "Synthetic companion accessor must not be attributable: $method\n$stubs",
+        javacSucceeds(
+          stubs,
+          "consumer.UnsupportedSyntheticCompanionAccessor$index",
+          """
+          package consumer;
+          import sample.SyntheticGetterConsumer;
+          import sample.SyntheticSetterConsumer;
+          class UnsupportedSyntheticCompanionAccessor$index {
+            $method
+          }
+          """.trimIndent(),
+        ),
+      )
+    }
+  }
+
+  @Test
   fun generate_projectsCompanionJvmStaticPropertyHonorsSyntheticAccessors() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

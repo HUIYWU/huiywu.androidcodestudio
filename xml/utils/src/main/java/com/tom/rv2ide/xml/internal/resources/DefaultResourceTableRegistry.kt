@@ -42,6 +42,7 @@ import com.tom.rv2ide.xml.internal.resources.DefaultResourceTableRegistry.Single
 import com.tom.rv2ide.xml.internal.resources.DefaultResourceTableRegistry.SingleLineValueEntryType.FEATURES
 import com.tom.rv2ide.xml.internal.resources.DefaultResourceTableRegistry.SingleLineValueEntryType.SERVICE_ACTIONS
 import com.tom.rv2ide.xml.res.IResourceTable
+import com.tom.rv2ide.xml.resources.ResourceTableInputSnapshot
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry.Companion.PCK_ANDROID
 import java.io.File
@@ -110,6 +111,14 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   }
 
   override fun refreshPackage(name: String, vararg resDirs: File): ResourceTable? {
+    return refreshPackage(name, ResourceTableInputSnapshot.EMPTY, *resDirs)
+  }
+
+  override fun refreshPackage(
+      name: String,
+      inputs: ResourceTableInputSnapshot,
+      vararg resDirs: File,
+  ): ResourceTable? {
     if (name == PCK_ANDROID) {
       return resDirs.firstOrNull()?.let(::platformResourceTable)
     }
@@ -119,7 +128,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       val previous = tables[name]
       val fingerprint =
           try {
-            resourceFingerprint(*resDirs)
+            resourceFingerprint(inputs, *resDirs)
           } catch (error: Exception) {
             log.warn("Failed to fingerprint resources for package '{}'", name, error)
             null
@@ -127,17 +136,18 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       if (previous != null && fingerprint != null && tableFingerprints[name] == fingerprint) {
         if (refreshDecisionWarnings.add("$name:reuse")) {
           log.warn(
-              "Resource table refresh reused disk-fingerprint table: package={} generation={} entries={}; unsaved editor content is not part of this fingerprint or table input",
+              "Resource table refresh reused table: package={} generation={} entries={} memoryInputs={}",
               name,
               tableGenerations[name] ?: 0L,
               fingerprint.entries.size,
+              inputs.size,
           )
         }
         return previous
       }
       val replacement =
           try {
-            if (fingerprint == null) null else buildPackageTable(name, *resDirs)
+            if (fingerprint == null) null else buildPackageTable(name, inputs, *resDirs)
           } catch (error: Exception) {
             log.warn("Failed to refresh resource table for package '{}'", name, error)
             null
@@ -151,10 +161,11 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       val generation = tableGenerations.compute(name) { _, previousGeneration -> (previousGeneration ?: 0L) + 1L }
       if (refreshDecisionWarnings.add("$name:rebuild")) {
         log.warn(
-            "Resource table refresh rebuilt from disk inputs: package={} generation={} entries={}; unsaved editor content is not part of this table input",
+            "Resource table refresh rebuilt and published: package={} generation={} entries={} memoryInputs={}",
             name,
             generation ?: 0L,
             fingerprint.entries.size,
+            inputs.size,
         )
       }
       return replacement
@@ -326,9 +337,18 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       val path: String,
       val modifiedMillis: Long,
       val size: Long,
+      val memoryRevision: Long?,
+      val memoryContentHash: Int?,
   )
 
   private fun resourceFingerprint(vararg resDirs: File): ResourceFingerprint? {
+    return resourceFingerprint(ResourceTableInputSnapshot.EMPTY, *resDirs)
+  }
+
+  private fun resourceFingerprint(
+      inputs: ResourceTableInputSnapshot,
+      vararg resDirs: File,
+  ): ResourceFingerprint? {
     val validResDirs = resDirs.filter { it.exists() && it.isDirectory }
     if (validResDirs.isEmpty()) {
       return null
@@ -338,7 +358,14 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
         validResDirs
             .flatMap { directory ->
               directory.walkTopDown().filter { it.isFile }.map { file ->
-                FileFingerprint(file.path, file.lastModified(), file.length())
+                val memoryInput = inputs.get(file.toPath())
+                FileFingerprint(
+                    path = file.path,
+                    modifiedMillis = file.lastModified(),
+                    size = memoryInput?.content?.length?.toLong() ?: file.length(),
+                    memoryRevision = memoryInput?.revision,
+                    memoryContentHash = memoryInput?.content?.hashCode(),
+                )
               }.toList()
             }
             .sortedBy { it.path }
@@ -349,18 +376,33 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   }
 
   private fun buildPackageTable(name: String, vararg resDirs: File): ResourceTable? {
+    return buildPackageTable(name, ResourceTableInputSnapshot.EMPTY, *resDirs)
+  }
+
+  private fun buildPackageTable(
+      name: String,
+      inputs: ResourceTableInputSnapshot,
+      vararg resDirs: File,
+  ): ResourceTable? {
     val validResDirs = resDirs.filter { it.exists() && it.isDirectory }
     if (validResDirs.isEmpty()) {
       return null
     }
 
-    val table = createTable(*validResDirs.toTypedArray()) ?: return null
+    val table = createTable(inputs, *validResDirs.toTypedArray()) ?: return null
     table.packages.firstOrNull()?.name = name
     validResDirs.forEach { resDir -> addFileReferences(table, name, resDir) }
     return table
   }
 
   private fun createTable(vararg resDirs: File): ResourceTable? {
+    return createTable(ResourceTableInputSnapshot.EMPTY, *resDirs)
+  }
+
+  private fun createTable(
+      inputs: ResourceTableInputSnapshot,
+      vararg resDirs: File,
+  ): ResourceTable? {
     if (resDirs.isEmpty()) {
       return null
     }
@@ -383,7 +425,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       if (!values.exists() || !values.isDirectory) {
         continue
       }
-      updateFromDirectory(values, table, options, logger)
+      updateFromDirectory(values, table, options, logger, inputs)
     }
 
     return table
@@ -429,13 +471,14 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       table: ResourceTable,
       options: TableExtractorOptions,
       logger: BlameLogger = BlameLogger(IDELogger),
+      inputs: ResourceTableInputSnapshot = ResourceTableInputSnapshot.EMPTY,
   ) {
     directory.listFiles()?.forEach {
       if (it.isDirectory || it.extension != "xml") {
         return@forEach
       }
 
-      updateFromFile(it, table, options, logger)
+      updateFromFile(it, table, options, logger, inputs)
     }
   }
 
@@ -444,6 +487,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       table: ResourceTable,
       options: TableExtractorOptions,
       logger: BlameLogger,
+      inputs: ResourceTableInputSnapshot = ResourceTableInputSnapshot.EMPTY,
   ) {
 
     if (it.path.endsWith(OS_PLATFORM_ATTRS_MANIFEST_XML)) {
@@ -451,7 +495,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       return
     }
 
-    extractTable(it, table, options, logger)
+    extractTable(it, table, options, logger, inputs)
     return
   }
 
@@ -460,6 +504,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       table: ResourceTable,
       options: TableExtractorOptions,
       logger: BlameLogger,
+      inputs: ResourceTableInputSnapshot = ResourceTableInputSnapshot.EMPTY,
   ) {
     val pathData = extractPathData(file)
     if (pathData.extension != "xml") {
@@ -476,10 +521,15 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
             logger = logger,
         )
 
-    pathData.file.inputStream().use { stream ->
+    val memoryInput = inputs.get(pathData.file.toPath())
+    val stream = memoryInput?.content?.byteInputStream() ?: pathData.file.inputStream()
+    stream.use {
       try {
-        extractor.extract(stream)
-      } catch (err: Exception) {
+        extractor.extract(it)
+      } catch (error: Exception) {
+        if (memoryInput != null) {
+          throw error
+        }
         if (isLoggingEnabled) {
           log.warn("Failed to compile {}", pathData.file)
         }

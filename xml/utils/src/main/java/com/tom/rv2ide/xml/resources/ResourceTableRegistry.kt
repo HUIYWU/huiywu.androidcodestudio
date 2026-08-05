@@ -23,12 +23,39 @@ import com.tom.rv2ide.utils.ServiceLoader
 import com.tom.rv2ide.xml.registry.XmlRegistry
 import com.tom.rv2ide.xml.res.IResourceTable
 import java.io.File
+import java.nio.file.Path
 
 /**
  * Handles resource tables for multiple modules/dependencies and the framework resources.
  *
  * @author Akash Yadav
  */
+data class ResourceTableFileInput(
+    val content: String,
+    val revision: Long,
+)
+
+/** Immutable resource contents captured before a package refresh starts. */
+class ResourceTableInputSnapshot private constructor(
+    private val files: Map<Path, ResourceTableFileInput>,
+) {
+
+  fun get(file: Path): ResourceTableFileInput? = files[file.normalize()]
+
+  val size: Int
+    get() = files.size
+
+  companion object {
+    @JvmField val EMPTY = ResourceTableInputSnapshot(emptyMap())
+
+    @JvmStatic
+    fun of(files: Map<Path, ResourceTableFileInput>): ResourceTableInputSnapshot {
+      if (files.isEmpty()) return EMPTY
+      return ResourceTableInputSnapshot(files.mapKeys { (path, _) -> path.normalize() }.toMap())
+    }
+  }
+}
+
 interface ResourceTableRegistry : XmlRegistry<IResourceTable> {
 
   companion object {
@@ -77,6 +104,17 @@ interface ResourceTableRegistry : XmlRegistry<IResourceTable> {
    * @return The replacement table, or the previously cached table if rebuilding failed.
    */
   fun refreshPackage(name: String, vararg resDirs: File): IResourceTable?
+
+  /**
+   * Rebuilds a package table using immutable in-memory contents for the listed resource files and
+   * disk contents for every other file. [inputs] must describe one coherent editor snapshot; its
+   * revisions participate in cache fingerprints so unchanged snapshots can reuse the current table.
+   */
+  fun refreshPackage(
+      name: String,
+      inputs: ResourceTableInputSnapshot,
+      vararg resDirs: File,
+  ): IResourceTable? = refreshPackage(name, *resDirs)
 
   /** Returns the generation of the cached package table, or 0 when it is unavailable. */
   fun getGeneration(packageName: String): Long
