@@ -45,12 +45,15 @@ class ResourceDefinitionExtractorTest : TestCase() {
 
   fun testExtractsAttrDefinitionsButNotDeclareStyleableNames() {
     val text =
-        "<resources><attr name=\"brand_color\" format=\"color\" /><declare-styleable name=\"Widget\" /></resources>"
+        "<resources><attr name=\"brand_color\" format=\"color\" /><declare-styleable name=\"Widget\"><attr name=\"corner_radius\" format=\"dimension\" /></declare-styleable></resources>"
 
     val definitions = extract("project/app/src/main/res/values/attrs.xml", text)
 
-    assertThat(definitions.map { it.type to it.name }).containsExactly(ATTR to "brand_color")
-    assertNameRange(text, definitions.single(), "brand_color")
+    assertThat(definitions.map { it.type to it.name })
+        .containsExactly(ATTR to "brand_color", ATTR to "corner_radius")
+        .inOrder()
+    assertNameRange(text, definitions[0], "brand_color")
+    assertNameRange(text, definitions[1], "corner_radius")
   }
 
   fun testExtractsFileResourcesFromQualifiedDirectoriesWithoutTextRange() {

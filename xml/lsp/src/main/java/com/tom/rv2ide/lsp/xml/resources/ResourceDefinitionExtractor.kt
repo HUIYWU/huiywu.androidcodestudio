@@ -95,11 +95,12 @@ internal object ResourceDefinitionExtractor {
               positions,
           )
         }
+    val nestedStyleableAttrDefinitions = styleableAttrDefinitions(file, text, root, positions)
     if (timing != null) timing.elementTraversalNanos += System.nanoTime() - checkNotNull(traversalStartedAtNanos)
     val creatingIdsStartedAtNanos = timing?.let { System.nanoTime() }
     val creatingIds = creatingIdDefinitions(file, text, document, positions)
     if (timing != null) timing.creatingIdNanos += System.nanoTime() - checkNotNull(creatingIdsStartedAtNanos)
-    return Extraction.Available(valueDefinitions + creatingIds)
+    return Extraction.Available(valueDefinitions + nestedStyleableAttrDefinitions + creatingIds)
   }
 
   private fun fileDefinitions(file: Path, text: String, path: ResourcePath.File): Extraction {
@@ -128,6 +129,30 @@ internal object ResourceDefinitionExtractor {
       return Extraction.Available(listOfNotNull(fileResource))
     }
     return Extraction.Available(listOfNotNull(fileResource) + creatingIdDefinitions(file, text, document))
+  }
+
+  private fun styleableAttrDefinitions(
+      file: Path,
+      text: String,
+      root: DOMElement,
+      positions: PositionIndex,
+  ): List<ResourceDefinition> {
+    return root.children
+        .filterIsInstance<DOMElement>()
+        .filter { it.tagName == DECLARE_STYLEABLE_TAG }
+        .flatMap { styleable ->
+          styleable.children.filterIsInstance<DOMElement>().mapNotNull { attribute ->
+            if (attribute.tagName != ATTR_TAG) return@mapNotNull null
+            definitionFromNameAttribute(
+                file,
+                text,
+                AaptResourceType.ATTR,
+                attribute.getAttributeNode(NAME_ATTRIBUTE),
+                ResourceDefinitionKind.VALUE_ELEMENT,
+                positions,
+            )
+          }
+        }
   }
 
   private fun creatingIdDefinitions(
@@ -313,6 +338,8 @@ internal object ResourceDefinitionExtractor {
   private const val VALUES_DIRECTORY = "values"
   private const val VALUES_ROOT_TAG = "resources"
   private const val ITEM_TAG = "item"
+  private const val ATTR_TAG = "attr"
+  private const val DECLARE_STYLEABLE_TAG = "declare-styleable"
   private const val TYPE_ATTRIBUTE = "type"
   private const val NAME_ATTRIBUTE = "name"
   private const val ID_TYPE_NAME = "id"

@@ -1060,9 +1060,21 @@ private static final Pattern PROPERTY_PATTERN =
       KotlinJvmSyntaxParser.MemberSyntax property,
       boolean interfaceType,
       boolean topLevel) {
-    if (property.name == null || property.receiverType != null && !topLevel && !interfaceType
-        || !canProjectValueClassProperty(
-            property.getterJvmName, property.setterJvmName, property.mutableProperty, property.declaredType)) {
+    if (property.name == null || property.receiverType != null && !topLevel && !interfaceType) {
+      return;
+    }
+    final boolean extensionProperty = property.receiverType != null;
+    final boolean getterProjectable = extensionProperty
+        ? canProjectValueClassExtensionGetter(
+            property.getterJvmName, property.receiverType, property.declaredType)
+        : canProjectValueClassProperty(
+            property.getterJvmName, property.setterJvmName, property.mutableProperty, property.declaredType);
+    final boolean setterProjectable = !property.mutableProperty ? false : extensionProperty
+        ? canProjectValueClassExtensionSetter(
+            property.setterJvmName, property.receiverType, property.declaredType)
+        : canProjectValueClassProperty(
+            property.getterJvmName, property.setterJvmName, true, property.declaredType);
+    if (!getterProjectable && !setterProjectable) {
       return;
     }
     final String type = javaAbiType(property.declaredType);
@@ -1072,7 +1084,7 @@ private static final Pattern PROPERTY_PATTERN =
     final String setter = property.setterJvmName == null
         ? propertySetterName(property.name, property.declaredType)
         : property.setterJvmName;
-    if (!property.getterJvmSynthetic) {
+    if (getterProjectable && !property.getterJvmSynthetic) {
       out.append("  public ");
       if (topLevel) {
         out.append("static ");
@@ -1085,7 +1097,7 @@ private static final Pattern PROPERTY_PATTERN =
           ? ";\n"
           : " { return " + defaultValue(property.declaredType) + "; }\n");
     }
-    if (property.mutableProperty && !property.setterJvmSynthetic) {
+    if (setterProjectable && !property.setterJvmSynthetic) {
       out.append("  public ");
       if (topLevel) {
         out.append("static ");
@@ -2325,6 +2337,25 @@ private static final Pattern PROPERTY_PATTERN =
           + ("Object".equals(bound) || "void".equals(bound) ? "" : " extends " + bound));
     }
     return declarations.isEmpty() ? "" : "<" + String.join(", ", declarations) + "> ";
+  }
+
+  /**
+   * Extension getters with a scalar receiver are mangled. A direct non-null scalar return alone
+   * remains a plain JVM getter using its underlying representation; nullable returns stay omitted
+   * until their representation has dedicated compiler evidence.
+   */
+  private static boolean canProjectValueClassExtensionGetter(
+      String getterJvmName, String receiverType, String returnType) {
+    return getterJvmName != null
+        || !isScalarValueClassType(receiverType)
+            && (!containsValueClassType(returnType) || isDirectValueClassType(returnType));
+  }
+
+  /** Extension setters are mangled for either a scalar receiver or scalar value parameter. */
+  private static boolean canProjectValueClassExtensionSetter(
+      String setterJvmName, String receiverType, String valueType) {
+    return setterJvmName != null
+        || !isScalarValueClassType(receiverType) && !isScalarValueClassType(valueType);
   }
 
   private static boolean canProjectValueClassProperty(

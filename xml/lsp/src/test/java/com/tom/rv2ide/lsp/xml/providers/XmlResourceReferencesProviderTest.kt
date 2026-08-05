@@ -99,6 +99,25 @@ class XmlResourceReferencesProviderTest : TestCase() {
         .inOrder()
   }
 
+  fun testFindsResAutoAttributeUsageFromNestedStyleableAttrDefinition() {
+    val attributes = Paths.get("project/app/src/main/res/values/attrs.xml")
+    val layout = Paths.get("project/app/src/main/res/layout/screen.xml")
+    val attributesText =
+        "<resources><declare-styleable name=\"Widget\"><attr name=\"corner_radius\" format=\"dimension\" /></declare-styleable></resources>"
+    val layoutText =
+        "<View xmlns:custom=\"http://schemas.android.com/apk/res-auto\" custom:corner_radius=\"12dp\" />"
+    val snapshot = snapshot(linkedMapOf(attributes to attributesText, layout to layoutText))
+    val provider = XmlResourceReferencesProvider()
+    val target =
+        checkNotNull(provider.targetFor(attributes, attributesText, attributesText.indexOf("corner_radius") + 2, snapshot))
+
+    val locations = provider.findInSnapshot(target, snapshot, includeDeclaration = true)
+    assertThat(locations.map { it.file }).containsExactly(attributes, layout).inOrder()
+    assertThat(provider.rolesFor(target, snapshot, locations))
+        .containsExactly(ReferenceRole.DEFINITION, ReferenceRole.USAGE)
+        .inOrder()
+  }
+
   fun testResolvesFileDefinitionOnlyWhenCursorIsNotOnInnerReference() {
     val drawable = Paths.get("project/app/src/main/res/drawable/probe_background.xml")
     val values = Paths.get("project/app/src/main/res/values/colors.xml")

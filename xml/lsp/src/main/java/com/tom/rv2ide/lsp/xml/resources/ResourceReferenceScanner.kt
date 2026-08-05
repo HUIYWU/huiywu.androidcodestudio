@@ -75,6 +75,10 @@ internal object ResourceReferenceScanner {
             if (occurrence.isCreatingId) timing.creatingIdOccurrences++
           }
         }
+        customAttributeNameOccurrence(attribute, text, positions, timing)?.let { occurrence ->
+          occurrences += occurrence
+          if (timing != null) timing.attributeOccurrences++
+        }
       }
     }
     if (node is DOMText) {
@@ -101,6 +105,26 @@ internal object ResourceReferenceScanner {
     val reference = parseMeasuredReference(value, timing) ?: return null
     val range = attributeValueOffsets(attribute, text) ?: return null
     return buildMeasuredOccurrence(reference, positions, range.first, range.second, timing)
+  }
+
+  private fun customAttributeNameOccurrence(
+      attribute: DOMAttr,
+      text: String,
+      positions: PositionIndex,
+      timing: OccurrenceTiming?,
+  ): ResourceReferenceOccurrence? {
+    if (attribute.namespaceURI != AUTO_NAMESPACE_URI) return null
+    val fullName = attribute.name ?: return null
+    val separator = fullName.indexOf(':')
+    if (separator <= 0 || separator == fullName.lastIndex) return null
+    val name = fullName.substring(separator + 1)
+    if (!RESOURCE_NAME.matches(name)) return null
+    val nameNode = attribute.nodeAttrName ?: return null
+    val start = nameNode.start.coerceIn(0, text.length)
+    val end = nameNode.end.coerceIn(start, text.length)
+    if (text.substring(start, end) != fullName) return null
+    val reference = XmlResourceReference("@attr/$name", null, AaptResourceType.ATTR, name, false)
+    return buildMeasuredOccurrence(ParsedReference(reference, false), positions, start, end, timing)
   }
 
   private fun textOccurrence(
@@ -254,12 +278,14 @@ internal object ResourceReferenceScanner {
 
   private const val ANDROID_NAMESPACE_URI = "http://schemas.android.com/apk/res/android"
   private const val TOOLS_NAMESPACE_URI = "http://schemas.android.com/tools"
+  private const val AUTO_NAMESPACE_URI = "http://schemas.android.com/apk/res-auto"
   private const val RESOURCE_MARKER = '@'
   private const val THEME_MARKER = '?'
   private const val CREATING_ID_PREFIX = "@+"
   private const val DATA_BINDING_PREFIX = "@{"
   private const val TWO_WAY_DATA_BINDING_PREFIX = "@={"
   private const val QUOTES = "\"'"
+  private val RESOURCE_NAME = Regex("[a-z][a-z0-9_]*")
 }
 
 /** A complete resource reference occurrence with a range excluding XML quotes and whitespace. */

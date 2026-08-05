@@ -9,6 +9,7 @@ import org.jetbrains.kotlin.cli.jvm.K2JVMCompiler
 import org.jetbrains.kotlin.cli.common.ExitCode
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.FieldVisitor
 import org.objectweb.asm.MethodVisitor
 import org.objectweb.asm.Opcodes
 
@@ -32,10 +33,13 @@ internal object KotlinCompilerJvmAbiProbe {
     val internalName: String,
     val access: Int,
     val members: List<Member>,
+    val fields: List<Member>,
   ) {
     fun constructors(): List<Member> = members.filter { it.name == "<init>" }
 
     fun methodsNamed(name: String): List<Member> = members.filter { it.name == name }
+
+    fun fieldsNamed(name: String): List<Member> = fields.filter { it.name == name }
   }
 
   fun compile(source: String, fileName: String = "Probe.kt"): List<ClassSurface> {
@@ -83,6 +87,7 @@ internal object KotlinCompilerJvmAbiProbe {
     var internalName = ""
     var access = 0
     val members = mutableListOf<Member>()
+    val fields = mutableListOf<Member>()
     ClassReader(Files.readAllBytes(path)).accept(object : ClassVisitor(Opcodes.ASM9) {
       override fun visit(
         version: Int,
@@ -96,6 +101,17 @@ internal object KotlinCompilerJvmAbiProbe {
         access = classAccess
       }
 
+      override fun visitField(
+        fieldAccess: Int,
+        name: String,
+        descriptor: String,
+        signature: String?,
+        value: Any?,
+      ): FieldVisitor? {
+        fields += Member(name, descriptor, fieldAccess)
+        return null
+      }
+
       override fun visitMethod(
         methodAccess: Int,
         name: String,
@@ -107,6 +123,6 @@ internal object KotlinCompilerJvmAbiProbe {
         return null
       }
     }, ClassReader.SKIP_CODE or ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
-    return ClassSurface(internalName, access, members)
+    return ClassSurface(internalName, access, members, fields)
   }
 }

@@ -1509,6 +1509,50 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generate_structuredProjectsOnlyProvenValueClassExtensionAccessorSurfaces() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        @JvmInline
+        value class UserId(val raw: String)
+
+        var UserId.label: String
+          get() = raw
+          set(value) {}
+
+        var String.id: UserId
+          get() = UserId(this)
+          set(value) {}
+
+        var UserId.other: UserId
+          get() = this
+          set(value) {}
+
+        @get:JvmName("readLabel")
+        @set:JvmName("writeLabel")
+        var UserId.namedLabel: String
+          get() = raw
+          set(value) {}
+        """.trimIndent()
+
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ValueClassExtensionsKt", "ValueClassExtensions.kt", source, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull(stub)
+    assertFalse("Scalar receiver getter leaked:\n$stub", stub!!.contains("getLabel(String receiver)"))
+    assertFalse("Scalar receiver setter leaked:\n$stub", stub.contains("setLabel(String receiver"))
+    assertContains(stub, "static String getId(String receiver)")
+    assertFalse("Scalar value setter leaked:\n$stub", stub.contains("setId(String receiver"))
+    assertFalse("Scalar receiver/value getter leaked:\n$stub", stub.contains("getOther(String receiver)"))
+    assertFalse("Scalar receiver/value setter leaked:\n$stub", stub.contains("setOther(String receiver"))
+    assertContains(stub, "static String readLabel(String receiver)")
+    assertContains(stub, "static void writeLabel(String receiver, String value)")
+  }
+
+  @Test
   fun generate_structuredProjectsTopLevelExtensionPropertyAccessors() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

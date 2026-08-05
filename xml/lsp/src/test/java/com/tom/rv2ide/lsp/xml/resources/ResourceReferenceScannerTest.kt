@@ -112,6 +112,18 @@ class ResourceReferenceScannerTest : TestCase() {
     assertOccurrenceRange(text, occurrences.single(), "?attr/textColorPrimary")
   }
 
+  fun testScansResAutoCustomAttributeNamesOnly() {
+    val text =
+        "<View xmlns:android=\"http://schemas.android.com/apk/res/android\" xmlns:custom=\"http://schemas.android.com/apk/res-auto\" xmlns:tools=\"http://schemas.android.com/tools\" xmlns:lib=\"http://schemas.android.com/apk/res/example.lib\" custom:brand_color=\"plain\" android:brand_color=\"plain\" tools:brand_color=\"plain\" lib:brand_color=\"plain\" />"
+
+    val occurrences = scan(text)
+
+    assertThat(occurrences).hasSize(1)
+    assertThat(occurrences.single().reference.type).isEqualTo(com.android.aaptcompiler.AaptResourceType.ATTR)
+    assertThat(occurrences.single().reference.entry).isEqualTo("brand_color")
+    assertOccurrenceRange(text, occurrences.single(), "custom:brand_color")
+  }
+
   fun testTargetAtAcceptsOnlyReferenceRange() {
     val text = "<View android:text=\"@string/title\" />"
     val referenceOffset = text.indexOf("title") + 2

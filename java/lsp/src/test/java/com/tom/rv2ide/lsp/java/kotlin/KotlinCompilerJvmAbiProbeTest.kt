@@ -305,6 +305,202 @@ class KotlinCompilerJvmAbiProbeTest {
     )
   }
 
+  @Test
+  fun memberPropertyAccessors_requireExplicitJvmNamesForScalarValueClasses() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      @JvmInline
+      value class UserId(val raw: String)
+
+      class MemberScalar {
+        var id: UserId = UserId("member")
+      }
+
+      class NamedScalar {
+        @get:JvmName("readId")
+        @set:JvmName("writeId")
+        var id: UserId = UserId("named")
+      }
+
+      class ArrayMember {
+        var ids: Array<UserId> = emptyArray()
+      }
+
+      class GenericMember {
+        var ids: List<UserId> = emptyList()
+      }
+      """.trimIndent(),
+      "ValueClassMemberProperties.kt",
+    ).associateBy { it.internalName }
+
+    assertMangledAccessor(
+      surfaces.getValue("evidence/MemberScalar"),
+      "getId-", "()Ljava/lang/String;",
+    )
+    assertMangledAccessor(
+      surfaces.getValue("evidence/MemberScalar"),
+      "setId-", "(Ljava/lang/String;)V",
+    )
+
+    assertPlainAccessor(
+      surfaces.getValue("evidence/NamedScalar"),
+      "readId", "()Ljava/lang/String;",
+    )
+    assertPlainAccessor(
+      surfaces.getValue("evidence/NamedScalar"),
+      "writeId", "(Ljava/lang/String;)V",
+    )
+    assertTrue(
+      "Explicit @JvmName accessors must replace mangled defaults: ${surfaces.getValue("evidence/NamedScalar").members}",
+      surfaces.getValue("evidence/NamedScalar").members.none {
+        it.name.startsWith("getId-") || it.name.startsWith("setId-")
+      },
+    )
+
+    assertPlainAccessor(
+      surfaces.getValue("evidence/ArrayMember"),
+      "getIds", "()[Levidence/UserId;",
+    )
+    assertPlainAccessor(
+      surfaces.getValue("evidence/ArrayMember"),
+      "setIds", "([Levidence/UserId;)V",
+    )
+    assertPlainAccessor(
+      surfaces.getValue("evidence/GenericMember"),
+      "getIds", "()Ljava/util/List;",
+    )
+    assertPlainAccessor(
+      surfaces.getValue("evidence/GenericMember"),
+      "setIds", "(Ljava/util/List;)V",
+    )
+  }
+
+  @Test
+  fun companionValueClassProperties_distinguishJvmFieldAndJvmStaticSurfaces() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      @JvmInline
+      value class UserId(val raw: String)
+
+      class FieldHost {
+        companion object {
+          @JvmField
+          val ids: Array<UserId> = emptyArray()
+        }
+      }
+
+      class StaticScalarHost {
+        companion object {
+          @JvmStatic
+          var id: UserId = UserId("static")
+        }
+      }
+
+      class NamedStaticScalarHost {
+        companion object {
+          @get:JvmName("readId")
+          @set:JvmName("writeId")
+          @JvmStatic
+          var id: UserId = UserId("named")
+        }
+      }
+      """.trimIndent(),
+      "ValueClassCompanionProperties.kt",
+    ).associateBy { it.internalName }
+
+    val fieldHost = surfaces.getValue("evidence/FieldHost")
+    val field = fieldHost.fieldsNamed("ids").singleOrNull { it.descriptor == "[Levidence/UserId;" }
+    assertNotNull("Expected @JvmField boxed array field; actual=${fieldHost.fields}", field)
+    assertTrue("Expected @JvmField to be public: $field", field!!.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("Expected @JvmField to be static: $field", field.access and Opcodes.ACC_STATIC != 0)
+    assertTrue("Expected @JvmField not to be synthetic: $field", field.access and Opcodes.ACC_SYNTHETIC == 0)
+    assertTrue("@JvmField must not create a host getter: ${fieldHost.members}",
+      fieldHost.methodsNamed("getIds").isEmpty())
+    assertTrue("@JvmField must not create a host setter: ${fieldHost.members}",
+      fieldHost.methodsNamed("setIds").isEmpty())
+
+    for (owner in listOf(
+      "evidence/StaticScalarHost",
+      "evidence/StaticScalarHost\$Companion",
+    )) {
+      assertMangledAccessor(
+        surfaces.getValue(owner), "getId-", "()Ljava/lang/String;",
+      )
+      assertMangledAccessor(
+        surfaces.getValue(owner), "setId-", "(Ljava/lang/String;)V",
+      )
+    }
+
+    assertStaticPlainAccessor(
+      surfaces.getValue("evidence/NamedStaticScalarHost"),
+      "readId", "()Ljava/lang/String;",
+    )
+    assertStaticPlainAccessor(
+      surfaces.getValue("evidence/NamedStaticScalarHost"),
+      "writeId", "(Ljava/lang/String;)V",
+    )
+    assertPlainAccessor(
+      surfaces.getValue("evidence/NamedStaticScalarHost\$Companion"),
+      "readId", "()Ljava/lang/String;",
+    )
+    assertPlainAccessor(
+      surfaces.getValue("evidence/NamedStaticScalarHost\$Companion"),
+      "writeId", "(Ljava/lang/String;)V",
+    )
+  }
+
+  @Test
+  fun valueClassExtensionProperties_preserveCompilerManglingBoundaries() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      @JvmInline
+      value class UserId(val raw: String)
+
+      var UserId.label: String
+        get() = raw
+        set(value) {}
+
+      var String.id: UserId
+        get() = UserId(this)
+        set(value) {}
+
+      var UserId.other: UserId
+        get() = this
+        set(value) {}
+
+      @get:JvmName("readLabel")
+      @set:JvmName("writeLabel")
+      var UserId.namedLabel: String
+        get() = raw
+        set(value) {}
+      """.trimIndent(),
+      "ValueClassFieldsAndExtensionProperties.kt",
+    ).associateBy { it.internalName }
+
+    val facade = surfaces.getValue("evidence/ValueClassFieldsAndExtensionPropertiesKt")
+    assertMangledAccessor(facade, "getLabel-", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertMangledAccessor(facade, "setLabel-", "(Ljava/lang/String;Ljava/lang/String;)V")
+    // A value-class return alone does not force a JVM name mangling. The getter can use the
+    // underlying String return, while the setter takes a value-class parameter and is mangled.
+    assertStaticPlainAccessor(facade, "getId", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertMangledAccessor(facade, "setId-", "(Ljava/lang/String;Ljava/lang/String;)V")
+    assertMangledAccessor(facade, "getOther-", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertMangledAccessor(facade, "setOther-", "(Ljava/lang/String;Ljava/lang/String;)V")
+
+    assertStaticPlainAccessor(facade, "readLabel", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertStaticPlainAccessor(facade, "writeLabel", "(Ljava/lang/String;Ljava/lang/String;)V")
+    assertTrue("Explicit extension accessor names must replace mangled defaults: ${facade.members}",
+      facade.members.none {
+        it.name.startsWith("getNamedLabel-") || it.name.startsWith("setNamedLabel-")
+      })
+  }
+
   private fun assertMangledAccessor(
     surface: KotlinCompilerJvmAbiProbe.ClassSurface,
     namePrefix: String,
@@ -327,6 +523,21 @@ class KotlinCompilerJvmAbiProbeTest {
       "Plain accessor $plainName must not coexist with mangled value-class accessor: ${surface.members}",
       surface.methodsNamed(plainName).isEmpty(),
     )
+  }
+
+  private fun assertStaticPlainAccessor(
+    surface: KotlinCompilerJvmAbiProbe.ClassSurface,
+    name: String,
+    descriptor: String,
+  ) {
+    val accessor = surface.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+    assertNotNull("Expected static accessor $name$descriptor in ${surface.internalName}: ${surface.members}", accessor)
+    assertTrue("Expected static accessor to be public: $accessor",
+      accessor!!.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("Expected static accessor to be static: $accessor",
+      accessor.access and Opcodes.ACC_STATIC != 0)
+    assertTrue("Expected static accessor not to be synthetic: $accessor",
+      accessor.access and Opcodes.ACC_SYNTHETIC == 0)
   }
 
   private fun assertPlainAccessor(
