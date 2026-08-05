@@ -1,6 +1,13 @@
 package com.tom.rv2ide.lsp.java.kotlin
 
 import com.itsaky.androidide.treesitter.TreeSitter
+import java.net.URI
+import java.nio.file.Files
+import java.util.Comparator
+import jdkx.tools.DiagnosticCollector
+import jdkx.tools.JavaFileObject
+import jdkx.tools.SimpleJavaFileObject
+import openjdk.tools.javac.api.JavacTool
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -318,6 +325,264 @@ class KotlinJvmAbiStubGeneratorTest {
           secondary.contains("public SecondaryHolder(UserId id)"))
       assertFalse("Underlying scalar secondary constructor leaked in $mode:\n$secondary",
           secondary.contains("public SecondaryHolder(String id)"))
+    }
+  }
+
+  @Test
+  fun generatedValueClassConstructorStubs_controlJavacConsumerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        @JvmInline
+        value class UserId(val raw: String)
+
+        class DirectHolder(val id: UserId)
+        class NullableHolder(var id: UserId?)
+        class ArrayHolder(var ids: Array<UserId>)
+        class GenericHolder(var ids: List<UserId>)
+        """.trimIndent()
+    val qualifiedNames = listOf(
+      "sample.UserId",
+      "sample.DirectHolder",
+      "sample.NullableHolder",
+      "sample.ArrayHolder",
+      "sample.GenericHolder",
+    )
+    val stubs = qualifiedNames.associateWith { qualifiedName ->
+      KotlinJvmAbiStubGenerator.generateForTest(
+        qualifiedName,
+        "ValueClassConstructors.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      ) ?: error("Missing generated stub for $qualifiedName")
+    }
+
+    val supportedConsumer =
+        """
+        package consumer;
+        import sample.ArrayHolder;
+        import sample.GenericHolder;
+        import sample.UserId;
+        class SupportedConstructors {
+          void use(UserId[] ids, java.util.List<UserId> list) {
+            ArrayHolder array = new ArrayHolder(ids);
+            array.setIds(array.getIds());
+            GenericHolder generic = new GenericHolder(list);
+            generic.setIds(generic.getIds());
+          }
+        }
+        """.trimIndent()
+    assertTrue(
+      "Boxed value-class constructor/property surfaces must be attributable by javac:\n$stubs",
+      javacSucceeds(stubs, "consumer.SupportedConstructors", supportedConsumer),
+    )
+
+    val unsupportedMethods = listOf(
+      "void use() { new DirectHolder(\"id\"); }",
+      "void use(DirectHolder value) { value.getId(); }",
+      "void use() { new NullableHolder(\"id\"); }",
+      "void use(NullableHolder value) { value.getId(); }",
+      "void use(NullableHolder value) { value.setId(\"id\"); }",
+    )
+    for ((index, method) in unsupportedMethods.withIndex()) {
+      val unsupportedConsumer =
+          """
+          package consumer;
+          import sample.DirectHolder;
+          import sample.NullableHolder;
+          class UnsupportedConstructors$index {
+            $method
+          }
+          """.trimIndent()
+      assertFalse(
+        "Scalar value-class surface must not be attributable: $method\n$stubs",
+        javacSucceeds(stubs, "consumer.UnsupportedConstructors$index", unsupportedConsumer),
+      )
+    }
+  }
+
+  @Test
+  fun generatedValueClassCompanionStubs_controlJavacConsumerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        @JvmInline
+        value class UserId(val raw: String)
+
+        class FieldHost {
+          companion object {
+            @JvmField val ids: Array<UserId> = emptyArray()
+          }
+        }
+
+        class StaticScalarHost {
+          companion object {
+            @JvmStatic var id: UserId = UserId("static")
+          }
+        }
+
+        class NamedStaticScalarHost {
+          companion object {
+            @get:JvmName("readId")
+            @set:JvmName("writeId")
+            @JvmStatic var id: UserId = UserId("named")
+          }
+        }
+        """.trimIndent()
+    val qualifiedNames = listOf(
+      "sample.UserId",
+      "sample.FieldHost",
+      "sample.StaticScalarHost",
+      "sample.NamedStaticScalarHost",
+    )
+    val stubs = qualifiedNames.associateWith { qualifiedName ->
+      KotlinJvmAbiStubGenerator.generateForTest(
+        qualifiedName,
+        "ValueClassCompanions.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      ) ?: error("Missing generated stub for $qualifiedName")
+    }
+
+    val supportedConsumer =
+        """
+        package consumer;
+        import sample.FieldHost;
+        import sample.NamedStaticScalarHost;
+        import sample.UserId;
+        class SupportedCompanions {
+          void use(UserId[] ids) {
+            UserId[] field = FieldHost.ids;
+            String id = NamedStaticScalarHost.readId();
+            NamedStaticScalarHost.writeId(id);
+          }
+        }
+        """.trimIndent()
+    assertTrue(
+      "Proven value-class companion surface must be attributable by javac:\n$stubs",
+      javacSucceeds(stubs, "consumer.SupportedCompanions", supportedConsumer),
+    )
+
+    val unsupportedMethods = listOf(
+      "void use() { FieldHost.getIds(); }",
+      "void use() { FieldHost.setIds(null); }",
+      "void use() { StaticScalarHost.getId(); }",
+      "void use() { StaticScalarHost.setId(\"id\"); }",
+    )
+    for ((index, method) in unsupportedMethods.withIndex()) {
+      val unsupportedConsumer =
+          """
+          package consumer;
+          import sample.FieldHost;
+          import sample.StaticScalarHost;
+          class UnsupportedCompanions$index {
+            $method
+          }
+          """.trimIndent()
+      assertFalse(
+        "Unproven companion accessor must not be attributable: $method\n$stubs",
+        javacSucceeds(stubs, "consumer.UnsupportedCompanions$index", unsupportedConsumer),
+      )
+    }
+  }
+
+  @Test
+  fun generatedValueClassMemberPropertyStubs_controlJavacConsumerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        @JvmInline
+        value class UserId(val raw: String)
+
+        class MemberScalar {
+          var id: UserId = UserId("member")
+        }
+
+        class NamedScalar {
+          @get:JvmName("readId")
+          @set:JvmName("writeId")
+          var id: UserId = UserId("named")
+        }
+
+        class ArrayMember {
+          var ids: Array<UserId> = emptyArray()
+        }
+
+        class GenericMember {
+          var ids: List<UserId> = emptyList()
+        }
+        """.trimIndent()
+    val qualifiedNames = listOf(
+      "sample.UserId",
+      "sample.MemberScalar",
+      "sample.NamedScalar",
+      "sample.ArrayMember",
+      "sample.GenericMember",
+    )
+    val stubs = qualifiedNames.associateWith { qualifiedName ->
+      KotlinJvmAbiStubGenerator.generateForTest(
+        qualifiedName,
+        "ValueClassMemberProperties.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      ) ?: error("Missing generated stub for $qualifiedName")
+    }
+
+    val supportedConsumer =
+        """
+        package consumer;
+        import sample.ArrayMember;
+        import sample.GenericMember;
+        import sample.NamedScalar;
+        import sample.UserId;
+        class SupportedMemberProperties {
+          void use(UserId[] ids, java.util.List<UserId> list) {
+            NamedScalar scalar = new NamedScalar();
+            String id = scalar.readId();
+            scalar.writeId(id);
+            ArrayMember array = new ArrayMember();
+            array.setIds(ids);
+            UserId[] result = array.getIds();
+            GenericMember generic = new GenericMember();
+            generic.setIds(list);
+            java.util.List<UserId> genericResult = generic.getIds();
+          }
+        }
+        """.trimIndent()
+    assertTrue(
+      "Proven member-property surface must be attributable by javac:\n$stubs",
+      javacSucceeds(stubs, "consumer.SupportedMemberProperties", supportedConsumer),
+    )
+
+    val unsupportedMethods = listOf(
+      "void use(MemberScalar value) { value.getId(); }",
+      "void use(MemberScalar value) { value.setId(\"id\"); }",
+    )
+    for ((index, method) in unsupportedMethods.withIndex()) {
+      val unsupportedConsumer =
+          """
+          package consumer;
+          import sample.MemberScalar;
+          class UnsupportedMemberProperties$index {
+            $method
+          }
+          """.trimIndent()
+      assertFalse(
+        "Mangled scalar member accessor must not be attributable: $method\n$stubs",
+        javacSucceeds(stubs, "consumer.UnsupportedMemberProperties$index", unsupportedConsumer),
+      )
     }
   }
 
@@ -1553,6 +1818,67 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generatedValueClassExtensionStub_controlsJavacConsumerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        @JvmInline
+        value class UserId(val raw: String)
+
+        var UserId.label: String
+          get() = raw
+          set(value) {}
+
+        var String.id: UserId
+          get() = UserId(this)
+          set(value) {}
+
+        @get:JvmName("readLabel")
+        @set:JvmName("writeLabel")
+        var UserId.namedLabel: String
+          get() = raw
+          set(value) {}
+        """.trimIndent()
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ValueClassExtensionsKt", "ValueClassExtensions.kt", kotlinSource, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull(stub)
+
+    val supportedConsumer =
+        """
+        package consumer;
+        import sample.ValueClassExtensionsKt;
+        class Supported {
+          String read() { return ValueClassExtensionsKt.getId("id"); }
+          String named() { return ValueClassExtensionsKt.readLabel("id"); }
+          void write() { ValueClassExtensionsKt.writeLabel("id", "value"); }
+        }
+        """.trimIndent()
+    assertTrue(
+        "Proven Kotlin ABI surface must be attributable by javac:\n$stub",
+        javacSucceeds(stub!!, supportedConsumer))
+
+    val unsupportedConsumer =
+        """
+        package consumer;
+        import sample.ValueClassExtensionsKt;
+        class Unsupported {
+          void calls() {
+            ValueClassExtensionsKt.getLabel("id");
+            ValueClassExtensionsKt.setLabel("id", "value");
+            ValueClassExtensionsKt.setId("id", "value");
+          }
+        }
+        """.trimIndent()
+    assertFalse(
+        "Mangled Kotlin ABI surface must not be attributable under guessed Java names:\n$stub",
+        javacSucceeds(stub, unsupportedConsumer))
+  }
+
+  @Test
   fun generate_structuredProjectsTopLevelExtensionPropertyAccessors() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
@@ -2230,6 +2556,50 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
           jvmSurface(structured!!),
           jvmSurface(fallback!!))
     }
+  }
+
+  private fun javacSucceeds(stub: String, consumer: String): Boolean {
+    return javacSucceeds(
+      mapOf("sample.ValueClassExtensionsKt" to stub),
+      "consumer.Consumer",
+      consumer,
+    )
+  }
+
+  private fun javacSucceeds(
+    stubs: Map<String, String>,
+    consumerName: String,
+    consumer: String,
+  ): Boolean {
+    val sources = stubs.map { (qualifiedName, code) ->
+      InMemoryJavaSource(qualifiedName, code)
+    } + InMemoryJavaSource(consumerName, consumer)
+    val outputDirectory = Files.createTempDirectory("kotlin-jvm-abi-stub-javac-")
+    try {
+      val diagnostics = DiagnosticCollector<JavaFileObject>()
+      return JavacTool.create()
+        .getTask(
+          null,
+          null,
+          diagnostics,
+          listOf("-d", outputDirectory.toString()),
+          null,
+          sources,
+        )
+        .call() == true
+    } finally {
+      Files.walk(outputDirectory).use { paths ->
+        paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+      }
+    }
+  }
+
+  private class InMemoryJavaSource(qualifiedName: String, private val code: String) :
+    SimpleJavaFileObject(
+      URI.create("string:///" + qualifiedName.replace('.', '/') + ".java"),
+      JavaFileObject.Kind.SOURCE,
+    ) {
+    override fun getCharContent(ignoreEncodingErrors: Boolean): CharSequence = code
   }
 
   private data class AbiParityCase(

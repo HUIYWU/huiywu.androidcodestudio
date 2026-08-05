@@ -148,6 +148,64 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun facadeNavigation_matchesOnlyProvenValueClassExtensionAccessorSurfaces() {
+    val kotlinSource =
+      """
+      package navigation
+
+      @JvmInline
+      value class UserId(val raw: String)
+
+      var UserId.label: String
+        get() = raw
+        set(value) {}
+
+      var String.id: UserId
+        get() = UserId(this)
+        set(value) {}
+
+      var UserId.other: UserId
+        get() = this
+        set(value) {}
+
+      @get:JvmName("readLabel")
+      @set:JvmName("writeLabel")
+      var UserId.namedLabel: String
+        get() = raw
+        set(value) {}
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      abstract class ValueClassExtensionPropertiesKt {
+        static java.lang.String getLabel(java.lang.String receiver) { return receiver; }
+        static void setLabel(java.lang.String receiver, java.lang.String value) {}
+        static java.lang.String getId(java.lang.String receiver) { return receiver; }
+        static void setId(java.lang.String receiver, java.lang.String value) {}
+        static java.lang.String getOther(java.lang.String receiver) { return receiver; }
+        static void setOther(java.lang.String receiver, java.lang.String value) {}
+        static java.lang.String readLabel(java.lang.String receiver) { return receiver; }
+        static void writeLabel(java.lang.String receiver, java.lang.String value) {}
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/ValueClassExtensionProperties.kt")
+
+    for (name in listOf("getLabel", "setLabel", "setId", "getOther", "setOther")) {
+      val accessor = compileMethod(javaSource, "navigation.ValueClassExtensionPropertiesKt", name)
+      assertNull("Mangled value-class extension accessor must not match plain Java name: $name",
+        KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, accessor))
+    }
+    val getter = compileMethod(javaSource, "navigation.ValueClassExtensionPropertiesKt", "getId")
+    assertEquals("id", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, getter)!!))
+    for (name in listOf("readLabel", "writeLabel")) {
+      val accessor = compileMethod(javaSource, "navigation.ValueClassExtensionPropertiesKt", name)
+      assertEquals("namedLabel", sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, accessor)!!))
+    }
+  }
+
+  @Test
   fun facadeNavigation_resolvesExtensionPropertyAccessorsByReceiverSignature() {
     val kotlinSource =
       """

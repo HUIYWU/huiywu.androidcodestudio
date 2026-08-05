@@ -42,6 +42,9 @@ import com.tom.rv2ide.lsp.models.CompletionResult.Companion.EMPTY
 import com.tom.rv2ide.lsp.models.CompletionResult.Companion.MAX_ITEMS
 import com.tom.rv2ide.lsp.models.MatchLevel.NO_MATCH
 import com.tom.rv2ide.lsp.xml.edits.QualifiedValueEditHandler
+import com.tom.rv2ide.lsp.xml.resources.ModuleResourceIndex
+import com.tom.rv2ide.lsp.xml.resources.ResourceDefinition
+import com.tom.rv2ide.lsp.xml.resources.ResourceSnapshot
 import com.tom.rv2ide.lsp.xml.utils.XmlUtils.NodeType
 import com.tom.rv2ide.lsp.xml.utils.XmlUtils.NodeType.ATTRIBUTE_VALUE
 import com.tom.rv2ide.lsp.xml.utils.dimensionUnits
@@ -91,7 +94,25 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
               return EMPTY
             }
 
-    return completeValue(namespace = namespace, prefix = prefix, attrName = attrName)
+    val tableResult = completeValue(namespace = namespace, prefix = prefix, attrName = attrName)
+    val value = attrAtCursor.value.orEmpty()
+    val workspaceQuery = parseWorkspaceResourceCompletionQuery(value) ?: return tableResult
+    params.cancelChecker.abortIfCancelled()
+    val snapshot =
+        ModuleResourceIndex.snapshot(params.file, document.textDocument.text) as? ResourceSnapshot.Available
+            ?: return tableResult
+    params.cancelChecker.abortIfCancelled()
+    val workspaceItems =
+        workspaceResourceCompletionCandidates(workspaceQuery, snapshot.definitions)
+            .map { candidate ->
+              createAttrValueCompletionItem(
+                  type = candidate.type.tagName,
+                  name = candidate.name,
+                  matchLevel = matchLevel(candidate.name, workspaceQuery.entryPrefix),
+                  referenceMarker = candidate.marker,
+              )
+            }
+    return mergeWorkspaceResourceCompletions(tableResult, workspaceItems)
   }
 
   fun setNamespaces(namespaces: Set<Pair<String, String>>) {
@@ -479,6 +500,70 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
     return this.typeMask and check != 0
   }
 }
+
+internal data class WorkspaceResourceCompletionQuery(
+    val marker: Char,
+    val type: com.android.aaptcompiler.AaptResourceType,
+    val entryPrefix: String,
+)
+
+internal data class WorkspaceResourceCompletionCandidate(
+    val marker: Char,
+    val type: com.android.aaptcompiler.AaptResourceType,
+    val name: String,
+)
+
+internal fun parseWorkspaceResourceCompletionQuery(
+    value: String,
+): WorkspaceResourceCompletionQuery? {
+  val marker = value.firstOrNull() ?: return null
+  if (marker != '@' && marker != '?') return null
+  val body = value.drop(1)
+  if (body.startsWith('+') || ':' in body) return null
+  val separator = body.indexOf('/')
+  if (separator <= 0 || body.indexOf('/', separator + 1) >= 0) return null
+  val typeName = body.substring(0, separator)
+  val entryPrefix = body.substring(separator + 1)
+  if (!RESOURCE_COMPLETION_TYPE.matches(typeName) ||
+      !RESOURCE_COMPLETION_ENTRY_PREFIX.matches(entryPrefix)) {
+    return null
+  }
+  val type =
+      com.android.aaptcompiler.AaptResourceType.values().firstOrNull {
+        it != UNKNOWN && it.tagName == typeName
+      } ?: return null
+  if (marker == '?' && type != ATTR) return null
+  return WorkspaceResourceCompletionQuery(marker, type, entryPrefix)
+}
+
+internal fun workspaceResourceCompletionCandidates(
+    query: WorkspaceResourceCompletionQuery,
+    definitions: List<ResourceDefinition>,
+): List<WorkspaceResourceCompletionCandidate> {
+  return definitions
+      .asSequence()
+      .filter { it.type == query.type && it.name.startsWith(query.entryPrefix) }
+      .map { WorkspaceResourceCompletionCandidate(query.marker, it.type, it.name) }
+      .distinctBy { it.type to it.name }
+      .sortedBy { it.name }
+      .take(MAX_ITEMS + 1)
+      .toList()
+}
+
+internal fun mergeWorkspaceResourceCompletions(
+    tableResult: CompletionResult,
+    workspaceItems: List<CompletionItem>,
+): CompletionResult {
+  val items = LinkedHashMap<String, CompletionItem>()
+  tableResult.items.forEach { item -> items.putIfAbsent(item.insertText, item) }
+  workspaceItems.forEach { item -> items.putIfAbsent(item.insertText, item) }
+  return CompletionResult(items.values).also { result ->
+    result.isIncomplete = tableResult.isIncomplete || result.isIncomplete
+  }
+}
+
+private val RESOURCE_COMPLETION_TYPE = Regex("[A-Za-z_][A-Za-z0-9_]*")
+private val RESOURCE_COMPLETION_ENTRY_PREFIX = Regex("[A-Za-z0-9_.-]*")
 
 internal data class ThemeReferenceQuery(
     val packageName: String?,

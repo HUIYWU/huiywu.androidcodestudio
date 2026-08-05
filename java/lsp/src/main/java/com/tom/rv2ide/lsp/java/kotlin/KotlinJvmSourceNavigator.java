@@ -35,8 +35,9 @@ public final class KotlinJvmSourceNavigator {
           "(?m)^\\s*typealias\\s+([A-Za-z_][\\w]*)\\s*<([^<>]+)>\\s*=\\s*([^\\r\\n]+?)\\s*$");
   private static final Pattern TYPE_NAME_PATTERN =
       Pattern.compile("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*");
-  private static final Pattern VALUE_CLASS_DECLARATION_PATTERN =
-      Pattern.compile("\\bvalue\\s+class\\s+([A-Za-z_][\\w]*)");
+  private static final Pattern VALUE_CLASS_UNDERLYING_TYPE_PATTERN = Pattern.compile(
+      "\\bvalue\\s+class\\s+([A-Za-z_][\\w]*)\\s*\\(\\s*(?:val|var)\\s+"
+          + "[A-Za-z_][\\w]*\\s*:\\s*([^,\\)\\r\\n]+)");
   private static final ThreadLocal<Map<String, String>> TYPE_ALIASES = new ThreadLocal<>();
   private static final ThreadLocal<Map<String, GenericTypeAlias>> GENERIC_TYPE_ALIASES =
       new ThreadLocal<>();
@@ -66,7 +67,8 @@ public final class KotlinJvmSourceNavigator {
         GENERIC_TYPE_ALIASES.set(visibleGenericTypeAliases(
         module, multifileDeclaration.file, multifileSource));
         try {
-          final SourceRange multifileRange = findFacadeMember(multifileSource, element);
+          final SourceRange multifileRange = findFacadeMember(
+              multifileSource, ValueClassAbiContext.fromSource(multifileSource), element);
           if (multifileRange != null) {
             return location(
                 multifileDeclaration.file, multifileSource, multifileRange.offset, multifileRange.length);
@@ -111,11 +113,12 @@ public final class KotlinJvmSourceNavigator {
       if (element instanceof TypeElement) {
         return location(declaration.file, source, declaration.offset, declaration.length);
       }
+      final ValueClassAbiContext valueClassContext = ValueClassAbiContext.fromSource(source);
       final SourceRange range = type == null
-          ? findFacadeMember(source, element)
+          ? findFacadeMember(source, valueClassContext, element)
           : companionOwner
-              ? findMember(type.companionMembers, element, false)
-              : findTypeMember(type, declaration, source, element);
+              ? findMember(type.companionMembers, valueClassContext, element, false)
+              : findTypeMember(type, declaration, valueClassContext, element);
       if (range != null) {
         return location(declaration.file, source, range.offset, range.length);
       }
@@ -139,14 +142,14 @@ public final class KotlinJvmSourceNavigator {
   private static SourceRange findTypeMember(
       KotlinJvmSyntaxParser.TypeSyntax type,
       KotlinTypeDeclaration typeDeclaration,
-      String source,
+      ValueClassAbiContext valueClassContext,
       Element element) {
     if (element.getKind() == ElementKind.CONSTRUCTOR && element instanceof ExecutableElement) {
       if (KotlinAbiSyntheticMembers.isSyntheticConstructor(element)) {
         return null;
       }
       final ExecutableElement executable = (ExecutableElement) element;
-      final Set<String> valueClassTypes = collectValueClassTypes(source);
+      final Set<String> valueClassTypes = valueClassContext.types;
       final SourceRange typeRange = type.nameOffset >= 0
           ? new SourceRange(type.nameOffset, type.nameLength)
           : new SourceRange(typeDeclaration.offset, typeDeclaration.length);
@@ -167,16 +170,16 @@ public final class KotlinJvmSourceNavigator {
       return matches == 1 ? match : typeRange;
     }
 
-    SourceRange range = findMember(type.members, element, false);
+    SourceRange range = findMember(type.members, valueClassContext, element, false);
     if (range != null) {
       return range;
     }
     range = findConstructorProperty(
-        type.constructorParameters, collectValueClassTypes(source), element);
+        type.constructorParameters, valueClassContext.types, element);
     if (range != null) {
       return range;
     }
-    return findMember(type.companionMembers, element, true);
+    return findMember(type.companionMembers, valueClassContext, element, true);
   }
 
   private static SourceRange findConstructorProperty(
@@ -234,9 +237,10 @@ public final class KotlinJvmSourceNavigator {
       }
       final KotlinTypeDeclaration declaration = new KotlinTypeDeclaration(
           file, Math.max(0, type.nameOffset), Math.max(1, type.nameLength));
+      final ValueClassAbiContext valueClassContext = ValueClassAbiContext.fromSource(source);
       final SourceRange range = companionOwner
-          ? findMember(type.companionMembers, element, false)
-          : findTypeMember(type, declaration, source, element);
+          ? findMember(type.companionMembers, valueClassContext, element, false)
+          : findTypeMember(type, declaration, valueClassContext, element);
       return range == null ? null : location(file, source, range.offset, range.length);
     } finally {
       if (previousAliases == null) {
@@ -315,7 +319,8 @@ public final class KotlinJvmSourceNavigator {
     TYPE_ALIASES.set(directAliases);
     GENERIC_TYPE_ALIASES.set(genericAliases);
     try {
-      final SourceRange range = findFacadeMember(source, element);
+      final SourceRange range = findFacadeMember(
+          source, ValueClassAbiContext.fromSource(source), element);
       return range == null ? null : location(file, source, range.offset, range.length);
     } finally {
       if (previousAliases == null) {
@@ -331,15 +336,19 @@ public final class KotlinJvmSourceNavigator {
     }
   }
 
-  private static SourceRange findFacadeMember(String source, Element element) {
+  private static SourceRange findFacadeMember(
+      String source, ValueClassAbiContext valueClassContext, Element element) {
     final List<KotlinJvmSyntaxParser.MemberSyntax> members =
         KotlinJvmSyntaxParser.findTopLevelMembers(source);
-    return members == null ? null : findMember(members, element, false);
+    return members == null ? null : findMember(members, valueClassContext, element, false);
   }
 
 
   private static SourceRange findMember(
-      List<KotlinJvmSyntaxParser.MemberSyntax> members, Element element, boolean requireJvmStatic) {
+      List<KotlinJvmSyntaxParser.MemberSyntax> members,
+      ValueClassAbiContext valueClassContext,
+      Element element,
+      boolean requireJvmStatic) {
     final String javaName = element.getSimpleName().toString();
     final ExecutableElement executable = element instanceof ExecutableElement
         ? (ExecutableElement) element
@@ -357,7 +366,8 @@ public final class KotlinJvmSourceNavigator {
       final boolean nameMatches = javaName.equals(jvmMemberName);
       final boolean matchesElement = member.function()
           ? nameMatches && functionSignatureMatches(member, executable)
-          : propertyJavaNameMatches(member, javaName, element);
+          : propertyJavaNameMatches(
+              member, javaName, element, valueClassContext.types, valueClassContext.underlyingTypes);
       if (matchesElement) {
         match = new SourceRange(member.nameOffset, member.nameLength);
         matches++;
@@ -399,7 +409,11 @@ public final class KotlinJvmSourceNavigator {
   }
 
   private static boolean propertyJavaNameMatches(
-      KotlinJvmSyntaxParser.MemberSyntax member, String javaName, Element element) {
+      KotlinJvmSyntaxParser.MemberSyntax member,
+      String javaName,
+      Element element,
+      Set<String> valueClassTypes,
+      Map<String, String> valueClassUnderlyingTypes) {
     if (element.getKind() == ElementKind.FIELD && member.receiverType == null
         && javaName.equals(member.name)) {
       return true;
@@ -415,24 +429,64 @@ public final class KotlinJvmSourceNavigator {
     final String setter = member.setterJvmName == null
         ? propertySetterName(member.name, member.declaredType)
         : member.setterJvmName;
-    final boolean getterMatches = !member.getterJvmSynthetic && javaName.equals(getter)
-        && propertyAccessorParametersMatch(member, executable, false);
-    final boolean setterMatches = member.mutableProperty && !member.setterJvmSynthetic
-        && javaName.equals(setter) && propertyAccessorParametersMatch(member, executable, true);
+    final boolean extensionProperty = member.receiverType != null;
+    final boolean propertyProjectable = canNavigateValueClassProperty(
+        member.getterJvmName,
+        member.setterJvmName,
+        member.mutableProperty,
+        member.declaredType,
+        valueClassTypes);
+    final boolean getterProjectable = extensionProperty
+        ? canNavigateValueClassExtensionGetter(
+            member.getterJvmName, member.receiverType, member.declaredType, valueClassTypes)
+        : propertyProjectable;
+    final boolean setterProjectable = member.mutableProperty && (extensionProperty
+        ? canNavigateValueClassExtensionSetter(
+            member.setterJvmName, member.receiverType, member.declaredType, valueClassTypes)
+        : propertyProjectable);
+    final boolean getterMatches = getterProjectable && !member.getterJvmSynthetic
+        && javaName.equals(getter) && propertyAccessorParametersMatch(
+            member, executable, false, member.getterJvmName != null, valueClassUnderlyingTypes);
+    final boolean setterMatches = setterProjectable && !member.setterJvmSynthetic
+        && javaName.equals(setter) && propertyAccessorParametersMatch(
+            member, executable, true, member.setterJvmName != null, valueClassUnderlyingTypes);
     return getterMatches || setterMatches;
   }
 
   private static boolean propertyAccessorParametersMatch(
-      KotlinJvmSyntaxParser.MemberSyntax member, ExecutableElement executable, boolean setter) {
+      KotlinJvmSyntaxParser.MemberSyntax member,
+      ExecutableElement executable,
+      boolean setter,
+      boolean allowExplicitValueClassUnderlying,
+      Map<String, String> valueClassUnderlyingTypes) {
     final int receiverCount = member.receiverType == null ? 0 : 1;
     final int expectedCount = receiverCount + (setter ? 1 : 0);
     if (executable.getParameters().size() != expectedCount) return false;
-    if (receiverCount == 1 && !parameterTypeMatches(
-        member.receiverType, false, executable.getParameters().get(0).asType().toString())) {
+    if (receiverCount == 1 && !extensionAccessorParameterMatches(
+        member.receiverType, executable.getParameters().get(0).asType().toString(),
+        allowExplicitValueClassUnderlying, valueClassUnderlyingTypes)) {
       return false;
     }
-    return !setter || parameterTypeMatches(member.declaredType, false,
-        executable.getParameters().get(receiverCount).asType().toString());
+    return !setter || extensionAccessorParameterMatches(
+        member.declaredType, executable.getParameters().get(receiverCount).asType().toString(),
+        allowExplicitValueClassUnderlying, valueClassUnderlyingTypes);
+  }
+
+  private static boolean extensionAccessorParameterMatches(
+      String kotlinType,
+      String javaType,
+      boolean allowExplicitValueClassUnderlying,
+      Map<String, String> valueClassUnderlyingTypes) {
+    if (parameterTypeMatches(kotlinType, false, javaType)) {
+      return true;
+    }
+    if (!allowExplicitValueClassUnderlying || kotlinType == null
+        || kotlinType.trim().endsWith("?")) {
+      return false;
+    }
+    final String simpleName = kotlinType.trim();
+    final String underlying = valueClassUnderlyingTypes.get(simpleName);
+    return underlying != null && parameterTypeMatches(underlying, false, javaType);
   }
 
   private static String propertyGetterName(String name, String kotlinType) {
@@ -516,16 +570,83 @@ public final class KotlinJvmSourceNavigator {
     return true;
   }
 
-  private static Set<String> collectValueClassTypes(String source) {
-    final Set<String> result = new LinkedHashSet<>();
+  /** Mirrors the generator's compiler-backed extension accessor eligibility boundary. */
+  private static boolean canNavigateValueClassExtensionGetter(
+      String getterJvmName,
+      String receiverType,
+      String returnType,
+      Set<String> valueClassTypes) {
+    return getterJvmName != null
+        || !isScalarValueClassType(receiverType, valueClassTypes)
+            && (!containsValueClassType(returnType, valueClassTypes)
+                || isDirectValueClassType(returnType, valueClassTypes));
+  }
+
+  private static boolean canNavigateValueClassExtensionSetter(
+      String setterJvmName,
+      String receiverType,
+      String valueType,
+      Set<String> valueClassTypes) {
+    return setterJvmName != null
+        || !isScalarValueClassType(receiverType, valueClassTypes)
+            && !isScalarValueClassType(valueType, valueClassTypes);
+  }
+
+  /** Mirrors the generator's scalar-property accessor eligibility boundary. */
+  private static boolean canNavigateValueClassProperty(
+      String getterJvmName,
+      String setterJvmName,
+      boolean mutable,
+      String type,
+      Set<String> valueClassTypes) {
+    return !isScalarValueClassType(type, valueClassTypes)
+        || getterJvmName != null && (!mutable || setterJvmName != null);
+  }
+
+  private static boolean containsValueClassType(
+      String kotlinType, Set<String> valueClassTypes) {
+    if (kotlinType == null || valueClassTypes == null || valueClassTypes.isEmpty()) {
+      return false;
+    }
+    for (String valueClassType : valueClassTypes) {
+      if (Pattern.compile("(?:^|[^A-Za-z0-9_$.])" + Pattern.quote(valueClassType)
+          + "(?:$|[^A-Za-z0-9_$])").matcher(kotlinType).find()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean isDirectValueClassType(
+      String kotlinType, Set<String> valueClassTypes) {
+    return kotlinType != null && !kotlinType.trim().endsWith("?")
+        && isScalarValueClassType(kotlinType, valueClassTypes);
+  }
+
+  private static Map<String, String> collectValueClassUnderlyingTypes(String source) {
+    final Map<String, String> result = new LinkedHashMap<>();
     if (source == null || source.isEmpty()) {
       return result;
     }
-    final Matcher matcher = VALUE_CLASS_DECLARATION_PATTERN.matcher(source);
+    final Matcher matcher = VALUE_CLASS_UNDERLYING_TYPE_PATTERN.matcher(source);
     while (matcher.find()) {
-      result.add(matcher.group(1));
+      result.put(matcher.group(1), matcher.group(2).trim());
     }
     return result;
+  }
+
+  private static final class ValueClassAbiContext {
+    final Map<String, String> underlyingTypes;
+    final Set<String> types;
+
+    private ValueClassAbiContext(Map<String, String> underlyingTypes) {
+      this.underlyingTypes = Collections.unmodifiableMap(underlyingTypes);
+      this.types = Collections.unmodifiableSet(new LinkedHashSet<>(underlyingTypes.keySet()));
+    }
+
+    static ValueClassAbiContext fromSource(String source) {
+      return new ValueClassAbiContext(collectValueClassUnderlyingTypes(source));
+    }
   }
 
   private static boolean isScalarValueClassType(String kotlinType, Set<String> valueClassTypes) {

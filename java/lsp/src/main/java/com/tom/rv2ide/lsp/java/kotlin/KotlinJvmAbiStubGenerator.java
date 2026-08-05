@@ -2358,9 +2358,13 @@ private static final Pattern PROPERTY_PATTERN =
         || !isScalarValueClassType(receiverType) && !isScalarValueClassType(valueType);
   }
 
+  /**
+   * Scalar value-class properties use mangled default accessors. Arrays and generic containers of
+   * value classes are boxed JVM surfaces and retain ordinary accessors.
+   */
   private static boolean canProjectValueClassProperty(
       String getterJvmName, String setterJvmName, boolean mutable, String type) {
-    if (!containsValueClassType(type)) {
+    if (!isScalarValueClassType(type)) {
       return true;
     }
     return getterJvmName != null && (!mutable || setterJvmName != null);
