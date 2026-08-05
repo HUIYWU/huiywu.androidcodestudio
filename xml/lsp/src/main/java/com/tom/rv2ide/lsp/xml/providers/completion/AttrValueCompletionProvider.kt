@@ -36,6 +36,7 @@ import com.android.aaptcompiler.ConfigDescription
 import com.android.aaptcompiler.ResourcePathData
 import com.tom.rv2ide.lsp.api.ICompletionProvider
 import com.tom.rv2ide.lsp.models.CompletionItem
+import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.lsp.models.CompletionParams
 import com.tom.rv2ide.lsp.models.CompletionResult
 import com.tom.rv2ide.lsp.models.CompletionResult.Companion.EMPTY
@@ -98,11 +99,6 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
     val tableResult = completeValue(namespace = namespace, prefix = prefix, attrName = attrName)
     val value = attrAtCursor.value.orEmpty()
     val workspaceQuery = parseWorkspaceResourceCompletionQuery(value) ?: return tableResult
-    if (workspaceCompletionUnsavedDocumentWarningLogged.compareAndSet(false, true)) {
-      log.warn(
-          "Workspace XML resource completion reads cross-document unsaved definitions through FileManager active documents; definitions not yet visible there are unavailable until saved"
-      )
-    }
     params.cancelChecker.abortIfCancelled()
     val snapshot =
         ModuleResourceIndex.snapshot(params.file, document.textDocument.text) as? ResourceSnapshot.Available
@@ -118,6 +114,35 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
                   referenceMarker = candidate.marker,
               )
             }
+    val tableInsertTexts = tableResult.items.mapTo(mutableSetOf()) { it.insertText }
+    val workspaceOnlyCount = workspaceItems.count { it.insertText !in tableInsertTexts }
+    if (workspaceOnlyCount > 0 && workspaceCompletionTableMismatchWarningLogged.compareAndSet(false, true)) {
+      val workspaceOnlyKeys =
+          workspaceItems
+              .asSequence()
+              .filter { it.insertText !in tableInsertTexts }
+              .map { it.insertText }
+              .toList()
+      val activeDefinitionSources =
+          snapshot.definitions
+              .asSequence()
+              .filter { definition ->
+                "${workspaceQuery.marker}${definition.type.tagName}/${definition.name}" in workspaceOnlyKeys
+              }
+              .mapNotNull { definition ->
+                FileManager.getActiveDocument(definition.sourceFile)?.let { document ->
+                  "${definition.sourceFile} (version=${document.version}, modified=${document.modified})"
+                }
+              }
+              .distinct()
+              .toList()
+      log.warn(
+          "Workspace XML resource completion added {} candidate(s) absent from resource tables; keys={} activeDefinitionSources={}; AXML003 may report those definitions unresolved until the resource table refreshes",
+          workspaceOnlyCount,
+          workspaceOnlyKeys,
+          activeDefinitionSources,
+      )
+    }
     return mergeWorkspaceResourceCompletions(tableResult, workspaceItems)
   }
 
@@ -568,7 +593,7 @@ internal fun mergeWorkspaceResourceCompletions(
   }
 }
 
-private val workspaceCompletionUnsavedDocumentWarningLogged = AtomicBoolean(false)
+private val workspaceCompletionTableMismatchWarningLogged = AtomicBoolean(false)
 private val RESOURCE_COMPLETION_TYPE = Regex("[A-Za-z_][A-Za-z0-9_]*")
 private val RESOURCE_COMPLETION_ENTRY_PREFIX = Regex("[A-Za-z0-9_.-]*")
 

@@ -20,6 +20,8 @@ import com.android.aaptcompiler.AaptResourceType
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.xml.res.IResourceTable
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
+import java.util.concurrent.ConcurrentHashMap
+import org.slf4j.LoggerFactory
 
 /**
  * Resolves resource references against the same resource-table snapshots consumed by XML
@@ -27,6 +29,11 @@ import com.tom.rv2ide.xml.resources.ResourceTableRegistry
  * the result is unknown, not that a resource is missing.
  */
 internal class XmlResourceResolver {
+
+  private companion object {
+    val log = LoggerFactory.getLogger(XmlResourceResolver::class.java)
+    val missingTableLookupWarnings = ConcurrentHashMap.newKeySet<String>()
+  }
 
   fun resolve(
       reference: XmlResourceReference,
@@ -40,7 +47,19 @@ internal class XmlResourceResolver {
         (reference.type != AaptResourceType.ID || reference.packageName != null)) {
       return Resolution.Unavailable
     }
-    return resolutionForMissingReference(reference, moduleIds)
+    val resolution = resolutionForMissingReference(reference, moduleIds)
+    if (resolution == Resolution.NotFound && tables != null && missingTableLookupWarnings.add(reference.text)) {
+      log.warn(
+          "XML resource diagnostics table lookup missing: reference={} package={} type={} entry={} tables={} packages={}; resolution used published resource tables only",
+          reference.text,
+          reference.packageName ?: "<local>",
+          reference.type.tagName,
+          reference.entry,
+          tables.size,
+          tables.sumOf { it.packages.size },
+      )
+    }
+    return resolution
   }
 
   internal fun resolutionForMissingReference(

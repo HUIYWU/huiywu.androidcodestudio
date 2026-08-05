@@ -454,6 +454,47 @@ class KotlinCompilerJvmAbiProbeTest {
   }
 
   @Test
+  fun companionJvmStaticProperties_preserveSyntheticAccessorFlags() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      class SyntheticGetterHost {
+        companion object {
+          @get:JvmSynthetic
+          @JvmStatic
+          var secret: String = "secret"
+        }
+      }
+
+      class SyntheticSetterHost {
+        companion object {
+          @set:JvmSynthetic
+          @JvmStatic
+          var visible: String = "visible"
+        }
+      }
+      """.trimIndent(),
+      "SyntheticCompanionProperties.kt",
+    ).associateBy { it.internalName }
+
+    for (owner in listOf(
+      "evidence/SyntheticGetterHost",
+      "evidence/SyntheticGetterHost\$Companion",
+    )) {
+      assertSyntheticAccessor(surfaces.getValue(owner), "getSecret", "()Ljava/lang/String;")
+      assertPlainAccessor(surfaces.getValue(owner), "setSecret", "(Ljava/lang/String;)V")
+    }
+    for (owner in listOf(
+      "evidence/SyntheticSetterHost",
+      "evidence/SyntheticSetterHost\$Companion",
+    )) {
+      assertPlainAccessor(surfaces.getValue(owner), "getVisible", "()Ljava/lang/String;")
+      assertSyntheticAccessor(surfaces.getValue(owner), "setVisible", "(Ljava/lang/String;)V")
+    }
+  }
+
+  @Test
   fun valueClassExtensionProperties_preserveCompilerManglingBoundaries() {
     val surfaces = KotlinCompilerJvmAbiProbe.compile(
       """
@@ -528,6 +569,40 @@ class KotlinCompilerJvmAbiProbeTest {
     assertMangledAccessor(contract, "setOther-", "(Ljava/lang/String;Ljava/lang/String;)V")
   }
 
+  @Test
+  fun genericInterfaceExtensionProperties_preserveDefaultAccessorErasure() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      interface GenericExtensionContract<T> {
+        var T.payload: T
+      }
+
+      interface BoundedExtensionContract<T : CharSequence> {
+        var T.payload: T
+      }
+      """.trimIndent(),
+      "GenericInterfaceExtensionProperties.kt",
+    ).associateBy { it.internalName }
+
+    val generic = surfaces.getValue("evidence/GenericExtensionContract")
+    assertPlainAccessor(generic, "getPayload", "(Ljava/lang/Object;)Ljava/lang/Object;")
+    assertPlainAccessor(generic, "setPayload", "(Ljava/lang/Object;Ljava/lang/Object;)V")
+
+    val bounded = surfaces.getValue("evidence/BoundedExtensionContract")
+    assertPlainAccessor(
+      bounded,
+      "getPayload",
+      "(Ljava/lang/CharSequence;)Ljava/lang/CharSequence;",
+    )
+    assertPlainAccessor(
+      bounded,
+      "setPayload",
+      "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)V",
+    )
+  }
+
   private fun assertMangledAccessor(
     surface: KotlinCompilerJvmAbiProbe.ClassSurface,
     namePrefix: String,
@@ -565,6 +640,19 @@ class KotlinCompilerJvmAbiProbeTest {
       accessor.access and Opcodes.ACC_STATIC != 0)
     assertTrue("Expected static accessor not to be synthetic: $accessor",
       accessor.access and Opcodes.ACC_SYNTHETIC == 0)
+  }
+
+  private fun assertSyntheticAccessor(
+    surface: KotlinCompilerJvmAbiProbe.ClassSurface,
+    name: String,
+    descriptor: String,
+  ) {
+    val accessor = surface.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+    assertNotNull("Expected synthetic accessor $name$descriptor in ${surface.internalName}: ${surface.members}", accessor)
+    assertTrue("Expected synthetic accessor to be public: $accessor",
+      accessor!!.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("Expected synthetic accessor flag: $accessor",
+      accessor.access and Opcodes.ACC_SYNTHETIC != 0)
   }
 
   private fun assertPlainAccessor(

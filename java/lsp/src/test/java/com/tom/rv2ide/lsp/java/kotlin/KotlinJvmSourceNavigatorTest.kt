@@ -409,6 +409,14 @@ class KotlinJvmSourceNavigatorTest {
         void setPayload(java.lang.CharSequence receiver, java.lang.CharSequence value);
       }
       """.trimIndent()
+    val wrongShapeSource =
+      """
+      package navigation;
+      interface BoundedExtensionPropertyNavigation<T extends java.lang.CharSequence> {
+        T getPayload();
+        void setPayload(T value);
+      }
+      """.trimIndent()
     val file = Paths.get("/navigation/BoundedExtensionPropertyNavigation.kt")
     val getter = compileMethod(javaSource, "navigation.BoundedExtensionPropertyNavigation", "getPayload")
     val setter = compileMethod(javaSource, "navigation.BoundedExtensionPropertyNavigation", "setPayload")
@@ -416,6 +424,10 @@ class KotlinJvmSourceNavigatorTest {
       erasedSource, "navigation.BoundErasedExtensionPropertyNavigation", "getPayload")
     val erasedSetter = compileMethod(
       erasedSource, "navigation.BoundErasedExtensionPropertyNavigation", "setPayload")
+    val missingReceiverGetter = compileMethod(
+      wrongShapeSource, "navigation.BoundedExtensionPropertyNavigation", "getPayload")
+    val missingReceiverSetter = compileMethod(
+      wrongShapeSource, "navigation.BoundedExtensionPropertyNavigation", "setPayload")
 
     assertEquals("payload", sourceTextAt(
       kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, getter)!!))
@@ -423,6 +435,8 @@ class KotlinJvmSourceNavigatorTest {
       kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, setter)!!))
     assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, erasedGetter))
     assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, erasedSetter))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, missingReceiverGetter))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, missingReceiverSetter))
   }
 
   @Test
@@ -451,6 +465,14 @@ class KotlinJvmSourceNavigatorTest {
         void setPayload(java.lang.Object receiver, java.lang.Object value);
       }
       """.trimIndent()
+    val wrongShapeSource =
+      """
+      package navigation;
+      interface GenericExtensionPropertyNavigation<T> {
+        T getPayload();
+        void setPayload(T value);
+      }
+      """.trimIndent()
     val file = Paths.get("/navigation/GenericExtensionPropertyNavigation.kt")
     val getter = compileMethod(javaSource, "navigation.GenericExtensionPropertyNavigation", "getPayload")
     val setter = compileMethod(javaSource, "navigation.GenericExtensionPropertyNavigation", "setPayload")
@@ -458,6 +480,10 @@ class KotlinJvmSourceNavigatorTest {
       erasedSource, "navigation.ErasedExtensionPropertyNavigation", "getPayload")
     val erasedSetter = compileMethod(
       erasedSource, "navigation.ErasedExtensionPropertyNavigation", "setPayload")
+    val missingReceiverGetter = compileMethod(
+      wrongShapeSource, "navigation.GenericExtensionPropertyNavigation", "getPayload")
+    val missingReceiverSetter = compileMethod(
+      wrongShapeSource, "navigation.GenericExtensionPropertyNavigation", "setPayload")
 
     assertEquals("payload", sourceTextAt(
       kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, getter)!!))
@@ -465,6 +491,8 @@ class KotlinJvmSourceNavigatorTest {
       kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, setter)!!))
     assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, erasedGetter))
     assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, erasedSetter))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, missingReceiverGetter))
+    assertNull(KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, missingReceiverSetter))
   }
 
   @Test

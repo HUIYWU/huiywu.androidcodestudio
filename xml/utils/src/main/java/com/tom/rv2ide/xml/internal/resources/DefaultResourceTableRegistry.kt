@@ -81,6 +81,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   private val singleLineValueEntries =
       ConcurrentHashMap<String, ConcurrentHashMap<SingleLineValueEntryType, List<String>>>()
   private val singleLineEntryLocks = ConcurrentHashMap<String, Any>()
+  private val refreshDecisionWarnings = ConcurrentHashMap.newKeySet<String>()
 
   companion object {
 
@@ -124,6 +125,14 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
             null
           }
       if (previous != null && fingerprint != null && tableFingerprints[name] == fingerprint) {
+        if (refreshDecisionWarnings.add("$name:reuse")) {
+          log.warn(
+              "Resource table refresh reused disk-fingerprint table: package={} generation={} entries={}; unsaved editor content is not part of this fingerprint or table input",
+              name,
+              tableGenerations[name] ?: 0L,
+              fingerprint.entries.size,
+          )
+        }
         return previous
       }
       val replacement =
@@ -139,7 +148,15 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
 
       tables[name] = replacement
       tableFingerprints[name] = fingerprint!!
-      tableGenerations.compute(name) { _, generation -> (generation ?: 0L) + 1L }
+      val generation = tableGenerations.compute(name) { _, previousGeneration -> (previousGeneration ?: 0L) + 1L }
+      if (refreshDecisionWarnings.add("$name:rebuild")) {
+        log.warn(
+            "Resource table refresh rebuilt from disk inputs: package={} generation={} entries={}; unsaved editor content is not part of this table input",
+            name,
+            generation ?: 0L,
+            fingerprint.entries.size,
+        )
+      }
       return replacement
     }
   }
@@ -206,6 +223,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     tables.clear()
     tableFingerprints.clear()
     tableGenerations.clear()
+    refreshDecisionWarnings.clear()
     tableLocks.clear()
     platformTables.clear()
     platformTableLocks.clear()

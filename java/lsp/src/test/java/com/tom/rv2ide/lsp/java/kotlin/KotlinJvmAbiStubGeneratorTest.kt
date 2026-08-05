@@ -1679,6 +1679,51 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generate_structuredProjectsGenericInterfaceExtensionPropertyAccessors() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+        """
+        package sample
+
+        interface GenericExtensionContract<T> {
+          var T.payload: T
+        }
+
+        interface BoundedExtensionContract<T : CharSequence> {
+          var T.payload: T
+        }
+        """.trimIndent()
+
+    val generic = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.GenericExtensionContract", "GenericExtensionContract.kt", source, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull(generic)
+    assertContains(generic!!, "public interface GenericExtensionContract<T>")
+    assertContains(generic, "T getPayload(T receiver);")
+    assertContains(generic, "void setPayload(T receiver, T value);")
+
+    val bounded = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.BoundedExtensionContract", "BoundedExtensionContract.kt", source, emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED)
+    assertNotNull(bounded)
+    assertContains(bounded!!, "public interface BoundedExtensionContract<T extends CharSequence>")
+    assertContains(bounded, "T getPayload(T receiver);")
+    assertContains(bounded, "void setPayload(T receiver, T value);")
+
+    for ((qualifiedName, fileName) in listOf(
+        "sample.GenericExtensionContract" to "GenericExtensionContract.kt",
+        "sample.BoundedExtensionContract" to "BoundedExtensionContract.kt",
+    )) {
+      val fallback = KotlinJvmAbiStubGenerator.generateForTest(
+          qualifiedName, fileName, source, emptySet(), KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK)
+      assertNotNull(fallback)
+      assertFalse("Fallback must not invent generic interface extension accessors:\n$fallback",
+          fallback!!.contains("getPayload(") || fallback.contains("setPayload("))
+    }
+  }
+
+  @Test
   fun generate_structuredProjectsInterfaceExtensionPropertyAccessors() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
@@ -1768,6 +1813,22 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
           val String.initial: Char
           var String.label: String
         }
+
+        @JvmInline
+        value class UserId(val raw: String)
+
+        interface ConsumerValueClassExtensionContract {
+          var UserId.label: String
+          var String.id: UserId
+        }
+
+        interface ConsumerGenericExtensionContract<T> {
+          var T.payload: T
+        }
+
+        interface ConsumerBoundedExtensionContract<T : CharSequence> {
+          var T.payload: T
+        }
         """.trimIndent()
     val stubs = mapOf(
       "sample.ConsumerPropertyContract" to KotlinJvmAbiStubGenerator.generateForTest(
@@ -1784,6 +1845,27 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         emptySet(),
         KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
       )!!,
+      "sample.ConsumerValueClassExtensionContract" to KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ConsumerValueClassExtensionContract",
+        "ConsumerValueClassExtensionContract.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      )!!,
+      "sample.ConsumerGenericExtensionContract" to KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ConsumerGenericExtensionContract",
+        "ConsumerGenericExtensionContract.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      )!!,
+      "sample.ConsumerBoundedExtensionContract" to KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.ConsumerBoundedExtensionContract",
+        "ConsumerBoundedExtensionContract.kt",
+        kotlinSource,
+        emptySet(),
+        KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      )!!,
     )
     assertTrue(
       "Proven structured interface property surfaces must be attributable:\n$stubs",
@@ -1792,10 +1874,17 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         "consumer.SupportedInterfaceProperties",
         """
         package consumer;
+        import sample.ConsumerBoundedExtensionContract;
         import sample.ConsumerExtensionContract;
+        import sample.ConsumerGenericExtensionContract;
         import sample.ConsumerPropertyContract;
         class SupportedInterfaceProperties {
-          void use(ConsumerPropertyContract properties, ConsumerExtensionContract extensions) {
+          void use(
+              ConsumerPropertyContract properties,
+              ConsumerExtensionContract extensions,
+              ConsumerGenericExtensionContract<String> generic,
+              ConsumerBoundedExtensionContract<StringBuilder> bounded,
+              ConsumerGenericExtensionContract rawGeneric) {
             String title = properties.getTitle();
             boolean ready = properties.isReady();
             properties.setReady(ready);
@@ -1804,6 +1893,12 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
             char initial = extensions.getInitial("value");
             String label = extensions.getLabel("value");
             extensions.setLabel("value", label);
+            String genericValue = generic.getPayload("value");
+            generic.setPayload("value", genericValue);
+            StringBuilder boundedValue = bounded.getPayload(new StringBuilder("value"));
+            bounded.setPayload(boundedValue, boundedValue);
+            Object rawValue = rawGeneric.getPayload(new Object());
+            rawGeneric.setPayload(rawValue, rawValue);
           }
         }
         """.trimIndent(),
@@ -1813,6 +1908,10 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
       "void use(ConsumerExtensionContract value) { value.getInitial(); }",
       "void use(ConsumerExtensionContract value) { value.getLabel(); }", 
       "void use(ConsumerPropertyContract value) { value.getInternal(); }",
+      "void use(ConsumerValueClassExtensionContract value) { value.getLabel(\"value\"); }",
+      "void use(ConsumerValueClassExtensionContract value) { value.setLabel(\"value\", \"label\"); }",
+      "void use(ConsumerValueClassExtensionContract value) { value.getId(\"value\"); }",
+      "void use(ConsumerValueClassExtensionContract value) { value.setId(\"value\", \"id\"); }",
     )
     for ((index, method) in unsupportedMethods.withIndex()) {
       assertFalse(
@@ -1824,6 +1923,7 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
           package consumer;
           import sample.ConsumerExtensionContract;
           import sample.ConsumerPropertyContract;
+          import sample.ConsumerValueClassExtensionContract;
           class UnsupportedInterfaceProperties$index {
             $method
           }
