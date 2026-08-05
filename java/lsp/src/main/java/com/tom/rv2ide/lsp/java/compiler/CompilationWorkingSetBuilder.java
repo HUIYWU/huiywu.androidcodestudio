@@ -39,6 +39,10 @@ final class CompilationWorkingSetBuilder {
       logDecision("skip=disabled", null, 0, 0, request.sources.size(), false);
       return request;
     }
+    if (!request.allowWorkingSet) {
+      logDecision("skip=request-disallowed", null, 0, 0, request.sources.size(), false);
+      return request;
+    }
     if (request.allowPartialReparse) {
       logDecision("skip=partial-reparse", null, 0, 0, request.sources.size(), false);
       return request;
@@ -93,6 +97,7 @@ final class CompilationWorkingSetBuilder {
         expanded.values(),
         request.partialRequest,
         request.allowPartialReparse,
+        request.allowWorkingSet,
         request.compilationTaskProcessor,
         request.configureContext);
   }
@@ -129,6 +134,7 @@ final class CompilationWorkingSetBuilder {
         cachedSources,
         request.partialRequest,
         request.allowPartialReparse,
+        request.allowWorkingSet,
         request.compilationTaskProcessor,
         request.configureContext);
   }
