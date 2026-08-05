@@ -750,7 +750,6 @@ public class JavaCompilerService implements CompilerProvider {
           close();
           cachedCompile = null;
           cachedModified.clear();
-          lastExpandedSourceCount = -1;
           compiler = new ReusableCompiler();
         });
   }
@@ -774,7 +773,6 @@ public class JavaCompilerService implements CompilerProvider {
             this.module, this.fileManager, this.bootClasspathClasses, this.classPathClasses);
     compiler.cachedCompile = null;
     compiler.incrementalState.resetForCopy();
-    compiler.lastExpandedSourceCount = -1;
     compiler.compiler = new ReusableCompiler();
     compiler.diagnostics.clear();
     compiler.cachedModified.clear();
