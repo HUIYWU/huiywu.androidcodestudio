@@ -1053,8 +1053,6 @@ Failed: %2$d</string>
   <string name="idepref_java_diagnosticsEnabled_summary">(EXPERIMENTAL) Whether the Java source files should be analyzed for errors or not.</string>
   <string name="idepref_java_kotlinRecognitionEnabled_title">Recognize Kotlin declarations from Java</string>
   <string name="idepref_java_kotlinRecognitionEnabled_summary">Let Java language features—including completion, imports, navigation, signature help, and diagnostics—recognize JVM-visible declarations in Kotlin source files. This uses a lightweight JVM ABI model and may not match full Kotlin compiler semantics.</string>
-  <string name="idepref_java_compilationWorkingSetEnabled_title">Include related Java sources in full analysis</string>
-  <string name="idepref_java_compilationWorkingSetEnabled_summary">(Experimental) Adds same-package and imported project Java sources to single-file full javac requests. Toggle it to compare language-service latency and diagnostic accuracy; enable IDE debug logging to collect JAVA_WORKING_SET results.</string>
   <string name="idepref_java_incrementalReparseEnabled_title">Enable Java incremental parsing</string>
 
   <string name="idepref_java_incrementalReparseEnabled_summary">(Experimental) Enables Java method-body incremental parsing for language services. Full recompilation remains the fallback when a change is not eligible.</string>

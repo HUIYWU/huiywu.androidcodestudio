@@ -105,9 +105,6 @@ public class JavaCompilerService implements CompilerProvider {
   private final PartialReparseMethodLocator partialReparseMethodLocator = new PartialReparseMethodLocator();
   private final JavaIncrementalState incrementalState = new JavaIncrementalState();
   private static final long RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES = 160L * 1024L * 1024L;
-  private final CompilationWorkingSetBuilder compilationWorkingSetBuilder =
-      new CompilationWorkingSetBuilder();
-  private volatile int lastExpandedSourceCount = -1;
 
   // The module project must not be null
   // It is marked as nullable just for some special cases like tests
@@ -605,12 +602,9 @@ public class JavaCompilerService implements CompilerProvider {
       cachedCompile.borrow.close();
       cachedCompile = null;
     }
-    final boolean shouldRecreateForExpandedSources = lastExpandedSourceCount > 1;
     final boolean shouldRecreateForMemoryPressure = usedBeforeClose >= RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES;
     final boolean shouldRecreateCompiler =
-        compiler != null
-            && compiler.currentContext != null
-            && (shouldRecreateForExpandedSources || shouldRecreateForMemoryPressure);
+        compiler != null && compiler.currentContext != null && shouldRecreateForMemoryPressure;
     if (shouldRecreateCompiler) {
       compiler = new ReusableCompiler();
       recreatedReusableCompiler = true;
@@ -625,16 +619,13 @@ public class JavaCompilerService implements CompilerProvider {
     }
   }
   private CompileBatch performCompilation(CompilationRequest request) {
-    final long compilationStartedAtNanos = System.nanoTime();
-    final CompilationRequest expandedRequest =
-        compilationWorkingSetBuilder.expand(this, request);
-    Collection<? extends JavaFileObject> sources = expandedRequest.sources;
+    Collection<? extends JavaFileObject> sources = request.sources;
     // Kotlin stubs are diagnostics/full-compile input only. Partial reparse is deliberately kept
     // isolated from cross-language synthetic sources because its cached javac state is not
     // diagnostics-grade and cannot safely track Kotlin document revisions.
     if (module != null
         && JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()
-        && !expandedRequest.allowPartialReparse) {
+        && !request.allowPartialReparse) {
       final Collection<JavaFileObject> kotlinStubs = KotlinSourceStubProvider.stubsFor(module, sources);
       if (!kotlinStubs.isEmpty()) {
         final List<JavaFileObject> withKotlinStubs = new ArrayList<>(sources);
@@ -642,7 +633,6 @@ public class JavaCompilerService implements CompilerProvider {
         sources = withKotlinStubs;
       }
     }
-    lastExpandedSourceCount = sources == null ? -1 : sources.size();
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
           "performCompilation sourcesDetail requestHash={} sourcesDetail={}",
@@ -656,7 +646,7 @@ public class JavaCompilerService implements CompilerProvider {
 
     CompileBatch firstAttempt;
     try {
-      firstAttempt = new CompileBatch(this, sources, expandedRequest);
+      firstAttempt = new CompileBatch(this, sources, request);
     } catch (Throwable err) {
       LOG.error(
           "performCompilation failed requestHash={} expandedSources={} currentContextPresent={} firstSource={} ",
@@ -671,7 +661,6 @@ public class JavaCompilerService implements CompilerProvider {
 
 
     if (addFiles.isEmpty()) {
-      logWorkingSetCompilation(request, sources, compilationStartedAtNanos, 0);
       return firstAttempt;
     }
 
@@ -691,34 +680,9 @@ public class JavaCompilerService implements CompilerProvider {
       }
     }
  
-    final CompileBatch retry = new CompileBatch(this, moreSources, expandedRequest);
-    logWorkingSetCompilation(request, moreSources, compilationStartedAtNanos, addFiles.size());
-    return retry;
+    return new CompileBatch(this, moreSources, request);
   }
 
-  private void logWorkingSetCompilation(
-      @NonNull final CompilationRequest request,
-      @NonNull final Collection<? extends JavaFileObject> sources,
-      final long startedAtNanos,
-      final int additionalSources) {
-    if (!IdeLogConfig.shouldLogDebug()) {
-      return;
-    }
-    final long elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000L;
-    LOG.debug(
-        "JAVA_WORKING_SET_COMPILE enabled={} requestedSources={} compiledSources={} additionalSources={} diagnostics={} elapsedMs={}",
-        JavaPreferences.INSTANCE.isJavaCompilationWorkingSetEnabled(),
-        request.sources.size(),
-        sources.size(),
-        additionalSources,
-        diagnostics.size(),
-        elapsedMs);
-  }
-
-  @NonNull
-  List<String> readImportsForWorkingSet(@NonNull Path file) {
-    return readImports(file);
-  }
 
   private boolean containsWord(Path file, String word) {
     if (cacheContainsWord.needs(file, word)) {

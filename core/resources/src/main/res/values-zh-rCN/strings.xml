@@ -493,8 +493,6 @@
   <string name="idepref_java_diagnosticsEnabled_summary">（实验性）是否应该分析 Java 源文件的错误。</string>
   <string name="idepref_java_kotlinRecognitionEnabled_title">在 Java 中识别 Kotlin 声明</string>
   <string name="idepref_java_kotlinRecognitionEnabled_summary">让 Java 的代码补全、导入建议、导航、签名辅助和诊断识别 Kotlin 源文件中对 JVM 可见的声明。此功能使用轻量级 JVM ABI 模型，语义可能与完整 Kotlin 编译器存在差异。</string>
-  <string name="idepref_java_compilationWorkingSetEnabled_title">完整分析时纳入关联 Java 源码</string>
-  <string name="idepref_java_compilationWorkingSetEnabled_summary">（实验性）为单文件完整 javac 请求加入同包和 import 的项目 Java 源码。可切换此项对比语言服务延迟与诊断准确性；启用 IDE 调试日志可采集 JAVA_WORKING_SET 结果。</string>
   <string name="idepref_java_incrementalReparseEnabled_title">启用 Java 增量解析</string>
   <string name="idepref_java_incrementalReparseEnabled_summary">（实验性）为语言服务启用 Java 方法体级增量解析；当变更不满足条件时，仍会回退到完整重新编译。</string>
   <string name="title_reload_color_schemes">重载配色方案</string>

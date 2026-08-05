@@ -36,9 +36,6 @@ constructor(
     @JvmField val sources: Collection<JavaFileObject>,
     @JvmField val partialRequest: PartialReparseRequest? = null,
     @JvmField val allowPartialReparse: Boolean = false,
-    /** Whether this request may add related project sources to a full javac compilation. */
-    @JvmField var allowWorkingSet: Boolean = true,
-    @JvmField
-    val compilationTaskProcessor: CompilationTaskProcessor = DefaultCompilationTaskProcessor(),
+    @JvmField val compilationTaskProcessor: CompilationTaskProcessor = DefaultCompilationTaskProcessor(),
     @JvmField var configureContext: Consumer<Context>? = null,
 )

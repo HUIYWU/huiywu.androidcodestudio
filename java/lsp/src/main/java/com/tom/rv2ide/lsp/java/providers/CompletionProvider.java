@@ -448,10 +448,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         Collections.singletonList(source),
         partialRequest,
         !requiresKotlinAbi);
-    // A completion request is cancelled as the user keeps typing. Keep its full-compile path
-    // single-source instead of expanding it into a multi-source working-set compilation.
-
-    request.allowWorkingSet = false;
     request.configureContext = ctx -> {
       final var config = JavaCompilerConfig.instance(ctx);
       config.setCompletionInfo(new CompletionInfo(params.getPosition()));
