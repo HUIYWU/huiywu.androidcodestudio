@@ -71,7 +71,7 @@ class TsAnalyzeWorker(
   private var lastStylesUpdateTime = 0L
 
   private var isInitialized = false
-  private var isDestroyed = false
+  @Volatile private var isDestroyed = false
 
   val document = TsTextDocument(languageSpec.language)
 
@@ -101,15 +101,21 @@ class TsAnalyzeWorker(
 
   fun stop() {
     log.debug("Stopping TsAnalyzeWorker...")
+    if (isDestroyed) {
+      return
+    }
     isDestroyed = true
 
     document.requestCancellationAndWaitIfParsing()
-
-    analyzerContext.close()
     messageChannel.clear()
     analyzerJob?.cancel(CancellationException("Requested to be stopped"))
     analyzerScope.cancel(CancellationException("Requested to be stopped"))
-    document.close()
+    analyzerContext.close()
+
+    // The worker owns document/text/tree/parser. Do not release them from the caller thread while
+    // applyMods() may still be inside JNI. The cancelled worker closes them after its coroutine
+    // has fully completed.
+    analyzerJob?.invokeOnCompletion { document.close() } ?: document.close()
   }
 
   fun start() {
