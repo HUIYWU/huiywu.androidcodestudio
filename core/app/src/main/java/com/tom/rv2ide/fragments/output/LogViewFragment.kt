@@ -25,9 +25,12 @@ import androidx.core.view.isVisible
 import com.blankj.utilcode.util.ThreadUtils
 import com.tom.rv2ide.R
 import com.tom.rv2ide.databinding.FragmentLogBinding
+import com.tom.rv2ide.editor.language.treesitter.LogLanguage
+import com.tom.rv2ide.editor.language.treesitter.TreeSitterLanguageProvider
+import com.tom.rv2ide.editor.schemes.IDEColorScheme
+import com.tom.rv2ide.editor.schemes.IDEColorSchemeProvider
 import com.tom.rv2ide.fragments.EmptyStateFragment
 import com.tom.rv2ide.models.LogLine
-import com.tom.rv2ide.syntax.colorschemes.SchemeAndroidIDE
 import com.tom.rv2ide.utils.ILogger.Level
 import com.tom.rv2ide.utils.jetbrainsMono
 import io.github.rosemoe.sora.widget.style.CursorAnimator
@@ -283,9 +286,21 @@ abstract class LogViewFragment :
     editor.setTextSize(8f)
     editor.typefaceText = jetbrainsMono()
     editor.isEnsurePosAnimEnabled = false
-    editor.setEditorLanguage(LogEditorLanguage())
+    IDEColorSchemeProvider.readSchemeAsync(
+        context = requireContext(),
+        coroutineScope = editor.editorScope,
+        type = LogLanguage.TS_TYPE,
+    ) { scheme ->
+      val language =
+          checkNotNull(TreeSitterLanguageProvider.forType(LogLanguage.TS_TYPE, requireContext())) {
+            "No TreeSitterLanguage found for type ${LogLanguage.TS_TYPE}"
+          }
+      if (scheme is IDEColorScheme) {
+        language.setupWith(scheme)
+      }
+      editor.applyTreeSitterLang(language, LogLanguage.TS_TYPE, scheme)
+    }
 
-    editor.setColorScheme(SchemeAndroidIDE.newInstance(requireContext()))
     editor.cursorAnimator =
         object : CursorAnimator {
           override fun markStartPos() {
