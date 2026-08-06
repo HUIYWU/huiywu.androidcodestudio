@@ -21,31 +21,27 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.graphics.Color
-import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
-import android.text.Spannable
-import android.text.SpannableStringBuilder
-import android.text.style.ForegroundColorSpan
-import android.text.style.StyleSpan
 import android.view.View
 import android.widget.EditText
 import com.blankj.utilcode.util.ThreadUtils
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
 import com.tom.rv2ide.databinding.FragmentLogViewerBinding
-import com.tom.rv2ide.syntax.colorschemes.SchemeAndroidIDE
+import com.tom.rv2ide.editor.language.treesitter.LogLanguage
+import com.tom.rv2ide.editor.language.treesitter.TreeSitterLanguageProvider
+import com.tom.rv2ide.editor.schemes.IDEColorScheme
+import com.tom.rv2ide.editor.schemes.IDEColorSchemeProvider
 import com.tom.rv2ide.fragments.EmptyStateFragment
 import com.tom.rv2ide.preferences.internal.DevOpsPreferences
 import com.tom.rv2ide.utils.jetbrainsMono
 import io.github.mohammedbaqernull.logger.model.LogEntry
 import io.github.mohammedbaqernull.logger.service.LogReceiverService
-import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.widget.style.CursorAnimator
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
@@ -85,97 +81,6 @@ class AppLogFragment :
 
         fun newInstance() = AppLogFragment()
     }
-
-    private object LogTextHighlighter {
-        private val logLevelPattern = Regex("""^\S+\s+\[([A-Z])\]\s+([^:]+):\s?(.*)$""")
-        private val stackTracePattern = Regex("""^\s*at\s+[\w.$]+\(.*\)$""")
-        private val causedByPattern = Regex("""^\s*Caused by:.*$""")
-        private val exceptionPattern = Regex(""".*(?:Exception|Error|FATAL EXCEPTION|SIGSEGV|ANR|OutOfMemoryError|NullPointerException|ClassCastException|IllegalStateException|IllegalArgumentException|failed|timeout).*""", RegexOption.IGNORE_CASE)
-
-        fun build(text: String, colors: LogColors): CharSequence {
-            if (text.isEmpty()) return text
-
-            val builder = SpannableStringBuilder(text)
-            var lineStart = 0
-            while (lineStart < builder.length) {
-                val lineEnd = text.indexOf('\n', lineStart).let { if (it >= 0) it else builder.length }
-                highlightLine(builder, text.substring(lineStart, lineEnd), lineStart, lineEnd, colors)
-                lineStart = if (lineEnd < builder.length) lineEnd + 1 else builder.length
-            }
-            return builder
-        }
-
-        private fun highlightLine(
-            builder: SpannableStringBuilder,
-            line: String,
-            start: Int,
-            end: Int,
-            colors: LogColors,
-        ) {
-            if (start >= end) return
-
-            val stackMatch = stackTracePattern.matches(line)
-            val causedByMatch = causedByPattern.matches(line)
-            val exceptionMatch = exceptionPattern.matches(line)
-
-            when {
-                stackMatch -> {
-                    applyColor(builder, colors.stackTrace, start, end)
-                    return
-                }
-                causedByMatch || exceptionMatch -> {
-                    applyColor(builder, colors.error, start, end)
-                    applyStyle(builder, Typeface.BOLD, start, end)
-                }
-            }
-
-            val match = logLevelPattern.find(line) ?: return
-            val level = match.groupValues[1].firstOrNull() ?: return
-            val tagStart = start + match.groups[2]!!.range.first
-            val tagEnd = start + match.groups[2]!!.range.last + 1
-            val messageStart = start + match.groups[3]!!.range.first
-            val messageEnd = start + match.groups[3]!!.range.last + 1
-
-            val levelColor = when (level) {
-                'E', 'A', 'F' -> colors.error
-                'W' -> colors.warn
-                'I' -> colors.info
-                'D' -> colors.debug
-                'V' -> colors.verbose
-                else -> colors.defaultText
-            }
-
-            applyColor(builder, levelColor, start, end)
-            applyStyle(builder, Typeface.BOLD, start, tagEnd.coerceAtMost(end))
-            applyColor(builder, colors.tag, tagStart, tagEnd.coerceAtMost(end))
-
-            if (messageStart < messageEnd && exceptionPattern.matches(line.substring(match.groups[3]!!.range))) {
-                applyColor(builder, colors.error, messageStart, messageEnd.coerceAtMost(end))
-                applyStyle(builder, Typeface.BOLD, messageStart, messageEnd.coerceAtMost(end))
-            }
-        }
-
-        private fun applyColor(builder: SpannableStringBuilder, color: Int, start: Int, end: Int) {
-            if (start >= end) return
-            builder.setSpan(ForegroundColorSpan(color), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-
-        private fun applyStyle(builder: SpannableStringBuilder, style: Int, start: Int, end: Int) {
-            if (start >= end) return
-            builder.setSpan(StyleSpan(style), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-    }
-
-    private data class LogColors(
-        val defaultText: Int,
-        val verbose: Int,
-        val debug: Int,
-        val info: Int,
-        val warn: Int,
-        val error: Int,
-        val tag: Int,
-        val stackTrace: Int,
-    )
 
     private var logService: LogReceiverService? = null
     private var isBound = false
@@ -316,8 +221,20 @@ class AppLogFragment :
         editor.setTextSize(8f)
         editor.typefaceText = jetbrainsMono()
         editor.inputType = InputType.TYPE_NULL
-        editor.setEditorLanguage(EmptyLanguage())
-        editor.setColorScheme(SchemeAndroidIDE.newInstance(requireContext()))
+        IDEColorSchemeProvider.readSchemeAsync(
+            context = requireContext(),
+            coroutineScope = editor.editorScope,
+            type = LogLanguage.TS_TYPE,
+        ) { scheme ->
+            val language =
+                checkNotNull(TreeSitterLanguageProvider.forType(LogLanguage.TS_TYPE, requireContext())) {
+                    "No TreeSitterLanguage found for type ${LogLanguage.TS_TYPE}"
+                }
+            if (scheme is IDEColorScheme) {
+                language.setupWith(scheme)
+            }
+            editor.applyTreeSitterLang(language, LogLanguage.TS_TYPE, scheme)
+        }
         editor.cursorAnimator =
             object : CursorAnimator {
                 override fun markStartPos() {}
@@ -337,28 +254,11 @@ class AppLogFragment :
             ThreadUtils.runOnUiThread {
                 val editor = _binding?.logEditor ?: return@runOnUiThread
                 val existingText = editor.text?.toString().orEmpty()
-                val updatedText = existingText + chars.toString()
-                editor.setText(highlightLogText(updatedText))
+                val updatedText = existingText + chars
+                editor.setText(updatedText)
                 emptyStateViewModel.isEmpty.value = updatedText.isEmpty()
             }
         }
-    }
-
-    private fun highlightLogText(text: String): CharSequence {
-        return LogTextHighlighter.build(text, resolveLogColors())
-    }
-
-    private fun resolveLogColors(): LogColors {
-        return LogColors(
-            defaultText = Color.parseColor("#FFCCCCCC"),
-            verbose = Color.parseColor("#FF9E9E9E"),
-            debug = Color.parseColor("#FF66BB6A"),
-            info = Color.parseColor("#FF42A5F5"),
-            warn = Color.parseColor("#FFFFB300"),
-            error = Color.parseColor("#FFEF5350"),
-            tag = Color.parseColor("#FFBA68C8"),
-            stackTrace = Color.parseColor("#FFFF8A65"),
-        )
     }
 
     private fun checkUsbDebugging() {
@@ -475,7 +375,7 @@ class AppLogFragment :
 
             isTrimming.set(true)
             val trimmed = lines.takeLast(MAX_LINE_COUNT).joinToString("\n")
-            editor.setText(highlightLogText(trimmed))
+            editor.setText(trimmed)
             isTrimming.set(false)
         }
     }
@@ -505,7 +405,7 @@ class AppLogFragment :
                 }
 
                 val content = contentBuilder.toString()
-                _binding?.logEditor?.setText(highlightLogText(content))
+                _binding?.logEditor?.setText(content)
                 emptyStateViewModel.isEmpty.value = content.isEmpty()
             } else {
                 showUsbDebuggingDisabledMessage()
@@ -519,7 +419,7 @@ class AppLogFragment :
     }
 
     private fun showLogWireHeader() {
-        _binding?.logEditor?.setText(highlightLogText(LOGWIRE_HEADER))
+        _binding?.logEditor?.setText(LOGWIRE_HEADER)
         emptyStateViewModel.isEmpty.value = false
     }
 
@@ -541,7 +441,7 @@ class AppLogFragment :
     ║                                                           ║
     ╚═══════════════════════════════════════════════════════════╝
     """
-        _binding?.logEditor?.setText(highlightLogText(message))
+        _binding?.logEditor?.setText(message)
         emptyStateViewModel.isEmpty.value = false
     }
 
@@ -556,7 +456,7 @@ class AppLogFragment :
     ║                                                           ║
     ╚═══════════════════════════════════════════════════════════╝
     """
-        _binding?.logEditor?.setText(highlightLogText(message))
+        _binding?.logEditor?.setText(message)
         emptyStateViewModel.isEmpty.value = false
     }
 

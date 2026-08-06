@@ -136,7 +136,7 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
               }
               .distinct()
               .toList()
-      log.warn(
+      log.debug(
           "Workspace XML resource completion added {} candidate(s) absent from resource tables; keys={} activeDefinitionSources={}; AXML003 may report those definitions unresolved until the resource table refreshes",
           workspaceOnlyCount,
           workspaceOnlyKeys,

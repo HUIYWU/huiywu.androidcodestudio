@@ -452,12 +452,35 @@ public final class KotlinJvmSourceNavigator {
             member.setterJvmName, member.receiverType, member.declaredType, interfaceMember, valueClassTypes)
         : propertyProjectable);
     final boolean getterMatches = getterProjectable && !member.getterJvmSynthetic
-        && javaName.equals(getter) && propertyAccessorParametersMatch(
+        && javaName.equals(getter)
+        && propertyGetterReturnTypeMatches(
+            member, executable, extensionProperty || member.getterJvmName != null, valueClassUnderlyingTypes)
+        && propertyAccessorParametersMatch(
             member, executable, false, member.getterJvmName != null, valueClassUnderlyingTypes);
     final boolean setterMatches = setterProjectable && !member.setterJvmSynthetic
         && javaName.equals(setter) && propertyAccessorParametersMatch(
             member, executable, true, member.setterJvmName != null, valueClassUnderlyingTypes);
     return getterMatches || setterMatches;
+  }
+
+  private static boolean propertyGetterReturnTypeMatches(
+      KotlinJvmSyntaxParser.MemberSyntax member,
+      ExecutableElement executable,
+      boolean allowExplicitValueClassUnderlying,
+      Map<String, String> valueClassUnderlyingTypes) {
+    if (executable == null || executable.getReturnType() == null) {
+      return false;
+    }
+    // Unresolved type variables and complex generic expressions cannot safely disprove a match;
+    // retain the existing conservative candidate behavior for those declarations.
+    if (navigationJavaType(member.declaredType) == null) {
+      return true;
+    }
+    return extensionAccessorParameterMatches(
+        member.declaredType,
+        executable.getReturnType().toString(),
+        allowExplicitValueClassUnderlying,
+        valueClassUnderlyingTypes);
   }
 
   private static boolean propertyAccessorParametersMatch(

@@ -49,7 +49,7 @@ internal class XmlResourceResolver {
     }
     val resolution = resolutionForMissingReference(reference, moduleIds)
     if (resolution == Resolution.NotFound && tables != null && missingTableLookupWarnings.add(reference.text)) {
-      log.warn(
+      log.debug(
           "XML resource diagnostics table lookup missing: reference={} package={} type={} entry={} tables={} packages={}; resolution used published resource tables only",
           reference.text,
           reference.packageName ?: "<local>",

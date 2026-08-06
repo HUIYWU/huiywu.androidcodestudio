@@ -2300,6 +2300,82 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generatedGenericOverrideStubs_omitSyntheticBridgesButRemainJavacAttributable() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        interface GenericContract<T> {
+          fun accept(value: T): T
+          var payload: T
+        }
+
+        class StringContract : GenericContract<String> {
+          override fun accept(value: String): String = value
+          override var payload: String = "payload"
+        }
+        """.trimIndent()
+    val contractStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.GenericContract",
+      "GenericOverrideBridges.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for GenericContract")
+    val implementationStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.StringContract",
+      "GenericOverrideBridges.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for StringContract")
+
+    assertContains(contractStub, "public interface GenericContract<T>")
+    assertContains(contractStub, "T accept(T value)")
+    assertContains(contractStub, "T getPayload()")
+    assertContains(contractStub, "void setPayload(T value)")
+
+    assertContains(implementationStub, "public class StringContract")
+    assertContains(implementationStub, "public String accept(String value)")
+    assertContains(implementationStub, "public String getPayload()")
+    assertContains(implementationStub, "public void setPayload(String value)")
+    assertFalse("Synthetic Object bridge must not be projected:\n$implementationStub",
+      implementationStub.contains("Object accept(Object value)") ||
+        implementationStub.contains("Object getPayload()") ||
+        implementationStub.contains("void setPayload(Object value)"))
+
+    val stubs = mapOf(
+      "sample.GenericContract" to contractStub,
+      "sample.StringContract" to implementationStub,
+    )
+    assertTrue(
+      "Generic override stubs must remain attributable by javac:\n$stubs",
+      javacSucceeds(
+        stubs,
+        "consumer.GenericOverrideConsumer",
+        """
+        package consumer;
+        import sample.GenericContract;
+        import sample.StringContract;
+        class GenericOverrideConsumer {
+          String useImplementation(String value) {
+            StringContract implementation = new StringContract();
+            implementation.setPayload(value);
+            return implementation.accept(value) + implementation.getPayload();
+          }
+          String useContract(GenericContract<String> contract, String value) {
+            contract.setPayload(value);
+            return contract.accept(value) + contract.getPayload();
+          }
+        }
+        """.trimIndent(),
+      ),
+    )
+  }
+
+  @Test
   fun generatedCompanionJvmFieldAccessorAnnotations_controlJavacConsumerSurface() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
@@ -2416,6 +2492,79 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
           package consumer;
           import sample.NamedFieldAnnotationConsumer;
           class UnsupportedNamedFieldAnnotationConsumer$index {
+            $method
+          }
+          """.trimIndent(),
+        ),
+      )
+    }
+  }
+
+  @Test
+  fun generatedCompanionJvmFieldMutableSetterAnnotations_controlJavacConsumerSurface() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        class MutableFieldAnnotationConsumer {
+          companion object {
+            @set:JvmSynthetic
+            @JvmField
+            var syntheticMutableField: String = "synthetic"
+
+            @set:JvmName("writeNamedMutableField")
+            @JvmField
+            var namedMutableField: String = "named"
+          }
+        }
+        """.trimIndent()
+    val stub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.MutableFieldAnnotationConsumer",
+      "MutableFieldAnnotationConsumer.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for MutableFieldAnnotationConsumer")
+    val stubs = mapOf("sample.MutableFieldAnnotationConsumer" to stub)
+
+    assertTrue(
+      "@JvmField mutable host surface must be attributable:\n$stub",
+      javacSucceeds(
+        stubs,
+        "consumer.SupportedMutableFieldAnnotationConsumer",
+        """
+        package consumer;
+        import sample.MutableFieldAnnotationConsumer;
+        class SupportedMutableFieldAnnotationConsumer {
+          void write() {
+            MutableFieldAnnotationConsumer.syntheticMutableField = "updated";
+            MutableFieldAnnotationConsumer.namedMutableField = "named-updated";
+          }
+        }
+        """.trimIndent(),
+      ),
+    )
+
+    val unsupportedMethods = listOf(
+      "void write() { MutableFieldAnnotationConsumer.setSyntheticMutableField(\"updated\"); }",
+      "void write() { MutableFieldAnnotationConsumer.setNamedMutableField(\"updated\"); }",
+      "void write() { MutableFieldAnnotationConsumer.writeNamedMutableField(\"updated\"); }",
+      "void write() { MutableFieldAnnotationConsumer.Companion.setSyntheticMutableField(\"updated\"); }",
+      "void write() { MutableFieldAnnotationConsumer.Companion.setNamedMutableField(\"updated\"); }",
+      "void write() { MutableFieldAnnotationConsumer.Companion.writeNamedMutableField(\"updated\"); }",
+    )
+    for ((index, method) in unsupportedMethods.withIndex()) {
+      assertFalse(
+        "@JvmField must not expose a setter despite setter annotations: $method\n$stub",
+        javacSucceeds(
+          stubs,
+          "consumer.UnsupportedMutableFieldAnnotationConsumer$index",
+          """
+          package consumer;
+          import sample.MutableFieldAnnotationConsumer;
+          class UnsupportedMutableFieldAnnotationConsumer$index {
             $method
           }
           """.trimIndent(),

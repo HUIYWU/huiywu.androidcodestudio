@@ -29,14 +29,36 @@ internal class ResourceTableRefreshCoordinator(
   private val pending = ConcurrentHashMap<String, PendingRefresh>()
 
   fun schedule(module: AndroidModule, immediate: Boolean = false) {
-    val key = module.path
+    scheduleInternal(
+        key = module.path,
+        immediate = immediate,
+        snapshot = { snapshotInputs(module) },
+        publish = { inputs, isObsolete -> module.refreshResourceTable(inputs, isObsolete) },
+    )
+  }
+
+  internal fun scheduleForTest(
+      key: String,
+      immediate: Boolean = false,
+      snapshot: () -> ResourceTableInputSnapshot,
+      publish: (ResourceTableInputSnapshot, () -> Boolean) -> Unit,
+  ) {
+    scheduleInternal(key, immediate, snapshot, publish)
+  }
+
+  private fun scheduleInternal(
+      key: String,
+      immediate: Boolean,
+      snapshot: () -> ResourceTableInputSnapshot,
+      publish: (ResourceTableInputSnapshot, () -> Boolean) -> Unit,
+  ) {
     val state = pending.computeIfAbsent(key) { PendingRefresh() }
     synchronized(state) {
       val sequence = state.sequence.incrementAndGet()
       state.future?.cancel(false)
       state.future =
           executor.schedule(
-              { refresh(module, key, state, sequence) },
+              { refresh(key, state, sequence, snapshot, publish) },
               if (immediate) 0L else debounceMillis,
               TimeUnit.MILLISECONDS,
           )
@@ -44,14 +66,15 @@ internal class ResourceTableRefreshCoordinator(
   }
 
   private fun refresh(
-      module: AndroidModule,
       key: String,
       state: PendingRefresh,
       sequence: Long,
+      snapshot: () -> ResourceTableInputSnapshot,
+      publish: (ResourceTableInputSnapshot, () -> Boolean) -> Unit,
   ) {
     if (state.sequence.get() != sequence) return
-    val inputs = snapshotInputs(module)
-    module.refreshResourceTable(inputs) { state.sequence.get() != sequence }
+    val inputs = snapshot()
+    publish(inputs) { state.sequence.get() != sequence }
     if (state.sequence.get() == sequence) {
       pending.remove(key, state)
     }

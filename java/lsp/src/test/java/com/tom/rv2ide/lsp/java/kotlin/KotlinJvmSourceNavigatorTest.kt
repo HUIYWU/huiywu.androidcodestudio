@@ -608,6 +608,70 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesConcreteGenericOverridesAndRejectsBridgeShapedErasure() {
+    val kotlinSource =
+      """
+      package navigation
+
+      interface GenericContract<T> {
+        fun accept(value: T): T
+        var payload: T
+      }
+
+      class StringContract : GenericContract<String> {
+        override fun accept(value: String): String = value
+        override var payload: String = "payload"
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class StringContract implements GenericContract<String> {
+        public String accept(String value) { return value; }
+        public String getPayload() { return "payload"; }
+        public void setPayload(String value) {}
+      }
+      interface GenericContract<T> {
+        T accept(T value);
+        T getPayload();
+        void setPayload(T value);
+      }
+      """.trimIndent()
+    val bridgeShapedSource =
+      """
+      package navigation;
+      class StringContract {
+        public Object accept(Object value) { return value; }
+        public Object getPayload() { return null; }
+        public void setPayload(Object value) {}
+      }
+      interface GenericContract<T> {
+        T accept(T value);
+        T getPayload();
+        void setPayload(T value);
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/GenericOverrideBridges.kt")
+
+    for (name in listOf("accept", "getPayload", "setPayload")) {
+      val method = compileMethod(javaSource, "navigation.StringContract", name)
+      val expectedSourceName = if (name == "accept") "accept" else "payload"
+      assertEquals(expectedSourceName, sourceTextAt(
+        kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, method)!!,
+      ))
+    }
+
+    for (name in listOf("accept", "getPayload", "setPayload")) {
+      val bridge = compileMethod(bridgeShapedSource, "navigation.StringContract", name)
+      assertNull(
+        "Erased bridge-shaped $name must not navigate to a String override",
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, bridge),
+      )
+    }
+  }
+
+  @Test
   fun typeNavigation_resolvesPrimaryConstructorVarargByJvmArraySurface() {
     val kotlinSource =
         """

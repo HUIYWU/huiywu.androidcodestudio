@@ -728,8 +728,55 @@ class KotlinCompilerJvmAbiProbeTest {
       "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)V",
     )
   }
+  @Test
+  fun genericOverrides_recordSyntheticBridgeSurfaceSeparatelyFromSourceApi() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      interface GenericContract<T> {
+        fun accept(value: T): T
+        var payload: T
+      }
+
+      class StringContract : GenericContract<String> {
+        override fun accept(value: String): String = value
+        override var payload: String = "payload"
+      }
+      """.trimIndent(),
+      "GenericOverrideBridges.kt",
+    ).associateBy { it.internalName }
+
+    val implementation = surfaces.getValue("evidence/StringContract")
+
+    assertPlainAccessor(implementation, "accept", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertPlainAccessor(implementation, "getPayload", "()Ljava/lang/String;")
+    assertPlainAccessor(implementation, "setPayload", "(Ljava/lang/String;)V")
+
+    assertSyntheticBridge(implementation, "accept", "(Ljava/lang/Object;)Ljava/lang/Object;")
+    assertSyntheticBridge(implementation, "getPayload", "()Ljava/lang/Object;")
+    assertSyntheticBridge(implementation, "setPayload", "(Ljava/lang/Object;)V")
+  }
+
+  private fun assertSyntheticBridge(
+    surface: KotlinCompilerJvmAbiProbe.ClassSurface,
+    name: String,
+    descriptor: String,
+  ) {
+    val bridge = surface.members.singleOrNull {
+      it.name == name && it.descriptor == descriptor
+    }
+    assertNotNull(
+      "Expected synthetic bridge $name$descriptor in ${surface.internalName}; actual=${surface.members}",
+      bridge,
+    )
+    assertTrue("Expected bridge to be public: $bridge", bridge!!.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("Expected bridge to be synthetic: $bridge", bridge.access and Opcodes.ACC_SYNTHETIC != 0)
+    assertTrue("Expected bridge flag: $bridge", bridge.access and Opcodes.ACC_BRIDGE != 0)
+  }
 
   private fun assertMangledAccessor(
+
     surface: KotlinCompilerJvmAbiProbe.ClassSurface,
     namePrefix: String,
     descriptor: String,

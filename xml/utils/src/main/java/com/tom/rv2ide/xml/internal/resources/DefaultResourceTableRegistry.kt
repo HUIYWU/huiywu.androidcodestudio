@@ -147,7 +147,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
           }
       if (previous != null && fingerprint != null && tableFingerprints[name] == fingerprint) {
         if (refreshDecisionWarnings.add("$name:reuse")) {
-          log.warn(
+          log.debug(
               "Resource table refresh reused table: package={} generation={} entries={} memoryInputs={}",
               name,
               tableGenerations[name] ?: 0L,
@@ -172,7 +172,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       tableFingerprints[name] = fingerprint!!
       val generation = tableGenerations.compute(name) { _, previousGeneration -> (previousGeneration ?: 0L) + 1L }
       if (refreshDecisionWarnings.add("$name:rebuild")) {
-        log.warn(
+        log.debug(
             "Resource table refresh rebuilt and published: package={} generation={} entries={} memoryInputs={}",
             name,
             generation ?: 0L,
