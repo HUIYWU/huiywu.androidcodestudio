@@ -2376,6 +2376,82 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generatedBoundedGenericOverrideStubs_omitUpperBoundSyntheticBridgesButRemainJavacAttributable() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        interface BoundedContract<T : CharSequence> {
+          fun accept(value: T): T
+          var payload: T
+        }
+
+        class BoundedStringContract : BoundedContract<String> {
+          override fun accept(value: String): String = value
+          override var payload: String = "payload"
+        }
+        """.trimIndent()
+    val contractStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.BoundedContract",
+      "BoundedGenericOverrideBridges.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for BoundedContract")
+    val implementationStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.BoundedStringContract",
+      "BoundedGenericOverrideBridges.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for BoundedStringContract")
+
+    assertContains(contractStub, "public interface BoundedContract<T extends CharSequence>")
+    assertContains(contractStub, "T accept(T value)")
+    assertContains(contractStub, "T getPayload()")
+    assertContains(contractStub, "void setPayload(T value)")
+
+    assertContains(implementationStub, "public class BoundedStringContract")
+    assertContains(implementationStub, "public String accept(String value)")
+    assertContains(implementationStub, "public String getPayload()")
+    assertContains(implementationStub, "public void setPayload(String value)")
+    assertFalse("Synthetic CharSequence bridge must not be projected:\n$implementationStub",
+      implementationStub.contains("CharSequence accept(CharSequence value)") ||
+        implementationStub.contains("CharSequence getPayload()") ||
+        implementationStub.contains("void setPayload(CharSequence value)"))
+
+    val stubs = mapOf(
+      "sample.BoundedContract" to contractStub,
+      "sample.BoundedStringContract" to implementationStub,
+    )
+    assertTrue(
+      "Bounded generic override stubs must remain attributable by javac:\n$stubs",
+      javacSucceeds(
+        stubs,
+        "consumer.BoundedGenericOverrideConsumer",
+        """
+        package consumer;
+        import sample.BoundedContract;
+        import sample.BoundedStringContract;
+        class BoundedGenericOverrideConsumer {
+          String useImplementation(String value) {
+            BoundedStringContract implementation = new BoundedStringContract();
+            implementation.setPayload(value);
+            return implementation.accept(value) + implementation.getPayload();
+          }
+          String useContract(BoundedContract<String> contract, String value) {
+            contract.setPayload(value);
+            return contract.accept(value) + contract.getPayload();
+          }
+        }
+        """.trimIndent(),
+      ),
+    )
+  }
+
+  @Test
   fun generatedCompanionJvmFieldAccessorAnnotations_controlJavacConsumerSurface() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

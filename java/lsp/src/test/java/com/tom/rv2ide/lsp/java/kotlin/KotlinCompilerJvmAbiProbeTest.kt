@@ -758,6 +758,40 @@ class KotlinCompilerJvmAbiProbeTest {
     assertSyntheticBridge(implementation, "setPayload", "(Ljava/lang/Object;)V")
   }
 
+  @Test
+  fun boundedGenericOverrides_useUpperBoundSyntheticBridges() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      interface BoundedContract<T : CharSequence> {
+        fun accept(value: T): T
+        var payload: T
+      }
+
+      class BoundedStringContract : BoundedContract<String> {
+        override fun accept(value: String): String = value
+        override var payload: String = "payload"
+      }
+      """.trimIndent(),
+      "BoundedGenericOverrideBridges.kt",
+    ).associateBy { it.internalName }
+
+    val implementation = surfaces.getValue("evidence/BoundedStringContract")
+
+    assertPlainAccessor(implementation, "accept", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertPlainAccessor(implementation, "getPayload", "()Ljava/lang/String;")
+    assertPlainAccessor(implementation, "setPayload", "(Ljava/lang/String;)V")
+
+    assertSyntheticBridge(
+      implementation,
+      "accept",
+      "(Ljava/lang/CharSequence;)Ljava/lang/CharSequence;",
+    )
+    assertSyntheticBridge(implementation, "getPayload", "()Ljava/lang/CharSequence;")
+    assertSyntheticBridge(implementation, "setPayload", "(Ljava/lang/CharSequence;)V")
+  }
+
   private fun assertSyntheticBridge(
     surface: KotlinCompilerJvmAbiProbe.ClassSurface,
     name: String,
