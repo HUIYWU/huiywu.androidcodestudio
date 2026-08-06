@@ -207,6 +207,33 @@ class DefaultResourceTableRegistryTest {
   }
 
   @Test
+  fun obsoleteMemoryRefreshRetainsPublishedTableAndGeneration() {
+    val resDir = File(root, "res").apply { mkdirs() }
+    val valuesDir = File(resDir, "values").apply { mkdirs() }
+    val strings = File(valuesDir, "strings.xml").apply {
+      writeText("<resources><string name=\"saved_title\">Saved</string></resources>")
+    }
+    val initial = registry.forPackage(PACKAGE_NAME, resDir)!!
+    val generation = registry.getGeneration(PACKAGE_NAME)
+    val inputs =
+        ResourceTableInputSnapshot.of(
+            mapOf(
+                strings.toPath() to
+                    ResourceTableFileInput(
+                        "<resources><string name=\"unsaved_title\">Unsaved</string></resources>",
+                        revision = 1L,
+                    )
+            )
+        )
+
+    val result = registry.refreshPackage(PACKAGE_NAME, inputs, { true }, resDir)
+
+    assertThat(result).isSameInstanceAs(initial)
+    assertThat(registry.getGeneration(PACKAGE_NAME)).isEqualTo(generation)
+    assertThat(registry.forPackage(PACKAGE_NAME, resDir)).isSameInstanceAs(initial)
+  }
+
+  @Test
   fun removeTableAllowsPackageTableToBeCreatedAgain() {
     val resDir = File(root, "res").apply { mkdirs() }
     val first = registry.forPackage(PACKAGE_NAME, resDir)

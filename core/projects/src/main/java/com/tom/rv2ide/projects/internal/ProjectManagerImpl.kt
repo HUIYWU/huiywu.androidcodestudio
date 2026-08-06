@@ -23,6 +23,8 @@ import com.google.auto.service.AutoService
 import com.google.common.collect.ImmutableList
 import com.tom.rv2ide.projects.util.RuntimeProbe
 import com.tom.rv2ide.eventbus.events.EventReceiver
+import com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent
+import com.tom.rv2ide.eventbus.events.editor.DocumentCloseEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentSaveEvent
 import com.tom.rv2ide.eventbus.events.file.FileCreationEvent
 import com.tom.rv2ide.eventbus.events.file.FileDeletionEvent
@@ -77,6 +79,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
   private var _projectDir: File? = null
   private val modulesGeneratingSources = ConcurrentHashMap.newKeySet<String>()
   private val fullBuildIntents = AtomicInteger(0)
+  private var resourceTableRefreshes = ResourceTableRefreshCoordinator()
 
   var projectInitialized: Boolean = false
   var cachedInitResult: InitializeResult? = null
@@ -179,6 +182,8 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     this.projectInitialized = false
     this.modulesGeneratingSources.clear()
     this.fullBuildIntents.set(0)
+    resourceTableRefreshes.close()
+    resourceTableRefreshes = ResourceTableRefreshCoordinator()
   }
   @JvmOverloads
   fun generateSources(
@@ -288,7 +293,7 @@ val mainArtifact = variant.mainArtifact
       if (result == null || !result.isSuccessful || error != null) {
         log.warn("Source generation failed for module '{}': {}", module.path, error ?: result)
       } else {
-        module.updateResourceTable()
+        resourceTableRefreshes.schedule(module, immediate = true)
         log.info("Android source generation completed for changed module '{}'", module.path)
       }
     }
@@ -384,53 +389,68 @@ val mainArtifact = variant.mainArtifact
     // Resource edits must not trigger a workspace-wide Gradle warm-up. AGP produces generated
     // binding/navigation sources during initialization or an explicit build; editor file events
     // only need the owning module's resource table refreshed for completion and diagnostics.
-    (workspace.findModuleForFile(file, false) as? AndroidModule)?.updateResourceTable()
+    (workspace.findModuleForFile(file, false) as? AndroidModule)?.let { module ->
+      resourceTableRefreshes.schedule(module, immediate = true)
+    }
   }
 
 
   @Suppress("unused")
   @Subscribe(threadMode = ThreadMode.ASYNC)
+  fun onDocumentChanged(event: DocumentChangeEvent) {
+    scheduleActiveValuesRefresh(event.changedFile)
+  }
+
+  @Suppress("unused")
+  @Subscribe(threadMode = ThreadMode.ASYNC)
+  fun onDocumentClosed(event: DocumentCloseEvent) {
+    scheduleActiveValuesRefresh(event.closedFile)
+  }
+
+  private fun scheduleActiveValuesRefresh(file: java.nio.file.Path) {
+    if (file.extension != "xml") return
+    val module = getWorkspace()?.findModuleForFile(file, false) as? AndroidModule ?: return
+    val isValuesResource =
+        module.mainSourceSet?.sourceProvider?.resDirectories?.any { resDirectory ->
+          file.normalize().startsWith(resDirectory.toPath().normalize().resolve("values"))
+        } ?: false
+    if (isValuesResource) {
+      resourceTableRefreshes.schedule(module)
+    }
+  }
+
+  @Suppress("unused")
+  @Subscribe(threadMode = ThreadMode.ASYNC)
   fun onFileSaved(event: DocumentSaveEvent) {
-    event.file.apply {
-      if (isDirectory()) {
-        return@apply
-      }
+    val file = event.file
+    if (file.isDirectory()) return
 
-      if (extension == "kt" || extension == "kts") {
-        getWorkspace()?.findModuleForFile(this, false)?.bumpSourceIndexVersion()
-        return@apply
-      }
+    if (file.extension == "kt" || file.extension == "kts") {
+      getWorkspace()?.findModuleForFile(file, false)?.bumpSourceIndexVersion()
+      return
+    }
+    if (file.extension != "xml") return
 
-      if (extension != "xml") {
-        return@apply
-      }
+    val module = getWorkspace()?.findModuleForFile(file, false) as? AndroidModule ?: return
+    val sourceProvider = module.mainSourceSet?.sourceProvider
+    val isResource =
+        sourceProvider?.resDirectories?.any { resourceDir ->
+          file.normalize().startsWith(resourceDir.toPath().normalize())
+        } ?: false
+    val isManifest =
+        sourceProvider?.manifestFile?.let { manifest ->
+          manifest.exists() && file.normalize() == manifest.toPath().normalize()
+        } ?: false
+    if (!isResource && !isManifest) return
 
-      val module = getWorkspace()?.findModuleForFile(this, false) ?: return@apply
-      if (module !is AndroidModule) {
-        return@apply
-      }
-
-      val sourceProvider = module.mainSourceSet?.sourceProvider
-      val isResource =
-          sourceProvider?.resDirectories?.any { resourceDir ->
-            this.normalize().startsWith(resourceDir.toPath().normalize())
-          } ?: false
-      val isManifest =
-          sourceProvider?.manifestFile?.let { manifest ->
-            manifest.exists() && this.normalize() == manifest.toPath().normalize()
-          } ?: false
-
-      if (isResource || isManifest) {
-        module.updateResourceTable()
-        if (!event.buildWillFollow && !hasFullBuildIntent()) {
-          generateSourcesForModule(module)
-        } else {
-          log.debug(
-              "Skipping standalone source generation for '{}' because a full build will follow",
-              module.path,
-          )
-        }
-      }
+    resourceTableRefreshes.schedule(module, immediate = true)
+    if (!event.buildWillFollow && !hasFullBuildIntent()) {
+      generateSourcesForModule(module)
+    } else {
+      log.debug(
+          "Skipping standalone source generation for '{}' because a full build will follow",
+          module.path,
+      )
     }
   }
 

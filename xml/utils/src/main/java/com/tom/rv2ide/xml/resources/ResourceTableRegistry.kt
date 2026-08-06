@@ -116,6 +116,17 @@ interface ResourceTableRegistry : XmlRegistry<IResourceTable> {
       vararg resDirs: File,
   ): IResourceTable? = refreshPackage(name, *resDirs)
 
+  /**
+   * Same as the snapshot overload, but abandons a replacement when [isObsolete] becomes true.
+   * An obsolete request must retain the previously published table and its generation.
+   */
+  fun refreshPackage(
+      name: String,
+      inputs: ResourceTableInputSnapshot,
+      isObsolete: () -> Boolean,
+      vararg resDirs: File,
+  ): IResourceTable? = refreshPackage(name, inputs, *resDirs)
+
   /** Returns the generation of the cached package table, or 0 when it is unavailable. */
   fun getGeneration(packageName: String): Long
 

@@ -119,6 +119,15 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       inputs: ResourceTableInputSnapshot,
       vararg resDirs: File,
   ): ResourceTable? {
+    return refreshPackage(name, inputs, { false }, *resDirs)
+  }
+
+  override fun refreshPackage(
+      name: String,
+      inputs: ResourceTableInputSnapshot,
+      isObsolete: () -> Boolean,
+      vararg resDirs: File,
+  ): ResourceTable? {
     if (name == PCK_ANDROID) {
       return resDirs.firstOrNull()?.let(::platformResourceTable)
     }
@@ -126,6 +135,9 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     val lock = tableLocks.computeIfAbsent(name) { Any() }
     synchronized(lock) {
       val previous = tables[name]
+      if (isObsolete()) {
+        return previous
+      }
       val fingerprint =
           try {
             resourceFingerprint(inputs, *resDirs)
@@ -152,7 +164,7 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
             log.warn("Failed to refresh resource table for package '{}'", name, error)
             null
           }
-      if (replacement == null) {
+      if (replacement == null || isObsolete()) {
         return previous
       }
 

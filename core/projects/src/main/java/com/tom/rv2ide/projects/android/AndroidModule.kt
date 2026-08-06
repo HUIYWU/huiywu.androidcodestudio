@@ -38,6 +38,7 @@ import com.tom.rv2ide.tooling.api.models.GradleTask
 import com.tom.rv2ide.tooling.api.util.findPackageName
 import com.tom.rv2ide.utils.withStopWatch
 import com.tom.rv2ide.xml.res.IResourceTable
+import com.tom.rv2ide.xml.resources.ResourceTableInputSnapshot
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import com.tom.rv2ide.xml.versions.ApiVersions
 import com.tom.rv2ide.xml.versions.ApiVersionsRegistry
@@ -405,13 +406,18 @@ open class AndroidModule( // Class must be open because BaseXMLTest mocks this..
 
   /** Updates the resource table for this module. */
   fun updateResourceTable() {
-    val namespace = this.namespace ?: return
+    CompletableFuture.runAsync { refreshResourceTable(ResourceTableInputSnapshot.EMPTY) { false } }
+  }
 
-    CompletableFuture.runAsync {
-      val tableRegistry = ResourceTableRegistry.getInstance()
-      val resDirs = mainSourceSet?.sourceProvider?.resDirectories ?: return@runAsync
-      tableRegistry.refreshPackage(namespace, *resDirs.toTypedArray())
-    }
+  /** Builds and publishes this module's resource table on the caller-controlled worker thread. */
+  fun refreshResourceTable(
+      inputs: ResourceTableInputSnapshot,
+      isObsolete: () -> Boolean = { false },
+  ): IResourceTable? {
+    val namespace = this.namespace ?: return null
+    val resDirs = mainSourceSet?.sourceProvider?.resDirectories ?: return null
+    return ResourceTableRegistry.getInstance()
+        .refreshPackage(namespace, inputs, isObsolete, *resDirs.toTypedArray())
   }
 
   /**
