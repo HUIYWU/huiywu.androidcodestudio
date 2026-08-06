@@ -2452,6 +2452,164 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generatedMultilevelGenericOverrideStubs_preserveInheritanceAndOmitTerminalSyntheticBridges() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        interface GenericContract<T> {
+          fun accept(value: T): T
+          var payload: T
+        }
+
+        abstract class GenericMiddle<T> : GenericContract<T> {
+          abstract override fun accept(value: T): T
+          abstract override var payload: T
+        }
+
+        class StringGenericLeaf : GenericMiddle<String>() {
+          override fun accept(value: String): String = value
+          override var payload: String = "payload"
+        }
+        """.trimIndent()
+    val contractStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.GenericContract", "MultilevelGenericOverrideBridges.kt", kotlinSource, emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for GenericContract")
+    val middleStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.GenericMiddle", "MultilevelGenericOverrideBridges.kt", kotlinSource, emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for GenericMiddle")
+    val leafStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.StringGenericLeaf", "MultilevelGenericOverrideBridges.kt", kotlinSource, emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for StringGenericLeaf")
+
+    assertContains(contractStub, "public interface GenericContract<T>")
+    assertContains(middleStub, "public class GenericMiddle<T> implements GenericContract<T>")
+    assertContains(middleStub, "T accept(T value)")
+    assertContains(middleStub, "T getPayload()")
+    assertContains(middleStub, "void setPayload(T value)")
+    assertContains(leafStub, "public class StringGenericLeaf extends GenericMiddle<String>")
+    assertContains(leafStub, "public String accept(String value)")
+    assertContains(leafStub, "public String getPayload()")
+    assertContains(leafStub, "public void setPayload(String value)")
+    assertFalse("Terminal Object bridges must not be projected:\n$leafStub",
+      leafStub.contains("Object accept(Object value)") ||
+        leafStub.contains("Object getPayload()") ||
+        leafStub.contains("void setPayload(Object value)"))
+
+    val stubs = mapOf(
+      "sample.GenericContract" to contractStub,
+      "sample.GenericMiddle" to middleStub,
+      "sample.StringGenericLeaf" to leafStub,
+    )
+    assertTrue(
+      "Multilevel generic override stubs must remain attributable by javac:\n$stubs",
+      javacSucceeds(
+        stubs,
+        "consumer.MultilevelGenericOverrideConsumer",
+        """
+        package consumer;
+        import sample.GenericContract;
+        import sample.GenericMiddle;
+        import sample.StringGenericLeaf;
+        class MultilevelGenericOverrideConsumer {
+          String useLeaf(String value) {
+            StringGenericLeaf leaf = new StringGenericLeaf();
+            leaf.setPayload(value);
+            return leaf.accept(value) + leaf.getPayload();
+          }
+          String useMiddle(GenericMiddle<String> middle, String value) {
+            middle.setPayload(value);
+            return middle.accept(value) + middle.getPayload();
+          }
+          String useContract(GenericContract<String> contract, String value) {
+            contract.setPayload(value);
+            return contract.accept(value) + contract.getPayload();
+          }
+        }
+        """.trimIndent(),
+      ),
+    )
+  }
+
+  @Test
+  fun generatedCovariantReturnOverrideStubs_omitReturnOnlySyntheticBridgesButRemainJavacAttributable() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val kotlinSource =
+        """
+        package sample
+
+        interface CovariantContract {
+          fun render(): CharSequence
+          val title: CharSequence
+        }
+
+        class StringCovariantContract : CovariantContract {
+          override fun render(): String = "rendered"
+          override val title: String = "title"
+        }
+        """.trimIndent()
+    val contractStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.CovariantContract",
+      "CovariantReturnOverrideBridges.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for CovariantContract")
+    val implementationStub = KotlinJvmAbiStubGenerator.generateForTest(
+      "sample.StringCovariantContract",
+      "CovariantReturnOverrideBridges.kt",
+      kotlinSource,
+      emptySet(),
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+    ) ?: error("Missing generated stub for StringCovariantContract")
+
+    assertContains(contractStub, "public interface CovariantContract")
+    assertContains(contractStub, "CharSequence render()")
+    assertContains(contractStub, "CharSequence getTitle()")
+
+    assertContains(implementationStub, "public class StringCovariantContract")
+    assertContains(implementationStub, "public String render()")
+    assertContains(implementationStub, "public String getTitle()")
+    assertFalse("Synthetic CharSequence return bridge must not be projected:\n$implementationStub",
+      implementationStub.contains("CharSequence render()") ||
+        implementationStub.contains("CharSequence getTitle()"))
+
+    val stubs = mapOf(
+      "sample.CovariantContract" to contractStub,
+      "sample.StringCovariantContract" to implementationStub,
+    )
+    assertTrue(
+      "Covariant return override stubs must remain attributable by javac:\n$stubs",
+      javacSucceeds(
+        stubs,
+        "consumer.CovariantReturnOverrideConsumer",
+        """
+        package consumer;
+        import sample.CovariantContract;
+        import sample.StringCovariantContract;
+        class CovariantReturnOverrideConsumer {
+          String useImplementation() {
+            StringCovariantContract implementation = new StringCovariantContract();
+            String rendered = implementation.render();
+            String title = implementation.getTitle();
+            return rendered + title;
+          }
+          CharSequence useContract(CovariantContract contract) {
+            return contract.render().toString() + contract.getTitle();
+          }
+        }
+        """.trimIndent(),
+      ),
+    )
+  }
+
+  @Test
   fun generatedCompanionJvmFieldAccessorAnnotations_controlJavacConsumerSurface() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

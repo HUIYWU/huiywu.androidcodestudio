@@ -105,15 +105,99 @@
   (#match? @verbose.priority "TRACE")
 )
 
-; A message is optional in the grammar. Keep priority styling when a log line ends at its tag.
-(log_line (priority) @err.priority (#match? @err.priority "E"))
-(log_line (priority) @warn.priority (#match? @warn.priority "W"))
-(log_line (priority) @info.priority (#match? @info.priority "I"))
-(log_line (priority) @debug.priority (#match? @debug.priority "D"))
-(log_line (priority) @verbose.priority (#match? @verbose.priority "V"))
+; A message is optional in the grammar. When a line ends at its tag, retain the
+; same metadata and priority styles as a line with a message.
+(log_line
+  (date) @err.date
+  (time) @err.time
+  (pid) @err.pid
+  (tid) @err.tid
+  (priority) @err.priority
+  (tag) @err.tag
+  (#match? @err.priority "E")
+)
 
-(ide_log_line (priority) @err.priority (#match? @err.priority "ERROR"))
-(ide_log_line (priority) @warn.priority (#match? @warn.priority "WARN"))
-(ide_log_line (priority) @info.priority (#match? @info.priority "INFO"))
-(ide_log_line (priority) @debug.priority (#match? @debug.priority "DEBUG"))
-(ide_log_line (priority) @verbose.priority (#match? @verbose.priority "TRACE"))
+(log_line
+  (date) @warn.date
+  (time) @warn.time
+  (pid) @warn.pid
+  (tid) @warn.tid
+  (priority) @warn.priority
+  (tag) @warn.tag
+  (#match? @warn.priority "W")
+)
+
+(log_line
+  (date) @info.date
+  (time) @info.time
+  (pid) @info.pid
+  (tid) @info.tid
+  (priority) @info.priority
+  (tag) @info.tag
+  (#match? @info.priority "I")
+)
+
+(log_line
+  (date) @debug.date
+  (time) @debug.time
+  (pid) @debug.pid
+  (tid) @debug.tid
+  (priority) @debug.priority
+  (tag) @debug.tag
+  (#match? @debug.priority "D")
+)
+
+(log_line
+  (date) @verbose.date
+  (time) @verbose.time
+  (pid) @verbose.pid
+  (tid) @verbose.tid
+  (priority) @verbose.priority
+  (tag) @verbose.tag
+  (#match? @verbose.priority "V")
+)
+
+(ide_log_line
+  (date) @err.date
+  (time) @err.time
+  (priority) @err.priority
+  (thread_name) @err.thread_name
+  (tag) @err.tag
+  (#match? @err.priority "ERROR")
+)
+
+(ide_log_line
+  (date) @warn.date
+  (time) @warn.time
+  (priority) @warn.priority
+  (thread_name) @warn.thread_name
+  (tag) @warn.tag
+  (#match? @warn.priority "WARN")
+)
+
+(ide_log_line
+  (date) @info.date
+  (time) @info.time
+  (priority) @info.priority
+  (thread_name) @info.thread_name
+  (tag) @info.tag
+  (#match? @info.priority "INFO")
+)
+
+(ide_log_line
+  (date) @debug.date
+  (time) @debug.time
+  (priority) @debug.priority
+  (thread_name) @debug.thread_name
+  (tag) @debug.tag
+  (#match? @debug.priority "DEBUG")
+)
+
+(ide_log_line
+  (date) @verbose.date
+  (time) @verbose.time
+  (priority) @verbose.priority
+  (thread_name) @verbose.thread_name
+  (tag) @verbose.tag
+  (#match? @verbose.priority "TRACE")
+)

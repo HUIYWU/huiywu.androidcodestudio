@@ -365,7 +365,8 @@ public final class KotlinJvmSourceNavigator {
       final String jvmMemberName = member.jvmName == null ? member.name : member.jvmName;
       final boolean nameMatches = javaName.equals(jvmMemberName);
       final boolean matchesElement = member.function()
-          ? nameMatches && functionSignatureMatches(member, executable)
+          ? nameMatches && functionSignatureMatches(
+              member, executable, valueClassContext.underlyingTypes)
           : propertyJavaNameMatches(
               member, javaName, element, isInterfaceMember(element), valueClassContext.types,
                valueClassContext.underlyingTypes);
@@ -378,8 +379,10 @@ public final class KotlinJvmSourceNavigator {
   }
 
   private static boolean functionSignatureMatches(
-      KotlinJvmSyntaxParser.MemberSyntax member, ExecutableElement executable) {
-    if (executable == null) {
+      KotlinJvmSyntaxParser.MemberSyntax member,
+      ExecutableElement executable,
+      Map<String, String> valueClassUnderlyingTypes) {
+    if (executable == null || executable.getReturnType() == null) {
       return false;
     }
     final int receiverCount = member.receiverType == null ? 0 : 1;
@@ -406,7 +409,29 @@ public final class KotlinJvmSourceNavigator {
         return false;
       }
     }
-    return true;
+    return functionReturnTypeMatches(member, executable, valueClassUnderlyingTypes);
+  }
+
+  private static boolean functionReturnTypeMatches(
+      KotlinJvmSyntaxParser.MemberSyntax member,
+      ExecutableElement executable,
+      Map<String, String> valueClassUnderlyingTypes) {
+    // Kotlin's non-null Unit is JVM void only in return position; do not put this
+    // mapping in navigationJavaType because Unit remains kotlin.Unit in parameter position.
+    if ("Unit".equals(member.declaredType) || "kotlin.Unit".equals(member.declaredType)) {
+      return "void".equals(executable.getReturnType().toString());
+    }
+    // As with property getters, unresolved type variables and complex generic expressions cannot
+    // safely disprove a candidate. Concrete return types must match so JVM bridge methods do not
+    // navigate as independent Kotlin source declarations.
+    if (navigationJavaType(member.declaredType) == null) {
+      return true;
+    }
+    return extensionAccessorParameterMatches(
+        member.declaredType,
+        executable.getReturnType().toString(),
+        member.jvmName != null,
+        valueClassUnderlyingTypes);
   }
 
   private static boolean propertyJavaNameMatches(

@@ -791,8 +791,71 @@ class KotlinCompilerJvmAbiProbeTest {
     assertSyntheticBridge(implementation, "getPayload", "()Ljava/lang/CharSequence;")
     assertSyntheticBridge(implementation, "setPayload", "(Ljava/lang/CharSequence;)V")
   }
+  @Test
+  fun covariantReturnOverrides_recordReturnOnlySyntheticBridges() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      interface CovariantContract {
+        fun render(): CharSequence
+        val title: CharSequence
+      }
+
+      class StringCovariantContract : CovariantContract {
+        override fun render(): String = "rendered"
+        override val title: String = "title"
+      }
+      """.trimIndent(),
+      "CovariantReturnOverrideBridges.kt",
+    ).associateBy { it.internalName }
+
+    val implementation = surfaces.getValue("evidence/StringCovariantContract")
+
+    assertPlainAccessor(implementation, "render", "()Ljava/lang/String;")
+    assertPlainAccessor(implementation, "getTitle", "()Ljava/lang/String;")
+
+    assertSyntheticBridge(implementation, "render", "()Ljava/lang/CharSequence;")
+    assertSyntheticBridge(implementation, "getTitle", "()Ljava/lang/CharSequence;")
+  }
+
+  @Test
+  fun multilevelGenericOverrides_preserveTerminalErasedSyntheticBridges() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      interface GenericContract<T> {
+        fun accept(value: T): T
+        var payload: T
+      }
+
+      abstract class GenericMiddle<T> : GenericContract<T> {
+        abstract override fun accept(value: T): T
+        abstract override var payload: T
+      }
+
+      class StringGenericLeaf : GenericMiddle<String>() {
+        override fun accept(value: String): String = value
+        override var payload: String = "payload"
+      }
+      """.trimIndent(),
+      "MultilevelGenericOverrideBridges.kt",
+    ).associateBy { it.internalName }
+
+    val leaf = surfaces.getValue("evidence/StringGenericLeaf")
+
+    assertPlainAccessor(leaf, "accept", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertPlainAccessor(leaf, "getPayload", "()Ljava/lang/String;")
+    assertPlainAccessor(leaf, "setPayload", "(Ljava/lang/String;)V")
+
+    assertSyntheticBridge(leaf, "accept", "(Ljava/lang/Object;)Ljava/lang/Object;")
+    assertSyntheticBridge(leaf, "getPayload", "()Ljava/lang/Object;")
+    assertSyntheticBridge(leaf, "setPayload", "(Ljava/lang/Object;)V")
+  }
 
   private fun assertSyntheticBridge(
+
     surface: KotlinCompilerJvmAbiProbe.ClassSurface,
     name: String,
     descriptor: String,

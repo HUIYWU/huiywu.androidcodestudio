@@ -672,6 +672,75 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesMultilevelGenericLeafAndRejectsTerminalErasedBridgeShapes() {
+    val kotlinSource =
+      """
+      package navigation
+
+      interface GenericContract<T> {
+        fun accept(value: T): T
+        var payload: T
+      }
+
+      abstract class GenericMiddle<T> : GenericContract<T> {
+        abstract override fun accept(value: T): T
+        abstract override var payload: T
+      }
+
+      class StringGenericLeaf : GenericMiddle<String>() {
+        override fun accept(value: String): String = value
+        override var payload: String = "payload"
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class StringGenericLeaf extends GenericMiddle<String> {
+        public String accept(String value) { return value; }
+        public String getPayload() { return "payload"; }
+        public void setPayload(String value) {}
+      }
+      abstract class GenericMiddle<T> implements GenericContract<T> {
+        public abstract T accept(T value);
+        public abstract T getPayload();
+        public abstract void setPayload(T value);
+      }
+      interface GenericContract<T> {
+        T accept(T value);
+        T getPayload();
+        void setPayload(T value);
+      }
+      """.trimIndent()
+    val bridgeShapedSource =
+      """
+      package navigation;
+      class StringGenericLeaf {
+        public Object accept(Object value) { return value; }
+        public Object getPayload() { return null; }
+        public void setPayload(Object value) {}
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/MultilevelGenericOverrideBridges.kt")
+
+    for (name in listOf("accept", "getPayload", "setPayload")) {
+      val method = compileMethod(javaSource, "navigation.StringGenericLeaf", name)
+      val expectedSourceName = if (name == "accept") "accept" else "payload"
+      assertEquals(expectedSourceName, sourceTextAt(
+        kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, method)!!,
+      ))
+    }
+
+    for (name in listOf("accept", "getPayload", "setPayload")) {
+      val bridge = compileMethod(bridgeShapedSource, "navigation.StringGenericLeaf", name)
+      assertNull(
+        "Terminal erased bridge-shaped $name must not navigate to a String leaf override",
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, bridge),
+      )
+    }
+  }
+
+  @Test
   fun typeNavigation_resolvesBoundedGenericOverridesAndRejectsUpperBoundBridgeShapes() {
     val kotlinSource =
       """
@@ -730,6 +799,65 @@ class KotlinJvmSourceNavigatorTest {
       val bridge = compileMethod(bridgeShapedSource, "navigation.BoundedStringContract", name)
       assertNull(
         "Upper-bound bridge-shaped $name must not navigate to a String override",
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, bridge),
+      )
+    }
+  }
+
+  @Test
+  fun typeNavigation_resolvesCovariantReturnOverridesAndRejectsReturnOnlyBridgeShapes() {
+    val kotlinSource =
+      """
+      package navigation
+
+      interface CovariantContract {
+        fun render(): CharSequence
+        val title: CharSequence
+      }
+
+      class StringCovariantContract : CovariantContract {
+        override fun render(): String = "rendered"
+        override val title: String = "title"
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class StringCovariantContract implements CovariantContract {
+        public String render() { return "rendered"; }
+        public String getTitle() { return "title"; }
+      }
+      interface CovariantContract {
+        CharSequence render();
+        CharSequence getTitle();
+      }
+      """.trimIndent()
+    val bridgeShapedSource =
+      """
+      package navigation;
+      class StringCovariantContract {
+        public CharSequence render() { return "rendered"; }
+        public CharSequence getTitle() { return "title"; }
+      }
+      interface CovariantContract {
+        CharSequence render();
+        CharSequence getTitle();
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/CovariantReturnOverrideBridges.kt")
+
+    for ((name, expectedSourceName) in listOf("render" to "render", "getTitle" to "title")) {
+      val method = compileMethod(javaSource, "navigation.StringCovariantContract", name)
+      assertEquals(expectedSourceName, sourceTextAt(
+        kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, method)!!,
+      ))
+    }
+
+    for (name in listOf("render", "getTitle")) {
+      val bridge = compileMethod(bridgeShapedSource, "navigation.StringCovariantContract", name)
+      assertNull(
+        "Return-only bridge-shaped $name must not navigate to a String override",
         KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, bridge),
       )
     }
