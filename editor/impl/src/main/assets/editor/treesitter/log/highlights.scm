@@ -104,3 +104,16 @@
   (message) @verbose.msg
   (#match? @verbose.priority "TRACE")
 )
+
+; A message is optional in the grammar. Keep priority styling when a log line ends at its tag.
+(log_line (priority) @err.priority (#match? @err.priority "E"))
+(log_line (priority) @warn.priority (#match? @warn.priority "W"))
+(log_line (priority) @info.priority (#match? @info.priority "I"))
+(log_line (priority) @debug.priority (#match? @debug.priority "D"))
+(log_line (priority) @verbose.priority (#match? @verbose.priority "V"))
+
+(ide_log_line (priority) @err.priority (#match? @err.priority "ERROR"))
+(ide_log_line (priority) @warn.priority (#match? @warn.priority "WARN"))
+(ide_log_line (priority) @info.priority (#match? @info.priority "INFO"))
+(ide_log_line (priority) @debug.priority (#match? @debug.priority "DEBUG"))
+(ide_log_line (priority) @verbose.priority (#match? @verbose.priority "TRACE"))

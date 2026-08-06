@@ -8,7 +8,7 @@ junit-jupiter = "5.10.2"
 kotlin = "2.1.0"
 kotlin-coroutines = "1.10.2"
 # Auditable Android Tree-sitter wrapper/grammars published from HUIYWU/android-tree-sitter.
-tree-sitter = "0.1.5"
+tree-sitter = "0.1.6"
 editor = "0.23.7"
 glide = "5.0.4"
 androidx-vectordrawable = "1.2.0"
