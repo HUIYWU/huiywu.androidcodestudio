@@ -19,6 +19,7 @@ package com.tom.rv2ide.lsp.java
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.projects.ModuleProject
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -39,11 +40,27 @@ internal class JavaSemanticSession internal constructor(
     initialEnvironmentGeneration: Long,
 ) {
   private val generation = AtomicLong(initialEnvironmentGeneration)
+  private val interactiveRequestCount = AtomicInteger(0)
 
   val environmentGeneration: Long
     get() = generation.get()
 
   fun compiler(): JavaCompilerService = JavaCompilerProvider.get(module)
+
+  /**
+   * Marks a user-visible semantic request as active.
+   *
+   * Diagnostics consult this counter immediately before entering javac. They yield instead of
+   * queueing behind completion/signature work, which prevents background analysis from extending
+   * keystroke latency without adding a second compiler or scheduler thread.
+   */
+  fun beginInteractiveRequest(): AutoCloseable {
+    interactiveRequestCount.incrementAndGet()
+    return AutoCloseable { interactiveRequestCount.decrementAndGet() }
+  }
+
+  val hasInteractiveRequest: Boolean
+    get() = interactiveRequestCount.get() > 0
 
   fun invalidateEnvironment(): Long {
     val nextGeneration = nextEnvironmentGeneration()

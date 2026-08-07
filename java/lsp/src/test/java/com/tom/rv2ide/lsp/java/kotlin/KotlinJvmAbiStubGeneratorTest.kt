@@ -2483,6 +2483,10 @@ interface MutableGenericDefaultContract<T> {
     set(value) {}
 }
 abstract class StringMutableGenericDefaultConsumer : MutableGenericDefaultContract<String>
+interface BoundedGenericDefaultContract<T : CharSequence> {
+  fun echo(value: T): T = value
+}
+class BoundedStringGenericDefaultConsumer : BoundedGenericDefaultContract<String>
 
 class ExplicitDefaultConsumer : DefaultContract {
   override fun render(value: String): String = "explicit:${'$'}value"
@@ -2558,6 +2562,20 @@ kotlinSource,
 emptySet(),
 KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
 ) ?: error("Missing generated stub for MutableGenericDefaultContract")
+val boundedGenericContractStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.BoundedGenericDefaultContract",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for BoundedGenericDefaultContract")
+val boundedGenericConsumerStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.BoundedStringGenericDefaultConsumer",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for BoundedStringGenericDefaultConsumer")
 val mutableGenericConsumerStub = KotlinJvmAbiStubGenerator.generateForTest(
 "sample.StringMutableGenericDefaultConsumer",
 "InterfaceDefaultImplementations.kt",
@@ -2612,6 +2630,10 @@ assertContains(stub, "String echo(String value) { return null; }")
 assertFalse("Synthetic Object bridge must not be projected:\n$stub",
 stub.contains("Object echo(Object value)"))
 }
+assertContains(boundedGenericContractStub, "T echo(T value);")
+assertContains(boundedGenericConsumerStub, "String echo(String value) { return null; }")
+assertFalse("Synthetic CharSequence bridge must not be projected:\n$boundedGenericConsumerStub",
+boundedGenericConsumerStub.contains("CharSequence echo(CharSequence value)"))
 assertContains(mutableGenericContractStub, "T getPayload();")
 assertContains(mutableGenericContractStub, "void setPayload(T value);")
 assertContains(mutableGenericConsumerStub, "String getPayload() { return null; }")
@@ -2639,6 +2661,8 @@ mapOf(
 "sample.IndirectStringGenericDefaultConsumer" to indirectGenericConsumerStub,
 "sample.MutableGenericDefaultContract" to mutableGenericContractStub,
 "sample.StringMutableGenericDefaultConsumer" to mutableGenericConsumerStub,
+"sample.BoundedGenericDefaultContract" to boundedGenericContractStub,
+"sample.BoundedStringGenericDefaultConsumer" to boundedGenericConsumerStub,
 ),
 "consumer.DefaultConsumerUse",
 """
@@ -2647,11 +2671,13 @@ import sample.DefaultConsumer;
 import sample.StringGenericDefaultConsumer;
 import sample.IndirectStringGenericDefaultConsumer;
 import sample.StringMutableGenericDefaultConsumer;
+import sample.BoundedStringGenericDefaultConsumer;
 class DefaultConsumerUse {
   String render(DefaultConsumer consumer) { return consumer.render("value"); }
   String title(DefaultConsumer consumer) { return consumer.getTitle(); }
   String generic(StringGenericDefaultConsumer consumer) { return consumer.echo("value"); }
   String indirect(IndirectStringGenericDefaultConsumer consumer) { return consumer.echo("value"); }
+  String bounded(BoundedStringGenericDefaultConsumer consumer) { return consumer.echo("value"); }
   void payload(StringMutableGenericDefaultConsumer consumer) {
     consumer.setPayload("value");
     String value = consumer.getPayload();

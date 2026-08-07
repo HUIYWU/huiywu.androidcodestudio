@@ -211,11 +211,20 @@ class JavaDiagnosticProvider {
                 if (requestedGeneration != analyzeGeneration.get()) {
                   if (IdeLogConfig.shouldLogInfo()) {
                     log.info(
-                      "Analyze skipped after snapshot due to newer request requestedGeneration={} currentGeneration={} file={}",
-                      requestedGeneration,
-                      analyzeGeneration.get(),
-                      file,
+                        "Analyze skipped after snapshot due to newer request requestedGeneration={} currentGeneration={} file={}",
+                        requestedGeneration,
+                        analyzeGeneration.get(),
+                        file,
                     )
+                  }
+                  return
+                }
+                // Diagnostics are speculative background work. Yield before entering javac when a
+                // completion or signature request is active for this module, rather than waiting
+                // behind it and competing for the same reusable compiler.
+                if (session.hasInteractiveRequest) {
+                  if (IdeLogConfig.shouldLogInfo()) {
+                    log.info("Analyze yielded to interactive semantic request file={}", file)
                   }
                   return
                 }

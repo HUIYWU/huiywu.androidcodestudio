@@ -662,6 +662,10 @@ class KotlinJvmSourceNavigatorTest {
           set(value) {}
       }
       class StringMutableGenericDefaultConsumer : MutableGenericDefaultContract<String>
+      interface BoundedGenericDefaultContract<T : CharSequence> {
+        fun echo(value: T): T = value
+      }
+      class BoundedStringGenericDefaultConsumer : BoundedGenericDefaultContract<String>
       """.trimIndent()
     val javaSource =
       """
@@ -679,12 +683,19 @@ class KotlinJvmSourceNavigatorTest {
       interface GenericDefaultContract<T> { T echo(T value); }
       interface DerivedGenericDefaultContract<T> extends GenericDefaultContract<T> {}
       interface MutableGenericDefaultContract<T> { T getPayload(); void setPayload(T value); }
+      class BoundedStringGenericDefaultConsumer implements BoundedGenericDefaultContract<String> {
+        public String echo(String value) { return value; }
+      }
+      interface BoundedGenericDefaultContract<T extends CharSequence> { T echo(T value); }
       """.trimIndent()
     val bridgeSource =
       """
       package navigation;
       class StringGenericDefaultConsumer {
         public Object echo(Object value) { return value; }
+      }
+      class BoundedStringGenericDefaultConsumer {
+        public CharSequence echo(CharSequence value) { return value; }
       }
       class StringMutableGenericDefaultConsumer {
         public Object getPayload() { return null; }
@@ -698,6 +709,7 @@ class KotlinJvmSourceNavigatorTest {
       Triple("navigation.IndirectStringGenericDefaultConsumer", "echo", "echo"),
       Triple("navigation.StringMutableGenericDefaultConsumer", "getPayload", "payload"),
       Triple("navigation.StringMutableGenericDefaultConsumer", "setPayload", "payload"),
+      Triple("navigation.BoundedStringGenericDefaultConsumer", "echo", "echo"),
     )) {
       val method = compileMethod(javaSource, owner, name)
       assertEquals(expected, sourceTextAt(
@@ -705,6 +717,7 @@ class KotlinJvmSourceNavigatorTest {
     }
     for ((owner, name) in listOf(
       "navigation.StringGenericDefaultConsumer" to "echo",
+      "navigation.BoundedStringGenericDefaultConsumer" to "echo",
       "navigation.StringMutableGenericDefaultConsumer" to "getPayload",
       "navigation.StringMutableGenericDefaultConsumer" to "setPayload",
     )) {

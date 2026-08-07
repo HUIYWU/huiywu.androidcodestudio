@@ -196,33 +196,36 @@ class JavaLanguageServer : ILanguageServer {
     }
     val semanticSession = getSemanticSession(request.file)
     val environmentGeneration = semanticSession?.environmentGeneration
-    val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
-    if (!settings.completionsEnabled() || !completionProvider.canComplete(request.file)) {
-      return CompletionResult.EMPTY
+    val interactiveLease = semanticSession?.beginInteractiveRequest()
+    try {
+      val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
+      if (!settings.completionsEnabled() || !completionProvider.canComplete(request.file)) {
+        return CompletionResult.EMPTY
+      }
+
+      if (diagnosticProvider!!.isAnalyzing()) {
+        diagnosticProvider.cancel()
+      }
+
+      completionProvider.reset(compiler, settings, cachedCompletion) {
+          cachedCompletion: CachedCompletion ->
+        updateCachedCompletion(cachedCompletion)
+      }
+
+      val result = completionProvider.complete(request)
+
+      // The document may have changed while javac was computing the result. Do not let an older
+      // completion request publish candidates for the current editor state.
+      if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision) ||
+          !isCurrentSemanticSession(semanticSession, environmentGeneration)) {
+        return CompletionResult.EMPTY
+      }
+
+      // log.warn(result.toString())
+      return result
+    } finally {
+      interactiveLease?.close()
     }
-
-
-    if (diagnosticProvider!!.isAnalyzing()) {
-      diagnosticProvider.cancel()
-    }
-
-    completionProvider.reset(compiler, settings, cachedCompletion) {
-        cachedCompletion: CachedCompletion ->
-      updateCachedCompletion(cachedCompletion)
-    }
-
-    val result = completionProvider.complete(request)
-
-    // The document may have changed while javac was computing the result. Do not let an older
-    // completion request publish candidates for the current editor state.
-    if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision) ||
-        !isCurrentSemanticSession(semanticSession, environmentGeneration)) {
-      return CompletionResult.EMPTY
-    }
-
-    // log.warn(result.toString())
-
-    return result
   }
 
   override suspend fun findReferences(params: ReferenceParams): ReferenceResult {
@@ -253,20 +256,25 @@ class JavaLanguageServer : ILanguageServer {
     }
     val semanticSession = getSemanticSession(params.file)
     val environmentGeneration = semanticSession?.environmentGeneration
-    val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
-    val result =
-        if (!settings.signatureHelpEnabled()) {
-          SignatureHelp(emptyList(), -1, -1)
-        } else {
-          SignatureProvider(compiler, params.cancelChecker).signatureHelp(params)
-        }
-    return if (
-        isCurrentDocument(params.file, params.documentVersion, params.documentRevision) &&
-            isCurrentSemanticSession(semanticSession, environmentGeneration)
-    ) {
-      result
-    } else {
-      SignatureHelp(emptyList(), -1, -1)
+    val interactiveLease = semanticSession?.beginInteractiveRequest()
+    try {
+      val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
+      val result =
+          if (!settings.signatureHelpEnabled()) {
+            SignatureHelp(emptyList(), -1, -1)
+          } else {
+            SignatureProvider(compiler, params.cancelChecker).signatureHelp(params)
+          }
+      return if (
+          isCurrentDocument(params.file, params.documentVersion, params.documentRevision) &&
+              isCurrentSemanticSession(semanticSession, environmentGeneration)
+      ) {
+        result
+      } else {
+        SignatureHelp(emptyList(), -1, -1)
+      }
+    } finally {
+      interactiveLease?.close()
     }
   }
 
