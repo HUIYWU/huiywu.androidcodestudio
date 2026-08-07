@@ -17,8 +17,14 @@
 package com.tom.rv2ide.lsp.java
 
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
+import com.tom.rv2ide.lsp.models.CompletionResult
+import com.tom.rv2ide.progress.ICancelChecker
 import com.tom.rv2ide.projects.ModuleProject
+import java.nio.file.Path
+import java.util.concurrent.CancellationException
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -62,7 +68,177 @@ internal class JavaSemanticSession internal constructor(
   val hasInteractiveRequest: Boolean
     get() = interactiveRequestCount.get() > 0
 
+  /**
+   * Immutable identity for a shareable completion computation.
+   *
+   * The key intentionally includes both version and revision. Version identifies the ordinary
+   * editor edit sequence, while revision distinguishes lifecycles such as close/reopen where a
+   * document version can legitimately restart at zero. It is declaration-only for now: no worker
+   * is shared until UI waiter cancellation is separated from worker cancellation.
+   */
+  data class CompletionRequestKey(
+      val file: Path,
+      val documentVersion: Int,
+      val documentRevision: Long,
+      val environmentGeneration: Long,
+      val cursorIndex: Long,
+      val prefix: String,
+  ) {
+    init {
+      require(documentVersion >= 0) { "A completion key requires a known document version" }
+      require(documentRevision >= 0L) { "A completion key requires a known document revision" }
+      require(cursorIndex >= 0L) { "A completion key requires a valid cursor index" }
+    }
+
+    companion object {
+      fun create(
+          file: Path,
+          documentVersion: Int,
+          documentRevision: Long,
+          environmentGeneration: Long,
+          cursorIndex: Long,
+          prefix: String?,
+      ): CompletionRequestKey =
+          CompletionRequestKey(
+              file = file.normalize(),
+              documentVersion = documentVersion,
+              documentRevision = documentRevision,
+              environmentGeneration = environmentGeneration,
+              cursorIndex = cursorIndex,
+              prefix = prefix.orEmpty(),
+          )
+    }
+  }
+
+  /**
+   * Tracks UI subscriptions independently from the future shared worker cancellation policy.
+   *
+   * This is intentionally not connected to javac yet. It records the required invariant for the
+   * next phase: detaching one UI waiter must never cancel a computation still observed by another.
+   */
+  internal class CompletionSubscribers {
+    private val count = AtomicInteger(0)
+
+    fun attach(): AutoCloseable {
+      count.incrementAndGet()
+      val detached = AtomicBoolean(false)
+      return AutoCloseable {
+        if (detached.compareAndSet(false, true)) {
+          check(count.decrementAndGet() >= 0) { "Completion subscriber count underflow" }
+        }
+      }
+    }
+
+    val isEmpty: Boolean
+      get() = count.get() == 0
+
+    val size: Int
+      get() = count.get()
+  }
+
+  /**
+   * Session-owned in-flight completion state.
+   *
+   * The [workerCancelChecker] belongs to the computation, never to a UI CompletionThread. A
+   * subscriber can detach without stopping the worker while another subscriber remains. This type
+   * is intentionally not yet awaited from UI threads; it establishes cleanup and ownership rules
+   * before a cancellable, non-blocking waiter bridge is introduced.
+   */
+  internal class InFlightCompletion internal constructor(
+      val key: CompletionRequestKey,
+  ) {
+    val workerCancelChecker = ICancelChecker.Default()
+    val result = CompletableFuture<CompletionResult>()
+    private val subscribers = CompletionSubscribers()
+    private val terminal = AtomicBoolean(false)
+
+    fun attachSubscriber(): AutoCloseable = subscribers.attach()
+
+    val subscriberCount: Int
+      get() = subscribers.size
+
+    val hasSubscribers: Boolean
+      get() = !subscribers.isEmpty
+
+    /** Completes once; returns false when cancellation or another completion won the race. */
+    fun complete(workerResult: CompletionResult): Boolean {
+      if (!terminal.compareAndSet(false, true)) {
+        return false
+      }
+      return result.complete(workerResult)
+    }
+
+    /** Completes exceptionally once; returns false when the worker already published a result. */
+    fun fail(error: Throwable): Boolean {
+      if (!terminal.compareAndSet(false, true)) {
+        return false
+      }
+      return result.completeExceptionally(error)
+    }
+
+    fun cancelWorkerIfUnobserved() {
+      if (subscribers.isEmpty && !result.isDone) {
+        cancelWorker()
+      }
+    }
+
+    fun cancelWorker() {
+      workerCancelChecker.cancel()
+      fail(CancellationException("Completion worker cancelled"))
+    }
+  }
+
+  private val inFlightCompletions = ConcurrentHashMap<CompletionRequestKey, InFlightCompletion>()
+
+  /**
+   * Returns the only in-flight state for [key], together with whether this caller created it.
+   *
+   * A later integration must execute the worker only when [created] is true and remove the exact
+   * state in a completion callback. This avoids replacing an active computation for the same key.
+   */
+  fun acquireInFlightCompletion(key: CompletionRequestKey): Pair<InFlightCompletion, Boolean> {
+    val created = InFlightCompletion(key)
+    val existing = inFlightCompletions.putIfAbsent(key, created)
+    return if (existing == null) created to true else existing to false
+  }
+
+  fun removeInFlightCompletion(state: InFlightCompletion) {
+    inFlightCompletions.remove(state.key, state)
+  }
+
+  /**
+   * Cancels only stale states for [file]. EventBus listeners can run asynchronously, so an older
+   * event may arrive after a newer request has already been registered. Comparing revisions rather
+   * than cancelling every state for the file prevents that late event from killing current work.
+   */
+  fun cancelInFlightCompletionsOlderThan(file: Path, revision: Long) {
+    val normalizedFile = file.normalize()
+    inFlightCompletions.values.forEach { state ->
+      if (state.key.file == normalizedFile && state.key.documentRevision < revision) {
+        if (inFlightCompletions.remove(state.key, state)) {
+          state.cancelWorker()
+        }
+      }
+    }
+  }
+
+  /** A closed document has no valid completion consumer regardless of its last revision. */
+  fun cancelInFlightCompletionsForFile(file: Path) {
+    val normalizedFile = file.normalize()
+    inFlightCompletions.values.forEach { state ->
+      if (state.key.file == normalizedFile && inFlightCompletions.remove(state.key, state)) {
+        state.cancelWorker()
+      }
+    }
+  }
+
+  private fun cancelInFlightCompletions() {
+    inFlightCompletions.values.forEach { it.cancelWorker() }
+    inFlightCompletions.clear()
+  }
+
   fun invalidateEnvironment(): Long {
+    cancelInFlightCompletions()
     val nextGeneration = nextEnvironmentGeneration()
     generation.set(nextGeneration)
     return nextGeneration
@@ -87,6 +263,19 @@ internal object JavaSemanticSessions {
             initialEnvironmentGeneration = environmentGeneration.incrementAndGet(),
         )
       }
+
+  /** Returns an existing session without allocating one solely to cancel stale work. */
+  fun existingForModule(module: ModuleProject): JavaSemanticSession? = sessions[module]
+
+  /** Cancels stale work across existing sessions without allocating a compiler session. */
+  fun cancelInFlightCompletionsOlderThan(file: Path, revision: Long) {
+    sessions.values.forEach { it.cancelInFlightCompletionsOlderThan(file, revision) }
+  }
+
+  /** Cancels all completion work for a closed file even when its module can no longer be resolved. */
+  fun cancelInFlightCompletionsForFile(file: Path) {
+    sessions.values.forEach { it.cancelInFlightCompletionsForFile(file) }
+  }
 
   fun isCurrent(session: JavaSemanticSession, generation: Long): Boolean =
       sessions[session.module] === session && session.environmentGeneration == generation

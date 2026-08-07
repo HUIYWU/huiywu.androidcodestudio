@@ -218,8 +218,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       final int line = params.getPosition().getLine();
       final int column = params.getPosition().getColumn();
       final long cursor = params.getPosition().requireIndex();
-      final var sourceObject = new SourceFileObject(file);
-      final String originalContents = sourceObject.getCharContent(true).toString();
+      final String originalContents = requestContents(params);
       return TSCompletionContextClassifier.classify(file, originalContents, cursor, line, column);
     } catch (Throwable ignored) {
       return TSCompletionContext.UNKNOWN;
@@ -286,8 +285,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final long cursor = params.getPosition().requireIndex();
     final int tsLine = params.getPosition().getLine();
     final int tsColumn = params.getPosition().getColumn();
-    final var sourceObject = new SourceFileObject(file);
-    final String originalContents = sourceObject.getCharContent(true).toString();
+    final String originalContents = requestContents(params);
     final var contentBuilder = new StringBuilder(originalContents);
 
     int endOfLine = endOfLine(contentBuilder, (int) cursor);
@@ -396,7 +394,22 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         && prefix.matches("(?s).*\\.\\s*new(?:\\s+[A-Za-z_$][\\w$]*)?\\s*");
   }
 
+  /**
+   * Returns the text frozen by the editor at request creation time.
+   *
+   * A completion worker must not reread FileManager after its cursor/version have been captured:
+   * another edit could otherwise pair newer text with this request's older position. Non-editor
+   * callers may omit content, in which case the established SourceFileObject fallback is retained.
+   */
   @NonNull
+  private String requestContents(@NonNull final CompletionParams params) {
+    final CharSequence requestContent = params.getContent();
+    if (requestContent != null) {
+      return requestContent.toString();
+    }
+    return new SourceFileObject(params.getFile()).getCharContent(true).toString();
+  }
+
   private String partialIdentifier(String contents, int end) {
     int start = end;
     while (start > 0 && Character.isJavaIdentifierPart(contents.charAt(start - 1))) {

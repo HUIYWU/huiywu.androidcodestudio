@@ -54,6 +54,7 @@ dependencies {
     api(projects.core.projects)
     api(projects.core.lspModels)
     api(projects.utilities.lookup)
+    implementation(projects.utilities.shared)
     api(projects.utilities.preferences)
     api(projects.xml.utils)
 

@@ -35,13 +35,12 @@
 package com.tom.rv2ide.lsp.api;
 
 import androidx.annotation.NonNull;
-import com.tom.rv2ide.lookup.Lookup;
 import com.tom.rv2ide.lsp.models.CompletionItem;
 import com.tom.rv2ide.lsp.models.CompletionParams;
 import com.tom.rv2ide.lsp.models.CompletionResult;
 import com.tom.rv2ide.lsp.models.CompletionsKt;
 import com.tom.rv2ide.lsp.models.MatchLevel;
-import com.tom.rv2ide.progress.ICancelChecker;
+import com.tom.rv2ide.progress.CompletionCancellation;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -58,7 +57,7 @@ public interface ICompletionProvider {
 
   /** Abort the completion process if cancelled. */
   default void abortCompletionIfCancelled() {
-    final var checker = Lookup.getDefault().lookup(ICancelChecker.class);
+    final var checker = CompletionCancellation.current();
     if (checker != null) {
       checker.abortIfCancelled();
     }

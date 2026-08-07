@@ -491,6 +491,10 @@ class JavaLanguageServer : ILanguageServer {
 
     // TODO Find an alternative to efficiently update changeDelta in JavaCompilerService instance
     JavaCompilerService.NO_MODULE_COMPILER.onDocumentChange(event)
+    // EventBus delivery is asynchronous. Cancel only states whose event revision is provably
+    // older than this change; a delayed older event must not kill a newer completion worker.
+    // This does not need module resolution, which may temporarily fail during close/rename flows.
+    JavaSemanticSessions.cancelInFlightCompletionsOlderThan(event.changedFile, event.revision)
     val workspace = getInstance().getWorkspace()
     val module = workspace?.findModuleForFile(event.changedFile, true)
     if (module != null) {
@@ -533,6 +537,7 @@ class JavaLanguageServer : ILanguageServer {
   @Subscribe(threadMode = ThreadMode.ASYNC)
   @Suppress("unused")
   fun onFileClosed(event: DocumentCloseEvent) {
+    JavaSemanticSessions.cancelInFlightCompletionsForFile(event.closedFile)
     diagnosticProvider?.clearTimestamp(event.closedFile)
 
     if (getActiveDocumentCount() == 0) {

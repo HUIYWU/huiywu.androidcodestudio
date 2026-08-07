@@ -102,7 +102,10 @@ internal class CommonCompletionProvider(
                   file,
                   cancelChecker,
               )
-          params.content = content
+          // ContentReference is backed by the mutable editor buffer and becomes invalid when this
+          // CompletionThread is cancelled. Freeze it before crossing the LSP boundary so a later
+          // worker cannot accidentally compile a newer buffer with this request's cursor/version.
+          params.content = content.toString()
           params.prefix = prefix
           params.documentVersion = documentVersion
           params.documentRevision = documentRevision

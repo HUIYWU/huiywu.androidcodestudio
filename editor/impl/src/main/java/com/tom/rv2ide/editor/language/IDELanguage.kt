@@ -19,9 +19,9 @@ package com.tom.rv2ide.editor.language
 import android.os.Bundle
 import com.tom.rv2ide.editor.api.IEditor
 import com.tom.rv2ide.editor.ui.IDECompletionPublisher
-import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.api.ILanguageServer
 import com.tom.rv2ide.preferences.internal.EditorPreferences
+import com.tom.rv2ide.progress.CompletionCancellation
 import com.tom.rv2ide.progress.ICancelChecker
 import io.github.rosemoe.sora.lang.Language
 import io.github.rosemoe.sora.lang.completion.CompletionCancelledException
@@ -55,12 +55,12 @@ abstract class IDELanguage : Language {
       publisher: CompletionPublisher,
       extraArguments: Bundle,
   ) {
+    val cancelChecker = CompletionCancelChecker(publisher)
+    val previousChecker = CompletionCancellation.install(cancelChecker)
     try {
-      val cancelChecker = CompletionCancelChecker(publisher)
-      Lookup.getDefault().register(ICancelChecker::class.java, cancelChecker)
       doComplete(content, position, publisher, cancelChecker, extraArguments)
     } finally {
-      Lookup.getDefault().unregister(ICancelChecker::class.java)
+      CompletionCancellation.restore(previousChecker)
     }
   }
 

@@ -17,10 +17,9 @@
 
 package com.tom.rv2ide.lsp.java.providers
 
-import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.api.IServerSettings
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
-import com.tom.rv2ide.progress.ICancelChecker
+import com.tom.rv2ide.progress.CompletionCancellation
 import java.nio.file.Path
 
 /**
@@ -36,7 +35,7 @@ abstract class BaseJavaServiceProvider(
 
   /** Abort the completion if cancelled. */
   fun abortCompletionIfCancelled() {
-    val checker = Lookup.getDefault().lookup(ICancelChecker::class.java)
+    val checker = CompletionCancellation.current()
     checker?.abortIfCancelled()
   }
 }
