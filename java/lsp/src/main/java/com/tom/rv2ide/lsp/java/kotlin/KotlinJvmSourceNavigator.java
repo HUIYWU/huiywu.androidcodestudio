@@ -178,7 +178,8 @@ public final class KotlinJvmSourceNavigator {
       return range;
     }
     range = findDefaultInterfaceMember(
-        type, sourceTypes, valueClassContext, element, new java.util.LinkedHashSet<String>());
+        type, sourceTypes, valueClassContext, element, new java.util.LinkedHashSet<String>(),
+        Collections.<String, String>emptyMap());
     if (range != null) {
       return range;
     }
@@ -195,29 +196,52 @@ public final class KotlinJvmSourceNavigator {
       List<KotlinJvmSyntaxParser.TypeSyntax> sourceTypes,
       ValueClassAbiContext valueClassContext,
       Element element,
-      Set<String> visitedContracts) {
+      Set<String> visitedContracts,
+      Map<String, String> substitutions) {
     if (sourceTypes == null) {
       return null;
     }
     for (KotlinJvmSyntaxParser.SuperTypeSyntax superType : implementation.superTypes) {
-      if (superType.constructorInvocation || !superType.type.matches("[A-Za-z_$][\\w$]*")
-          || !visitedContracts.add(superType.type)) {
+      if (superType.constructorInvocation) {
+        continue;
+      }
+      final KotlinJvmTypeProjection.TypeApplication application =
+          KotlinJvmTypeProjection.parseTypeApplication(superType.type);
+      final String contractName = application == null ? superType.type.trim() : application.rawType;
+      if (!TYPE_NAME_PATTERN.matcher(contractName).matches() || !visitedContracts.add(superType.type)) {
         continue;
       }
       KotlinJvmSyntaxParser.TypeSyntax contract = null;
       for (KotlinJvmSyntaxParser.TypeSyntax candidate : sourceTypes) {
-        if (candidate.interfaceType && superType.type.equals(candidate.name)) {
+        if (candidate.interfaceType && contractName.equals(candidate.name)) {
           contract = candidate;
           break;
         }
       }
-      if (contract == null) {
+      if (contract == null || (application != null
+          && application.arguments.size() != contract.typeParameters.size())) {
+        continue;
+      }
+      final Map<String, String> contractSubstitutions = new LinkedHashMap<>(substitutions);
+      boolean supported = true;
+      if (application != null) {
+        for (int index = 0; index < application.arguments.size(); index++) {
+          final String argument = substituteDefaultInterfaceType(
+              application.arguments.get(index), substitutions);
+          if (!TYPE_NAME_PATTERN.matcher(argument).matches()) {
+            supported = false;
+            break;
+          }
+          contractSubstitutions.put(contract.typeParameters.get(index).name, argument);
+        }
+      }
+      if (!supported) {
         continue;
       }
       final List<KotlinJvmSyntaxParser.MemberSyntax> defaults = new java.util.ArrayList<>();
       for (KotlinJvmSyntaxParser.MemberSyntax member : contract.members) {
         if (member.functionBodyPresent) {
-          defaults.add(member);
+          defaults.add(substituteDefaultInterfaceMember(member, contractSubstitutions));
         }
       }
       final SourceRange range = findMember(defaults, valueClassContext, element, false);
@@ -225,12 +249,47 @@ public final class KotlinJvmSourceNavigator {
         return range;
       }
       final SourceRange inherited = findDefaultInterfaceMember(
-          contract, sourceTypes, valueClassContext, element, visitedContracts);
+          contract, sourceTypes, valueClassContext, element, visitedContracts, contractSubstitutions);
       if (inherited != null) {
         return inherited;
       }
     }
     return null;
+  }
+
+  private static String substituteDefaultInterfaceType(
+      String type, Map<String, String> substitutions) {
+    if (type == null || substitutions.isEmpty()) {
+      return type;
+    }
+    String result = type;
+    for (Map.Entry<String, String> entry : substitutions.entrySet()) {
+      result = result.replaceAll(
+          "\\b" + Pattern.quote(entry.getKey()) + "\\b",
+          Matcher.quoteReplacement(entry.getValue()));
+    }
+    return result;
+  }
+
+  private static KotlinJvmSyntaxParser.MemberSyntax substituteDefaultInterfaceMember(
+      KotlinJvmSyntaxParser.MemberSyntax member, Map<String, String> substitutions) {
+    if (substitutions.isEmpty()) {
+      return member;
+    }
+    final List<KotlinJvmSyntaxParser.ParameterSyntax> parameters = new java.util.ArrayList<>();
+    for (KotlinJvmSyntaxParser.ParameterSyntax parameter : member.parameterList) {
+      parameters.add(new KotlinJvmSyntaxParser.ParameterSyntax(
+          parameter.name, substituteDefaultInterfaceType(parameter.type, substitutions),
+          parameter.defaultValue, parameter.vararg));
+    }
+    return new KotlinJvmSyntaxParser.MemberSyntax(
+        member.kind, member.declarationText, member.privateMember, member.jvmStatic, member.jvmField,
+        member.jvmOverloads, member.suspendFunction, member.jvmSynthetic, member.getterJvmSynthetic,
+        member.setterJvmSynthetic, member.jvmName, member.getterJvmName, member.setterJvmName,
+        member.name, member.nameOffset, member.nameLength, member.parameters, parameters,
+        member.typeParameters, substituteDefaultInterfaceType(member.receiverType, substitutions),
+        substituteDefaultInterfaceType(member.declaredType, substitutions), member.mutableProperty,
+        member.readOnlyProperty, member.functionBodyPresent);
   }
 
   private static SourceRange findConstructorProperty(

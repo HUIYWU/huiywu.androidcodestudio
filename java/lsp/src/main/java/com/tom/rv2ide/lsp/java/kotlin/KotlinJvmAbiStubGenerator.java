@@ -948,7 +948,8 @@ private static final Pattern PROPERTY_PATTERN =
     final List<KotlinJvmSyntaxParser.MemberSyntax> projected = new ArrayList<>(implementation.members);
     for (KotlinJvmSyntaxParser.SuperTypeSyntax superType : implementation.superTypes) {
       appendDefaultInterfaceForwarders(
-          out, implementation, superType, sourceTypes, visitedContracts, projected);
+          out, implementation, superType, sourceTypes, visitedContracts, projected,
+          java.util.Collections.<String, String>emptyMap());
     }
   }
 
@@ -958,24 +959,42 @@ private static final Pattern PROPERTY_PATTERN =
       KotlinJvmSyntaxParser.SuperTypeSyntax superType,
       List<KotlinJvmSyntaxParser.TypeSyntax> sourceTypes,
       Set<String> visitedContracts,
-      List<KotlinJvmSyntaxParser.MemberSyntax> projected) {
-    // Same-file, non-generic interface chains only. Class supertypes, generic substitution, and
-    // external contracts remain unprojected until their compiler ABI surfaces are separately proven.
-    if (superType.constructorInvocation || !superType.type.matches("[A-Za-z_$][\\w$]*")
-        || !visitedContracts.add(superType.type)) {
+      List<KotlinJvmSyntaxParser.MemberSyntax> projected,
+      Map<String, String> substitutions) {
+    // Same-file interface chains only. Type arguments must be simple names after the already
+    // established substitutions; nested/star projections and external contracts remain omitted.
+    if (superType.constructorInvocation) {
+      return;
+    }
+    final KotlinJvmTypeProjection.TypeApplication application =
+        KotlinJvmTypeProjection.parseTypeApplication(superType.type);
+    final String contractName = application == null ? superType.type.trim() : application.rawType;
+    if (!contractName.matches("[A-Za-z_$][\\w$]*") || !visitedContracts.add(superType.type)) {
       return;
     }
     KotlinJvmSyntaxParser.TypeSyntax contract = null;
     for (KotlinJvmSyntaxParser.TypeSyntax candidate : sourceTypes) {
-      if (candidate.interfaceType && superType.type.equals(candidate.name)) {
+      if (candidate.interfaceType && contractName.equals(candidate.name)) {
         contract = candidate;
         break;
       }
     }
-    if (contract == null) {
+    if (contract == null || (application != null
+        && application.arguments.size() != contract.typeParameters.size())) {
       return;
     }
-    for (KotlinJvmSyntaxParser.MemberSyntax member : contract.members) {
+    final Map<String, String> contractSubstitutions = new LinkedHashMap<>(substitutions);
+    if (application != null) {
+      for (int index = 0; index < application.arguments.size(); index++) {
+        final String argument = substituteType(application.arguments.get(index), substitutions);
+        if (!argument.matches("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*")) {
+          return;
+        }
+        contractSubstitutions.put(contract.typeParameters.get(index).name, argument);
+      }
+    }
+    for (KotlinJvmSyntaxParser.MemberSyntax original : contract.members) {
+      final KotlinJvmSyntaxParser.MemberSyntax member = substituteMember(original, contractSubstitutions);
       if (!defaultInterfaceMember(member) || declaredBy(projected, member)) {
         continue;
       }
@@ -988,8 +1007,43 @@ private static final Pattern PROPERTY_PATTERN =
     }
     for (KotlinJvmSyntaxParser.SuperTypeSyntax parent : contract.superTypes) {
       appendDefaultInterfaceForwarders(
-          out, implementation, parent, sourceTypes, visitedContracts, projected);
+          out, implementation, parent, sourceTypes, visitedContracts, projected,
+          contractSubstitutions);
     }
+  }
+
+  private static String substituteType(String type, Map<String, String> substitutions) {
+    if (type == null || substitutions.isEmpty()) {
+      return type;
+    }
+    String result = type;
+    for (Map.Entry<String, String> entry : substitutions.entrySet()) {
+      result = result.replaceAll(
+          "\\b" + Pattern.quote(entry.getKey()) + "\\b",
+          Matcher.quoteReplacement(entry.getValue()));
+    }
+    return result;
+  }
+
+  private static KotlinJvmSyntaxParser.MemberSyntax substituteMember(
+      KotlinJvmSyntaxParser.MemberSyntax member, Map<String, String> substitutions) {
+    if (substitutions.isEmpty()) {
+      return member;
+    }
+    final List<KotlinJvmSyntaxParser.ParameterSyntax> parameters = new ArrayList<>();
+    for (KotlinJvmSyntaxParser.ParameterSyntax parameter : member.parameterList) {
+      parameters.add(new KotlinJvmSyntaxParser.ParameterSyntax(
+          parameter.name, substituteType(parameter.type, substitutions),
+          parameter.defaultValue, parameter.vararg));
+    }
+    return new KotlinJvmSyntaxParser.MemberSyntax(
+        member.kind, member.declarationText, member.privateMember, member.jvmStatic, member.jvmField,
+        member.jvmOverloads, member.suspendFunction, member.jvmSynthetic, member.getterJvmSynthetic,
+        member.setterJvmSynthetic, member.jvmName, member.getterJvmName, member.setterJvmName,
+        member.name, member.nameOffset, member.nameLength, member.parameters, parameters,
+        member.typeParameters, substituteType(member.receiverType, substitutions),
+        substituteType(member.declaredType, substitutions), member.mutableProperty,
+        member.readOnlyProperty, member.functionBodyPresent);
   }
 
   private static boolean defaultInterfaceMember(KotlinJvmSyntaxParser.MemberSyntax member) {

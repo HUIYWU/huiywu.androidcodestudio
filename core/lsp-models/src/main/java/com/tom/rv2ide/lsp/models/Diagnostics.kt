@@ -122,10 +122,14 @@ data class DiagnosticResult(
     var file: Path,
     var diagnostics: List<DiagnosticItem>,
     var channel: String = DEFAULT_CHANNEL,
+    var documentVersion: Int = UNKNOWN_DOCUMENT_VERSION,
+    var documentRevision: Long = UNKNOWN_DOCUMENT_REVISION,
 ) {
   companion object {
     const val DEFAULT_CHANNEL = "default"
     const val CHANNEL_SERVER = "server"
+    const val UNKNOWN_DOCUMENT_VERSION = -1
+    const val UNKNOWN_DOCUMENT_REVISION = -1L
 
     @JvmField val NO_UPDATE = DiagnosticResult(Paths.get(""), emptyList())
   }

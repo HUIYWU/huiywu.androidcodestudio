@@ -22,7 +22,6 @@ import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.lsp.java.JavaCompilerProvider
 import com.tom.rv2ide.lsp.java.compiler.CompileTask
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
-import com.tom.rv2ide.lsp.java.models.PartialReparseRequest
 import com.tom.rv2ide.lsp.java.providers.DiagnosticsProvider.findDiagnostics
 import com.tom.rv2ide.lsp.java.utils.CancelChecker
 import com.tom.rv2ide.lsp.models.DiagnosticResult
@@ -67,14 +66,20 @@ class JavaDiagnosticProvider {
       log.debug("Analyzing: {}", file)
     }
 
-    val modifiedAt = FileManager.getLastModified(file)
+    val activeSnapshot = FileManager.getActiveDocumentSnapshot(file)
+    val modifiedAt = activeSnapshot?.modified ?: FileManager.getLastModified(file)
     val analyzedAt = analyzeTimestamps[file]
+    val cachedResult = cachedDiagnostics[file]
+    val cacheMatchesDocument =
+        activeSnapshot == null ||
+            (cachedResult?.documentVersion == activeSnapshot.version &&
+                cachedResult.documentRevision == activeSnapshot.revision)
 
-    if (analyzedAt?.isAfter(modifiedAt) == true) {
+    if (analyzedAt?.isAfter(modifiedAt) == true && cacheMatchesDocument) {
       if (IdeLogConfig.shouldLogDebug()) {
         log.debug("Using cached analyze results...")
       }
-      return cachedDiagnostics[file] ?: DiagnosticResult.NO_UPDATE
+      return cachedResult ?: DiagnosticResult.NO_UPDATE
     }
 
     analyzingThread?.let { analyzingThread ->
@@ -99,10 +104,10 @@ class JavaDiagnosticProvider {
 
     return analyzingThread.result.also {
       this.analyzingThread = null
-      if (requestedGeneration == analyzeGeneration.get()) {
+      if (requestedGeneration == analyzeGeneration.get() && it != DiagnosticResult.NO_UPDATE) {
         cachedDiagnostics[file] = it
         analyzeTimestamps[file] = Instant.now()
-      } else if (IdeLogConfig.shouldLogInfo()) {
+      } else if (requestedGeneration != analyzeGeneration.get() && IdeLogConfig.shouldLogInfo()) {
         log.info(
           "Analyze cache update skipped due to newer request requestedGeneration={} currentGeneration={} file={}",
           requestedGeneration,
@@ -126,7 +131,12 @@ class JavaDiagnosticProvider {
     cachedDiagnostics.remove(file)
   }
 
-  private fun doAnalyze(file: Path, task: CompileTask): DiagnosticResult {
+  private fun doAnalyze(
+      file: Path,
+      task: CompileTask,
+      documentVersion: Int,
+      documentRevision: Long,
+  ): DiagnosticResult {
     val result =
         if (!isTaskValid(task)) {
           // Do not use Collections.emptyList ()
@@ -135,8 +145,18 @@ class JavaDiagnosticProvider {
           if (IdeLogConfig.shouldLogInfo()) {
             log.info("Using cached diagnostics")
           }
-          cachedDiagnostics[file] ?: DiagnosticResult.NO_UPDATE
-        } else DiagnosticResult(file, findDiagnostics(task, file).sortedBy { it.range })
+          cachedDiagnostics[file]?.takeIf { cached ->
+            documentRevision == DiagnosticResult.UNKNOWN_DOCUMENT_REVISION ||
+                cached.documentRevision == documentRevision
+          } ?: DiagnosticResult.NO_UPDATE
+        } else {
+          DiagnosticResult(
+              file,
+              findDiagnostics(task, file).sortedBy { it.range },
+              documentVersion = documentVersion,
+              documentRevision = documentRevision,
+          )
+        }
     return result.also {
       if (IdeLogConfig.shouldLogDebug()) {
         log.debug("Analyze file completed. Found {} diagnostic items", result.diagnostics.size)
@@ -176,16 +196,13 @@ class JavaDiagnosticProvider {
                   }
                   return
                 }
-                val contents = com.tom.rv2ide.projects.FileManager.getDocumentContents(file)
-                val partialRequest =
-                    compiler.getIncrementalState().newCursorPosition?.let { position ->
-                      try {
-                        val cursor = position.requireIndex()
-                        if (cursor >= 0) PartialReparseRequest(cursor.toLong(), contents) else null
-                      } catch (_: IllegalArgumentException) {
-                        null
-                      }
-                    }
+                val activeSnapshot = FileManager.getActiveDocumentSnapshot(file)
+                val contents = activeSnapshot?.content ?: FileManager.getDocumentContents(file)
+                val modified = activeSnapshot?.modified ?: FileManager.getLastModified(file)
+                val documentVersion =
+                    activeSnapshot?.version ?: DiagnosticResult.UNKNOWN_DOCUMENT_VERSION
+                val documentRevision =
+                    activeSnapshot?.revision ?: DiagnosticResult.UNKNOWN_DOCUMENT_REVISION
                 if (requestedGeneration != analyzeGeneration.get()) {
                   if (IdeLogConfig.shouldLogInfo()) {
                     log.info(
@@ -204,10 +221,9 @@ class JavaDiagnosticProvider {
                                 com.tom.rv2ide.lsp.java.compiler.SourceFileObject(
                                     file,
                                     contents,
-                                    com.tom.rv2ide.projects.FileManager.getLastModified(file),
+                                    modified,
                                 )
-                            ),
-                            partialRequest,
+                            )
                         )
                     )
                     .get { task ->
@@ -221,8 +237,13 @@ class JavaDiagnosticProvider {
                           )
                         }
                         DiagnosticResult.NO_UPDATE
+                      } else if (
+                          documentRevision != DiagnosticResult.UNKNOWN_DOCUMENT_REVISION &&
+                              FileManager.getActiveDocumentSnapshot(file)?.revision != documentRevision
+                      ) {
+                        DiagnosticResult.NO_UPDATE
                       } else {
-                        doAnalyze(file, task)
+                        doAnalyze(file, task, documentVersion, documentRevision)
                       }
                     }
               } catch (err: Throwable) {

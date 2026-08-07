@@ -27,7 +27,7 @@ import com.tom.rv2ide.editor.schemes.IDEColorScheme
 import com.tom.rv2ide.editor.schemes.IDEColorSchemeProvider
 import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.preferences.internal.EditorPreferences.AUTO_SAVE
-import com.tom.rv2ide.preferences.internal.EditorPreferences.AUTO_SAVE_TWO
+import com.tom.rv2ide.preferences.internal.EditorPreferences.AUTO_SAVE_PERIODICALLY
 import com.tom.rv2ide.preferences.internal.EditorPreferences.KEYBOARD_SUGGESTIONS
 import com.tom.rv2ide.preferences.internal.EditorPreferences.COLOR_SCHEME
 import com.tom.rv2ide.preferences.internal.EditorPreferences.COMPLETIONS_MATCH_LOWER
@@ -96,6 +96,7 @@ private class CommonConfigurations(
     addPreference(UseMagnifier())
     addPreference(UseICU())
     addPreference(AutoSave())
+    addPreference(PeriodicAutoSave())
     addPreference(VisibiblePasswordFlag())
     addPreference(DeleteEmptyLines())
     addPreference(DeleteTabs())
@@ -351,6 +352,18 @@ private class AutoSave(
     SwitchPreference(
         setValue = EditorPreferences::autoSave::set,
         getValue = EditorPreferences::autoSave::get,
+    )
+
+@Parcelize
+private class PeriodicAutoSave(
+    override val key: String = AUTO_SAVE_PERIODICALLY,
+    override val title: Int = string.idepref_editor_periodicAutoSave_title,
+    override val summary: Int? = string.idepref_editor_periodicAutoSave_summary,
+    override val icon: Int? = drawable.ic_save,
+) :
+    SwitchPreference(
+        setValue = EditorPreferences::autoSavePeriodically::set,
+        getValue = EditorPreferences::autoSavePeriodically::get,
     )
 
 @Parcelize

@@ -2471,6 +2471,19 @@ interface DerivedDefaultContract : DefaultContract
 
 class IndirectDefaultConsumer : DerivedDefaultContract
 
+interface GenericDefaultContract<T> {
+  fun echo(value: T): T = value
+}
+class StringGenericDefaultConsumer : GenericDefaultContract<String>
+interface DerivedGenericDefaultContract<T> : GenericDefaultContract<T>
+class IndirectStringGenericDefaultConsumer : DerivedGenericDefaultContract<String>
+interface MutableGenericDefaultContract<T> {
+  var payload: T
+    get() = throw UnsupportedOperationException()
+    set(value) {}
+}
+abstract class StringMutableGenericDefaultConsumer : MutableGenericDefaultContract<String>
+
 class ExplicitDefaultConsumer : DefaultContract {
   override fun render(value: String): String = "explicit:${'$'}value"
   override val title: String
@@ -2510,6 +2523,48 @@ kotlinSource,
 emptySet(),
 KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
 ) ?: error("Missing generated stub for IndirectDefaultConsumer")
+val genericContractStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.GenericDefaultContract",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for GenericDefaultContract")
+val genericConsumerStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.StringGenericDefaultConsumer",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for StringGenericDefaultConsumer")
+val derivedGenericContractStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.DerivedGenericDefaultContract",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for DerivedGenericDefaultContract")
+val indirectGenericConsumerStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.IndirectStringGenericDefaultConsumer",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for IndirectStringGenericDefaultConsumer")
+val mutableGenericContractStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.MutableGenericDefaultContract",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for MutableGenericDefaultContract")
+val mutableGenericConsumerStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.StringMutableGenericDefaultConsumer",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for StringMutableGenericDefaultConsumer")
 val explicitStub = KotlinJvmAbiStubGenerator.generateForTest(
 "sample.ExplicitDefaultConsumer",
 "InterfaceDefaultImplementations.kt",
@@ -2551,6 +2606,19 @@ assertContains(consumerStub, "String render(String value) { return null; }")
 assertContains(consumerStub, "String getTitle() { return null; }")
 assertContains(indirectStub, "String render(String value) { return null; }")
 assertContains(indirectStub, "String getTitle() { return null; }")
+assertContains(genericContractStub, "T echo(T value);")
+for (stub in listOf(genericConsumerStub, indirectGenericConsumerStub)) {
+assertContains(stub, "String echo(String value) { return null; }")
+assertFalse("Synthetic Object bridge must not be projected:\n$stub",
+stub.contains("Object echo(Object value)"))
+}
+assertContains(mutableGenericContractStub, "T getPayload();")
+assertContains(mutableGenericContractStub, "void setPayload(T value);")
+assertContains(mutableGenericConsumerStub, "String getPayload() { return null; }")
+assertContains(mutableGenericConsumerStub, "void setPayload(String value) {}")
+assertFalse("Synthetic Object accessors must not be projected:\n$mutableGenericConsumerStub",
+mutableGenericConsumerStub.contains("Object getPayload()")
+|| mutableGenericConsumerStub.contains("void setPayload(Object value)"))
 assertEquals(1, Regex("\\brender\\(String value\\)").findAll(explicitStub).count())
 assertEquals(1, Regex("\\bgetTitle\\(\\)").findAll(explicitStub).count())
 assertContains(overloadStub, "String render(int value) { return null; }")
@@ -2562,14 +2630,32 @@ assertContains(mutableConsumerStub, "void setEnabled(boolean value) {}")
 assertTrue(
 "Default-interface implementer forwarders must be attributable by javac:\n$consumerStub",
 javacSucceeds(
-mapOf("sample.DefaultContract" to contractStub, "sample.DefaultConsumer" to consumerStub),
+mapOf(
+"sample.DefaultContract" to contractStub,
+"sample.DefaultConsumer" to consumerStub,
+"sample.GenericDefaultContract" to genericContractStub,
+"sample.StringGenericDefaultConsumer" to genericConsumerStub,
+"sample.DerivedGenericDefaultContract" to derivedGenericContractStub,
+"sample.IndirectStringGenericDefaultConsumer" to indirectGenericConsumerStub,
+"sample.MutableGenericDefaultContract" to mutableGenericContractStub,
+"sample.StringMutableGenericDefaultConsumer" to mutableGenericConsumerStub,
+),
 "consumer.DefaultConsumerUse",
 """
 package consumer;
 import sample.DefaultConsumer;
+import sample.StringGenericDefaultConsumer;
+import sample.IndirectStringGenericDefaultConsumer;
+import sample.StringMutableGenericDefaultConsumer;
 class DefaultConsumerUse {
   String render(DefaultConsumer consumer) { return consumer.render("value"); }
   String title(DefaultConsumer consumer) { return consumer.getTitle(); }
+  String generic(StringGenericDefaultConsumer consumer) { return consumer.echo("value"); }
+  String indirect(IndirectStringGenericDefaultConsumer consumer) { return consumer.echo("value"); }
+  void payload(StringMutableGenericDefaultConsumer consumer) {
+    consumer.setPayload("value");
+    String value = consumer.getPayload();
+  }
 }
 """.trimIndent(),
 ),

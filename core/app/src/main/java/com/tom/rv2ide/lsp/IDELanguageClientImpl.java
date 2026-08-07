@@ -48,6 +48,7 @@ import com.tom.rv2ide.models.DiagnosticGroup;
 import com.tom.rv2ide.models.Location;
 import com.tom.rv2ide.models.Range;
 import com.tom.rv2ide.models.SearchResult;
+import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.tasks.TaskExecutor;
 import com.tom.rv2ide.ui.CodeEditorView;
 import com.tom.rv2ide.utils.FlashbarActivityUtilsKt;
@@ -156,6 +157,23 @@ public class IDELanguageClientImpl implements ILanguageClient {
     }
 
     File file = result.getFile().toFile();
+    final var activeSnapshot = FileManager.INSTANCE.getActiveDocumentSnapshot(result.getFile());
+    if (result.getDocumentVersion() != DiagnosticResult.UNKNOWN_DOCUMENT_VERSION
+        && (activeSnapshot == null
+            || activeSnapshot.getVersion() != result.getDocumentVersion()
+            || (result.getDocumentRevision() != DiagnosticResult.UNKNOWN_DOCUMENT_REVISION
+                && activeSnapshot.getRevision() != result.getDocumentRevision()))) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info(
+            "publishDiagnostics dropped: stale document result file={} resultVersion={} currentVersion={} resultRevision={} currentRevision={}",
+            file.getAbsolutePath(),
+            result.getDocumentVersion(),
+            activeSnapshot == null ? null : activeSnapshot.getVersion(),
+            result.getDocumentRevision(),
+            activeSnapshot == null ? null : activeSnapshot.getRevision());
+      }
+      return;
+    }
     final String channel =
         result.getChannel() == null || result.getChannel().isBlank()
             ? DIAGNOSTIC_CHANNEL_DEFAULT
@@ -163,12 +181,14 @@ public class IDELanguageClientImpl implements ILanguageClient {
     final int incomingDiagnosticCount = result.getDiagnostics() == null ? -1 : result.getDiagnostics().size();
     if (IdeLogConfig.shouldLogIde()) {
       LOG.debug(
-          "publishDiagnostics received: file={}, exists={}, isFile={}, count={}, channel={}, thread={}, isMainThread={}",
+          "publishDiagnostics received: file={}, exists={}, isFile={}, count={}, channel={}, documentVersion={}, documentRevision={}, thread={}, isMainThread={}",
           file.getAbsolutePath(),
           file.exists(),
           file.isFile(),
           incomingDiagnosticCount,
           channel,
+          result.getDocumentVersion(),
+          result.getDocumentRevision(),
           threadName,
           isMainThread);
     }

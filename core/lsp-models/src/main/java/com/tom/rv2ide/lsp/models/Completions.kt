@@ -50,6 +50,8 @@ data class CompletionParams(
 ) : CancellableRequestParams {
   var content: CharSequence? = null
   var prefix: String? = null
+  var documentVersion: Int = -1
+  var documentRevision: Long = -1L
 
   fun requirePrefix(): String {
     if (prefix == null) {

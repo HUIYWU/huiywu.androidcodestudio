@@ -32,8 +32,10 @@ import java.io.File;
  * @author Akash Yadav
  */
 public interface IEditor {
-
   String KEY_FILE = "ide.editor.file";
+  String KEY_DOCUMENT_VERSION = "ide.editor.document.version";
+  String KEY_DOCUMENT_REVISION = "ide.editor.document.revision";
+
 
   /**
    * Get the file that this editor is currently editing.

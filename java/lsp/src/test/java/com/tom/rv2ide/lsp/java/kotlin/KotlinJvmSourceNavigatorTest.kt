@@ -645,6 +645,76 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesInheritedGenericDefaultForwardersAndRejectsErasedBridges() {
+    val kotlinSource =
+      """
+      package navigation
+
+      interface GenericDefaultContract<T> {
+        fun echo(value: T): T = value
+      }
+      class StringGenericDefaultConsumer : GenericDefaultContract<String>
+      interface DerivedGenericDefaultContract<T> : GenericDefaultContract<T>
+      class IndirectStringGenericDefaultConsumer : DerivedGenericDefaultContract<String>
+      interface MutableGenericDefaultContract<T> {
+        var payload: T
+          get() = throw UnsupportedOperationException()
+          set(value) {}
+      }
+      class StringMutableGenericDefaultConsumer : MutableGenericDefaultContract<String>
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class StringGenericDefaultConsumer implements GenericDefaultContract<String> {
+        public String echo(String value) { return value; }
+      }
+      class IndirectStringGenericDefaultConsumer implements DerivedGenericDefaultContract<String> {
+        public String echo(String value) { return value; }
+      }
+      class StringMutableGenericDefaultConsumer implements MutableGenericDefaultContract<String> {
+        public String getPayload() { return null; }
+        public void setPayload(String value) {}
+      }
+      interface GenericDefaultContract<T> { T echo(T value); }
+      interface DerivedGenericDefaultContract<T> extends GenericDefaultContract<T> {}
+      interface MutableGenericDefaultContract<T> { T getPayload(); void setPayload(T value); }
+      """.trimIndent()
+    val bridgeSource =
+      """
+      package navigation;
+      class StringGenericDefaultConsumer {
+        public Object echo(Object value) { return value; }
+      }
+      class StringMutableGenericDefaultConsumer {
+        public Object getPayload() { return null; }
+        public void setPayload(Object value) {}
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/GenericDefaultInterfaceForwarders.kt")
+
+    for ((owner, name, expected) in listOf(
+      Triple("navigation.StringGenericDefaultConsumer", "echo", "echo"),
+      Triple("navigation.IndirectStringGenericDefaultConsumer", "echo", "echo"),
+      Triple("navigation.StringMutableGenericDefaultConsumer", "getPayload", "payload"),
+      Triple("navigation.StringMutableGenericDefaultConsumer", "setPayload", "payload"),
+    )) {
+      val method = compileMethod(javaSource, owner, name)
+      assertEquals(expected, sourceTextAt(
+        kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, method)!!))
+    }
+    for ((owner, name) in listOf(
+      "navigation.StringGenericDefaultConsumer" to "echo",
+      "navigation.StringMutableGenericDefaultConsumer" to "getPayload",
+      "navigation.StringMutableGenericDefaultConsumer" to "setPayload",
+    )) {
+      val bridge = compileMethod(bridgeSource, owner, name)
+      assertNull("Erased generic default bridge must not navigate: $owner.$name",
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, bridge))
+    }
+  }
+
+  @Test
   fun typeNavigation_resolvesConcreteGenericOverridesAndRejectsBridgeShapedErasure() {
     val kotlinSource =
       """

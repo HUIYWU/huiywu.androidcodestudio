@@ -63,6 +63,8 @@ internal class CommonCompletionProvider(
       content: ContentReference,
       file: Path,
       position: CharPosition,
+      documentVersion: Int,
+      documentRevision: Long,
       prefixMatcher: (Char) -> Boolean,
   ): List<CompletionItem> {
     val completionResult =
@@ -102,6 +104,8 @@ internal class CommonCompletionProvider(
               )
           params.content = content
           params.prefix = prefix
+          params.documentVersion = documentVersion
+          params.documentRevision = documentRevision
           server.complete(params)
         } catch (e: Throwable) {
 

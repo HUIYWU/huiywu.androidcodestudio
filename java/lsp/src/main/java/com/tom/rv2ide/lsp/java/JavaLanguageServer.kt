@@ -65,6 +65,7 @@ import com.tom.rv2ide.lsp.models.SignatureHelp
 import com.tom.rv2ide.lsp.models.SignatureHelpParams
 import com.tom.rv2ide.lsp.util.LSPEditorActions
 import com.tom.rv2ide.models.Range
+import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.projects.FileManager.getActiveDocumentCount
 import com.tom.rv2ide.projects.IProjectManager.Companion.getInstance
 import com.tom.rv2ide.projects.IWorkspace
@@ -189,8 +190,12 @@ class JavaLanguageServer : ILanguageServer {
   }
   override fun complete(params: CompletionParams?): CompletionResult {
     lastInteractiveRequestAt.set(System.currentTimeMillis())
-    val compiler = getCompiler(params!!.file)
-    if (!settings.completionsEnabled() || !completionProvider.canComplete(params.file)) {
+    val request = params ?: return CompletionResult.EMPTY
+    if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision)) {
+      return CompletionResult.EMPTY
+    }
+    val compiler = getCompiler(request.file)
+    if (!settings.completionsEnabled() || !completionProvider.canComplete(request.file)) {
       return CompletionResult.EMPTY
     }
 
@@ -204,7 +209,13 @@ class JavaLanguageServer : ILanguageServer {
       updateCachedCompletion(cachedCompletion)
     }
 
-    val result = completionProvider.complete(params)
+    val result = completionProvider.complete(request)
+
+    // The document may have changed while javac was computing the result. Do not let an older
+    // completion request publish candidates for the current editor state.
+    if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision)) {
+      return CompletionResult.EMPTY
+    }
 
     // log.warn(result.toString())
 
@@ -234,10 +245,30 @@ class JavaLanguageServer : ILanguageServer {
 
   override suspend fun signatureHelp(params: SignatureHelpParams): SignatureHelp {
     lastInteractiveRequestAt.set(System.currentTimeMillis())
+    if (!isCurrentDocument(params.file, params.documentVersion, params.documentRevision)) {
+      return SignatureHelp(emptyList(), -1, -1)
+    }
     val compiler = getCompiler(params.file)
-    return if (!settings.signatureHelpEnabled()) {
+    val result =
+        if (!settings.signatureHelpEnabled()) {
+          SignatureHelp(emptyList(), -1, -1)
+        } else {
+          SignatureProvider(compiler, params.cancelChecker).signatureHelp(params)
+        }
+    return if (isCurrentDocument(params.file, params.documentVersion, params.documentRevision)) {
+      result
+    } else {
       SignatureHelp(emptyList(), -1, -1)
-    } else SignatureProvider(compiler, params.cancelChecker).signatureHelp(params)
+    }
+  }
+
+  private fun isCurrentDocument(file: Path, version: Int, revision: Long): Boolean {
+    val snapshot = FileManager.getActiveDocumentSnapshot(file)
+        ?: return version < 0 && revision < 0L
+    if (version >= 0 && snapshot.version != version) {
+      return false
+    }
+    return revision < 0L || snapshot.revision == revision
   }
 
   override suspend fun hover(params: DefinitionParams): com.tom.rv2ide.lsp.models.MarkupContent {

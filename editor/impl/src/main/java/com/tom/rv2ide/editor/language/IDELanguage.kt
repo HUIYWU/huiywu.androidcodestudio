@@ -80,8 +80,12 @@ abstract class IDELanguage : Language {
 
     val completionProvider = CommonCompletionProvider(server, cancelChecker)
     val file = Paths.get(path)
+    val documentVersion = extraArguments.getInt(IEditor.KEY_DOCUMENT_VERSION, -1)
+    val documentRevision = extraArguments.getLong(IEditor.KEY_DOCUMENT_REVISION, -1L)
     val completionItems =
-        completionProvider.complete(content, file, position) { checkIsCompletionChar(it) }
+        completionProvider.complete(content, file, position, documentVersion, documentRevision) {
+          checkIsCompletionChar(it)
+        }
     publisher.setUpdateThreshold(1)
     (publisher as IDECompletionPublisher).addLSPItems(completionItems)
   }

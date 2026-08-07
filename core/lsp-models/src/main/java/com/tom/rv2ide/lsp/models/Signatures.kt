@@ -40,10 +40,13 @@ data class SignatureHelp(
     var activeSignature: Int,
     var activeParameter: Int,
 )
-
 data class SignatureHelpParams(
     var file: Path,
     var position: Position,
     var content: CharSequence? = null,
     override val cancelChecker: ICancelChecker,
-) : CancellableRequestParams
+) : CancellableRequestParams {
+  var documentVersion: Int = -1
+  var documentRevision: Long = -1L
+}
+

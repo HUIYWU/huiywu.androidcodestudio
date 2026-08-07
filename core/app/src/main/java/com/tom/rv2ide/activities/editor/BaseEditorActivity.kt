@@ -99,6 +99,7 @@ import com.tom.rv2ide.models.OpenedFile
 import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.models.SearchResult
 import com.tom.rv2ide.preferences.internal.BuildPreferences
+import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.projectdata.state.lsp.Index
 import com.tom.rv2ide.indexing.views.IndexingBanner
 import com.tom.rv2ide.projectdata.state.Initialization
@@ -314,7 +315,6 @@ abstract class BaseEditorActivity :
     const val KEY_BOTTOM_SHEET_SHOWN = "editor_bottomSheetShown"
     const val KEY_STRING_EXT_HELPER = "editor_stringExtHelper"
     const val KEY_PROJECT_PATH = "saved_projectPath"
-    const val KEY_AUTO_SAVE_ENABLED = "auto_save_enabled"
     private const val BOTTOM_SHEET_HIDE_REASON_EDITOR_SEARCH = "editor_search_overlay"
   }
 
@@ -336,9 +336,9 @@ abstract class BaseEditorActivity :
    */
   protected abstract fun doSaveFile(editor: CodeEditorView): Boolean
 
-  /** Check if auto-save is enabled in preferences */
+  /** Check whether periodic auto-save is enabled in preferences. */
   protected open fun isAutoSaveEnabled(): Boolean {
-    return app.prefManager.getBoolean(KEY_AUTO_SAVE_ENABLED, true)
+    return EditorPreferences.autoSavePeriodically
   }
 
   /** Check if string extractor helper is enabled */
@@ -487,9 +487,9 @@ abstract class BaseEditorActivity :
     }
   }
 
-  /** Save all pending files immediately using SaveFileAction */
+  /** Save all files queued by periodic auto-save, unless periodic auto-save is disabled. */
   protected fun saveAllPendingFiles() {
-    if (pendingSaveFiles.isEmpty()) {
+    if (!isAutoSaveEnabled() || pendingSaveFiles.isEmpty()) {
       return
     }
 

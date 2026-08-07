@@ -67,6 +67,8 @@ private constructor(
           CompletionParams(_params.position, _params.file, ICancelChecker.CANCELLED).apply {
             prefix = _params.prefix ?: ""
             content = ""
+            documentVersion = _params.documentVersion
+            documentRevision = _params.documentRevision
           }
 
       return CachedCompletion(params, result)

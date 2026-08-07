@@ -291,8 +291,10 @@ constructor(
     sigHelpCancelChecker?.also { it.cancel() }
 
     val cancelChecker = JobCancelChecker().also { this.sigHelpCancelChecker = it }
+    val requestFile = file.toPath()
+    val requestVersion = fileVersion
     val requestPosition = cursorLSPPosition
-    val requestContent = text
+    val requestContent = text.toString()
 
     editorScope
         .launch(Dispatchers.Default) {
@@ -302,15 +304,21 @@ constructor(
               safeGet("signature help request") {
                 val params =
                     SignatureHelpParams(
-                        file = file.toPath(),
+                        file = requestFile,
                         position = requestPosition,
                         content = requestContent,
                         cancelChecker = cancelChecker,
-                    )
+                    ).apply {
+                      documentVersion = requestVersion
+                    }
                 languageServer.signatureHelp(params)
               }
 
-          withContext(Dispatchers.Main) { showSignatureHelp(help) }
+          withContext(Dispatchers.Main) {
+            if (!isReleased && this@IDEEditor.file?.toPath() == requestFile && fileVersion == requestVersion) {
+              showSignatureHelp(help)
+            }
+          }
         }
         .logError("signature help request")
   }
@@ -481,7 +489,10 @@ constructor(
   }
 
   override fun getExtraArguments(): Bundle {
-    return super.getExtraArguments().apply { putString(IEditor.KEY_FILE, file?.absolutePath) }
+    return super.getExtraArguments().apply {
+      putString(IEditor.KEY_FILE, file?.absolutePath)
+      putInt(IEditor.KEY_DOCUMENT_VERSION, fileVersion)
+    }
   }
 
   override fun ensurePositionVisible(line: Int, column: Int, noAnimation: Boolean) {

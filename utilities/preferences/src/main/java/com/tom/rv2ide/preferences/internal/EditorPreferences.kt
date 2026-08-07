@@ -35,9 +35,13 @@ object EditorPreferences {
   const val FONT_SIZE = "idepref_editor_fontSize"
   const val PRINTABLE_CHARS = "idepref_editor_nonPrintableFlags"
   const val TAB_SIZE = "idepref_editor_tabSize"
+  /** Whether files are saved when they are closed. */
   const val AUTO_SAVE = "idepref_editor_autoSave"
+
+  /** Whether the editor periodically writes pending changes to disk. */
+  const val AUTO_SAVE_PERIODICALLY = "auto_save_enabled"
+
   const val KEYBOARD_SUGGESTIONS = "idepref_editor_show_keyboard_suggestions"
-  const val AUTO_SAVE_TWO = "auto_save_enabled"
   const val KEY_STRING_EXT_HELPER = "editor_stringExtHelper"
   const val FONT_LIGATURES = "idepref_editor_fontLigatures"
   const val FLAG_PASSWORD = "idepref_editor_flagPassword"
@@ -135,10 +139,10 @@ object EditorPreferences {
       prefManager.putBoolean(FONT_LIGATURES, value)
     }
 
-  var autoSave_two: Boolean
-    get() = prefManager.getBoolean(AUTO_SAVE_TWO, true)
+  var autoSavePeriodically: Boolean
+    get() = prefManager.getBoolean(AUTO_SAVE_PERIODICALLY, true)
     set(value) {
-      prefManager.putBoolean(AUTO_SAVE_TWO, value)
+      prefManager.putBoolean(AUTO_SAVE_PERIODICALLY, value)
     }
 
   var keyboardSuggestions: Boolean

@@ -878,6 +878,18 @@ interface GenericDefaultContract<T> {
 
 class StringGenericDefaultConsumer : GenericDefaultContract<String>
 
+interface DerivedGenericDefaultContract<T> : GenericDefaultContract<T>
+
+class IndirectStringGenericDefaultConsumer : DerivedGenericDefaultContract<String>
+
+interface MutableGenericDefaultContract<T> {
+  var payload: T
+    get() = throw UnsupportedOperationException()
+    set(value) {}
+}
+
+class StringMutableGenericDefaultConsumer : MutableGenericDefaultContract<String>
+
 interface BoundedGenericDefaultContract<T : CharSequence> {
   fun echo(value: T): T = value
 }
@@ -976,6 +988,40 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
       specializedForwarder.access and Opcodes.ACC_ABSTRACT == 0)
     assertTrue("Specialized generic default forwarder must not be synthetic: $specializedForwarder",
       specializedForwarder.access and Opcodes.ACC_SYNTHETIC == 0)
+
+    val indirectGenericConsumer = surfaces.getValue("evidence/IndirectStringGenericDefaultConsumer")
+    for ((descriptor, synthetic) in listOf(
+      "(Ljava/lang/String;)Ljava/lang/String;" to false,
+      "(Ljava/lang/Object;)Ljava/lang/Object;" to true,
+    )) {
+      val member = indirectGenericConsumer.methodsNamed("echo")
+        .singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected indirect generic echo$descriptor; actual=${indirectGenericConsumer.members}", member)
+      assertTrue("Indirect generic echo must be public: $member", member!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("Indirect generic echo synthetic flag mismatch: $member",
+        (member.access and Opcodes.ACC_SYNTHETIC != 0) == synthetic)
+      if (synthetic) {
+        assertTrue("Indirect erased echo must be bridge: $member", member.access and Opcodes.ACC_BRIDGE != 0)
+      }
+    }
+
+    val mutableGenericConsumer = surfaces.getValue("evidence/StringMutableGenericDefaultConsumer")
+    for ((name, descriptor, synthetic) in listOf(
+      Triple("getPayload", "()Ljava/lang/String;", false),
+      Triple("setPayload", "(Ljava/lang/String;)V", false),
+      Triple("getPayload", "()Ljava/lang/Object;", true),
+      Triple("setPayload", "(Ljava/lang/Object;)V", true),
+    )) {
+      val member = mutableGenericConsumer.methodsNamed(name)
+        .singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected generic default accessor $name$descriptor; actual=${mutableGenericConsumer.members}", member)
+      assertTrue("Generic default accessor must be public: $member", member!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("Generic default accessor synthetic flag mismatch: $member",
+        (member.access and Opcodes.ACC_SYNTHETIC != 0) == synthetic)
+      if (synthetic) {
+        assertTrue("Erased generic accessor must be bridge: $member", member.access and Opcodes.ACC_BRIDGE != 0)
+      }
+    }
 
     val boundedGenericConsumer = surfaces.getValue("evidence/BoundedStringGenericDefaultConsumer")
     val boundedSpecializedForwarder = boundedGenericConsumer.methodsNamed("echo")
