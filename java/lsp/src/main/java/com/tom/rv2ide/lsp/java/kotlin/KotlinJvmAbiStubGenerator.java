@@ -186,15 +186,24 @@ private static final Pattern PROPERTY_PATTERN =
             sourcePackage, simpleName, source, knownTypes, visibleTypeAliases,
             visibleGenericTypeAliases));
     try {
-      final KotlinJvmSyntaxParser.TypeSyntax syntax =
+      final List<KotlinJvmSyntaxParser.TypeSyntax> sourceTypes =
           structuredGenerationEnabled()
-              ? KotlinJvmSyntaxParser.findTopLevelType(source, simpleName)
+              ? KotlinJvmSyntaxParser.findTopLevelTypeSyntaxes(source)
               : null;
+      KotlinJvmSyntaxParser.TypeSyntax syntax = null;
+      if (sourceTypes != null) {
+        for (KotlinJvmSyntaxParser.TypeSyntax candidate : sourceTypes) {
+          if (simpleName.equals(candidate.name)) {
+            syntax = candidate;
+            break;
+          }
+        }
+      }
       if (syntax != null) {
         if (syntax.privateType) {
           return null;
         }
-        final String structured = generateType(packageName, simpleName, syntax);
+        final String structured = generateType(packageName, simpleName, syntax, sourceTypes);
         if (generationMode() != GenerationMode.AUTO) {
           return rejectConflictingJvmSurfaces(structured);
         }
@@ -225,7 +234,10 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static String generateType(
-      String packageName, String simpleName, KotlinJvmSyntaxParser.TypeSyntax syntax) {
+      String packageName,
+      String simpleName,
+      KotlinJvmSyntaxParser.TypeSyntax syntax,
+      List<KotlinJvmSyntaxParser.TypeSyntax> sourceTypes) {
     final boolean isObject = syntax.objectType();
     final boolean isInterface = syntax.interfaceType;
     final StringBuilder out = header(packageName);
@@ -259,6 +271,9 @@ private static final Pattern PROPERTY_PATTERN =
       appendSyntaxConstructorProperties(out, syntax.constructorParameters);
     }
     appendSyntaxMembers(out, syntax.members, isInterface, false);
+    if (!isInterface) {
+      appendDefaultInterfaceForwarders(out, syntax, sourceTypes);
+    }
     if (syntax.companionBody != null) {
       appendCompanionSyntax(out, syntax.companionName, syntax.companionMembers);
     }
@@ -922,6 +937,100 @@ private static final Pattern PROPERTY_PATTERN =
     appendJvmFields(out, companionBody);
   }
 
+  private static void appendDefaultInterfaceForwarders(
+      StringBuilder out,
+      KotlinJvmSyntaxParser.TypeSyntax implementation,
+      List<KotlinJvmSyntaxParser.TypeSyntax> sourceTypes) {
+    if (sourceTypes == null) {
+      return;
+    }
+    final Set<String> visitedContracts = new LinkedHashSet<>();
+    final List<KotlinJvmSyntaxParser.MemberSyntax> projected = new ArrayList<>(implementation.members);
+    for (KotlinJvmSyntaxParser.SuperTypeSyntax superType : implementation.superTypes) {
+      appendDefaultInterfaceForwarders(
+          out, implementation, superType, sourceTypes, visitedContracts, projected);
+    }
+  }
+
+  private static void appendDefaultInterfaceForwarders(
+      StringBuilder out,
+      KotlinJvmSyntaxParser.TypeSyntax implementation,
+      KotlinJvmSyntaxParser.SuperTypeSyntax superType,
+      List<KotlinJvmSyntaxParser.TypeSyntax> sourceTypes,
+      Set<String> visitedContracts,
+      List<KotlinJvmSyntaxParser.MemberSyntax> projected) {
+    // Same-file, non-generic interface chains only. Class supertypes, generic substitution, and
+    // external contracts remain unprojected until their compiler ABI surfaces are separately proven.
+    if (superType.constructorInvocation || !superType.type.matches("[A-Za-z_$][\\w$]*")
+        || !visitedContracts.add(superType.type)) {
+      return;
+    }
+    KotlinJvmSyntaxParser.TypeSyntax contract = null;
+    for (KotlinJvmSyntaxParser.TypeSyntax candidate : sourceTypes) {
+      if (candidate.interfaceType && superType.type.equals(candidate.name)) {
+        contract = candidate;
+        break;
+      }
+    }
+    if (contract == null) {
+      return;
+    }
+    for (KotlinJvmSyntaxParser.MemberSyntax member : contract.members) {
+      if (!defaultInterfaceMember(member) || declaredBy(projected, member)) {
+        continue;
+      }
+      if (member.function()) {
+        appendSyntaxFunction(out, member, false, false);
+      } else {
+        appendSyntaxProperty(out, member, false, false);
+      }
+      projected.add(member);
+    }
+    for (KotlinJvmSyntaxParser.SuperTypeSyntax parent : contract.superTypes) {
+      appendDefaultInterfaceForwarders(
+          out, implementation, parent, sourceTypes, visitedContracts, projected);
+    }
+  }
+
+  private static boolean defaultInterfaceMember(KotlinJvmSyntaxParser.MemberSyntax member) {
+    return !member.privateMember && !member.jvmSynthetic && !member.suspendFunction
+        && member.functionBodyPresent;
+  }
+
+  private static boolean declaredBy(
+      List<KotlinJvmSyntaxParser.MemberSyntax> declared,
+      KotlinJvmSyntaxParser.MemberSyntax inherited) {
+    for (KotlinJvmSyntaxParser.MemberSyntax member : declared) {
+      if (member.function() != inherited.function()) {
+        continue;
+      }
+      if (!inherited.function()) {
+        if (inherited.name != null && inherited.name.equals(member.name)) {
+          return true;
+        }
+        continue;
+      }
+      final String inheritedName = inherited.jvmName == null ? inherited.name : inherited.jvmName;
+      final String memberName = member.jvmName == null ? member.name : member.jvmName;
+      if (inheritedName == null || !inheritedName.equals(memberName)
+          || inherited.parameterList.size() != member.parameterList.size()) {
+        continue;
+      }
+      boolean sameParameters = true;
+      for (int index = 0; index < inherited.parameterList.size(); index++) {
+        if (!javaAbiType(inherited.parameterList.get(index).type)
+            .equals(javaAbiType(member.parameterList.get(index).type))) {
+          sameParameters = false;
+          break;
+        }
+      }
+      if (sameParameters) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private static void appendSyntaxMembers(
       StringBuilder out,
       List<KotlinJvmSyntaxParser.MemberSyntax> members,
@@ -994,6 +1103,7 @@ private static final Pattern PROPERTY_PATTERN =
       if (topLevel) {
         out.append("static ");
       }
+
       out.append(javaTypeParameters(function.typeParameters));
       final List<String> parameters = new ArrayList<>();
       if (function.receiverType != null) {

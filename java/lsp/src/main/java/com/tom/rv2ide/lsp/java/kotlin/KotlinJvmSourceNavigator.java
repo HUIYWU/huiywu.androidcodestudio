@@ -118,7 +118,9 @@ public final class KotlinJvmSourceNavigator {
           ? findFacadeMember(source, valueClassContext, element)
           : companionOwner
               ? findMember(type.companionMembers, valueClassContext, element, false)
-              : findTypeMember(type, declaration, valueClassContext, element);
+              : findTypeMember(
+                  type, declaration, valueClassContext, element,
+                  KotlinJvmSyntaxParser.findTopLevelTypeSyntaxes(source));
       if (range != null) {
         return location(declaration.file, source, range.offset, range.length);
       }
@@ -143,7 +145,8 @@ public final class KotlinJvmSourceNavigator {
       KotlinJvmSyntaxParser.TypeSyntax type,
       KotlinTypeDeclaration typeDeclaration,
       ValueClassAbiContext valueClassContext,
-      Element element) {
+      Element element,
+      List<KotlinJvmSyntaxParser.TypeSyntax> sourceTypes) {
     if (element.getKind() == ElementKind.CONSTRUCTOR && element instanceof ExecutableElement) {
       if (KotlinAbiSyntheticMembers.isSyntheticConstructor(element)) {
         return null;
@@ -174,12 +177,60 @@ public final class KotlinJvmSourceNavigator {
     if (range != null) {
       return range;
     }
+    range = findDefaultInterfaceMember(
+        type, sourceTypes, valueClassContext, element, new java.util.LinkedHashSet<String>());
+    if (range != null) {
+      return range;
+    }
     range = findConstructorProperty(
         type.constructorParameters, valueClassContext.types, element);
     if (range != null) {
       return range;
     }
     return findMember(type.companionMembers, valueClassContext, element, true);
+  }
+
+  private static SourceRange findDefaultInterfaceMember(
+      KotlinJvmSyntaxParser.TypeSyntax implementation,
+      List<KotlinJvmSyntaxParser.TypeSyntax> sourceTypes,
+      ValueClassAbiContext valueClassContext,
+      Element element,
+      Set<String> visitedContracts) {
+    if (sourceTypes == null) {
+      return null;
+    }
+    for (KotlinJvmSyntaxParser.SuperTypeSyntax superType : implementation.superTypes) {
+      if (superType.constructorInvocation || !superType.type.matches("[A-Za-z_$][\\w$]*")
+          || !visitedContracts.add(superType.type)) {
+        continue;
+      }
+      KotlinJvmSyntaxParser.TypeSyntax contract = null;
+      for (KotlinJvmSyntaxParser.TypeSyntax candidate : sourceTypes) {
+        if (candidate.interfaceType && superType.type.equals(candidate.name)) {
+          contract = candidate;
+          break;
+        }
+      }
+      if (contract == null) {
+        continue;
+      }
+      final List<KotlinJvmSyntaxParser.MemberSyntax> defaults = new java.util.ArrayList<>();
+      for (KotlinJvmSyntaxParser.MemberSyntax member : contract.members) {
+        if (member.functionBodyPresent) {
+          defaults.add(member);
+        }
+      }
+      final SourceRange range = findMember(defaults, valueClassContext, element, false);
+      if (range != null) {
+        return range;
+      }
+      final SourceRange inherited = findDefaultInterfaceMember(
+          contract, sourceTypes, valueClassContext, element, visitedContracts);
+      if (inherited != null) {
+        return inherited;
+      }
+    }
+    return null;
   }
 
   private static SourceRange findConstructorProperty(
@@ -240,7 +291,9 @@ public final class KotlinJvmSourceNavigator {
       final ValueClassAbiContext valueClassContext = ValueClassAbiContext.fromSource(source);
       final SourceRange range = companionOwner
           ? findMember(type.companionMembers, valueClassContext, element, false)
-          : findTypeMember(type, declaration, valueClassContext, element);
+          : findTypeMember(
+              type, declaration, valueClassContext, element,
+              KotlinJvmSyntaxParser.findTopLevelTypeSyntaxes(source));
       return range == null ? null : location(file, source, range.offset, range.length);
     } finally {
       if (previousAliases == null) {

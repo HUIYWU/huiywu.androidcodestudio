@@ -47,6 +47,7 @@ import com.tom.rv2ide.xml.resources.ResourceTableRegistry
 import com.tom.rv2ide.xml.resources.ResourceTableRegistry.Companion.PCK_ANDROID
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import org.slf4j.LoggerFactory
 
 /**
@@ -82,7 +83,6 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
   private val singleLineValueEntries =
       ConcurrentHashMap<String, ConcurrentHashMap<SingleLineValueEntryType, List<String>>>()
   private val singleLineEntryLocks = ConcurrentHashMap<String, Any>()
-  private val refreshDecisionWarnings = ConcurrentHashMap.newKeySet<String>()
 
   companion object {
 
@@ -132,12 +132,15 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       return resDirs.firstOrNull()?.let(::platformResourceTable)
     }
 
+    val startedAtNanos = if (isLoggingEnabled) System.nanoTime() else 0L
     val lock = tableLocks.computeIfAbsent(name) { Any() }
     synchronized(lock) {
       val previous = tables[name]
       if (isObsolete()) {
+        logRefreshObservation(name, "obsolete-before-fingerprint", previous, inputs, 0, 0, 0, startedAtNanos)
         return previous
       }
+      val fingerprintStartedAtNanos = if (isLoggingEnabled) System.nanoTime() else 0L
       val fingerprint =
           try {
             resourceFingerprint(inputs, *resDirs)
@@ -145,18 +148,12 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
             log.warn("Failed to fingerprint resources for package '{}'", name, error)
             null
           }
+      val fingerprintNanos = elapsedNanos(fingerprintStartedAtNanos)
       if (previous != null && fingerprint != null && tableFingerprints[name] == fingerprint) {
-        if (refreshDecisionWarnings.add("$name:reuse")) {
-          log.debug(
-              "Resource table refresh reused table: package={} generation={} entries={} memoryInputs={}",
-              name,
-              tableGenerations[name] ?: 0L,
-              fingerprint.entries.size,
-              inputs.size,
-          )
-        }
+        logRefreshObservation(name, "reused", previous, inputs, fingerprint.entries.size, fingerprintNanos, 0, startedAtNanos)
         return previous
       }
+      val buildStartedAtNanos = if (isLoggingEnabled) System.nanoTime() else 0L
       val replacement =
           try {
             if (fingerprint == null) null else buildPackageTable(name, inputs, *resDirs)
@@ -164,22 +161,32 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
             log.warn("Failed to refresh resource table for package '{}'", name, error)
             null
           }
-      if (replacement == null || isObsolete()) {
+      val buildNanos = elapsedNanos(buildStartedAtNanos)
+      if (replacement == null) {
+        logRefreshObservation(name, "retained-after-failure", previous, inputs, fingerprint?.entries?.size ?: 0, fingerprintNanos, buildNanos, startedAtNanos)
+        return previous
+      }
+      if (isObsolete()) {
+        logRefreshObservation(name, "obsolete-after-build", previous, inputs, fingerprint!!.entries.size, fingerprintNanos, buildNanos, startedAtNanos)
         return previous
       }
 
+      val publishStartedAtNanos = if (isLoggingEnabled) System.nanoTime() else 0L
       tables[name] = replacement
       tableFingerprints[name] = fingerprint!!
       val generation = tableGenerations.compute(name) { _, previousGeneration -> (previousGeneration ?: 0L) + 1L }
-      if (refreshDecisionWarnings.add("$name:rebuild")) {
-        log.debug(
-            "Resource table refresh rebuilt and published: package={} generation={} entries={} memoryInputs={}",
-            name,
-            generation ?: 0L,
-            fingerprint.entries.size,
-            inputs.size,
-        )
-      }
+      logRefreshObservation(
+          name,
+          "published",
+          replacement,
+          inputs,
+          fingerprint.entries.size,
+          fingerprintNanos,
+          buildNanos,
+          startedAtNanos,
+          generation ?: 0L,
+          elapsedNanos(publishStartedAtNanos),
+      )
       return replacement
     }
   }
@@ -246,7 +253,6 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
     tables.clear()
     tableFingerprints.clear()
     tableGenerations.clear()
-    refreshDecisionWarnings.clear()
     tableLocks.clear()
     platformTables.clear()
     platformTableLocks.clear()
@@ -338,6 +344,38 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
       platformTables[key] = table
       return table
     }
+  }
+
+  private fun logRefreshObservation(
+      packageName: String,
+      decision: String,
+      table: ResourceTable?,
+      inputs: ResourceTableInputSnapshot,
+      entryCount: Int,
+      fingerprintNanos: Long,
+      buildNanos: Long,
+      startedAtNanos: Long,
+      generation: Long = tableGenerations[packageName] ?: 0L,
+      publishNanos: Long = 0L,
+  ) {
+    if (!isLoggingEnabled) return
+    log.debug(
+        "Resource table refresh metrics: package={} decision={} generation={} tablePresent={} entries={} memoryInputs={} fingerprintMs={} buildMs={} publishMs={} totalMs={}",
+        packageName,
+        decision,
+        generation,
+        table != null,
+        entryCount,
+        inputs.size,
+        TimeUnit.NANOSECONDS.toMillis(fingerprintNanos),
+        TimeUnit.NANOSECONDS.toMillis(buildNanos),
+        TimeUnit.NANOSECONDS.toMillis(publishNanos),
+        TimeUnit.NANOSECONDS.toMillis(elapsedNanos(startedAtNanos)),
+    )
+  }
+
+  private fun elapsedNanos(startedAtNanos: Long): Long {
+    return if (startedAtNanos == 0L) 0L else System.nanoTime() - startedAtNanos
   }
 
   private data class ResourceFingerprint(

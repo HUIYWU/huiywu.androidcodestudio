@@ -93,6 +93,35 @@ final class KotlinJvmSyntaxParser {
     }
   }
 
+  static List<TypeSyntax> findTopLevelTypeSyntaxes(String source) {
+    if (source == null) {
+      return null;
+    }
+    try (TSParser parser = TSParser.create()) {
+      parser.setLanguage(TSLanguageKotlin.getInstance());
+      try (var tree = parser.parseString(source)) {
+        if (tree == null) {
+          return null;
+        }
+        final TSNode root = tree.getRootNode();
+        if (root == null || root.isNull()) {
+          return null;
+        }
+        final List<TypeSyntax> result = new ArrayList<>();
+        for (int index = 0; index < root.getNamedChildCount(); index++) {
+          final TSNode declaration = root.getNamedChild(index);
+          final String kind = declaration.getType();
+          if ("class_declaration".equals(kind) || "object_declaration".equals(kind)) {
+            result.add(typeSyntax(source, declaration));
+          }
+        }
+        return Collections.unmodifiableList(result);
+      }
+    } catch (Throwable ignored) {
+      return null;
+    }
+  }
+
   static List<MemberSyntax> findTopLevelMembers(String source) {
     if (source == null) {
       return null;
@@ -226,7 +255,8 @@ final class KotlinJvmSyntaxParser {
 
   private static void collectDirectMembers(TSNode node, List<TSNode> result) {
     final String kind = node.getType();
-    if ("function_declaration".equals(kind) || "property_declaration".equals(kind)) {
+    if ("function_declaration".equals(kind) || "property_declaration".equals(kind)
+        || "getter".equals(kind)) {
       result.add(node);
       return;
     }
@@ -249,8 +279,16 @@ final class KotlinJvmSyntaxParser {
     final List<TSNode> declarations = new ArrayList<>();
     collectDirectMembers(body, declarations);
     final List<MemberSyntax> result = new ArrayList<>();
-    for (TSNode declaration : declarations) {
+    for (int index = 0; index < declarations.size(); index++) {
+      final TSNode declaration = declarations.get(index);
       final String kind = declaration.getType();
+      if ("getter".equals(kind)) {
+        continue;
+      }
+      final TSNode explicitGetter = "property_declaration".equals(kind)
+          && index + 1 < declarations.size()
+          && "getter".equals(declarations.get(index + 1).getType())
+              ? declarations.get(index + 1) : null;
       final TSNode modifiers = fieldChild(declaration, "modifiers", "modifiers");
       final TSNode functionBody = fieldChild(declaration, "body", "function_body");
       final int declarationStart = modifiers == null ? startIndex(source, declaration) : endIndex(source, modifiers);
@@ -265,7 +303,7 @@ final class KotlinJvmSyntaxParser {
           .trim();
       result.add("function_declaration".equals(kind)
           ? functionSyntax(source, declaration, declarationText, modifiers, modifierText)
-          : propertySyntax(source, declaration, declarationText, modifiers, modifierText));
+          : propertySyntax(source, declaration, declarationText, modifiers, modifierText, explicitGetter));
     }
     return Collections.unmodifiableList(result);
   }
@@ -320,7 +358,8 @@ final class KotlinJvmSyntaxParser {
       TSNode declaration,
       String declarationText,
       TSNode modifiers,
-      String modifierText) {
+      String modifierText,
+      TSNode explicitGetter) {
     final TSNode variable =
         fieldChild(declaration, "declaration", "variable_declaration");
     final TSNode name = fieldChild(variable, "name", "simple_identifier");
@@ -330,6 +369,9 @@ final class KotlinJvmSyntaxParser {
             ? declaredPropertyType
             : variable == null ? null : firstTypeChild(variable);
     final TSNode receiver = variable == null ? null : extensionReceiver(declaration, variable);
+    // The native Kotlin grammar emits an accessor as the immediate sibling following its property.
+    // members(...) pairs only that adjacent getter with this declaration.
+    final boolean getterBodyPresent = explicitGetter != null;
     return new MemberSyntax(
         "property_declaration",
         declarationText,
@@ -359,7 +401,7 @@ final class KotlinJvmSyntaxParser {
         propertyType == null ? null : text(source, propertyType),
         hasBindingPattern(declaration, "var"),
         hasBindingPattern(declaration, "val"),
-        false);
+        getterBodyPresent);
   }
 
   private static String leadingAnnotations(String source, TSNode declaration) {

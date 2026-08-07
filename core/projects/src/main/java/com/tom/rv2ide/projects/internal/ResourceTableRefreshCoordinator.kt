@@ -12,6 +12,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import org.slf4j.LoggerFactory
 
 /**
  * Serializes workspace resource-table refreshes and coalesces editor changes per Android module.
@@ -55,10 +56,11 @@ internal class ResourceTableRefreshCoordinator(
     val state = pending.computeIfAbsent(key) { PendingRefresh() }
     synchronized(state) {
       val sequence = state.sequence.incrementAndGet()
+      val scheduledAtNanos = System.nanoTime()
       state.future?.cancel(false)
       state.future =
           executor.schedule(
-              { refresh(key, state, sequence, snapshot, publish) },
+              { refresh(key, state, sequence, scheduledAtNanos, immediate, snapshot, publish) },
               if (immediate) 0L else debounceMillis,
               TimeUnit.MILLISECONDS,
           )
@@ -69,13 +71,30 @@ internal class ResourceTableRefreshCoordinator(
       key: String,
       state: PendingRefresh,
       sequence: Long,
+      scheduledAtNanos: Long,
+      immediate: Boolean,
       snapshot: () -> ResourceTableInputSnapshot,
       publish: (ResourceTableInputSnapshot, () -> Boolean) -> Unit,
   ) {
     if (state.sequence.get() != sequence) return
+    val startedAtNanos = System.nanoTime()
     val inputs = snapshot()
+    val snapshotNanos = System.nanoTime() - startedAtNanos
     publish(inputs) { state.sequence.get() != sequence }
-    if (state.sequence.get() == sequence) {
+    val obsolete = state.sequence.get() != sequence
+    if (log.isDebugEnabled) {
+      log.debug(
+          "Resource table refresh coordinator: module={} sequence={} immediate={} queueMs={} snapshotMs={} memoryInputs={} outcome={}",
+          key,
+          sequence,
+          immediate,
+          nanosToMillis(startedAtNanos - scheduledAtNanos),
+          nanosToMillis(snapshotNanos),
+          inputs.size,
+          if (obsolete) "obsolete" else "completed",
+      )
+    }
+    if (!obsolete) {
       pending.remove(key, state)
     }
   }
@@ -115,7 +134,10 @@ internal class ResourceTableRefreshCoordinator(
     @Volatile var future: ScheduledFuture<*>? = null
   }
 
+  private fun nanosToMillis(nanos: Long): Long = TimeUnit.NANOSECONDS.toMillis(nanos)
+
   private companion object {
+    val log = LoggerFactory.getLogger(ResourceTableRefreshCoordinator::class.java)
     const val DEBOUNCE_MILLIS = 400L
     const val XML_SUFFIX = ".xml"
   }

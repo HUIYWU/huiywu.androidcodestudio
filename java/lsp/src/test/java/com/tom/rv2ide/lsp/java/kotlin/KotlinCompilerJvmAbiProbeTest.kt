@@ -854,6 +854,197 @@ class KotlinCompilerJvmAbiProbeTest {
     assertSyntheticBridge(leaf, "setPayload", "(Ljava/lang/Object;)V")
   }
 
+  @Test
+  fun interfaceDefaultImplementations_recordDefaultImplsHelperSurfaceSeparatelyFromContract() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      interface DefaultContract {
+        fun render(value: String): String = value
+        val title: String
+          get() = "title"
+      }
+
+      class DefaultConsumer : DefaultContract
+
+interface DerivedDefaultContract : DefaultContract
+
+class IndirectDefaultConsumer : DerivedDefaultContract
+
+interface GenericDefaultContract<T> {
+  fun echo(value: T): T = value
+}
+
+class StringGenericDefaultConsumer : GenericDefaultContract<String>
+
+interface BoundedGenericDefaultContract<T : CharSequence> {
+  fun echo(value: T): T = value
+}
+
+class BoundedStringGenericDefaultConsumer : BoundedGenericDefaultContract<String>
+
+class ExplicitDefaultConsumer : DefaultContract {
+  override fun render(value: String): String = "explicit:${'$'}value"
+  override val title: String
+    get() = "explicit"
+}
+
+abstract class AbstractDefaultConsumer : DefaultContract
+
+interface MutableDefaultContract {
+var enabled: Boolean
+get() = true
+set(value) {}
+}
+
+class MutableDefaultConsumer : MutableDefaultContract
+""".trimIndent(),
+      "InterfaceDefaultImplementations.kt",
+    ).associateBy { it.internalName }
+
+    val contract = surfaces.getValue("evidence/DefaultContract")
+    assertPlainAccessor(contract, "render", "(Ljava/lang/String;)Ljava/lang/String;")
+    assertPlainAccessor(contract, "getTitle", "()Ljava/lang/String;")
+    for (member in listOf(
+      contract.methodsNamed("render").single { it.descriptor == "(Ljava/lang/String;)Ljava/lang/String;" },
+      contract.methodsNamed("getTitle").single { it.descriptor == "()Ljava/lang/String;" },
+    )) {
+      assertTrue("Default contract member must be public: $member", member.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("Default contract member must be abstract: $member", member.access and Opcodes.ACC_ABSTRACT != 0)
+    }
+
+    val defaults = surfaces.getValue("evidence/DefaultContract\$DefaultImpls")
+    for ((name, descriptor) in listOf(
+      "render" to "(Levidence/DefaultContract;Ljava/lang/String;)Ljava/lang/String;",
+      "getTitle" to "(Levidence/DefaultContract;)Ljava/lang/String;",
+    )) {
+      val helper = defaults.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected DefaultImpls helper $name$descriptor; actual=${defaults.members}", helper)
+      assertTrue("DefaultImpls helper must be public: $helper", helper!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("DefaultImpls helper must be static: $helper", helper.access and Opcodes.ACC_STATIC != 0)
+      assertTrue("DefaultImpls helper must not be synthetic: $helper", helper.access and Opcodes.ACC_SYNTHETIC == 0)
+    }
+
+    val consumer = surfaces.getValue("evidence/DefaultConsumer")
+    for ((name, descriptor) in listOf(
+      "render" to "(Ljava/lang/String;)Ljava/lang/String;",
+      "getTitle" to "()Ljava/lang/String;",
+    )) {
+      val forwarder = consumer.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected DefaultConsumer forwarding method $name$descriptor; actual=${consumer.members}", forwarder)
+      assertTrue("DefaultConsumer forwarder must be public: $forwarder", forwarder!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("DefaultConsumer forwarder must not be abstract: $forwarder", forwarder.access and Opcodes.ACC_ABSTRACT == 0)
+      assertTrue("DefaultConsumer forwarder must not be synthetic: $forwarder", forwarder.access and Opcodes.ACC_SYNTHETIC == 0)
+    }
+
+    val indirectConsumer = surfaces.getValue("evidence/IndirectDefaultConsumer")
+    for ((name, descriptor) in listOf(
+      "render" to "(Ljava/lang/String;)Ljava/lang/String;",
+      "getTitle" to "()Ljava/lang/String;",
+    )) {
+      val forwarder = indirectConsumer.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected IndirectDefaultConsumer forwarding method $name$descriptor; actual=${indirectConsumer.members}", forwarder)
+      assertTrue("IndirectDefaultConsumer forwarder must be public: $forwarder", forwarder!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("IndirectDefaultConsumer forwarder must not be abstract: $forwarder", forwarder.access and Opcodes.ACC_ABSTRACT == 0)
+      assertTrue("IndirectDefaultConsumer forwarder must not be synthetic: $forwarder", forwarder.access and Opcodes.ACC_SYNTHETIC == 0)
+    }
+
+    val genericConsumer = surfaces.getValue("evidence/StringGenericDefaultConsumer")
+    val genericForwarder = genericConsumer.methodsNamed("echo")
+      .singleOrNull { it.descriptor == "(Ljava/lang/Object;)Ljava/lang/Object;" }
+    assertNotNull(
+      "Expected erased generic default forwarder echo(Object): Object; actual=${genericConsumer.members}",
+      genericForwarder,
+    )
+    assertTrue("Generic default forwarder must be public: $genericForwarder",
+      genericForwarder!!.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("Generic default forwarder must not be abstract: $genericForwarder",
+      genericForwarder.access and Opcodes.ACC_ABSTRACT == 0)
+    assertTrue("Erased generic default forwarder must be synthetic bridge: $genericForwarder",
+genericForwarder.access and Opcodes.ACC_SYNTHETIC != 0
+&& genericForwarder.access and Opcodes.ACC_BRIDGE != 0)
+val specializedForwarder = genericConsumer.methodsNamed("echo")
+      .singleOrNull { it.descriptor == "(Ljava/lang/String;)Ljava/lang/String;" }
+    assertNotNull(
+      "Expected specialized generic default forwarder echo(String): String; actual=${genericConsumer.members}",
+      specializedForwarder,
+    )
+    assertTrue("Specialized generic default forwarder must be public: $specializedForwarder",
+      specializedForwarder!!.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("Specialized generic default forwarder must not be abstract: $specializedForwarder",
+      specializedForwarder.access and Opcodes.ACC_ABSTRACT == 0)
+    assertTrue("Specialized generic default forwarder must not be synthetic: $specializedForwarder",
+      specializedForwarder.access and Opcodes.ACC_SYNTHETIC == 0)
+
+    val boundedGenericConsumer = surfaces.getValue("evidence/BoundedStringGenericDefaultConsumer")
+    val boundedSpecializedForwarder = boundedGenericConsumer.methodsNamed("echo")
+      .singleOrNull { it.descriptor == "(Ljava/lang/String;)Ljava/lang/String;" }
+    assertNotNull(
+      "Expected bounded specialized generic default forwarder echo(String): String; actual=${boundedGenericConsumer.members}",
+      boundedSpecializedForwarder,
+    )
+    assertTrue("Bounded specialized forwarder must be public: $boundedSpecializedForwarder",
+      boundedSpecializedForwarder!!.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("Bounded specialized forwarder must not be synthetic: $boundedSpecializedForwarder",
+      boundedSpecializedForwarder.access and Opcodes.ACC_SYNTHETIC == 0)
+    val boundedBridge = boundedGenericConsumer.methodsNamed("echo")
+      .singleOrNull { it.descriptor == "(Ljava/lang/CharSequence;)Ljava/lang/CharSequence;" }
+    assertNotNull(
+      "Expected bounded erased bridge echo(CharSequence): CharSequence; actual=${boundedGenericConsumer.members}",
+      boundedBridge,
+    )
+    assertTrue("Bounded erased forwarder must be synthetic bridge: $boundedBridge",
+      boundedBridge!!.access and Opcodes.ACC_SYNTHETIC != 0
+      && boundedBridge.access and Opcodes.ACC_BRIDGE != 0)
+
+    val explicitConsumer = surfaces.getValue("evidence/ExplicitDefaultConsumer")
+    for ((name, descriptor) in listOf(
+      "render" to "(Ljava/lang/String;)Ljava/lang/String;",
+      "getTitle" to "()Ljava/lang/String;",
+    )) {
+      val implementation = explicitConsumer.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected ExplicitDefaultConsumer override $name$descriptor; actual=${explicitConsumer.members}", implementation)
+      assertTrue("ExplicitDefaultConsumer override must be public: $implementation", implementation!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("ExplicitDefaultConsumer override must not be abstract: $implementation", implementation.access and Opcodes.ACC_ABSTRACT == 0)
+      assertTrue("ExplicitDefaultConsumer override must not be synthetic: $implementation", implementation.access and Opcodes.ACC_SYNTHETIC == 0)
+    }
+
+    val abstractConsumer = surfaces.getValue("evidence/AbstractDefaultConsumer")
+    for ((name, descriptor) in listOf(
+      "render" to "(Ljava/lang/String;)Ljava/lang/String;",
+      "getTitle" to "()Ljava/lang/String;",
+    )) {
+      val forwarder = abstractConsumer.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected AbstractDefaultConsumer forwarding method $name$descriptor; actual=${abstractConsumer.members}", forwarder)
+      assertTrue("AbstractDefaultConsumer forwarder must be public: $forwarder", forwarder!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("AbstractDefaultConsumer forwarder must not be abstract: $forwarder", forwarder.access and Opcodes.ACC_ABSTRACT == 0)
+      assertTrue("AbstractDefaultConsumer forwarder must not be synthetic: $forwarder", forwarder.access and Opcodes.ACC_SYNTHETIC == 0)
+    }
+
+    val mutableContract = surfaces.getValue("evidence/MutableDefaultContract")
+    for ((name, descriptor) in listOf(
+      "getEnabled" to "()Z",
+      "setEnabled" to "(Z)V",
+    )) {
+      val member = mutableContract.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected mutable default contract member $name$descriptor; actual=${mutableContract.members}", member)
+      assertTrue("Mutable default contract member must be abstract: $member", member!!.access and Opcodes.ACC_ABSTRACT != 0)
+    }
+
+    val mutableConsumer = surfaces.getValue("evidence/MutableDefaultConsumer")
+    for ((name, descriptor) in listOf(
+      "getEnabled" to "()Z",
+      "setEnabled" to "(Z)V",
+    )) {
+      val forwarder = mutableConsumer.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected MutableDefaultConsumer forwarding method $name$descriptor; actual=${mutableConsumer.members}", forwarder)
+      assertTrue("MutableDefaultConsumer forwarder must be public: $forwarder", forwarder!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("MutableDefaultConsumer forwarder must not be abstract: $forwarder", forwarder.access and Opcodes.ACC_ABSTRACT == 0)
+      assertTrue("MutableDefaultConsumer forwarder must not be synthetic: $forwarder", forwarder.access and Opcodes.ACC_SYNTHETIC == 0)
+    }
+  }
+
   private fun assertSyntheticBridge(
 
     surface: KotlinCompilerJvmAbiProbe.ClassSurface,

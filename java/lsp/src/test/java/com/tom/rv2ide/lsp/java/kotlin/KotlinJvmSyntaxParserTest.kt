@@ -132,6 +132,9 @@ class KotlinJvmSyntaxParserTest {
     assertFalse(property.function())
     assertEquals("String", property.receiverType)
     assertEquals("Int", property.declaredType)
+    assertTrue(
+        "Explicit getter body must be preserved by the structured Kotlin AST.",
+        property.functionBodyPresent)
   }
 
   @Test
@@ -282,8 +285,7 @@ class KotlinJvmSyntaxParserTest {
     }
     return false
   }
-
-  private fun requireTopLevelMembers(source: String): List<KotlinJvmSyntaxParser.MemberSyntax> {
+private fun requireTopLevelMembers(source: String): List<KotlinJvmSyntaxParser.MemberSyntax> {
     val loadFailure = loadNativeLibraries()
     assumeTrue(
         "Unable to explicitly load Tree-sitter native libraries: " +

@@ -608,6 +608,43 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesInheritedDefaultInterfaceForwardersToContractDeclaration() {
+    val kotlinSource =
+      """
+      package navigation
+
+      interface DefaultContract {
+        fun render(value: String): String = value
+        val title: String
+          get() = "title"
+      }
+
+      class DefaultConsumer : DefaultContract
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      class DefaultConsumer implements DefaultContract {
+        public String render(String value) { return value; }
+        public String getTitle() { return "title"; }
+      }
+      interface DefaultContract {
+        String render(String value);
+        String getTitle();
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/DefaultInterfaceForwarders.kt")
+
+    for ((name, expectedSourceName) in listOf("render" to "render", "getTitle" to "title")) {
+      val method = compileMethod(javaSource, "navigation.DefaultConsumer", name)
+      assertEquals(expectedSourceName, sourceTextAt(
+        kotlinSource,
+        KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, method)!!,
+      ))
+    }
+  }
+
+  @Test
   fun typeNavigation_resolvesConcreteGenericOverridesAndRejectsBridgeShapedErasure() {
     val kotlinSource =
       """

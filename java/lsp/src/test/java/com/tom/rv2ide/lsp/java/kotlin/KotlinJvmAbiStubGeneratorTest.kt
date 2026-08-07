@@ -2452,6 +2452,131 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+fun generatedInterfaceDefaultImplementationStubs_preserveAbstractContractWithoutDefaultImplsOwner() {
+TreeSitter.loadLibrary()
+System.loadLibrary("tree-sitter-kotlin")
+val kotlinSource =
+"""
+package sample
+
+interface DefaultContract {
+fun render(value: String): String = value
+val title: String
+get() = "title"
+}
+
+class DefaultConsumer : DefaultContract
+
+interface DerivedDefaultContract : DefaultContract
+
+class IndirectDefaultConsumer : DerivedDefaultContract
+
+class ExplicitDefaultConsumer : DefaultContract {
+  override fun render(value: String): String = "explicit:${'$'}value"
+  override val title: String
+    get() = "explicit"
+}
+
+class OverloadedDefaultConsumer : DefaultContract {
+  fun render(value: Int): String = value.toString()
+}
+
+interface MutableDefaultContract {
+  var enabled: Boolean
+    get() = true
+    set(value) {}
+}
+
+abstract class MutableDefaultConsumer : MutableDefaultContract
+""".trimIndent()
+val contractStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.DefaultContract",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for DefaultContract")
+val consumerStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.DefaultConsumer",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for DefaultConsumer")
+val indirectStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.IndirectDefaultConsumer",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for IndirectDefaultConsumer")
+val explicitStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.ExplicitDefaultConsumer",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for ExplicitDefaultConsumer")
+val overloadStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.OverloadedDefaultConsumer",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for OverloadedDefaultConsumer")
+val mutableContractStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.MutableDefaultContract",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for MutableDefaultContract")
+val mutableConsumerStub = KotlinJvmAbiStubGenerator.generateForTest(
+"sample.MutableDefaultConsumer",
+"InterfaceDefaultImplementations.kt",
+kotlinSource,
+emptySet(),
+KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+) ?: error("Missing generated stub for MutableDefaultConsumer")
+
+assertContains(contractStub, "public interface DefaultContract")
+assertContains(contractStub, "String render(String value);")
+assertContains(contractStub, "String getTitle();")
+assertFalse("DefaultImpls is compiler-only dispatch detail:\n$contractStub",
+contractStub.contains("DefaultImpls"))
+assertFalse("DefaultImpls ABI must not be rewritten as Java interface defaults:\n$contractStub",
+contractStub.contains("default "))
+assertContains(consumerStub, "public class DefaultConsumer implements DefaultContract")
+assertContains(consumerStub, "String render(String value) { return null; }")
+assertContains(consumerStub, "String getTitle() { return null; }")
+assertContains(indirectStub, "String render(String value) { return null; }")
+assertContains(indirectStub, "String getTitle() { return null; }")
+assertEquals(1, Regex("\\brender\\(String value\\)").findAll(explicitStub).count())
+assertEquals(1, Regex("\\bgetTitle\\(\\)").findAll(explicitStub).count())
+assertContains(overloadStub, "String render(int value) { return null; }")
+assertContains(overloadStub, "String render(String value) { return null; }")
+assertContains(mutableContractStub, "boolean getEnabled();")
+assertContains(mutableContractStub, "void setEnabled(boolean value);")
+assertContains(mutableConsumerStub, "boolean getEnabled() { return false; }")
+assertContains(mutableConsumerStub, "void setEnabled(boolean value) {}")
+assertTrue(
+"Default-interface implementer forwarders must be attributable by javac:\n$consumerStub",
+javacSucceeds(
+mapOf("sample.DefaultContract" to contractStub, "sample.DefaultConsumer" to consumerStub),
+"consumer.DefaultConsumerUse",
+"""
+package consumer;
+import sample.DefaultConsumer;
+class DefaultConsumerUse {
+  String render(DefaultConsumer consumer) { return consumer.render("value"); }
+  String title(DefaultConsumer consumer) { return consumer.getTitle(); }
+}
+""".trimIndent(),
+),
+)
+}
+
+  @Test
   fun generatedMultilevelGenericOverrideStubs_preserveInheritanceAndOmitTerminalSyntheticBridges() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")
