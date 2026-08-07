@@ -758,10 +758,11 @@ constructor(
         markModified()
         file ?: return@subscribeEvent
 
-        editorScope.launch {
-          dispatchDocumentChangeEvent(event)
-          checkForSignatureHelp(event)
-        }
+        // FileManager and completion requests must observe the same version as this editor edit.
+        // Do not defer document-event construction to a coroutine: a later keystroke could then
+        // pair this event's range/version with newer text and make every completion stale.
+        dispatchDocumentChangeEvent(event)
+        editorScope.launch { checkForSignatureHelp(event) }
       }
     }
 measureEditorInitStage("subscribeSelectionChange") {

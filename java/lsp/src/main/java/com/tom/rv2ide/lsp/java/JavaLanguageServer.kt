@@ -193,11 +193,11 @@ class JavaLanguageServer : ILanguageServer {
     val request = params ?: return CompletionResult.EMPTY
     if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision)) {
       log.warn(
-          "Completion dropped before execution because document is stale file={} requestVersion={} requestRevision={} activeSnapshot={}",
+          "Completion dropped before execution because document is stale file={} requestVersion={} requestRevision={} activeDocument={}",
           request.file,
           request.documentVersion,
           request.documentRevision,
-          FileManager.getActiveDocumentSnapshot(request.file),
+          describeActiveDocument(request.file),
       )
       return CompletionResult.EMPTY
     }
@@ -324,6 +324,12 @@ class JavaLanguageServer : ILanguageServer {
       return false
     }
     return revision < 0L || snapshot.revision == revision
+  }
+
+  /** Avoid logging active source text when diagnosing request/version ordering races. */
+  private fun describeActiveDocument(file: Path): String {
+    val snapshot = FileManager.getActiveDocumentSnapshot(file) ?: return "none"
+    return "version=${snapshot.version}, revision=${snapshot.revision}, length=${snapshot.content.length}"
   }
 
   override suspend fun hover(params: DefinitionParams): com.tom.rv2ide.lsp.models.MarkupContent {
