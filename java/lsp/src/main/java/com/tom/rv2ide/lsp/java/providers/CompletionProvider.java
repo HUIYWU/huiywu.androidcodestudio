@@ -58,7 +58,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import openjdk.source.tree.Tree;
 import openjdk.source.util.TreePath;
@@ -69,35 +68,24 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
   public static final int MAX_COMPLETION_ITEMS = CompletionResult.MAX_ITEMS;
   private static final Logger LOG = LoggerFactory.getLogger(CompletionProvider.class);
-  private final AtomicBoolean completing = new AtomicBoolean(false);
-  private JavaCompilerService compiler;
-  private CachedCompletion cache;
-  private Consumer<CachedCompletion> nextCacheConsumer;
+  private final JavaCompilerService compiler;
+  private final CachedCompletion cache;
+  private final Consumer<CachedCompletion> nextCacheConsumer;
 
-  public CompletionProvider() {
-    super();
-  }
-
-  public synchronized CompletionProvider reset(JavaCompilerService compiler,
-      IServerSettings settings, CachedCompletion cache,
+  /**
+   * Creates one request-scoped provider. The reusable compiler is module-owned; this object only
+   * holds immutable request wiring so overlapping completion threads cannot overwrite each other.
+   */
+  public CompletionProvider(
+      JavaCompilerService compiler,
+      IServerSettings settings,
+      CachedCompletion cache,
       Consumer<CachedCompletion> nextCacheConsumer
   ) {
-    if (completing.get()) {
-      // CompletionProvider is shared by JavaLanguageServer. Do not serialize here: blocking a
-      // newer keystroke behind an older request worsens latency. Log overlap so a request-scoped
-      // provider/session scheduler can be introduced only if this is observed in practice.
-      LOG.warn(
-          "Completion provider reset while another completion is active newCompilerHash={} previousCompilerHash={} cachePresent={}",
-          System.identityHashCode(compiler),
-          System.identityHashCode(this.compiler),
-          cache != null);
-    }
     this.compiler = compiler;
     this.cache = cache;
     this.nextCacheConsumer = nextCacheConsumer;
-
     super.applySettings(settings);
-    return this;
   }
 
   @Override
@@ -128,7 +116,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       }
       if (IdeLogConfig.shouldLogWarn()) {
         LOG.warn(
-            "Completion busy and no fallback result is available file={} cursor={} prefix={} version={} revision={} tsContext={} compilerHash={} cachePresent={} completing={}",
+            "Completion busy and no fallback result is available file={} cursor={} prefix={} version={} revision={} tsContext={} compilerHash={} cachePresent={} providerScoped=true",
             params.getFile(),
             params.getPosition().requireIndex(),
             params.getPrefix(),
@@ -136,14 +124,12 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
             params.getDocumentRevision(),
             busyContext,
             System.identityHashCode(compiler),
-            cache != null,
-            completing.get());
+            cache != null);
         synchronizedTask.logStats();
       }
       return CompletionResult.EMPTY;
     }
- 
-    completing.set(true);
+
     try {
       abortIfCancelled();
       abortCompletionIfCancelled();
@@ -174,8 +160,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
             err);
       }
       throw err;
-    } finally {
-      completing.set(false);
     }
   }
 

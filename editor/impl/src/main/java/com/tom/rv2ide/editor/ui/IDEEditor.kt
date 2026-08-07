@@ -126,6 +126,8 @@ constructor(
   private var _diagnosticWindow: DiagnosticWindow? = null
   private var _hoverWindow: HoverWindow? = null
   private var fileVersion = 0
+  // Event-provided stamp, kept locally so editor:impl remains independent from core:projects.
+  private var documentRevision = -1L
   internal var isModified = false
 
   private val selectionChangeHandler = Handler(Looper.getMainLooper())
@@ -459,6 +461,7 @@ constructor(
 
     _file = null
     fileVersion = 0
+    documentRevision = -1L
     markUnmodified()
 
     editorFeatures.editor = null
@@ -492,6 +495,7 @@ constructor(
     return super.getExtraArguments().apply {
       putString(IEditor.KEY_FILE, file?.absolutePath)
       putInt(IEditor.KEY_DOCUMENT_VERSION, fileVersion)
+      putLong(IEditor.KEY_DOCUMENT_REVISION, documentRevision)
     }
   }
 
@@ -955,6 +959,7 @@ measureEditorInitStage("subscribeSelectionChange") {
     // from the active document cache instead of the event body.
     val openText = if (text.length > LARGE_DOCUMENT_EVENT_TEXT_THRESHOLD) "" else text.toString()
     val openEvent = DocumentOpenEvent(file.toPath(), openText, fileVersion)
+    documentRevision = openEvent.revision
 
     eventDispatcher.dispatch(openEvent)
   }
@@ -1088,6 +1093,7 @@ measureEditorInitStage("subscribeSelectionChange") {
             changeRange,
             fullTextProvider,
         )
+    documentRevision = changeEvent.revision
     eventDispatcher.dispatch(changeEvent)
   }
 

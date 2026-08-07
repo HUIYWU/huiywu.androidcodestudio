@@ -70,6 +70,13 @@ class EditorEventDispatcher(var editor: IDEEditor? = null) {
   }
 
   fun dispatch(event: DocumentEvent) {
+    // Keep the active-document truth in step with the editor before completion threads can read
+    // extraArguments. EventBus delivery remains queued/asynchronous for other subscribers.
+    when (event) {
+      is DocumentOpenEvent -> onDocumentOpen(event)
+      is DocumentChangeEvent -> onDocumentContentChange(event)
+      is DocumentCloseEvent -> onDocumentClose(event)
+    }
     check(eventQueue.offer(event)) { "Failed to dispatch event: $event" }
   }
 
@@ -91,12 +98,10 @@ class EditorEventDispatcher(var editor: IDEEditor? = null) {
   }
 
   private fun dispatchOpen(event: DocumentOpenEvent) {
-    onDocumentOpen(event)
     post(event)
   }
 
   private fun dispatchChange(event: DocumentChangeEvent) {
-    onDocumentContentChange(event)
     post(event)
   }
 
@@ -105,7 +110,6 @@ class EditorEventDispatcher(var editor: IDEEditor? = null) {
   }
 
   private fun dispatchClose(event: DocumentCloseEvent) {
-    onDocumentClose(event)
     post(event)
   }
 

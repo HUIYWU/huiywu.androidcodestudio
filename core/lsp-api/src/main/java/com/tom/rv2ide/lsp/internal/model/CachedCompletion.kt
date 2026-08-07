@@ -76,6 +76,38 @@ private constructor(
   }
 
   fun canUseCache(params: CompletionParams): Boolean {
+    // A completion list is semantic output for one document snapshot. Prefix-only reuse across
+    // edits can expose members/imports from an older buffer, so versioned Java requests require an
+    // exact document identity. Unknown stamps retain compatibility with not-yet-migrated servers.
+    if (
+        this.params.documentVersion >= 0 &&
+            params.documentVersion >= 0 &&
+            this.params.documentVersion != params.documentVersion
+    ) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "...cached completion document version changed cached={} requested={}",
+            this.params.documentVersion,
+            params.documentVersion,
+        )
+      }
+      return false
+    }
+    if (
+        this.params.documentRevision >= 0L &&
+            params.documentRevision >= 0L &&
+            this.params.documentRevision != params.documentRevision
+    ) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "...cached completion document revision changed cached={} requested={}",
+            this.params.documentRevision,
+            params.documentRevision,
+        )
+      }
+      return false
+    }
+
     val partial = params.requirePrefix()
     val position = this.params.position
     val file = this.params.file

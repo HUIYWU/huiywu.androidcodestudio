@@ -19,6 +19,7 @@ package com.tom.rv2ide.eventbus.events.editor
 
 import com.tom.rv2ide.models.Range
 import java.net.URI
+import java.util.concurrent.atomic.AtomicLong
 import java.nio.file.Path
 
 /** Base class for files that accept files as parameters. */
@@ -28,9 +29,15 @@ open class DocumentEvent(var file: Path) {
   }
 }
 
+private val DOCUMENT_REVISION = AtomicLong()
+
 /** Dispatched when an editor is opened for the given file. */
-data class DocumentOpenEvent(var openedFile: Path, var text: String, var version: Int) :
-    DocumentEvent(openedFile)
+data class DocumentOpenEvent(
+    var openedFile: Path,
+    var text: String,
+    var version: Int,
+    val revision: Long = DOCUMENT_REVISION.incrementAndGet(),
+) : DocumentEvent(openedFile)
 
 /** Dispatched when the given file is closed. Always dispatched after [DocumentOpenEvent]. */
 data class DocumentCloseEvent
@@ -73,6 +80,7 @@ data class DocumentChangeEvent(
     var changeDelta: Int,
     var changeRange: Range,
     var newTextProvider: DocumentTextProvider? = null,
+    val revision: Long = DOCUMENT_REVISION.incrementAndGet(),
 ) : DocumentEvent(changedFile) {
 
   var newText: String? = _newText

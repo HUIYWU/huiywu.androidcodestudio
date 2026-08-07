@@ -35,7 +35,6 @@ import java.nio.file.Paths
 import java.time.Instant
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import org.apache.commons.io.FileUtils
 import org.slf4j.LoggerFactory
 
@@ -48,7 +47,6 @@ object FileManager {
 
   private val log = LoggerFactory.getLogger(FileManager::class.java)
   private val activeDocuments = ConcurrentHashMap<Path, ActiveDocument>()
-  private val documentRevision = AtomicLong()
 
   fun isActive(uri: URI): Boolean {
     return isActive(Paths.get(uri))
@@ -137,7 +135,7 @@ object FileManager {
         version = event.version,
         modified = Instant.now(),
         content = event.newText ?: current.content,
-        revision = documentRevision.incrementAndGet(),
+        revision = event.revision,
     )
   }
 
@@ -156,7 +154,8 @@ object FileManager {
               version = snapshot.version,
               modified = Instant.now(),
               content = snapshot.content,
-              revision = documentRevision.incrementAndGet(),
+              // A rename changes the lookup key, not the document text identity.
+              revision = snapshot.revision,
           )
     }
   }
@@ -179,7 +178,7 @@ object FileManager {
         version = event.version,
         modified = Instant.now(),
         content = initialContent,
-        revision = documentRevision.incrementAndGet(),
+        revision = event.revision,
     )
   }
 
@@ -207,7 +206,7 @@ object FileManager {
         version = event.version,
         modified = Instant.now(),
         content = initialContent,
-        revision = documentRevision.incrementAndGet(),
+        revision = event.revision,
     )
   }
 

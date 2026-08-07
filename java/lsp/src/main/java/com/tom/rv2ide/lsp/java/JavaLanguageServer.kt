@@ -77,6 +77,7 @@ import com.tom.rv2ide.utils.VMUtils
 import java.nio.file.Path
 import java.util.Objects
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,7 +90,6 @@ import org.slf4j.LoggerFactory
 
 class JavaLanguageServer : ILanguageServer {
 
-  private val completionProvider: CompletionProvider = CompletionProvider()
   private val diagnosticProvider: JavaDiagnosticProvider?
   private var lastHeavyModuleCleanupAt: Long = 0L
   override var client: ILanguageClient? = null
@@ -102,7 +102,7 @@ class JavaLanguageServer : ILanguageServer {
   private val analyzeLaunchInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
   private val analyzeRerunRequested = java.util.concurrent.atomic.AtomicBoolean(false)
   private val lastInteractiveRequestAt = AtomicLong(0)
-  private var cachedCompletion: CachedCompletion
+  private val cachedCompletion = AtomicReference(CachedCompletion.EMPTY)
   private var lastJavaChangeDelta = 0
 
   val settings: IServerSettings
@@ -124,7 +124,6 @@ class JavaLanguageServer : ILanguageServer {
 
   init {
     diagnosticProvider = JavaDiagnosticProvider()
-    cachedCompletion = CachedCompletion.EMPTY
 
     applySettings(JavaServerSettings.getInstance())
 
@@ -206,12 +205,12 @@ class JavaLanguageServer : ILanguageServer {
     val interactiveLease = semanticSession?.beginInteractiveRequest()
     try {
       val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
-      if (!settings.completionsEnabled() || !completionProvider.canComplete(request.file)) {
+      if (!settings.completionsEnabled() || !DocumentUtils.isJavaFile(request.file)) {
         log.warn(
             "Completion disabled or unsupported file={} completionsEnabled={} canComplete={} version={} revision={}",
             request.file,
             settings.completionsEnabled(),
-            completionProvider.canComplete(request.file),
+            DocumentUtils.isJavaFile(request.file),
             request.documentVersion,
             request.documentRevision,
         )
@@ -222,11 +221,12 @@ class JavaLanguageServer : ILanguageServer {
         diagnosticProvider.cancel()
       }
 
-      completionProvider.reset(compiler, settings, cachedCompletion) {
-          cachedCompletion: CachedCompletion ->
-        updateCachedCompletion(cachedCompletion)
-      }
-
+      // The provider owns only immutable request wiring. The heavyweight reusable compiler and
+      // versioned cache remain owned by the module session and language server respectively.
+      val completionProvider =
+          CompletionProvider(compiler, settings, cachedCompletion.get()) { completion ->
+            updateCachedCompletion(completion, request, semanticSession, environmentGeneration)
+          }
       val result = completionProvider.complete(request)
 
       // The document may have changed while javac was computing the result. Do not let an older
@@ -396,9 +396,30 @@ class JavaLanguageServer : ILanguageServer {
     return getSemanticSession(file)?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
   }
 
-  private fun updateCachedCompletion(cachedCompletion: CachedCompletion) {
-    Objects.requireNonNull(cachedCompletion)
-    this.cachedCompletion = cachedCompletion
+  private fun updateCachedCompletion(
+      completion: CachedCompletion,
+      request: CompletionParams,
+      session: JavaSemanticSession?,
+      environmentGeneration: Long?,
+  ) {
+    Objects.requireNonNull(completion)
+    // CompletionProvider invokes this callback before complete() returns. Recheck request identity
+    // here so a slower stale request cannot overwrite the cache subsequently used by the newest
+    // editor version.
+    if (
+        !isCurrentDocument(request.file, request.documentVersion, request.documentRevision) ||
+            !isCurrentSemanticSession(session, environmentGeneration)
+    ) {
+      log.info(
+          "Completion cache write skipped for stale request file={} version={} revision={} environmentGeneration={}",
+          request.file,
+          request.documentVersion,
+          request.documentRevision,
+          environmentGeneration,
+      )
+      return
+    }
+    cachedCompletion.set(completion)
   }
 
   private fun maybeEvictIdleHeavyCompositeModules() {
@@ -577,7 +598,7 @@ class JavaLanguageServer : ILanguageServer {
       JavaSemanticSessions.destroyAll()
     }
     KotlinClassOutputProvider.clearCache()
-    cachedCompletion = CachedCompletion.EMPTY
+    cachedCompletion.set(CachedCompletion.EMPTY)
     if (clearFileManagers) {
       SourceFileManager.clearCache()
     }
