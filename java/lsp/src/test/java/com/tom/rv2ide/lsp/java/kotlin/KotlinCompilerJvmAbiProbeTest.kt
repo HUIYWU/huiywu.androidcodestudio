@@ -1090,8 +1090,112 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
       assertTrue("MutableDefaultConsumer forwarder must not be synthetic: $forwarder", forwarder.access and Opcodes.ACC_SYNTHETIC == 0)
     }
   }
+  @Test
+  fun jvmDefaultAllMode_movesInterfaceBodiesToConcreteInterfaceMethodsWithoutImplementerForwarders() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      interface JvmDefaultContract {
+        fun render(value: String): String = value
+        var enabled: Boolean
+          get() = true
+          set(value) {}
+      }
+      class JvmDefaultConsumer : JvmDefaultContract
+      """.trimIndent(),
+      "JvmDefaultAll.kt",
+      additionalArguments = listOf("-Xjvm-default=all"),
+    ).associateBy { it.internalName }
+
+    val contract = surfaces.getValue("evidence/JvmDefaultContract")
+    for ((name, descriptor) in listOf(
+      "render" to "(Ljava/lang/String;)Ljava/lang/String;",
+      "getEnabled" to "()Z",
+      "setEnabled" to "(Z)V",
+    )) {
+      val member = contract.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected JVM-default interface member $name$descriptor; actual=${contract.members}", member)
+      assertTrue("JVM-default interface member must be public: $member",
+        member!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("JVM-default interface member must be concrete: $member",
+        member.access and Opcodes.ACC_ABSTRACT == 0)
+      assertTrue("JVM-default interface member must not be synthetic: $member",
+        member.access and Opcodes.ACC_SYNTHETIC == 0)
+    }
+    assertTrue("all mode must not emit DefaultImpls; emitted=${surfaces.keys}",
+      "evidence/JvmDefaultContract\$DefaultImpls" !in surfaces)
+
+    val consumer = surfaces.getValue("evidence/JvmDefaultConsumer")
+    for ((name, descriptor) in listOf(
+      "render" to "(Ljava/lang/String;)Ljava/lang/String;",
+      "getEnabled" to "()Z",
+      "setEnabled" to "(Z)V",
+    )) {
+      assertTrue("all mode implementer must inherit interface default rather than materialize $name$descriptor; actual=${consumer.members}",
+        consumer.methodsNamed(name).none { it.descriptor == descriptor })
+    }
+  }
+
+  @Test
+  fun jvmDefaultAllCompatibilityMode_keepsConcreteInterfaceDefaultsAndCompatibilityHelpers() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      interface JvmDefaultCompatibilityContract {
+        fun render(value: String): String = value
+        var enabled: Boolean
+          get() = true
+          set(value) {}
+      }
+      class JvmDefaultCompatibilityConsumer : JvmDefaultCompatibilityContract
+      """.trimIndent(),
+      "JvmDefaultAllCompatibility.kt",
+      additionalArguments = listOf("-Xjvm-default=all-compatibility"),
+    ).associateBy { it.internalName }
+
+    val contract = surfaces.getValue("evidence/JvmDefaultCompatibilityContract")
+    for ((name, descriptor) in listOf(
+      "render" to "(Ljava/lang/String;)Ljava/lang/String;",
+      "getEnabled" to "()Z",
+      "setEnabled" to "(Z)V",
+    )) {
+      val member = contract.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected compatibility-mode interface member $name$descriptor; actual=${contract.members}", member)
+      assertTrue("Compatibility-mode interface member must be public: $member",
+        member!!.access and Opcodes.ACC_PUBLIC != 0)
+      assertTrue("Compatibility-mode interface member must be concrete: $member",
+        member.access and Opcodes.ACC_ABSTRACT == 0)
+      assertTrue("Compatibility-mode interface member must not be synthetic: $member",
+        member.access and Opcodes.ACC_SYNTHETIC == 0)
+    }
+
+    val helpers = surfaces.getValue("evidence/JvmDefaultCompatibilityContract\$DefaultImpls")
+    for ((name, descriptor) in listOf(
+      "render" to "(Levidence/JvmDefaultCompatibilityContract;Ljava/lang/String;)Ljava/lang/String;",
+      "getEnabled" to "(Levidence/JvmDefaultCompatibilityContract;)Z",
+      "setEnabled" to "(Levidence/JvmDefaultCompatibilityContract;Z)V",
+    )) {
+      val helper = helpers.methodsNamed(name).singleOrNull { it.descriptor == descriptor }
+      assertNotNull("Expected compatibility helper $name$descriptor; actual=${helpers.members}", helper)
+      assertTrue("Compatibility helper must be public static: $helper",
+        helper!!.access and Opcodes.ACC_PUBLIC != 0 && helper.access and Opcodes.ACC_STATIC != 0)
+    }
+
+    val consumer = surfaces.getValue("evidence/JvmDefaultCompatibilityConsumer")
+    for ((name, descriptor) in listOf(
+      "render" to "(Ljava/lang/String;)Ljava/lang/String;",
+      "getEnabled" to "()Z",
+      "setEnabled" to "(Z)V",
+    )) {
+      assertTrue("Compatibility-mode implementer must inherit interface default rather than materialize $name$descriptor; actual=${consumer.members}",
+        consumer.methodsNamed(name).none { it.descriptor == descriptor })
+    }
+  }
 
   private fun assertSyntheticBridge(
+
 
     surface: KotlinCompilerJvmAbiProbe.ClassSurface,
     name: String,

@@ -404,10 +404,10 @@ val mainArtifact = variant.mainArtifact
   @Suppress("unused")
   @Subscribe(threadMode = ThreadMode.ASYNC)
   fun onDocumentClosed(event: DocumentCloseEvent) {
-    scheduleActiveValuesRefresh(event.closedFile)
+    scheduleActiveValuesRefresh(event.closedFile, immediate = true)
   }
 
-  private fun scheduleActiveValuesRefresh(file: java.nio.file.Path) {
+  private fun scheduleActiveValuesRefresh(file: java.nio.file.Path, immediate: Boolean = false) {
     if (file.extension != "xml") return
     val module = getWorkspace()?.findModuleForFile(file, false) as? AndroidModule ?: return
     val isValuesResource =
@@ -415,7 +415,7 @@ val mainArtifact = variant.mainArtifact
           file.normalize().startsWith(resDirectory.toPath().normalize().resolve("values"))
         } ?: false
     if (isValuesResource) {
-      resourceTableRefreshes.schedule(module)
+      resourceTableRefreshes.schedule(module, immediate)
     }
   }
 

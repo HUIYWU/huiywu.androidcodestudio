@@ -26,3 +26,15 @@ import com.tom.rv2ide.eventbus.events.Event
  * @author Akash Yadav
  */
 class ProjectInitializedEvent : Event()
+
+/**
+ * Dispatched after a module resource table refresh has completed and remains current.
+ *
+ * Consumers may re-evaluate diagnostics or presentation derived from resource resolution. The event
+ * deliberately carries no resource contents or table instance; the registry remains the sole source
+ * of resource semantics.
+ */
+data class ResourceTableRefreshedEvent(
+    val modulePath: String,
+    val immediate: Boolean,
+)

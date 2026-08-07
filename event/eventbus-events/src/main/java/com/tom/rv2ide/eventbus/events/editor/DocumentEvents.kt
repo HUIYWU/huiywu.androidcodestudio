@@ -38,6 +38,8 @@ data class DocumentCloseEvent
 constructor(var closedFile: Path, val selectionRange: Range = Range.NONE) :
     DocumentEvent(closedFile)
 
+// Document lifecycle event declarations continue below.
+
 /**
  * Dispatched when the content of the given opened document changes. The change can be either
  * performed by the user or the IDE itself.

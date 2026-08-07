@@ -22,6 +22,7 @@ import com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentCloseEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentOpenEvent
 import com.tom.rv2ide.eventbus.events.editor.DocumentSelectedEvent
+import com.tom.rv2ide.eventbus.events.project.ResourceTableRefreshedEvent
 import com.tom.rv2ide.lsp.api.ICompletionProvider
 import com.tom.rv2ide.lsp.api.ILanguageClient
 import com.tom.rv2ide.lsp.api.ILanguageServer
@@ -214,6 +215,15 @@ class XMLLanguageServer : ILanguageServer {
       selectedFile = null
       analyzeGeneration.incrementAndGet()
       diagnosticHandler.removeCallbacks(analyzeRunnable)
+    }
+  }
+
+  @Subscribe(threadMode = ThreadMode.BACKGROUND)
+  fun onResourceTableRefreshed(event: ResourceTableRefreshedEvent) {
+    // The registry has already published the new table. Reuse the normal diagnostic path instead
+    // of retaining any cross-document resource state in the XML LSP.
+    if (selectedFile != null) {
+      scheduleDiagnosticAnalysis()
     }
   }
 

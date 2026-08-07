@@ -136,7 +136,7 @@ class JavaLanguageServer : ILanguageServer {
   }
 
   override fun shutdown() {
-    JavaCompilerProvider.getInstance().destroy()
+    JavaSemanticSessions.destroyAll()
     SourceFileManager.clearCache()
     KotlinJvmTypeIndex.clear()
     KotlinClassOutputProvider.clearCache()
@@ -172,8 +172,8 @@ class JavaLanguageServer : ILanguageServer {
     //    Maybe this could be improved by using data from the AndroidModule workspace model
     clearCachesForPaths { path: String -> path.endsWith("/R.jar") }
 
-    // Clear cached module-specific compilers
-    JavaCompilerProvider.getInstance().destroy()
+    // Clear module semantic sessions and their cached reusable compilers.
+    JavaSemanticSessions.destroyAll()
 
     // Cache classpath locations for eagerly active modules only.
     for (subModule in workspace.getSubProjects()) {
@@ -194,7 +194,9 @@ class JavaLanguageServer : ILanguageServer {
     if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision)) {
       return CompletionResult.EMPTY
     }
-    val compiler = getCompiler(request.file)
+    val semanticSession = getSemanticSession(request.file)
+    val environmentGeneration = semanticSession?.environmentGeneration
+    val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
     if (!settings.completionsEnabled() || !completionProvider.canComplete(request.file)) {
       return CompletionResult.EMPTY
     }
@@ -213,7 +215,8 @@ class JavaLanguageServer : ILanguageServer {
 
     // The document may have changed while javac was computing the result. Do not let an older
     // completion request publish candidates for the current editor state.
-    if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision)) {
+    if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision) ||
+        !isCurrentSemanticSession(semanticSession, environmentGeneration)) {
       return CompletionResult.EMPTY
     }
 
@@ -248,14 +251,19 @@ class JavaLanguageServer : ILanguageServer {
     if (!isCurrentDocument(params.file, params.documentVersion, params.documentRevision)) {
       return SignatureHelp(emptyList(), -1, -1)
     }
-    val compiler = getCompiler(params.file)
+    val semanticSession = getSemanticSession(params.file)
+    val environmentGeneration = semanticSession?.environmentGeneration
+    val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
     val result =
         if (!settings.signatureHelpEnabled()) {
           SignatureHelp(emptyList(), -1, -1)
         } else {
           SignatureProvider(compiler, params.cancelChecker).signatureHelp(params)
         }
-    return if (isCurrentDocument(params.file, params.documentVersion, params.documentRevision)) {
+    return if (
+        isCurrentDocument(params.file, params.documentVersion, params.documentRevision) &&
+            isCurrentSemanticSession(semanticSession, environmentGeneration)
+    ) {
       result
     } else {
       SignatureHelp(emptyList(), -1, -1)
@@ -306,22 +314,33 @@ class JavaLanguageServer : ILanguageServer {
         if (isCancelled(failure.error)) {
           return true
         }
-        JavaCompilerProvider.getInstance().destroy()
+        JavaSemanticSessions.destroyAll()
         true
       }
     }
   }
 
+  private fun getSemanticSession(file: Path?): JavaSemanticSession? {
+    if (!DocumentUtils.isJavaFile(file)) {
+      return null
+    }
+    val workspace = getInstance().getWorkspace() ?: return null
+    val module = workspace.findModuleForFile(file!!) ?: return null
+    workspace.ensureModuleActivated(module)
+    return JavaSemanticSessions.forModule(module)
+  }
+
+  private fun isCurrentSemanticSession(
+      session: JavaSemanticSession?,
+      environmentGeneration: Long?,
+  ): Boolean {
+    return session == null ||
+        (environmentGeneration != null && JavaSemanticSessions.isCurrent(session, environmentGeneration))
+  }
+
   @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
   fun getCompiler(file: Path?): JavaCompilerService {
-    if (!DocumentUtils.isJavaFile(file)) {
-      return JavaCompilerService.NO_MODULE_COMPILER
-    }
-    val workspace = getInstance().getWorkspace() ?: return JavaCompilerService.NO_MODULE_COMPILER
-    val module =
-      workspace.findModuleForFile(file!!) ?: return JavaCompilerService.NO_MODULE_COMPILER
-    workspace.ensureModuleActivated(module)
-    return JavaCompilerProvider.get(module)
+    return getSemanticSession(file)?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
   }
 
   private fun updateCachedCompletion(cachedCompletion: CachedCompletion) {
@@ -402,7 +421,7 @@ class JavaLanguageServer : ILanguageServer {
     val module = workspace?.findModuleForFile(event.changedFile, true)
     if (module != null) {
       workspace.ensureModuleActivated(module)
-      val compiler = JavaCompilerProvider.get(module)
+      val compiler = JavaSemanticSessions.forModule(module).compiler()
       compiler.onDocumentChange(event)
     }
     startOrRestartAnalyzeTimer(forceRestart = shouldForceAnalyzeTimerRestart())
@@ -497,12 +516,12 @@ class JavaLanguageServer : ILanguageServer {
         ?: workspace?.findModuleForFile(kotlinFile.toFile(), true)
     if (module != null) {
       KotlinJvmTypeIndex.invalidate(module)
-      JavaCompilerProvider.getInstance().destroy(module)
+      JavaSemanticSessions.destroy(module)
     } else {
       // A deletion is commonly delivered after its file can no longer be resolved to a module.
       // Prefer a conservative global reset over retaining an ABI stub for a deleted Kotlin type.
       KotlinJvmTypeIndex.clear()
-      JavaCompilerProvider.getInstance().destroy()
+      JavaSemanticSessions.destroyAll()
     }
     KotlinClassOutputProvider.clearCache()
     cachedCompletion = CachedCompletion.EMPTY
@@ -522,7 +541,7 @@ class JavaLanguageServer : ILanguageServer {
   @Subscribe(threadMode = ThreadMode.ASYNC)
   @Suppress("unused")
   fun onLazyModuleEvicted(event: LazyModuleEvictedEvent) {
-    JavaCompilerProvider.getInstance().destroy(event.module)
+    JavaSemanticSessions.destroy(event.module)
   }
 
   private fun analyzeSelected() {

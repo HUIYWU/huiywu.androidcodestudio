@@ -3,6 +3,7 @@
  */
 package com.tom.rv2ide.projects.internal
 
+import com.tom.rv2ide.eventbus.events.project.ResourceTableRefreshedEvent
 import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.xml.resources.ResourceTableFileInput
@@ -12,6 +13,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import org.greenrobot.eventbus.EventBus
 import org.slf4j.LoggerFactory
 
 /**
@@ -96,6 +98,7 @@ internal class ResourceTableRefreshCoordinator(
     }
     if (!obsolete) {
       pending.remove(key, state)
+      EventBus.getDefault().post(ResourceTableRefreshedEvent(key, immediate))
     }
   }
 

@@ -19,7 +19,8 @@ import android.os.Process
 import com.tom.rv2ide.common.logging.IdeLogConfig
 
 
-import com.tom.rv2ide.lsp.java.JavaCompilerProvider
+import com.tom.rv2ide.lsp.java.JavaSemanticSession
+import com.tom.rv2ide.lsp.java.JavaSemanticSessions
 import com.tom.rv2ide.lsp.java.compiler.CompileTask
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.lsp.java.providers.DiagnosticsProvider.findDiagnostics
@@ -58,7 +59,9 @@ class JavaDiagnosticProvider {
     val module =
         IProjectManager.getInstance().getWorkspace()?.findModuleForFile(file, false)
             ?: return DiagnosticResult.NO_UPDATE
-    val compiler = JavaCompilerProvider.get(module)
+    val session = JavaSemanticSessions.forModule(module)
+    val compiler = session.compiler()
+    val environmentGeneration = session.environmentGeneration
 
     abortIfCancelled()
 
@@ -96,7 +99,7 @@ class JavaDiagnosticProvider {
     analyzing.set(true)
 
     val analyzingThread =
-        AnalyzingThread(compiler, file, requestedGeneration).also {
+        AnalyzingThread(compiler, file, requestedGeneration, session, environmentGeneration).also {
           analyzingThread = it
           it.start()
           it.join()
@@ -169,10 +172,12 @@ class JavaDiagnosticProvider {
     return task?.task != null && task.roots != null && task.roots.size > 0
   }
 
-  inner class AnalyzingThread(
+  private inner class AnalyzingThread(
       val compiler: JavaCompilerService,
       val file: Path,
       val requestedGeneration: Long,
+      val session: JavaSemanticSession,
+      val environmentGeneration: Long,
   ) : Thread("JavaAnalyzerThread") {
 
     var result: DiagnosticResult = DiagnosticResult.NO_UPDATE
@@ -241,6 +246,18 @@ class JavaDiagnosticProvider {
                           documentRevision != DiagnosticResult.UNKNOWN_DOCUMENT_REVISION &&
                               FileManager.getActiveDocumentSnapshot(file)?.revision != documentRevision
                       ) {
+                        DiagnosticResult.NO_UPDATE
+                      } else if (
+                          !JavaSemanticSessions.isCurrent(session, environmentGeneration)
+                      ) {
+                        if (IdeLogConfig.shouldLogInfo()) {
+                          log.info(
+                              "Analyze skipped after compile due to environment change file={} requestedEnvironmentGeneration={} currentEnvironmentGeneration={}",
+                              file,
+                              environmentGeneration,
+                              session.environmentGeneration,
+                          )
+                        }
                         DiagnosticResult.NO_UPDATE
                       } else {
                         doAnalyze(file, task, documentVersion, documentRevision)

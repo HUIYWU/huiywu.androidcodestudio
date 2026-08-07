@@ -42,7 +42,11 @@ internal object KotlinCompilerJvmAbiProbe {
     fun fieldsNamed(name: String): List<Member> = fields.filter { it.name == name }
   }
 
-  fun compile(source: String, fileName: String = "Probe.kt"): List<ClassSurface> {
+  fun compile(
+    source: String,
+    fileName: String = "Probe.kt",
+    additionalArguments: List<String> = emptyList(),
+  ): List<ClassSurface> {
     require(fileName.endsWith(".kt")) { "Kotlin fixture name must end with .kt: $fileName" }
 
     val root = Files.createTempDirectory("kotlin-compiler-abi-probe")
@@ -59,6 +63,7 @@ internal object KotlinCompilerJvmAbiProbe {
         "-no-stdlib",
         "-classpath", kotlinStdlibPath(),
         "-d", outputDirectory.toString(),
+        *additionalArguments.toTypedArray(),
         sourceFile.toString(),
       )
       check(exitCode == ExitCode.OK) {

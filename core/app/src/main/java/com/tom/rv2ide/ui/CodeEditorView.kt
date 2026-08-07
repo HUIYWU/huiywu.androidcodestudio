@@ -28,8 +28,10 @@ import com.tom.rv2ide.editor.ui.updateEditorDiagnostics
 import com.tom.rv2ide.editor.utils.ContentReadWrite.readContent
 import com.tom.rv2ide.editor.utils.ContentReadWrite.writeTo
 import com.tom.rv2ide.common.logging.IdeLogConfig
+import com.tom.rv2ide.eventbus.events.editor.DocumentCloseEvent
 import com.tom.rv2ide.eventbus.events.preferences.PreferenceChangeEvent
 import com.tom.rv2ide.lsp.IDELanguageClientImpl
+import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.lsp.api.ILanguageServer
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.java.JavaLanguageServer
@@ -685,6 +687,15 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   }
 
   override fun close() {
+    val closedFile = file?.toPath()
+    if (closedFile != null) {
+      val closeEvent = DocumentCloseEvent(closedFile)
+      // Resource-table snapshots must no longer observe this document before subscribers schedule
+      // their refresh. This matches the established rename/delete event ordering.
+      FileManager.onDocumentClose(closeEvent)
+      EventBus.getDefault().post(closeEvent)
+    }
+
     analysisJob?.cancel()
     codeEditorScope.cancelIfActive("Cancellation was requested")
     _binding?.editor?.apply {
