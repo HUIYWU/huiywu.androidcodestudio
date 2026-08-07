@@ -192,6 +192,13 @@ class JavaLanguageServer : ILanguageServer {
     lastInteractiveRequestAt.set(System.currentTimeMillis())
     val request = params ?: return CompletionResult.EMPTY
     if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision)) {
+      log.warn(
+          "Completion dropped before execution because document is stale file={} requestVersion={} requestRevision={} activeSnapshot={}",
+          request.file,
+          request.documentVersion,
+          request.documentRevision,
+          FileManager.getActiveDocumentSnapshot(request.file),
+      )
       return CompletionResult.EMPTY
     }
     val semanticSession = getSemanticSession(request.file)
@@ -200,6 +207,14 @@ class JavaLanguageServer : ILanguageServer {
     try {
       val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
       if (!settings.completionsEnabled() || !completionProvider.canComplete(request.file)) {
+        log.warn(
+            "Completion disabled or unsupported file={} completionsEnabled={} canComplete={} version={} revision={}",
+            request.file,
+            settings.completionsEnabled(),
+            completionProvider.canComplete(request.file),
+            request.documentVersion,
+            request.documentRevision,
+        )
         return CompletionResult.EMPTY
       }
 
@@ -216,12 +231,36 @@ class JavaLanguageServer : ILanguageServer {
 
       // The document may have changed while javac was computing the result. Do not let an older
       // completion request publish candidates for the current editor state.
-      if (!isCurrentDocument(request.file, request.documentVersion, request.documentRevision) ||
-          !isCurrentSemanticSession(semanticSession, environmentGeneration)) {
+      val currentDocument =
+          isCurrentDocument(request.file, request.documentVersion, request.documentRevision)
+      val currentSession = isCurrentSemanticSession(semanticSession, environmentGeneration)
+      if (!currentDocument || !currentSession) {
+        log.warn(
+            "Completion dropped after execution file={} version={} revision={} environmentGeneration={} documentCurrent={} sessionCurrent={} itemCount={} cached={}",
+            request.file,
+            request.documentVersion,
+            request.documentRevision,
+            environmentGeneration,
+            currentDocument,
+            currentSession,
+            result.items.size,
+            result.isCached,
+        )
         return CompletionResult.EMPTY
       }
+      if (result.items.isEmpty()) {
+        log.warn(
+            "Completion produced no items file={} cursor={} prefix={} version={} revision={} environmentGeneration={} cached={}",
+            request.file,
+            request.position.requireIndex(),
+            request.prefix,
+            request.documentVersion,
+            request.documentRevision,
+            environmentGeneration,
+            result.isCached,
+        )
+      }
 
-      // log.warn(result.toString())
       return result
     } finally {
       interactiveLease?.close()

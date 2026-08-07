@@ -82,6 +82,16 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       IServerSettings settings, CachedCompletion cache,
       Consumer<CachedCompletion> nextCacheConsumer
   ) {
+    if (completing.get()) {
+      // CompletionProvider is shared by JavaLanguageServer. Do not serialize here: blocking a
+      // newer keystroke behind an older request worsens latency. Log overlap so a request-scoped
+      // provider/session scheduler can be introduced only if this is observed in practice.
+      LOG.warn(
+          "Completion provider reset while another completion is active newCompilerHash={} previousCompilerHash={} cachePresent={}",
+          System.identityHashCode(compiler),
+          System.identityHashCode(this.compiler),
+          cache != null);
+    }
     this.compiler = compiler;
     this.cache = cache;
     this.nextCacheConsumer = nextCacheConsumer;
@@ -117,7 +127,17 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         return CompletionResult.EMPTY;
       }
       if (IdeLogConfig.shouldLogWarn()) {
-        LOG.warn("Completion busy and no fallback result is available tsContext={}", busyContext);
+        LOG.warn(
+            "Completion busy and no fallback result is available file={} cursor={} prefix={} version={} revision={} tsContext={} compilerHash={} cachePresent={} completing={}",
+            params.getFile(),
+            params.getPosition().requireIndex(),
+            params.getPrefix(),
+            params.getDocumentVersion(),
+            params.getDocumentRevision(),
+            busyContext,
+            System.identityHashCode(compiler),
+            cache != null,
+            completing.get());
         synchronizedTask.logStats();
       }
       return CompletionResult.EMPTY;
@@ -352,7 +372,26 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
  
     CompletionResult result = compileAndComplete(contentString, params, partialRequest);
     if (result == null) {
+      LOG.warn(
+          "Completion provider returned null result file={} cursor={} prefix={} version={} revision={} tsContext={}",
+          file,
+          cursor,
+          params.getPrefix(),
+          params.getDocumentVersion(),
+          params.getDocumentRevision(),
+          tsContext);
       result = CompletionResult.EMPTY;
+    }
+    if (result.getItems().isEmpty()) {
+      LOG.warn(
+          "Completion provider produced no items file={} cursor={} prefix={} version={} revision={} tsContext={} contextPresent={}",
+          file,
+          cursor,
+          params.getPrefix(),
+          params.getDocumentVersion(),
+          params.getDocumentRevision(),
+          tsContext,
+          compiler.compiler.currentContext != null);
     }
 
     abortIfCancelled();
