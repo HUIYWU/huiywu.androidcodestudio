@@ -272,6 +272,9 @@ internal class JavaSemanticSession internal constructor(
       return result.completeExceptionally(error)
     }
 
+    val subscriberCount: Int
+      get() = subscribers.size
+
     fun cancelWorkerIfUnobserved() {
       if (subscribers.isEmpty && !result.isDone) cancelWorker()
     }
