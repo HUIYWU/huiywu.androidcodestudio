@@ -238,6 +238,19 @@ class JavaLanguageServer : ILanguageServer {
         )
     val (state, created) = semanticSession.acquireInFlightCompletion(key)
     val subscriberLease = state.attachSubscriber()
+    if (IdeLogConfig.shouldLogInfo()) {
+      log.info(
+          "Completion in-flight {} file={} version={} revision={} environmentGeneration={} cursor={} prefixLength={} subscribers={}",
+          if (created) "leader" else "follower",
+          key.file,
+          key.documentVersion,
+          key.documentRevision,
+          key.environmentGeneration,
+          key.cursorIndex,
+          key.prefix.length,
+          state.subscriberCount,
+      )
+    }
     val deferred = CompletionResult()
     deferred.deferredResult = state.result
     deferred.deferredDetach = { subscriberLease.close() }
@@ -245,12 +258,38 @@ class JavaLanguageServer : ILanguageServer {
     if (created) {
       val workerRequest = copyCompletionRequest(request, state.workerCancelChecker)
       CoroutineScope(Dispatchers.Default).launch {
+        val startedAt = System.currentTimeMillis()
         val previousChecker = CompletionCancellation.install(state.workerCancelChecker)
         try {
           state.workerCancelChecker.abortIfCancelled()
-          state.complete(executeCompletion(workerRequest, semanticSession, environmentGeneration))
+          val result = executeCompletion(workerRequest, semanticSession, environmentGeneration)
+          state.complete(result)
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+                "Completion worker terminal=completed file={} version={} revision={} environmentGeneration={} cursor={} itemCount={} durationMs={}",
+                key.file,
+                key.documentVersion,
+                key.documentRevision,
+                key.environmentGeneration,
+                key.cursorIndex,
+                result.items.size,
+                System.currentTimeMillis() - startedAt,
+            )
+          }
         } catch (error: Throwable) {
           state.fail(error)
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+                "Completion worker terminal=failed file={} version={} revision={} environmentGeneration={} cursor={} errorType={} durationMs={}",
+                key.file,
+                key.documentVersion,
+                key.documentRevision,
+                key.environmentGeneration,
+                key.cursorIndex,
+                error.javaClass.simpleName,
+                System.currentTimeMillis() - startedAt,
+            )
+          }
         } finally {
           CompletionCancellation.restore(previousChecker)
           semanticSession.removeInFlightCompletion(state)
@@ -408,14 +447,52 @@ class JavaLanguageServer : ILanguageServer {
         )
     val (state, created) = semanticSession.acquireInFlightSignatureHelp(key)
     val subscriberLease = state.attachSubscriber()
+    if (IdeLogConfig.shouldLogInfo()) {
+      log.info(
+          "Signature Help in-flight {} file={} version={} revision={} environmentGeneration={} cursor={} subscribers={}",
+          if (created) "leader" else "follower",
+          key.file,
+          key.documentVersion,
+          key.documentRevision,
+          key.environmentGeneration,
+          key.cursorIndex,
+          state.subscriberCount,
+      )
+    }
     if (created) {
       val workerParams = copySignatureHelpParams(params, state.workerCancelChecker)
       CoroutineScope(Dispatchers.Default).launch {
+        val startedAt = System.currentTimeMillis()
         try {
           state.workerCancelChecker.abortIfCancelled()
-          state.complete(executeSignatureHelp(workerParams, semanticSession, environmentGeneration))
+          val result = executeSignatureHelp(workerParams, semanticSession, environmentGeneration)
+          state.complete(result)
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+                "Signature Help worker terminal=completed file={} version={} revision={} environmentGeneration={} cursor={} signatureCount={} durationMs={}",
+                key.file,
+                key.documentVersion,
+                key.documentRevision,
+                key.environmentGeneration,
+                key.cursorIndex,
+                result.signatures.size,
+                System.currentTimeMillis() - startedAt,
+            )
+          }
         } catch (error: Throwable) {
           state.fail(error)
+          if (IdeLogConfig.shouldLogInfo()) {
+            log.info(
+                "Signature Help worker terminal=failed file={} version={} revision={} environmentGeneration={} cursor={} errorType={} durationMs={}",
+                key.file,
+                key.documentVersion,
+                key.documentRevision,
+                key.environmentGeneration,
+                key.cursorIndex,
+                error.javaClass.simpleName,
+                System.currentTimeMillis() - startedAt,
+            )
+          }
         } finally {
           semanticSession.removeInFlightSignatureHelp(state)
         }
@@ -853,6 +930,13 @@ class JavaLanguageServer : ILanguageServer {
           // module's compiler. Re-arm the one-shot debounce so diagnostics eventually run once
           // interactive work has settled; do not retry ordinary NO_UPDATE outcomes.
           if (diagnosticProvider?.consumeInteractiveYield() == true) {
+            if (IdeLogConfig.shouldLogInfo()) {
+              log.info(
+                  "Analyze retry scheduled after interactive yield requestedGeneration={} file={}",
+                  requestedGeneration,
+                  fileToAnalyze,
+              )
+            }
             startOrRestartAnalyzeTimer(forceRestart = true)
           }
           return@launch
