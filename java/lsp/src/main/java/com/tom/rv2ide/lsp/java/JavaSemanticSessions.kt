@@ -18,6 +18,7 @@ package com.tom.rv2ide.lsp.java
 
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.lsp.models.CompletionResult
+import com.tom.rv2ide.lsp.models.SignatureHelp
 import com.tom.rv2ide.progress.ICancelChecker
 import com.tom.rv2ide.projects.ModuleProject
 import java.nio.file.Path
@@ -37,8 +38,8 @@ import java.util.concurrent.atomic.AtomicLong
  * this object small makes it safe to retain while a module is active on Android devices.
  *
  * [environmentGeneration] changes whenever classpath/Kotlin ABI/module state invalidates the
- * semantic environment. It is not yet part of a cache key in this phase; it establishes the
- * single source of truth required before request coalescing and semantic-result caching are added.
+ * semantic environment. It participates in completion request identity and remains the single
+ * source of truth for future stable semantic-result caching.
  */
 internal class JavaSemanticSession internal constructor(
     val module: ModuleProject,
@@ -57,10 +58,20 @@ internal class JavaSemanticSession internal constructor(
    * Marks a user-visible semantic request as active.
    *
    * Diagnostics consult this counter immediately before entering javac. They yield instead of
-   * queueing behind completion/signature work, which prevents background analysis from extending
-   * keystroke latency without adding a second compiler or scheduler thread.
+   * queueing behind foreground semantic work, which prevents background analysis from extending
+   * user-visible latency without adding a second compiler or scheduler thread.
    */
   fun beginInteractiveRequest(): AutoCloseable {
+    interactiveRequestCount.incrementAndGet()
+    return AutoCloseable { interactiveRequestCount.decrementAndGet() }
+  }
+
+  /**
+   * Marks an explicit editor action such as definition, references, or expand-selection as
+   * foreground semantic work. It intentionally shares the diagnostics-yield gate with interactive
+   * typing requests, while callers retain their own cancellation and result semantics.
+   */
+  fun beginUserActionRequest(): AutoCloseable {
     interactiveRequestCount.incrementAndGet()
     return AutoCloseable { interactiveRequestCount.decrementAndGet() }
   }
@@ -73,8 +84,8 @@ internal class JavaSemanticSession internal constructor(
    *
    * The key intentionally includes both version and revision. Version identifies the ordinary
    * editor edit sequence, while revision distinguishes lifecycles such as close/reopen where a
-   * document version can legitimately restart at zero. It is declaration-only for now: no worker
-   * is shared until UI waiter cancellation is separated from worker cancellation.
+   * document version can legitimately restart at zero. UI waiter cancellation is deliberately
+   * separated from the shared worker cancellation checker.
    */
   data class CompletionRequestKey(
       val file: Path,
@@ -110,11 +121,44 @@ internal class JavaSemanticSession internal constructor(
     }
   }
 
+  /** Immutable identity for a shareable Signature Help computation. */
+  data class SignatureRequestKey(
+      val file: Path,
+      val documentVersion: Int,
+      val documentRevision: Long,
+      val environmentGeneration: Long,
+      val cursorIndex: Long,
+  ) {
+    init {
+      require(documentVersion >= 0) { "A signature key requires a known document version" }
+      require(documentRevision >= 0L) { "A signature key requires a known document revision" }
+      require(cursorIndex >= 0L) { "A signature key requires a valid cursor index" }
+    }
+
+    companion object {
+      fun create(
+          file: Path,
+          documentVersion: Int,
+          documentRevision: Long,
+          environmentGeneration: Long,
+          cursorIndex: Long,
+      ): SignatureRequestKey =
+          SignatureRequestKey(
+              file.normalize(),
+              documentVersion,
+              documentRevision,
+              environmentGeneration,
+              cursorIndex,
+          )
+    }
+  }
+
   /**
-   * Tracks UI subscriptions independently from the future shared worker cancellation policy.
+   * Tracks UI subscriptions independently from the shared worker cancellation policy.
    *
-   * This is intentionally not connected to javac yet. It records the required invariant for the
-   * next phase: detaching one UI waiter must never cancel a computation still observed by another.
+   * Completion subscribers use the deferred publisher bridge; Signature Help subscribers await the
+   * future from cancellable coroutines. Detaching either kind of UI waiter must never cancel a
+   * computation still observed by another.
    */
   internal class CompletionSubscribers {
     private val count = AtomicInteger(0)
@@ -140,9 +184,8 @@ internal class JavaSemanticSession internal constructor(
    * Session-owned in-flight completion state.
    *
    * The [workerCancelChecker] belongs to the computation, never to a UI CompletionThread. A
-   * subscriber can detach without stopping the worker while another subscriber remains. This type
-   * is intentionally not yet awaited from UI threads; it establishes cleanup and ownership rules
-   * before a cancellable, non-blocking waiter bridge is introduced.
+   * subscriber can detach without stopping the worker while another subscriber remains. The
+   * deferred UI bridge observes [result] without blocking the editor CompletionThread.
    */
   internal class InFlightCompletion internal constructor(
       val key: CompletionRequestKey,
@@ -199,20 +242,85 @@ internal class JavaSemanticSession internal constructor(
 
   private val inFlightCompletions = ConcurrentHashMap<CompletionRequestKey, InFlightCompletion>()
 
+  /** Signature counterpart of [InFlightCompletion], with an independent shared worker checker. */
+  internal class InFlightSignatureHelp internal constructor(
+      val key: SignatureRequestKey,
+  ) {
+    val workerCancelChecker = ICancelChecker.Default()
+    val result = CompletableFuture<SignatureHelp>()
+    private val subscribers = CompletionSubscribers()
+    private val terminal = AtomicBoolean(false)
+
+    fun attachSubscriber(): AutoCloseable {
+      val subscriberLease = subscribers.attach()
+      val detached = AtomicBoolean(false)
+      return AutoCloseable {
+        if (detached.compareAndSet(false, true)) {
+          subscriberLease.close()
+          cancelWorkerIfUnobserved()
+        }
+      }
+    }
+
+    fun complete(workerResult: SignatureHelp): Boolean {
+      if (!terminal.compareAndSet(false, true)) return false
+      return result.complete(workerResult)
+    }
+
+    fun fail(error: Throwable): Boolean {
+      if (!terminal.compareAndSet(false, true)) return false
+      return result.completeExceptionally(error)
+    }
+
+    fun cancelWorkerIfUnobserved() {
+      if (subscribers.isEmpty && !result.isDone) cancelWorker()
+    }
+
+    fun cancelWorker() {
+      workerCancelChecker.cancel()
+      fail(CancellationException("Signature Help worker cancelled"))
+    }
+  }
+
+  private val inFlightSignatureHelp = ConcurrentHashMap<SignatureRequestKey, InFlightSignatureHelp>()
+
   /**
-   * Returns the only in-flight state for [key], together with whether this caller created it.
+   * Returns the only active in-flight state for [key], together with whether this caller created it.
    *
-   * A later integration must execute the worker only when [created] is true and remove the exact
-   * state in a completion callback. This avoids replacing an active computation for the same key.
+   * The caller starts a worker only when [created] is true and removes that exact state in its
+   * completion callback. Terminal states are atomically replaced so a new request cannot inherit a
+   * just-cancelled worker before its finally block removes the old entry.
    */
   fun acquireInFlightCompletion(key: CompletionRequestKey): Pair<InFlightCompletion, Boolean> {
-    val created = InFlightCompletion(key)
-    val existing = inFlightCompletions.putIfAbsent(key, created)
-    return if (existing == null) created to true else existing to false
+    while (true) {
+      val created = InFlightCompletion(key)
+      val existing = inFlightCompletions.putIfAbsent(key, created)
+      if (existing == null) return created to true
+      if (!existing.result.isDone) return existing to false
+      // A cancelled/failed worker can remain briefly until its finally block runs. Replace that
+      // exact terminal state so a new subscriber never inherits an obsolete cancellation.
+      if (inFlightCompletions.replace(key, existing, created)) return created to true
+    }
   }
 
   fun removeInFlightCompletion(state: InFlightCompletion) {
     inFlightCompletions.remove(state.key, state)
+  }
+
+  fun acquireInFlightSignatureHelp(
+      key: SignatureRequestKey,
+  ): Pair<InFlightSignatureHelp, Boolean> {
+    while (true) {
+      val created = InFlightSignatureHelp(key)
+      val existing = inFlightSignatureHelp.putIfAbsent(key, created)
+      if (existing == null) return created to true
+      if (!existing.result.isDone) return existing to false
+      if (inFlightSignatureHelp.replace(key, existing, created)) return created to true
+    }
+  }
+
+  fun removeInFlightSignatureHelp(state: InFlightSignatureHelp) {
+    inFlightSignatureHelp.remove(state.key, state)
   }
 
   /**
@@ -229,13 +337,25 @@ internal class JavaSemanticSession internal constructor(
         }
       }
     }
+    inFlightSignatureHelp.values.forEach { state ->
+      if (state.key.file == normalizedFile && state.key.documentRevision < revision) {
+        if (inFlightSignatureHelp.remove(state.key, state)) {
+          state.cancelWorker()
+        }
+      }
+    }
   }
 
-  /** A closed document has no valid completion consumer regardless of its last revision. */
+  /** A closed document has no valid Completion or Signature Help consumer. */
   fun cancelInFlightCompletionsForFile(file: Path) {
     val normalizedFile = file.normalize()
     inFlightCompletions.values.forEach { state ->
       if (state.key.file == normalizedFile && inFlightCompletions.remove(state.key, state)) {
+        state.cancelWorker()
+      }
+    }
+    inFlightSignatureHelp.values.forEach { state ->
+      if (state.key.file == normalizedFile && inFlightSignatureHelp.remove(state.key, state)) {
         state.cancelWorker()
       }
     }
@@ -244,6 +364,8 @@ internal class JavaSemanticSession internal constructor(
   private fun cancelInFlightCompletions() {
     inFlightCompletions.values.forEach { it.cancelWorker() }
     inFlightCompletions.clear()
+    inFlightSignatureHelp.values.forEach { it.cancelWorker() }
+    inFlightSignatureHelp.clear()
   }
 
   fun invalidateEnvironment(): Long {

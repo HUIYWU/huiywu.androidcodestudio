@@ -46,6 +46,7 @@ class JavaDiagnosticProvider {
   private val analyzeTimestamps = mutableMapOf<Path, Instant>()
   private val cachedDiagnostics = mutableMapOf<Path, DiagnosticResult>()
   private val analyzeGeneration = AtomicLong(0)
+  private val retryAfterInteractiveYield = AtomicBoolean(false)
   private var analyzing = AtomicBoolean(false)
   private var analyzingThread: AnalyzingThread? = null
 
@@ -124,6 +125,9 @@ class JavaDiagnosticProvider {
   fun isAnalyzing(): Boolean {
     return this.analyzing.get()
   }
+
+  /** Returns true once when a background analysis yielded to an interactive semantic request. */
+  fun consumeInteractiveYield(): Boolean = retryAfterInteractiveYield.getAndSet(false)
 
   fun cancel() {
     this.analyzingThread?.cancel()
@@ -220,9 +224,10 @@ class JavaDiagnosticProvider {
                   return
                 }
                 // Diagnostics are speculative background work. Yield before entering javac when a
-                // completion or signature request is active for this module, rather than waiting
+                // foreground semantic request is active for this module, rather than waiting
                 // behind it and competing for the same reusable compiler.
                 if (session.hasInteractiveRequest) {
+                  retryAfterInteractiveYield.set(true)
                   if (IdeLogConfig.shouldLogInfo()) {
                     log.info("Analyze yielded to interactive semantic request file={}", file)
                   }

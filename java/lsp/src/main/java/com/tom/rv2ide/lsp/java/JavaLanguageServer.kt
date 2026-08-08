@@ -80,10 +80,13 @@ import java.util.Objects
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -173,8 +176,10 @@ class JavaLanguageServer : ILanguageServer {
     //    Maybe this could be improved by using data from the AndroidModule workspace model
     clearCachesForPaths { path: String -> path.endsWith("/R.jar") }
 
-    // Clear module semantic sessions and their cached reusable compilers.
+    // Clear module semantic sessions and their cached reusable compilers. Completion candidates are
+    // classpath-sensitive as well, so no cached result may cross a workspace environment reset.
     JavaSemanticSessions.destroyAll()
+    cachedCompletion.set(CachedCompletion.EMPTY)
 
     // Cache classpath locations for eagerly active modules only.
     for (subModule in workspace.getSubProjects()) {
@@ -330,42 +335,125 @@ class JavaLanguageServer : ILanguageServer {
   }
 
   override suspend fun findReferences(params: ReferenceParams): ReferenceResult {
-    val compiler = getCompiler(params.file)
-    return if (!settings.referencesEnabled()) {
-      ReferenceResult(emptyList())
-    } else ReferenceProvider(compiler, params.cancelChecker).findReferences(params)
+    if (!settings.referencesEnabled()) {
+      return ReferenceResult(emptyList())
+    }
+    val semanticSession = getSemanticSession(params.file)
+    val foregroundLease = semanticSession?.beginUserActionRequest()
+    try {
+      val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
+      return ReferenceProvider(compiler, params.cancelChecker).findReferences(params)
+    } finally {
+      foregroundLease?.close()
+    }
   }
 
   override suspend fun findDefinition(params: DefinitionParams): DefinitionResult {
-    val compiler = getCompiler(params.file)
-    return if (!settings.definitionsEnabled()) {
-      DefinitionResult(emptyList())
-    } else DefinitionProvider(compiler, settings, params.cancelChecker).findDefinition(params)
+    if (!settings.definitionsEnabled()) {
+      return DefinitionResult(emptyList())
+    }
+    val semanticSession = getSemanticSession(params.file)
+    val foregroundLease = semanticSession?.beginUserActionRequest()
+    try {
+      val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
+      return DefinitionProvider(compiler, settings, params.cancelChecker).findDefinition(params)
+    } finally {
+      foregroundLease?.close()
+    }
   }
 
   override suspend fun expandSelection(params: ExpandSelectionParams): Range {
-    val compiler = getCompiler(params.file)
-    return if (!settings.smartSelectionsEnabled()) {
-      params.selection
-    } else JavaSelectionProvider(compiler).expandSelection(params)
+    if (!settings.smartSelectionsEnabled()) {
+      return params.selection
+    }
+    val semanticSession = getSemanticSession(params.file)
+    val foregroundLease = semanticSession?.beginUserActionRequest()
+    try {
+      val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
+      return JavaSelectionProvider(compiler).expandSelection(params)
+    } finally {
+      foregroundLease?.close()
+    }
   }
 
   override suspend fun signatureHelp(params: SignatureHelpParams): SignatureHelp {
     lastInteractiveRequestAt.set(System.currentTimeMillis())
-    if (!isCurrentDocument(params.file, params.documentVersion, params.documentRevision)) {
+    if (
+        !settings.signatureHelpEnabled() ||
+            !isCurrentDocument(params.file, params.documentVersion, params.documentRevision)
+    ) {
       return SignatureHelp(emptyList(), -1, -1)
     }
     val semanticSession = getSemanticSession(params.file)
-    val environmentGeneration = semanticSession?.environmentGeneration
+    // Preserve legacy behavior where no module session/environment identity is available. Unknown
+    // document stamps are likewise kept on the non-shared compatibility path: a strict key must
+    // never merge requests whose source snapshot cannot be proven identical.
+    if (
+        semanticSession == null ||
+            params.documentVersion < 0 ||
+            params.documentRevision < 0L ||
+            params.position.requireIndex() < 0
+    ) {
+      return executeSignatureHelp(params, semanticSession, semanticSession?.environmentGeneration)
+    }
+
+    val environmentGeneration = semanticSession.environmentGeneration
+    val key =
+        JavaSemanticSession.SignatureRequestKey.create(
+            params.file,
+            params.documentVersion,
+            params.documentRevision,
+            environmentGeneration,
+            params.position.requireIndex().toLong(),
+        )
+    val (state, created) = semanticSession.acquireInFlightSignatureHelp(key)
+    val subscriberLease = state.attachSubscriber()
+    if (created) {
+      val workerParams = copySignatureHelpParams(params, state.workerCancelChecker)
+      CoroutineScope(Dispatchers.Default).launch {
+        try {
+          state.workerCancelChecker.abortIfCancelled()
+          state.complete(executeSignatureHelp(workerParams, semanticSession, environmentGeneration))
+        } catch (error: Throwable) {
+          state.fail(error)
+        } finally {
+          semanticSession.removeInFlightSignatureHelp(state)
+        }
+      }
+    }
+    return awaitSignatureHelp(state.result, subscriberLease)
+  }
+
+  private suspend fun awaitSignatureHelp(
+      result: java.util.concurrent.CompletableFuture<SignatureHelp>,
+      subscriberLease: AutoCloseable,
+  ): SignatureHelp =
+      suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { subscriberLease.close() }
+        result.whenComplete { value, error ->
+          try {
+            if (error == null && value != null) {
+              continuation.resume(value)
+            } else if (error != null) {
+              continuation.resumeWithException(error)
+            } else {
+              continuation.resume(SignatureHelp(emptyList(), -1, -1))
+            }
+          } finally {
+            subscriberLease.close()
+          }
+        }
+      }
+
+  private fun executeSignatureHelp(
+      params: SignatureHelpParams,
+      semanticSession: JavaSemanticSession?,
+      environmentGeneration: Long?,
+  ): SignatureHelp {
     val interactiveLease = semanticSession?.beginInteractiveRequest()
     try {
       val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
-      val result =
-          if (!settings.signatureHelpEnabled()) {
-            SignatureHelp(emptyList(), -1, -1)
-          } else {
-            SignatureProvider(compiler, params.cancelChecker).signatureHelp(params)
-          }
+      val result = SignatureProvider(compiler, params.cancelChecker).signatureHelp(params)
       return if (
           isCurrentDocument(params.file, params.documentVersion, params.documentRevision) &&
               isCurrentSemanticSession(semanticSession, environmentGeneration)
@@ -377,6 +465,26 @@ class JavaLanguageServer : ILanguageServer {
     } finally {
       interactiveLease?.close()
     }
+  }
+
+  private fun copySignatureHelpParams(
+      source: SignatureHelpParams,
+      cancelChecker: com.tom.rv2ide.progress.ICancelChecker,
+  ): SignatureHelpParams {
+    return SignatureHelpParams(
+            source.file,
+            com.tom.rv2ide.models.Position(
+                source.position.line,
+                source.position.column,
+                source.position.requireIndex(),
+            ),
+            source.content?.toString(),
+            cancelChecker,
+        )
+        .also {
+          it.documentVersion = source.documentVersion
+          it.documentRevision = source.documentRevision
+        }
   }
 
   private fun isCurrentDocument(file: Path, version: Int, revision: Long): Boolean {
@@ -683,6 +791,8 @@ class JavaLanguageServer : ILanguageServer {
   @Suppress("unused")
   fun onLazyModuleEvicted(event: LazyModuleEvictedEvent) {
     JavaSemanticSessions.destroy(event.module)
+    // Cached completion candidates may depend on the evicted module's classpath/type index.
+    cachedCompletion.set(CachedCompletion.EMPTY)
   }
 
   private fun analyzeSelected() {
@@ -739,6 +849,12 @@ class JavaLanguageServer : ILanguageServer {
           return@launch
         }
         if (result == DiagnosticResult.NO_UPDATE) {
+          // JavaDiagnosticProvider yields only when a live completion/signature request owns this
+          // module's compiler. Re-arm the one-shot debounce so diagnostics eventually run once
+          // interactive work has settled; do not retry ordinary NO_UPDATE outcomes.
+          if (diagnosticProvider?.consumeInteractiveYield() == true) {
+            startOrRestartAnalyzeTimer(forceRestart = true)
+          }
           return@launch
         }
         withContext(Dispatchers.Main) {

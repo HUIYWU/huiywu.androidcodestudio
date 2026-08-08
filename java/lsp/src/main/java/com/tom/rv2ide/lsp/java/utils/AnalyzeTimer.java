@@ -31,8 +31,9 @@ public class AnalyzeTimer {
   public static final long DEFAULT_INTERVAL = 400;
   @NonNull private final Handler timerHandler;
   @NonNull private final Runnable timerCallback;
+  @NonNull private final Runnable scheduledCallback;
   private long interval;
-  private boolean started;
+  private volatile boolean started;
 
   /**
    * Creates a new AnalyzeTimer instance.
@@ -45,6 +46,13 @@ public class AnalyzeTimer {
     this.timerCallback = timerCallback;
 
     Objects.requireNonNull(this.timerCallback, "Callback cannot be null");
+    this.scheduledCallback =
+        () -> {
+          // This is a one-shot debounce timer. Mark it inactive before invoking client code so a
+          // callback that decides to defer analysis can schedule its own next attempt.
+          started = false;
+          timerCallback.run();
+        };
   }
 
   /**
@@ -76,14 +84,14 @@ public class AnalyzeTimer {
 
   /** Restarts the timer. */
   public void restart() {
-    timerHandler.removeCallbacks(timerCallback);
-    timerHandler.postDelayed(timerCallback, interval);
+    timerHandler.removeCallbacks(scheduledCallback);
+    timerHandler.postDelayed(scheduledCallback, interval);
     started = true;
   }
 
   /** Shutdown the timer. Cancels any running timers. */
   public void cancel() {
-    timerHandler.removeCallbacks(timerCallback);
+    timerHandler.removeCallbacks(scheduledCallback);
     started = false;
   }
 

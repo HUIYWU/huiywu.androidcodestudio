@@ -295,6 +295,7 @@ constructor(
     val cancelChecker = JobCancelChecker().also { this.sigHelpCancelChecker = it }
     val requestFile = file.toPath()
     val requestVersion = fileVersion
+    val requestRevision = documentRevision
     val requestPosition = cursorLSPPosition
     val requestContent = text.toString()
 
@@ -310,14 +311,21 @@ constructor(
                         position = requestPosition,
                         content = requestContent,
                         cancelChecker = cancelChecker,
-                    ).apply {
-                      documentVersion = requestVersion
-                    }
+                    )
+                        .apply {
+                          documentVersion = requestVersion
+                          documentRevision = requestRevision
+                        }
                 languageServer.signatureHelp(params)
               }
 
           withContext(Dispatchers.Main) {
-            if (!isReleased && this@IDEEditor.file?.toPath() == requestFile && fileVersion == requestVersion) {
+            if (
+                !isReleased &&
+                    this@IDEEditor.file?.toPath() == requestFile &&
+                    fileVersion == requestVersion &&
+                    documentRevision == requestRevision
+            ) {
               showSignatureHelp(help)
             }
           }
@@ -473,6 +481,8 @@ constructor(
     selectionChangeRunner = null
 
     setupTsLanguageJob?.cancel("Editor is releasing resources.")
+    sigHelpCancelChecker?.cancel()
+    sigHelpCancelChecker = null
 
     if (editorScope.isActive) {
       editorScope.cancelIfActive("Editor is releasing resources.")
