@@ -47,6 +47,7 @@ import com.tom.rv2ide.lsp.java.providers.ReferenceProvider
 import com.tom.rv2ide.lsp.java.providers.SignatureProvider
 import com.tom.rv2ide.lsp.java.providers.snippet.JavaSnippetRepository.init
 import com.tom.rv2ide.lsp.java.utils.AnalyzeTimer
+import com.tom.rv2ide.progress.CompletionCancellation
 import com.tom.rv2ide.preferences.internal.JavaPreferences
 import com.tom.rv2ide.lsp.java.utils.CancelChecker.Companion.isCancelled
 import com.tom.rv2ide.lsp.models.CodeFormatResult
@@ -77,6 +78,7 @@ import com.tom.rv2ide.utils.VMUtils
 import java.nio.file.Path
 import java.util.Objects
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
@@ -200,37 +202,76 @@ class JavaLanguageServer : ILanguageServer {
       )
       return CompletionResult.EMPTY
     }
+    if (!settings.completionsEnabled() || !DocumentUtils.isJavaFile(request.file)) {
+      log.warn(
+          "Completion disabled or unsupported file={} completionsEnabled={} canComplete={} version={} revision={}",
+          request.file,
+          settings.completionsEnabled(),
+          DocumentUtils.isJavaFile(request.file),
+          request.documentVersion,
+          request.documentRevision,
+      )
+      return CompletionResult.EMPTY
+    }
+
     val semanticSession = getSemanticSession(request.file)
-    val environmentGeneration = semanticSession?.environmentGeneration
-    val interactiveLease = semanticSession?.beginInteractiveRequest()
-    try {
-      val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
-      if (!settings.completionsEnabled() || !DocumentUtils.isJavaFile(request.file)) {
-        log.warn(
-            "Completion disabled or unsupported file={} completionsEnabled={} canComplete={} version={} revision={}",
+    // No module session means there is no stable environment generation to put in a share key.
+    // Preserve the old synchronous NO_MODULE_COMPILER behavior for that exceptional path.
+    if (semanticSession == null) {
+      return executeCompletion(request, null, null)
+    }
+
+    val environmentGeneration = semanticSession.environmentGeneration
+    val key =
+        JavaSemanticSession.CompletionRequestKey.create(
             request.file,
-            settings.completionsEnabled(),
-            DocumentUtils.isJavaFile(request.file),
             request.documentVersion,
             request.documentRevision,
+            environmentGeneration,
+            request.position.requireIndex(),
+            request.prefix,
         )
-        return CompletionResult.EMPTY
-      }
+    val (state, created) = semanticSession.acquireInFlightCompletion(key)
+    val subscriberLease = state.attachSubscriber()
+    val deferred = CompletionResult()
+    deferred.deferredResult = state.result
+    deferred.deferredDetach = { subscriberLease.close() }
 
+    if (created) {
+      val workerRequest = copyCompletionRequest(request, state.workerCancelChecker)
+      CoroutineScope(Dispatchers.Default).launch {
+        val previousChecker = CompletionCancellation.install(state.workerCancelChecker)
+        try {
+          state.workerCancelChecker.abortIfCancelled()
+          state.complete(executeCompletion(workerRequest, semanticSession, environmentGeneration))
+        } catch (error: Throwable) {
+          state.fail(error)
+        } finally {
+          CompletionCancellation.restore(previousChecker)
+          semanticSession.removeInFlightCompletion(state)
+        }
+      }
+    }
+    return deferred
+  }
+
+  /** Runs only on the independent completion worker (or the legacy no-module fallback path). */
+  private fun executeCompletion(
+      request: CompletionParams,
+      semanticSession: JavaSemanticSession?,
+      environmentGeneration: Long?,
+  ): CompletionResult {
+    val interactiveLease = semanticSession?.beginInteractiveRequest()
+    try {
       if (diagnosticProvider!!.isAnalyzing()) {
         diagnosticProvider.cancel()
       }
-
-      // The provider owns only immutable request wiring. The heavyweight reusable compiler and
-      // versioned cache remain owned by the module session and language server respectively.
+      val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
       val completionProvider =
           CompletionProvider(compiler, settings, cachedCompletion.get()) { completion ->
             updateCachedCompletion(completion, request, semanticSession, environmentGeneration)
           }
       val result = completionProvider.complete(request)
-
-      // The document may have changed while javac was computing the result. Do not let an older
-      // completion request publish candidates for the current editor state.
       val currentDocument =
           isCurrentDocument(request.file, request.documentVersion, request.documentRevision)
       val currentSession = isCurrentSemanticSession(semanticSession, environmentGeneration)
@@ -260,11 +301,32 @@ class JavaLanguageServer : ILanguageServer {
             result.isCached,
         )
       }
-
       return result
     } finally {
       interactiveLease?.close()
     }
+  }
+
+  /** Copies all mutable request fields before the UI CompletionThread returns. */
+  private fun copyCompletionRequest(
+      source: CompletionParams,
+      cancelChecker: com.tom.rv2ide.progress.ICancelChecker,
+  ): CompletionParams {
+    return CompletionParams(
+            com.tom.rv2ide.models.Position(
+                source.position.line,
+                source.position.column,
+                source.position.requireIndex(),
+            ),
+            source.file,
+            cancelChecker,
+        )
+        .also {
+          it.content = source.content?.toString()
+          it.prefix = source.prefix
+          it.documentVersion = source.documentVersion
+          it.documentRevision = source.documentRevision
+        }
   }
 
   override suspend fun findReferences(params: ReferenceParams): ReferenceResult {

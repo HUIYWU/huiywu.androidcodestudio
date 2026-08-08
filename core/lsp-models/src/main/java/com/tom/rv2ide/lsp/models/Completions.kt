@@ -37,6 +37,7 @@ import io.github.rosemoe.sora.text.CharPosition
 import io.github.rosemoe.sora.text.Content
 import io.github.rosemoe.sora.widget.CodeEditor
 import java.nio.file.Path
+import java.util.concurrent.CompletableFuture
 import java.util.function.Consumer
 import org.slf4j.LoggerFactory
 
@@ -81,6 +82,18 @@ open class CompletionResult(items: Collection<CompletionItem>) {
 
   var isIncomplete = this.items.size < items.size
   var isCached = false
+
+  /**
+   * Optional non-blocking completion delivery. The immediate item list remains empty while this
+   * future is pending; editor clients must keep their publisher alive and consume it asynchronously.
+   */
+  var deferredResult: CompletableFuture<CompletionResult>? = null
+
+  /** Internal lease release for a deferred consumer; it must be safe to invoke more than once. */
+  var deferredDetach: (() -> Unit)? = null
+
+  val isDeferred: Boolean
+    get() = deferredResult != null
 
   companion object {
     const val MAX_ITEMS = 50

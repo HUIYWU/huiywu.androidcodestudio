@@ -228,28 +228,38 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
     cancelCompletion()
     requestTime = System.nanoTime()
     currentSelection = -1
-
-    publisher =
+    lateinit var requestPublisher: IDECompletionPublisher
+    requestPublisher =
         IDECompletionPublisher(
             editor.handler,
             {
               val currentPublisher = publisher as? IDECompletionPublisher ?: return@IDECompletionPublisher
               if (
-                  currentPublisher.generation != latestPublisherGeneration ||
-                      currentPublisher.isCancelled()
+                  currentPublisher !== requestPublisher ||
+                      requestPublisher.generation != latestPublisherGeneration ||
+                      requestPublisher.isCancelled()
               ) {
                 if (IdeLogConfig.shouldLogDebug()) {
                   log.debug(
-                      "Dropping stale completion UI update: generation={}, latestGeneration={}, cancelled={}",
+                      "Dropping stale completion UI update: callbackGeneration={}, currentGeneration={}, latestGeneration={}, cancelled={}",
+                      requestPublisher.generation,
                       currentPublisher.generation,
                       latestPublisherGeneration,
-                      currentPublisher.isCancelled(),
+                      requestPublisher.isCancelled(),
                   )
                 }
                 return@IDECompletionPublisher
               }
 
-              val items = publisher.items
+              // Sora 0.23.7 invokes this callback once after CompletionThread returns. A deferred
+              // request intentionally has no candidates yet; do not clear/hide the window before
+              // the session worker publishes its result through this same publisher.
+              if (requestPublisher.consumeDeferredResultMarker()) {
+                return@IDECompletionPublisher
+              }
+
+              val items = requestPublisher.items
+
 
               this.items.apply {
                 clear()
@@ -281,6 +291,7 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
             },
             editor.editorLanguage.interruptionLevel,
         )
+    publisher = requestPublisher
 
     publisher.setUpdateThreshold(1)
     latestPublisherGeneration = (publisher as IDECompletionPublisher).generation

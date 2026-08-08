@@ -152,7 +152,16 @@ internal class JavaSemanticSession internal constructor(
     private val subscribers = CompletionSubscribers()
     private val terminal = AtomicBoolean(false)
 
-    fun attachSubscriber(): AutoCloseable = subscribers.attach()
+    fun attachSubscriber(): AutoCloseable {
+      val subscriberLease = subscribers.attach()
+      val detached = AtomicBoolean(false)
+      return AutoCloseable {
+        if (detached.compareAndSet(false, true)) {
+          subscriberLease.close()
+          cancelWorkerIfUnobserved()
+        }
+      }
+    }
 
     val subscriberCount: Int
       get() = subscribers.size

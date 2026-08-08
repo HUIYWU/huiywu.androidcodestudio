@@ -66,7 +66,7 @@ internal class CommonCompletionProvider(
       documentVersion: Int,
       documentRevision: Long,
       prefixMatcher: (Char) -> Boolean,
-  ): List<CompletionItem> {
+  ): CompletionResult {
     val completionResult =
         try {
           setupLookupForCompletion(file)
@@ -125,10 +125,6 @@ internal class CommonCompletionProvider(
           CompletionResult.EMPTY
         }
 
-    if (completionResult == CompletionResult.EMPTY) {
-      return listOf()
-    }
-
-    return completionResult.items
+    return completionResult
   }
 }

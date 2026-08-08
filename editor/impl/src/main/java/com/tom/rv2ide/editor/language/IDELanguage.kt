@@ -30,6 +30,7 @@ import io.github.rosemoe.sora.lang.format.Formatter
 import io.github.rosemoe.sora.text.CharPosition
 import io.github.rosemoe.sora.text.ContentReference
 import java.nio.file.Paths
+import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
 /**
@@ -82,12 +83,43 @@ abstract class IDELanguage : Language {
     val file = Paths.get(path)
     val documentVersion = extraArguments.getInt(IEditor.KEY_DOCUMENT_VERSION, -1)
     val documentRevision = extraArguments.getLong(IEditor.KEY_DOCUMENT_REVISION, -1L)
-    val completionItems =
+    val completionResult =
         completionProvider.complete(content, file, position, documentVersion, documentRevision) {
           checkIsCompletionChar(it)
         }
+    val idePublisher = publisher as IDECompletionPublisher
     publisher.setUpdateThreshold(1)
-    (publisher as IDECompletionPublisher).addLSPItems(completionItems)
+    val deferred = completionResult.deferredResult
+    if (deferred == null) {
+      idePublisher.addLSPItems(completionResult.items)
+      return
+    }
+
+    // Sora 0.23.7 calls updateList() once when this CompletionThread returns. Keep the publisher
+    // alive for the session worker instead of letting that empty immediate result hide the window.
+    idePublisher.awaitDeferredResult()
+    val detached = AtomicBoolean(false)
+    fun detach() {
+      if (detached.compareAndSet(false, true)) {
+        completionResult.deferredDetach?.invoke()
+      }
+    }
+    idePublisher.onCancelled(::detach)
+    deferred.whenComplete { result, error ->
+      try {
+        if (error == null && result != null && !idePublisher.isCancelled()) {
+          // Keep the marker until the callback observes these items. The worker can finish before
+          // Sora 0.23.7 performs CompletionThread's initial updateList(true) callback.
+          idePublisher.addLSPItems(result.items)
+        } else {
+          // A failed or cancelled worker must not leave the initial Sora callback permanently
+          // marked as deferred. If it has not run yet, Sora will hide the normal empty result.
+          idePublisher.completeDeferredResult()
+        }
+      } finally {
+        detach()
+      }
+    }
   }
 
   /**

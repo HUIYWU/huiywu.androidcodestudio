@@ -78,6 +78,7 @@ dependencies {
   implementation(projects.core.lspApi)
   implementation(projects.core.resources)
   implementation(projects.editor.api)
+  implementation(projects.utilities.shared)
   implementation(projects.java.javacServices)
 
   implementation(libs.composite.javac)
