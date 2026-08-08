@@ -228,7 +228,7 @@ class JavaLanguageServer : ILanguageServer {
             request.documentVersion,
             request.documentRevision,
             environmentGeneration,
-            request.position.requireIndex(),
+            request.position.requireIndex().toLong(),
             request.prefix,
         )
     val (state, created) = semanticSession.acquireInFlightCompletion(key)
