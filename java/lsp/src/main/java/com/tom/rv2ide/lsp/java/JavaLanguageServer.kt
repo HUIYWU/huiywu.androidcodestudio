@@ -963,6 +963,17 @@ class JavaLanguageServer : ILanguageServer {
                 currentGeneration = currentGeneration,
                 retryAfterInteractiveYield = retryAfterInteractiveYield,
             )
+        if (IdeLogConfig.shouldLogInfo()) {
+          log.info(
+              "Diagnostics dispatch action={} file={} requestedGeneration={} currentGeneration={} resultKind={} retryAfterInteractiveYield={}",
+              dispatch,
+              fileToAnalyze,
+              requestedGeneration,
+              currentGeneration,
+              if (result == DiagnosticResult.NO_UPDATE) "no-update" else "result",
+              retryAfterInteractiveYield,
+          )
+        }
         when (dispatch) {
           DiagnosticDispatchDecision.Action.DROP -> return@launch
           DiagnosticDispatchDecision.Action.RETRY -> {

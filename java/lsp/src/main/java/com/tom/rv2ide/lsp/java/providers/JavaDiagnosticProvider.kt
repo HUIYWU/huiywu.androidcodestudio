@@ -80,10 +80,19 @@ class JavaDiagnosticProvider {
                 cachedResult.documentRevision == activeSnapshot.revision)
 
     if (analyzedAt?.isAfter(modifiedAt) == true && cacheMatchesDocument) {
-      if (IdeLogConfig.shouldLogDebug()) {
-        log.debug("Using cached analyze results...")
+      val result = cachedResult ?: DiagnosticResult.NO_UPDATE
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "Diagnostics cache-hit file={} version={} revision={} environmentGeneration={} resultKind={} diagnosticCount={}",
+            file,
+            activeSnapshot?.version ?: DiagnosticResult.UNKNOWN_DOCUMENT_VERSION,
+            activeSnapshot?.revision ?: DiagnosticResult.UNKNOWN_DOCUMENT_REVISION,
+            environmentGeneration,
+            if (result == DiagnosticResult.NO_UPDATE) "no-update" else "result",
+            result.diagnostics.size,
+        )
       }
-      return cachedResult ?: DiagnosticResult.NO_UPDATE
+      return result
     }
 
     analyzingThread?.let { analyzingThread ->
@@ -97,6 +106,7 @@ class JavaDiagnosticProvider {
     }
 
     val requestedGeneration = analyzeGeneration.incrementAndGet()
+    val startedAt = System.currentTimeMillis()
     analyzing.set(true)
 
     val analyzingThread =
@@ -106,10 +116,24 @@ class JavaDiagnosticProvider {
           it.join()
         }
 
-    return analyzingThread.result.also {
+    return analyzingThread.result.also { result ->
       this.analyzingThread = null
-      if (requestedGeneration == analyzeGeneration.get() && it != DiagnosticResult.NO_UPDATE) {
-        cachedDiagnostics[file] = it
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "Diagnostics terminal file={} version={} revision={} environmentGeneration={} requestedGeneration={} currentGeneration={} resultKind={} diagnosticCount={} durationMs={}",
+            file,
+            result.documentVersion,
+            result.documentRevision,
+            environmentGeneration,
+            requestedGeneration,
+            analyzeGeneration.get(),
+            if (result == DiagnosticResult.NO_UPDATE) "no-update" else "result",
+            result.diagnostics.size,
+            System.currentTimeMillis() - startedAt,
+        )
+      }
+      if (requestedGeneration == analyzeGeneration.get() && result != DiagnosticResult.NO_UPDATE) {
+        cachedDiagnostics[file] = result
         analyzeTimestamps[file] = Instant.now()
       } else if (requestedGeneration != analyzeGeneration.get() && IdeLogConfig.shouldLogInfo()) {
         log.info(
