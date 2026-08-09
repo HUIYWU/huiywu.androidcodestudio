@@ -611,13 +611,18 @@ class JavaLanguageServer : ILanguageServer {
                   stableInputShape = task.inputShape,
                   stableInputMatchesTarget = stableInputMatchesTarget,
               ))
+      val shape = task.inputShape
       log.debug(
-          "Signature incremental shadow observation file={} version={} revision={} environmentGeneration={} shapePresent={} stableInputMatchesTarget={} changeClass={} planKind={} planReason={}",
+          "Signature incremental shadow observation file={} version={} revision={} environmentGeneration={} shapePresent={} requestedSources={} effectiveSources={} kotlinAbiStubs={} additionalJavaSources={} stableInputMatchesTarget={} changeClass={} planKind={} planReason={}",
           params.file,
           params.documentVersion,
           params.documentRevision,
           environmentGeneration,
-          task.inputShape != null,
+          shape != null,
+          shape?.requestedSourceCount ?: -1,
+          shape?.effectiveSourceCount ?: -1,
+          shape?.kotlinAbiStubCount ?: -1,
+          shape?.additionalJavaSourceCount ?: -1,
           stableInputMatchesTarget,
           observation.changeClass,
           observation.plan.kind,
