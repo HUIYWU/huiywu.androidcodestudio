@@ -25,6 +25,8 @@ import com.tom.rv2ide.eventbus.events.file.FileRenameEvent
 import com.tom.rv2ide.progress.ProgressManager
 import com.tom.rv2ide.projects.models.ActiveDocument
 import com.tom.rv2ide.projects.models.ActiveDocumentSnapshot
+import com.tom.rv2ide.projects.models.DocumentSnapshotIdentity
+import com.tom.rv2ide.projects.models.OneHopDocumentEdit
 import java.io.BufferedReader
 import java.io.InputStream
 import java.net.URI
@@ -48,6 +50,10 @@ object FileManager {
   private val log = LoggerFactory.getLogger(FileManager::class.java)
   private val activeDocuments = ConcurrentHashMap<Path, ActiveDocument>()
 
+  // This map intentionally retains only one verified edge. Analysis must fall back to full work
+  // whenever it cannot prove that its requested target is exactly this edge's target snapshot.
+  private val latestOneHopEdits = ConcurrentHashMap<Path, OneHopDocumentEdit>()
+
   fun isActive(uri: URI): Boolean {
     return isActive(Paths.get(uri))
   }
@@ -62,6 +68,16 @@ object FileManager {
 
   fun getActiveDocumentSnapshot(file: Path): ActiveDocumentSnapshot? {
     return getActiveDocument(file)?.snapshot()
+  }
+
+  /**
+   * Returns the only verified base-to-target edit retained for this file.
+   *
+   * Callers must additionally compare both identities with their own frozen request snapshots;
+   * this method deliberately does not synthesize history after a lifecycle break or opaque edit.
+   */
+  fun getLatestOneHopDocumentEdit(file: Path): OneHopDocumentEdit? {
+    return latestOneHopEdits[file.normalize()]
   }
 
   fun getActiveDocumentSnapshots(files: Collection<Path>): Map<Path, ActiveDocumentSnapshot> {
@@ -115,36 +131,58 @@ object FileManager {
     return createFileInputStream(file)
   }
   fun onDocumentOpen(event: DocumentOpenEvent) {
-    activeDocuments[event.openedFile.normalize()] = createDocument(event)
+    val file = event.openedFile.normalize()
+    latestOneHopEdits.remove(file)
+    activeDocuments[file] = createDocument(event)
   }
 
-
   fun onDocumentContentChange(event: DocumentChangeEvent) {
-    val document = activeDocuments[event.changedFile.normalize()]
+    val file = event.changedFile.normalize()
+    val document = activeDocuments[file]
 
     if (document == null) {
-      // create document if not already created
-      // this should not happen under normal circumstances
-      activeDocuments[event.changedFile.normalize()] = createDocument(event)
+      // A missing open event means there is no trustworthy base snapshot to link to this target.
+      latestOneHopEdits.remove(file)
+      activeDocuments[file] = createDocument(event)
       log.warn("Document change event received before open event for file {}", event.changedFile)
       return
     }
 
-    val current = document.snapshot()
-    document.update(
-        version = event.version,
-        modified = Instant.now(),
-        content = event.newText ?: current.content,
-        revision = event.revision,
-    )
+    // Event dispatch normally serializes edits. Keep base capture, edge creation, and target update
+    // under the document lock for direct callers as well; consumers still compare identities because
+    // the edit map and active-document map are separate concurrent structures.
+    synchronized(document) {
+      val base = document.snapshot()
+      val targetContent = event.newText ?: base.content
+      val target =
+          ActiveDocumentSnapshot(file, event.version, Instant.now(), targetContent, event.revision)
+      val verifiedEdit = verifiedOneHopEdit(base, target, event.changeType, event.changedText)
+      if (verifiedEdit != null) {
+        latestOneHopEdits[file] = verifiedEdit
+      } else {
+        // Opaque replacement, non-continuous version, or malformed text must use the stable full path.
+        latestOneHopEdits.remove(file)
+      }
+      document.update(
+          version = target.version,
+          modified = target.modified,
+          content = target.content,
+          revision = target.revision,
+      )
+    }
   }
 
   fun onDocumentClose(event: DocumentCloseEvent) {
-    activeDocuments.remove(event.closedFile.normalize())
+    val file = event.closedFile.normalize()
+    latestOneHopEdits.remove(file)
+    activeDocuments.remove(file)
   }
 
   fun onFileRenamed(event: FileRenameEvent) {
-    val document = activeDocuments.remove(event.file.toPath().normalize())
+    val oldPath = event.file.toPath().normalize()
+    latestOneHopEdits.remove(oldPath)
+    latestOneHopEdits.remove(event.newFile.toPath().normalize())
+    val document = activeDocuments.remove(oldPath)
     if (document != null) {
       val snapshot = document.snapshot()
       val newPath = event.newFile.toPath().normalize()
@@ -161,8 +199,76 @@ object FileManager {
   }
 
   fun onFileDeleted(event: FileDeletionEvent) {
-    // If the file was an active document, remove the document cache
-    activeDocuments.remove(event.file.toPath().normalize())
+    // If the file was an active document, remove both its snapshot and its only edit edge.
+    val file = event.file.toPath().normalize()
+    latestOneHopEdits.remove(file)
+    activeDocuments.remove(file)
+  }
+
+  private fun verifiedOneHopEdit(
+      base: ActiveDocumentSnapshot,
+      target: ActiveDocumentSnapshot,
+      changeType: com.tom.rv2ide.eventbus.events.editor.ChangeType,
+      changedText: String,
+  ): OneHopDocumentEdit? {
+    if (
+        changeType == com.tom.rv2ide.eventbus.events.editor.ChangeType.NEW_TEXT ||
+            target.version != base.version + 1 ||
+            target.revision <= base.revision
+    ) {
+      return null
+    }
+
+    val baseText = base.content
+    val targetText = target.content
+    var start = 0
+    val commonLength = minOf(baseText.length, targetText.length)
+    while (start < commonLength && baseText[start] == targetText[start]) {
+      start++
+    }
+
+    var baseEnd = baseText.length
+    var targetEnd = targetText.length
+    while (
+        baseEnd > start &&
+            targetEnd > start &&
+            baseText[baseEnd - 1] == targetText[targetEnd - 1]
+    ) {
+      baseEnd--
+      targetEnd--
+    }
+    val replacement = targetText.substring(start, targetEnd)
+    val removed = baseText.substring(start, baseEnd)
+    val kind =
+        when {
+          start == baseEnd && replacement.isNotEmpty() -> OneHopDocumentEdit.Kind.INSERT
+          start != baseEnd && replacement.isEmpty() -> OneHopDocumentEdit.Kind.DELETE
+          start != baseEnd && replacement.isNotEmpty() -> OneHopDocumentEdit.Kind.REPLACE
+          else -> return null
+        }
+    // ContentChangeEvent reports inserted text for INSERT and removed text for DELETE. Do not
+    // infer replacement semantics from the action alone; accept a replacement only if the full
+    // base/target comparison and the action-specific payload agree.
+    val payloadMatches =
+        when (changeType) {
+          com.tom.rv2ide.eventbus.events.editor.ChangeType.INSERT ->
+              replacement == changedText && replacement.isNotEmpty()
+          com.tom.rv2ide.eventbus.events.editor.ChangeType.DELETE ->
+              removed == changedText && removed.isNotEmpty() && replacement.isEmpty()
+          com.tom.rv2ide.eventbus.events.editor.ChangeType.NEW_TEXT -> false
+        }
+    if (!payloadMatches) {
+      return null
+    }
+    return OneHopDocumentEdit(
+        base = DocumentSnapshotIdentity(base.file.normalize(), base.version, base.revision),
+        target = DocumentSnapshotIdentity(target.file.normalize(), target.version, target.revision),
+        baseStartIndex = start,
+        baseEndIndex = baseEnd,
+        removedText = removed,
+        replacementText = replacement,
+        kind = kind,
+    )
   }
 
   private fun createDocument(event: DocumentOpenEvent): ActiveDocument {

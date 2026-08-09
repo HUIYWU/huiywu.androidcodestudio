@@ -18,13 +18,13 @@
 package com.tom.rv2ide.lsp.java.providers;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.tom.rv2ide.lsp.java.compiler.CompileTask;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinAbiSyntheticMembers;
 import com.tom.rv2ide.lsp.java.compiler.CompilerProvider;
 import com.tom.rv2ide.lsp.java.compiler.SourceFileObject;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
-import com.tom.rv2ide.lsp.java.models.PartialReparseRequest;
 import com.tom.rv2ide.lsp.java.utils.FindHelper;
 import com.tom.rv2ide.lsp.java.utils.MarkdownHelper;
 import com.tom.rv2ide.lsp.java.utils.ScopeHelper;
@@ -34,7 +34,6 @@ import com.tom.rv2ide.lsp.models.ParameterInformation;
 import com.tom.rv2ide.lsp.models.SignatureHelp;
 import com.tom.rv2ide.lsp.models.SignatureHelpParams;
 import com.tom.rv2ide.lsp.models.SignatureInformation;
-import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.progress.ICancelChecker;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -42,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.StringJoiner;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
@@ -72,11 +72,19 @@ public class SignatureProvider extends CancelableServiceProvider {
   public static final SignatureHelp NOT_SUPPORTED =
       new SignatureHelp(Collections.emptyList(), -1, -1);
   private final CompilerProvider compiler;
-
+  @Nullable private final Consumer<CompileTask> stableTaskObserver;
 
   public SignatureProvider(CompilerProvider compiler, ICancelChecker cancelChecker) {
+    this(compiler, cancelChecker, null);
+  }
+
+  public SignatureProvider(
+      CompilerProvider compiler,
+      ICancelChecker cancelChecker,
+      @Nullable Consumer<CompileTask> stableTaskObserver) {
     super(cancelChecker);
     this.compiler = compiler;
+    this.stableTaskObserver = stableTaskObserver;
   }
   @NonNull
   public SignatureHelp signatureHelp(@NonNull SignatureHelpParams params) {
@@ -96,16 +104,12 @@ public class SignatureProvider extends CancelableServiceProvider {
     final int line = l + 1;
     final int column = c + 1;
 
-    final boolean requiresKotlinAbi =
-        JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled();
     final SynchronizedTask synchronizedTask;
     if (content != null) {
       final var source = new SourceFileObject(file, content, Instant.now());
-      final PartialReparseRequest partialRequest =
-          cursorIndex >= 0 ? new PartialReparseRequest(cursorIndex, content) : null;
-      final CompilationRequest request =
-          new CompilationRequest(
-              Collections.singletonList(source), partialRequest, !requiresKotlinAbi);
+      // JavaCompilerService consistently adds Kotlin ABI stubs to the stable full-compilation
+      // path when recognition is enabled.
+      final CompilationRequest request = new CompilationRequest(Collections.singletonList(source));
       synchronizedTask = compiler.compile(request);
     } else {
       synchronizedTask = compiler.compile(file);
@@ -113,6 +117,7 @@ public class SignatureProvider extends CancelableServiceProvider {
     abortIfCancelled();
     return synchronizedTask.get(
         task -> {
+          observeStableTask(task);
           final CompilationUnitTree root = task.root(file);
           // Position.index is the editor's authoritative UTF-16 offset. Recomputing it from
           // line/column can drift when the client and javac line maps normalize line endings
@@ -156,6 +161,12 @@ public class SignatureProvider extends CancelableServiceProvider {
           }
           return NOT_SUPPORTED;
         });
+  }
+
+  private void observeStableTask(CompileTask task) {
+    if (stableTaskObserver != null) {
+      stableTaskObserver.accept(task);
+    }
   }
 
   private List<ExecutableElement> methodOverloads(

@@ -113,6 +113,125 @@ class FileManagerTest {
     }
   }
 
+  @Test
+  fun verifiedOneHopEditCapturesInsertionDeletionAndReplacement() {
+    val file = Files.createTempFile("file-manager-one-hop", ".java")
+    try {
+      FileManager.onDocumentOpen(DocumentOpenEvent(file, "abc", 1))
+
+      FileManager.onDocumentContentChange(change(file, "aXbc", "X", 2, ChangeType.INSERT))
+      val insertion = checkNotNull(FileManager.getLatestOneHopDocumentEdit(file))
+      assertThat(insertion.kind).isEqualTo(com.tom.rv2ide.projects.models.OneHopDocumentEdit.Kind.INSERT)
+      assertThat(insertion.baseStartIndex).isEqualTo(1)
+      assertThat(insertion.baseEndIndex).isEqualTo(1)
+      assertThat(insertion.replacementText).isEqualTo("X")
+      assertThat(insertion.base.version).isEqualTo(1)
+      assertThat(insertion.target.version).isEqualTo(2)
+
+      FileManager.onDocumentContentChange(change(file, "aXc", "b", 3, ChangeType.DELETE))
+      val deletion = checkNotNull(FileManager.getLatestOneHopDocumentEdit(file))
+      assertThat(deletion.kind).isEqualTo(com.tom.rv2ide.projects.models.OneHopDocumentEdit.Kind.DELETE)
+      assertThat(deletion.baseStartIndex).isEqualTo(2)
+      assertThat(deletion.baseEndIndex).isEqualTo(3)
+      assertThat(deletion.replacementText).isEmpty()
+
+      FileManager.onDocumentContentChange(change(file, "aYc", "Y", 4, ChangeType.INSERT))
+      val replacement = checkNotNull(FileManager.getLatestOneHopDocumentEdit(file))
+      assertThat(replacement.kind).isEqualTo(com.tom.rv2ide.projects.models.OneHopDocumentEdit.Kind.REPLACE)
+      assertThat(replacement.baseStartIndex).isEqualTo(1)
+      assertThat(replacement.baseEndIndex).isEqualTo(2)
+      assertThat(replacement.replacementText).isEqualTo("Y")
+    } finally {
+      FileManager.onDocumentClose(DocumentCloseEvent(file))
+      Files.deleteIfExists(file)
+    }
+  }
+
+  @Test
+  fun verifiedOneHopEditUsesUtf16CoordinatesForSurrogatePairsCrLfAndMultilineReplacement() {
+    val file = Files.createTempFile("file-manager-one-hop-utf16", ".java")
+    try {
+      val initial = "😀\r\n// note\r\nold\r\n"
+      FileManager.onDocumentOpen(DocumentOpenEvent(file, initial, 1))
+
+      val withInsertion = "😀X\r\n// note\r\nold\r\n"
+      FileManager.onDocumentContentChange(change(file, withInsertion, "X", 2, ChangeType.INSERT))
+      val insertion = checkNotNull(FileManager.getLatestOneHopDocumentEdit(file))
+      assertThat(insertion.baseStartIndex).isEqualTo(2)
+      assertThat(insertion.baseEndIndex).isEqualTo(2)
+      assertThat(insertion.removedText).isEmpty()
+      assertThat(insertion.replacementText).isEqualTo("X")
+
+      val withoutCommentLineEnding = "😀X\r\n// noteold\r\n"
+      FileManager.onDocumentContentChange(
+          change(file, withoutCommentLineEnding, "\r\n", 3, ChangeType.DELETE))
+      val crLfDeletion = checkNotNull(FileManager.getLatestOneHopDocumentEdit(file))
+      assertThat(crLfDeletion.baseStartIndex).isEqualTo("😀X\r\n// note".length)
+      assertThat(crLfDeletion.baseEndIndex).isEqualTo("😀X\r\n// note\r\n".length)
+      assertThat(crLfDeletion.removedText).isEqualTo("\r\n")
+      assertThat(crLfDeletion.replacementText).isEmpty()
+
+      val replacedMultiline = "😀X\r\n// notefirst\nnext\r\n"
+      FileManager.onDocumentContentChange(
+          change(file, replacedMultiline, "first\nnext", 4, ChangeType.INSERT))
+      val replacement = checkNotNull(FileManager.getLatestOneHopDocumentEdit(file))
+      assertThat(replacement.kind)
+          .isEqualTo(com.tom.rv2ide.projects.models.OneHopDocumentEdit.Kind.REPLACE)
+      assertThat(replacement.baseStartIndex).isEqualTo("😀X\r\n// note".length)
+      assertThat(replacement.baseEndIndex).isEqualTo("😀X\r\n// noteold".length)
+      assertThat(replacement.removedText).isEqualTo("old")
+      assertThat(replacement.replacementText).isEqualTo("first\nnext")
+    } finally {
+      FileManager.onDocumentClose(DocumentCloseEvent(file))
+      Files.deleteIfExists(file)
+    }
+  }
+
+  @Test
+  fun opaqueOrLifecycleBreakingChangesClearOneHopEdit() {
+    val file = Files.createTempFile("file-manager-one-hop-clear", ".java")
+    try {
+      FileManager.onDocumentOpen(DocumentOpenEvent(file, "abc", 1))
+      FileManager.onDocumentContentChange(change(file, "aXbc", "X", 2, ChangeType.INSERT))
+      assertThat(FileManager.getLatestOneHopDocumentEdit(file)).isNotNull()
+
+      FileManager.onDocumentContentChange(change(file, "replacement", "replacement", 3, ChangeType.NEW_TEXT))
+      assertThat(FileManager.getLatestOneHopDocumentEdit(file)).isNull()
+
+      FileManager.onDocumentContentChange(change(file, "replacement!", "!", 4, ChangeType.INSERT))
+      assertThat(FileManager.getLatestOneHopDocumentEdit(file)).isNotNull()
+
+      FileManager.onDocumentContentChange(change(file, "replacement!?", "?", 6, ChangeType.INSERT))
+      assertThat(FileManager.getLatestOneHopDocumentEdit(file)).isNull()
+      FileManager.onDocumentClose(DocumentCloseEvent(file))
+      assertThat(FileManager.getLatestOneHopDocumentEdit(file)).isNull()
+
+      FileManager.onDocumentOpen(DocumentOpenEvent(file, "reopened", 1))
+      assertThat(FileManager.getLatestOneHopDocumentEdit(file)).isNull()
+    } finally {
+      FileManager.onDocumentClose(DocumentCloseEvent(file))
+      Files.deleteIfExists(file)
+    }
+  }
+
+  private fun change(
+      file: java.nio.file.Path,
+      targetText: String,
+      changedText: String,
+      version: Int,
+      type: ChangeType,
+  ): DocumentChangeEvent {
+    return DocumentChangeEvent(
+        file,
+        changedText,
+        targetText,
+        version,
+        type,
+        0,
+        Range.NONE,
+    )
+  }
+
   private fun change(file: java.nio.file.Path, text: String, version: Int): DocumentChangeEvent {
     return DocumentChangeEvent(
         file,

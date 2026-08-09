@@ -58,19 +58,22 @@ import openjdk.tools.javac.util.Names
 import org.slf4j.LoggerFactory
 
 /**
- * Partial reparser implementation.
+ * Legacy javac AST mutation primitive.
+ *
+ * <p>This directly mutates a supplied javac task and must remain disconnected from the stable Java
+ * semantic path until an isolated-task incremental analysis strategy is proven safe.
  *
  * @author Akash Yadav
  */
-class PartialReparserImpl : PartialReparser {
+internal class LegacyJavacAstMutation {
 
   private var allowPartialReparse: Boolean = ReparserUtils.canReparse()
 
   companion object {
-    private val log = LoggerFactory.getLogger(PartialReparserImpl::class.java)
+    private val log = LoggerFactory.getLogger(LegacyJavacAstMutation::class.java)
   }
 
-  override fun reparseMethod(
+  fun applyMethodBodyMutation(
       ci: CompilationInfo,
       methodPath: TreePath,
       newBody: String,
@@ -127,12 +130,11 @@ class PartialReparserImpl : PartialReparser {
           dl.startPartialReparse(origStartPos, origEndPos)
         } catch (err: Throwable) {
           log.error(
-              "Partial reparse stage failed: stage=diagnostic-begin method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              "Partial reparse stage failed: stage=diagnostic-begin method={} origStartPos={} origEndPos={} newBodyLength={}",
               method.name,
               origStartPos,
               origEndPos,
               newBody.length,
-              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
               err,
           )
           return false
@@ -143,19 +145,21 @@ class PartialReparserImpl : PartialReparser {
           reparseMethodBody(context, cu, method, newBody, docComments)
         } catch (err: Throwable) {
           log.error(
-              "Partial reparse stage failed: stage=parse method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              "Partial reparse stage failed: stage=parse method={} origStartPos={} origEndPos={} newBodyLength={}",
               method.name,
               origStartPos,
               origEndPos,
               newBody.length,
-              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
               err,
           )
           return false
         }
         val endPosTable = (cu as JCCompilationUnit).endPositions
         if (block == null) {
-          log.debug("Skipped reparse method. Invalid position, newBody: {}", newBody)
+          log.debug(
+              "Skipped legacy AST mutation because the parsed body position is invalid; newBodyLength={}",
+              newBody.length,
+          )
           return false
         }
 
@@ -163,14 +167,13 @@ class PartialReparserImpl : PartialReparser {
         val newEndPos = sourcePositions.getEndPosition(cu, block).toInt()
         if (newEndPos != origStartPos + newBody.length) {
           log.warn(
-              "Invalid position in reparsed method method={} origStartPos={} origEndPos={} newEndPos={} newBodyLength={} expectedEndPos={} newBodyPreview={}",
+              "Invalid position in reparsed method method={} origStartPos={} origEndPos={} newEndPos={} newBodyLength={} expectedEndPos={}",
               method.name,
               origStartPos,
               origEndPos,
               newEndPos,
               newBody.length,
               origStartPos + newBody.length,
-              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
           )
           return false
         }
@@ -199,13 +202,12 @@ class PartialReparserImpl : PartialReparser {
             getLazyDocCommentsTable(cuDocComments)
           } catch (err: Throwable) {
             log.error(
-                "Partial reparse stage failed: stage=doc-comments-get-table method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} addedDocComments={} removedOwners={} errorType={} errorMessage={}",
+                "Partial reparse stage failed: stage=doc-comments-get-table method={} origStartPos={} origEndPos={} newBodyLength={} addedDocComments={} removedOwners={} errorType={} errorMessage={}",
                 method.name,
                 origStartPos,
                 origEndPos,
                 newBody.length,
-                newBody.take(160).replace('\n', ' ').replace('\r', ' '),
-                docComments.size,
+                  docComments.size,
                 fav.docOwners.size,
                 err.javaClass.name,
                 err.message,
@@ -217,13 +219,12 @@ class PartialReparserImpl : PartialReparser {
             docCommentsTable.keys.removeAll(fav.docOwners)
           } catch (err: Throwable) {
             log.error(
-                "Partial reparse stage failed: stage=doc-comments-remove method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} tableSize={} addedDocComments={} removedOwners={} errorType={} errorMessage={}",
+                "Partial reparse stage failed: stage=doc-comments-remove method={} origStartPos={} origEndPos={} newBodyLength={} tableSize={} addedDocComments={} removedOwners={} errorType={} errorMessage={}",
                 method.name,
                 origStartPos,
                 origEndPos,
                 newBody.length,
-                newBody.take(160).replace('\n', ' ').replace('\r', ' '),
-                docCommentsTable.size,
+                  docCommentsTable.size,
                 docComments.size,
                 fav.docOwners.size,
                 err.javaClass.name,
@@ -236,13 +237,12 @@ class PartialReparserImpl : PartialReparser {
             docCommentsTable.putAll(docComments)
           } catch (err: Throwable) {
             log.error(
-                "Partial reparse stage failed: stage=doc-comments-put method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} tableSize={} addedDocComments={} removedOwners={} errorType={} errorMessage={}",
+                "Partial reparse stage failed: stage=doc-comments-put method={} origStartPos={} origEndPos={} newBodyLength={} tableSize={} addedDocComments={} removedOwners={} errorType={} errorMessage={}",
                 method.name,
                 origStartPos,
                 origEndPos,
                 newBody.length,
-                newBody.take(160).replace('\n', ' ').replace('\r', ' '),
-                docCommentsTable.size,
+                  docCommentsTable.size,
                 docComments.size,
                 fav.docOwners.size,
                 err.javaClass.name,
@@ -258,12 +258,11 @@ class PartialReparserImpl : PartialReparser {
           tpv.scan(cu, null)
         } catch (err: Throwable) {
           log.error(
-              "Partial reparse stage failed: stage=translate-positions method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} delta={}",
+              "Partial reparse stage failed: stage=translate-positions method={} origStartPos={} origEndPos={} newBodyLength={} delta={}",
               method.name,
               origStartPos,
               origEndPos,
               newBody.length,
-              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
               delta,
               err,
           )
@@ -273,12 +272,11 @@ class PartialReparserImpl : PartialReparser {
           doUnenter(context, cu, method)
         } catch (err: Throwable) {
           log.error(
-              "Partial reparse stage failed: stage=unenter method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              "Partial reparse stage failed: stage=unenter method={} origStartPos={} origEndPos={} newBodyLength={}",
               method.name,
               origStartPos,
               origEndPos,
               newBody.length,
-              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
               err,
           )
           return false
@@ -291,12 +289,11 @@ class PartialReparserImpl : PartialReparser {
           reAttrMethodBody(context, methodScope, method, block)
         } catch (err: Throwable) {
           log.error(
-              "Partial reparse stage failed: stage=reattr method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              "Partial reparse stage failed: stage=reattr method={} origStartPos={} origEndPos={} newBodyLength={}",
               method.name,
               origStartPos,
               origEndPos,
               newBody.length,
-              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
               err,
           )
           return false
@@ -312,13 +309,12 @@ class PartialReparserImpl : PartialReparser {
               reflowMethodBody(context, t, method)
             } catch (err: Throwable) {
               log.error(
-                  "Partial reparse stage failed: stage=reflow method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+                  "Partial reparse stage failed: stage=reflow method={} origStartPos={} origEndPos={} newBodyLength={}",
                   method.name,
                   origStartPos,
                   origEndPos,
                   newBody.length,
-                  newBody.take(160).replace('\n', ' ').replace('\r', ' '),
-                  err,
+                      err,
               )
               return false
             }
@@ -334,12 +330,11 @@ class PartialReparserImpl : PartialReparser {
           buildLineMap(cu, arr)
         } catch (err: Throwable) {
           log.error(
-              "Partial reparse stage failed: stage=line-map method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+              "Partial reparse stage failed: stage=line-map method={} origStartPos={} origEndPos={} newBodyLength={}",
               method.name,
               origStartPos,
               origEndPos,
               newBody.length,
-              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
               err,
           )
           return false
@@ -348,12 +343,11 @@ class PartialReparserImpl : PartialReparser {
           dl.endPartialReparse(delta)
         } catch (err: Throwable) {
           log.error(
-              "Partial reparse stage failed: stage=diagnostic-end method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={} delta={}",
+              "Partial reparse stage failed: stage=diagnostic-end method={} origStartPos={} origEndPos={} newBodyLength={} delta={}",
               method.name,
               origStartPos,
               origEndPos,
               newBody.length,
-              newBody.take(160).replace('\n', ' ').replace('\r', ' '),
               delta,
               err,
           )
@@ -365,12 +359,11 @@ class PartialReparserImpl : PartialReparser {
       }
     } catch (err: Throwable) {
       log.error(
-          "An error occurred while reparsing method method={} origStartPos={} origEndPos={} newBodyLength={} newBodyPreview={}",
+          "An error occurred while applying legacy AST mutation method={} origStartPos={} origEndPos={} newBodyLength={}",
           method.name,
           origStartPos,
           origEndPos,
           newBody.length,
-          newBody.take(160).replace('\n', ' ').replace('\r', ' '),
           err,
       )
       return false

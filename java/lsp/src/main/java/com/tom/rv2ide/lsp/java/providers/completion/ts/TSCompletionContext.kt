@@ -1,7 +1,9 @@
 package com.tom.rv2ide.lsp.java.providers.completion.ts
 
 enum class TSCompletionContext {
-  COMMENT_OR_STRING,
+  COMMENT,
+  STRING_LITERAL,
+  CHARACTER_LITERAL,
   IMPORT_DECLARATION,
   PACKAGE_DECLARATION,
   MEMBER_ACCESS,

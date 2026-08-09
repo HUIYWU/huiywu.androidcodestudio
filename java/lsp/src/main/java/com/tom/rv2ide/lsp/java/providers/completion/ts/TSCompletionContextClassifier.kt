@@ -17,15 +17,38 @@ object TSCompletionContextClassifier {
   private val log = LoggerFactory.getLogger(TSCompletionContextClassifier::class.java)
   @JvmStatic
   fun classify(file: Path, content: String, cursor: Long, line: Int, column: Int): TSCompletionContext {
-    if (cursor < 0 || cursor > content.length) {
+    if (cursor < 0 || cursor > content.length || line < 0 || column < 0) {
       return TSCompletionContext.UNKNOWN
     }
-    if (line < 0 || column < 0) {
-      return TSCompletionContext.UNKNOWN
-    }
+    return classifyAtPositions(file, content, listOf(Position(cursor.toInt(), line, column))).single()
+  }
 
+  /**
+   * Classifies multiple UTF-16 offsets from one immutable source string using one native parse.
+   * Callers that need more than one cursor position should prefer this over repeated [classify]
+   * calls, because every individual call otherwise creates a parser and parses the full content.
+   */
+  @JvmStatic
+  fun classifyOffsets(file: Path, content: String, offsets: IntArray): List<TSCompletionContext> {
+    if (offsets.isEmpty()) return emptyList()
+    if (offsets.any { it < 0 || it > content.length }) {
+      return List(offsets.size) { TSCompletionContext.UNKNOWN }
+    }
+    val positions =
+        offsets.map { offset ->
+          val line = content.substring(0, offset).count { it == '\n' }
+          val lineStart = content.lastIndexOf('\n', offset - 1) + 1
+          Position(offset, line, offset - lineStart)
+        }
+    return classifyAtPositions(file, content, positions)
+  }
+
+  private fun classifyAtPositions(
+      file: Path,
+      content: String,
+      positions: List<Position>,
+  ): List<TSCompletionContext> {
     val uri = file.toUri()
-
     TSParser.create().use { parser ->
       parser.language = TSLanguageJava.getInstance()
       parser.parseString(content).use { tree ->
@@ -34,9 +57,8 @@ object TSCompletionContextClassifier {
         } catch (err: Throwable) {
           if (IdeLogConfig.shouldLogInfo()) {
             log.info(
-                "TSCompletionContextClassifier.rootNodeFailed file={} cursor={} uri={} errorType={} errorMessage={}",
+                "TSCompletionContextClassifier.rootNodeFailed file={} uri={} errorType={} errorMessage={}",
                 file,
-                cursor,
                 uri,
                 err.javaClass.name,
                 err.message,
@@ -44,37 +66,48 @@ object TSCompletionContextClassifier {
           }
           throw err
         }
-        // TSParser converts Java strings to UTF-16LE. Tree-sitter point columns are byte offsets,
-        // while editor columns are UTF-16 code-unit offsets, so each column occupies two bytes.
-        // Use a non-empty range to make token lookup deterministic at boundaries.
-        val byteColumn = column * 2
-        val startPoint = TSPoint.create(line, byteColumn)
-        val endPoint = TSPoint.create(line, byteColumn + 2)
-        val node = try {
-          root.getNamedDescendantForPointRange(startPoint, endPoint)
-        } catch (err: Throwable) {
-          if (IdeLogConfig.shouldLogInfo()) {
-            log.info(
-                "TSCompletionContextClassifier.descendantLookupFailed file={} cursor={} uri={} line={} column={} errorType={} errorMessage={}",
-                file,
-                cursor,
-                uri,
-                line,
-                column,
-                err.javaClass.name,
-                err.message,
-            )
-          }
-          throw err
-        }
-
-        if (node == null || !node.canAccess()) {
-          return TSCompletionContext.UNKNOWN
-        }
-
-        return classifyNode(file, cursor, uri, node)
+        return positions.map { position -> classifyPosition(file, position, uri, root) }
       }
     }
+  }
+
+  private fun classifyPosition(
+      file: Path,
+      position: Position,
+      uri: URI,
+      root: TSNode,
+  ): TSCompletionContext {
+    val offset = position.offset
+    val line = position.line
+    val column = position.column
+    // TSParser converts Java strings to UTF-16LE. Tree-sitter point columns are byte offsets,
+    // while editor columns are UTF-16 code-unit offsets, so each column occupies two bytes.
+    // Use a non-empty range to make token lookup deterministic at boundaries.
+    val byteColumn = column * 2
+    val startPoint = TSPoint.create(line, byteColumn)
+    val endPoint = TSPoint.create(line, byteColumn + 2)
+    val node = try {
+      root.getNamedDescendantForPointRange(startPoint, endPoint)
+    } catch (err: Throwable) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "TSCompletionContextClassifier.descendantLookupFailed file={} cursor={} uri={} line={} column={} errorType={} errorMessage={}",
+            file,
+            offset,
+            uri,
+            line,
+            column,
+            err.javaClass.name,
+            err.message,
+        )
+      }
+      throw err
+    }
+
+    if (node == null || !node.canAccess()) {
+      return TSCompletionContext.UNKNOWN
+    }
+    return classifyNode(file, offset.toLong(), uri, node)
   }
 
   private fun classifyNode(file: Path, cursor: Long, uri: URI, node: TSNode): TSCompletionContext {
@@ -100,8 +133,14 @@ object TSCompletionContextClassifier {
         throw err
       }
       when (currentType) {
-        "line_comment", "block_comment", "comment", "string_literal", "character_literal" -> {
-          return TSCompletionContext.COMMENT_OR_STRING
+        "line_comment", "block_comment", "comment" -> {
+          return TSCompletionContext.COMMENT
+        }
+        "string_literal" -> {
+          return TSCompletionContext.STRING_LITERAL
+        }
+        "character_literal" -> {
+          return TSCompletionContext.CHARACTER_LITERAL
         }
         "import_declaration", "import" -> {
           return TSCompletionContext.IMPORT_DECLARATION
@@ -109,7 +148,7 @@ object TSCompletionContextClassifier {
         "package_declaration", "package" -> {
           return TSCompletionContext.PACKAGE_DECLARATION
         }
-        "field_access", "member_select" -> {
+        "field_access" -> {
           return TSCompletionContext.MEMBER_ACCESS
         }
         "argument_list" -> {
@@ -131,9 +170,13 @@ object TSCompletionContextClassifier {
             }
             throw err
           }
-          if (hasAncestorOfType(parent, "method_declaration", "constructor_declaration")) {
+          if (hasAncestorOfType(parent, "method_declaration", "compact_constructor_declaration")) {
             return TSCompletionContext.METHOD_BODY
           }
+        }
+        "constructor_body" -> {
+          // The Java grammar uses constructor_body rather than block for ordinary constructors.
+          return TSCompletionContext.METHOD_BODY
         }
         "class_body", "interface_body", "enum_body", "annotation_type_body" -> {
           return TSCompletionContext.TYPE_BODY
@@ -160,6 +203,8 @@ object TSCompletionContextClassifier {
     }
     return TSCompletionContext.UNKNOWN
   }
+
+  private data class Position(val offset: Int, val line: Int, val column: Int)
 
   private fun hasAncestorOfType(node: TSNode?, vararg types: String): Boolean {
     var current = node

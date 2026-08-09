@@ -73,3 +73,32 @@ data class ActiveDocumentSnapshot(
     val content: String,
     val revision: Long,
 )
+
+/** Immutable document identity used to prove a single continuous text edit. */
+data class DocumentSnapshotIdentity(
+    val file: Path,
+    val version: Int,
+    val revision: Long,
+)
+
+/**
+ * A verified replacement from one active-document snapshot to the immediately following snapshot.
+ *
+ * This is input metadata for future incremental analysis only. It must not be interpreted as a
+ * compiler cache or as permission to mutate a stable semantic snapshot.
+ */
+data class OneHopDocumentEdit(
+    val base: DocumentSnapshotIdentity,
+    val target: DocumentSnapshotIdentity,
+    val baseStartIndex: Int,
+    val baseEndIndex: Int,
+    val removedText: String,
+    val replacementText: String,
+    val kind: Kind,
+) {
+  enum class Kind {
+    INSERT,
+    DELETE,
+    REPLACE,
+  }
+}

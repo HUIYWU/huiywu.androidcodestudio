@@ -24,18 +24,19 @@ import jdkx.tools.JavaFileObject
 import openjdk.tools.javac.util.Context
 
 /**
- * Data sent to compiler to request a compilation.
+ * Data sent to the stable Java compilation path.
+ *
+ * <p>Incremental analysis is not encoded as mutable compiler-request state. A future incremental
+ * strategy must receive a revision-based analysis plan and keep its work isolated from this full
+ * compilation request.
  *
  * @param sources The source files to compile.
- * @param partialRequest Data that will be used to a partial reparse.
  * @author Akash Yadav
  */
 data class CompilationRequest
 @JvmOverloads
 constructor(
     @JvmField val sources: Collection<JavaFileObject>,
-    @JvmField val partialRequest: PartialReparseRequest? = null,
-    @JvmField val allowPartialReparse: Boolean = false,
     @JvmField val compilationTaskProcessor: CompilationTaskProcessor = DefaultCompilationTaskProcessor(),
     @JvmField var configureContext: Consumer<Context>? = null,
 )

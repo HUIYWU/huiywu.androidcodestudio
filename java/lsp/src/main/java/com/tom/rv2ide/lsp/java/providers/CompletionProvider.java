@@ -35,7 +35,6 @@ import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService;
 import com.tom.rv2ide.lsp.java.compiler.SourceFileObject;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
-import com.tom.rv2ide.lsp.java.models.PartialReparseRequest;
 import com.tom.rv2ide.lsp.java.providers.completion.IJavaCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.IdentifierCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.ImportCompletionProvider;
@@ -46,7 +45,6 @@ import com.tom.rv2ide.lsp.java.providers.completion.QualifiedNewClassCompletionP
 import com.tom.rv2ide.lsp.java.providers.completion.SwitchConstantCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContext;
 import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContextClassifier;
-import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.lsp.java.utils.ASTFixer;
 import com.tom.rv2ide.lsp.java.utils.CancelChecker;
 import com.tom.rv2ide.lsp.java.visitors.FindCompletionsAt;
@@ -317,9 +315,14 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       }
       tsContext = TSCompletionContext.UNKNOWN;
     }
-    if (tsContext == TSCompletionContext.COMMENT_OR_STRING) {
+    if (tsContext == TSCompletionContext.COMMENT
+        || tsContext == TSCompletionContext.STRING_LITERAL
+        || tsContext == TSCompletionContext.CHARACTER_LITERAL) {
       if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info("Skipping Java completion in comment/string context file={} cursor={}", file, cursor);
+        LOG.info("Skipping Java completion in comment or literal context file={} cursor={} context={}",
+            file,
+            cursor,
+            tsContext);
       }
       return CompletionResult.EMPTY;
     }
@@ -329,17 +332,13 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final boolean astFixerApplied = context != null;
     final boolean astFixerChangedContents = astFixerApplied && !contentString.contentEquals(contentBuilder);
     final int prefixLength = params.requirePrefix().length();
-    final long partialRequestCursor = cursor - prefixLength;
     final int injectedCharCount = contentString.length() - originalContents.length();
-    final PartialReparseRequest partialRequest = new PartialReparseRequest(
-        partialRequestCursor, contentString);
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
-          "Completion compile request file={} cursor={} prefixLength={} partialRequestCursor={} contentLength={} originalContentLength={} injectedCharCount={} semicolonInserted={} astFixerApplied={} astFixerChangedContents={} currentContextPresent={}",
+          "Completion compile request file={} cursor={} prefixLength={} contentLength={} originalContentLength={} injectedCharCount={} semicolonInserted={} astFixerApplied={} astFixerChangedContents={} currentContextPresent={}",
           file,
           cursor,
           prefixLength,
-          partialRequestCursor,
           contentString.length(),
           originalContents.length(),
           injectedCharCount,
@@ -352,7 +351,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
  
-    CompletionResult result = compileAndComplete(contentString, params, partialRequest);
+    CompletionResult result = compileAndComplete(contentString, params);
     if (result == null) {
       LOG.warn(
           "Completion provider returned null result file={} cursor={} prefix={} version={} revision={} tsContext={}",
@@ -442,9 +441,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     return cursor;
   }
 
-  private CompletionResult compileAndComplete(String contents, CompletionParams params,
-      PartialReparseRequest partialRequest
-  ) {
+  private CompletionResult compileAndComplete(String contents, CompletionParams params) {
     final long cursor = params.getPosition().requireIndex();
     final int tsLine = params.getPosition().getLine();
     final int tsColumn = params.getPosition().getColumn();
@@ -476,14 +473,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
 
-    final boolean requiresKotlinAbi = JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled();
-    // Kotlin source ABI stubs must be part of the same javac task that performs member completion.
-    // Partial reparse intentionally excludes synthetic sources, so recognition-enabled completion
-    // uses the normal full-compile path.
-    final CompilationRequest request = new CompilationRequest(
-        Collections.singletonList(source),
-        partialRequest,
-        !requiresKotlinAbi);
+    // Kotlin source ABI stubs are added by JavaCompilerService's stable compilation path when
+    // Kotlin recognition is enabled, so completion always uses one consistent request shape.
+    final CompilationRequest request = new CompilationRequest(Collections.singletonList(source));
     request.configureContext = ctx -> {
       final var config = JavaCompilerConfig.instance(ctx);
       config.setCompletionInfo(new CompletionInfo(params.getPosition()));

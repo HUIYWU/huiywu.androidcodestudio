@@ -3,11 +3,29 @@ package com.tom.rv2ide.lsp.java.providers.completion.ts
 import com.itsaky.androidide.treesitter.TreeSitter
 import java.nio.file.Paths
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 class TSCompletionContextClassifierTest {
 
   companion object {
-    @Volatile private var treeSitterLoaded = false
+    @Volatile private var nativeLoadAttempted = false
+    @Volatile private var nativeLoadFailure: Throwable? = null
+
+    @Synchronized
+    private fun loadNativeLibraries(): Throwable? {
+      if (!nativeLoadAttempted) {
+        nativeLoadAttempted = true
+        nativeLoadFailure =
+            try {
+              TreeSitter.loadLibrary()
+              System.loadLibrary("tree-sitter-java")
+              null
+            } catch (error: Throwable) {
+              error
+            }
+      }
+      return nativeLoadFailure
+    }
   }
 
 
@@ -18,7 +36,7 @@ class TSCompletionContextClassifierTest {
 
     val context = classify(code, cursor)
 
-    assertEquals(TSCompletionContext.COMMENT_OR_STRING, context)
+    assertEquals(TSCompletionContext.COMMENT, context)
   }
 
   @Test
@@ -28,7 +46,46 @@ class TSCompletionContextClassifierTest {
 
     val context = classify(code, cursor)
 
-    assertEquals(TSCompletionContext.COMMENT_OR_STRING, context)
+    assertEquals(TSCompletionContext.STRING_LITERAL, context)
+  }
+
+  @Test
+  fun classifiesCharacterLiteralContext() {
+    val code = "class A { char value = 'x'; }"
+    val cursor = code.indexOf("x").toLong()
+
+    val context = classify(code, cursor)
+
+    assertEquals(TSCompletionContext.CHARACTER_LITERAL, context)
+  }
+
+  @Test
+  fun batchClassificationMatchesSingleCursorClassification() {
+    val code = "class A { void test() { String s = \"abc\"; char c = 'x'; } }"
+    val stringOffset = code.indexOf("abc")
+    val characterOffset = code.indexOf("x")
+    val batch = classifyOffsets(code, intArrayOf(stringOffset, characterOffset))
+
+    assertEquals(
+        listOf(classify(code, stringOffset.toLong()), classify(code, characterOffset.toLong())),
+        batch,
+    )
+  }
+
+  @Test
+  fun classifiesOrdinaryConstructorBodyContext() {
+    val code = "class A { A() { int value = 1; } }"
+    val context = classify(code, code.indexOf("value").toLong())
+
+    assertEquals(TSCompletionContext.METHOD_BODY, context)
+  }
+
+  @Test
+  fun classifiesCompactConstructorBodyContext() {
+    val code = "record A(int x) { A { int value = x; } }"
+    val context = classify(code, code.indexOf("value").toLong())
+
+    assertEquals(TSCompletionContext.METHOD_BODY, context)
   }
 
   @Test
@@ -96,20 +153,28 @@ class TSCompletionContextClassifierTest {
     val line = code.substring(0, offset).count { it == '\n' }
     val lastLineBreak = code.lastIndexOf('\n', offset - 1)
     val column = offset - lastLineBreak - 1
-    ensureTreeSitterLoaded()
+    ensureNativeLibrariesLoaded()
     return TSCompletionContextClassifier.classify(
         Paths.get("/tmp/A.java"), code, cursor, line, column)
   }
 
-  private fun ensureTreeSitterLoaded() {
-    if (!treeSitterLoaded) {
-      synchronized(TSCompletionContextClassifierTest::class.java) {
-        if (!treeSitterLoaded) {
-          TreeSitter.loadLibrary()
-          treeSitterLoaded = true
-        }
-      }
-    }
+  private fun classifyOffsets(code: String, offsets: IntArray): List<TSCompletionContext> {
+    ensureNativeLibrariesLoaded()
+    return TSCompletionContextClassifier.classifyOffsets(Paths.get("/tmp/A.java"), code, offsets)
+  }
+
+  private fun ensureNativeLibrariesLoaded() {
+    val loadFailure = loadNativeLibraries()
+    assertNull(
+        "Unable to explicitly load Tree-sitter core/Java native libraries: " +
+            nativeFailureDescription(loadFailure),
+        loadFailure,
+    )
+  }
+
+  private fun nativeFailureDescription(error: Throwable?): String {
+    if (error == null) return "none"
+    return error.javaClass.name + ": " + (error.message ?: error.toString())
   }
 
 }

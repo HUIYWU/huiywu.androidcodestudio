@@ -19,18 +19,13 @@ package com.tom.rv2ide.lsp.java.compiler;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.util.Pair;
 import com.tom.rv2ide.common.logging.IdeLogConfig;
-import com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent;
 import com.tom.rv2ide.javac.services.compiler.ReusableCompiler;
-import com.tom.rv2ide.javac.services.partial.CompilationInfo;
-import com.tom.rv2ide.javac.services.partial.PartialReparser;
-import com.tom.rv2ide.javac.services.partial.PartialReparserImpl;
+import com.tom.rv2ide.lsp.java.kotlin.KotlinAbiStubJavaFileObject;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinClassOutputProvider;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinSourceStubProvider;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
-import com.tom.rv2ide.lsp.java.models.PartialReparseRequest;
 import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.lsp.java.parser.ParseTask;
 import com.tom.rv2ide.lsp.java.parser.Parser;
@@ -47,7 +42,6 @@ import com.tom.rv2ide.projects.util.StringSearch;
 import com.tom.rv2ide.utils.Cache;
 import com.tom.rv2ide.utils.Environment;
 import com.tom.rv2ide.utils.SourceClassTrie;
-import com.tom.rv2ide.utils.StopWatch;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -71,10 +65,6 @@ import jdkx.tools.Diagnostic;
 import jdkx.tools.JavaFileObject;
 import jdkx.tools.StandardLocation;
 import openjdk.source.tree.CompilationUnitTree;
-import openjdk.source.tree.MethodTree;
-import openjdk.source.util.SourcePositions;
-import openjdk.source.util.TreePath;
-import openjdk.source.util.Trees;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,14 +86,7 @@ public class JavaCompilerService implements CompilerProvider {
       BootClasspathProvider.getTopLevelClasses(
           Collections.singleton(Environment.ANDROID_JAR.getAbsolutePath()));
   private CompileBatch cachedCompile;
-  private final PartialReparseDecider partialReparseDecider = new PartialReparseDecider();
-  private final PartialReparseRouter partialReparseRouter = new PartialReparseRouter();
-  private final PartialReparseFallbackHandler partialReparseFallbackHandler =
-      new PartialReparseFallbackHandler();
-  private final PartialReparsePreflight partialReparsePreflight = new PartialReparsePreflight();
-  private final PartialReparseExecutor partialReparseExecutor = new PartialReparseExecutor();
-  private final PartialReparseMethodLocator partialReparseMethodLocator = new PartialReparseMethodLocator();
-  private final JavaIncrementalState incrementalState = new JavaIncrementalState();
+  private volatile StableCompilationInputShape latestStableInputShape;
   private static final long RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES = 160L * 1024L * 1024L;
 
   // The module project must not be null
@@ -187,6 +170,16 @@ public class JavaCompilerService implements CompilerProvider {
 
   public ModuleProject getModule() {
     return module;
+  }
+
+  /**
+   * Returns metadata from the latest successfully established stable compilation, or {@code null}
+   * when no stable batch is currently retained. The shape is observational and must not select a
+   * request strategy by itself.
+   */
+  @Nullable
+  public StableCompilationInputShape getLatestStableInputShape() {
+    return latestStableInputShape;
   }
   @Override
   public TreeSet<String> publicTopLevelTypes() {
@@ -336,7 +329,8 @@ public class JavaCompilerService implements CompilerProvider {
               LOG.debug("...using cached compile");
             }
           }
-          synchronizedTask.setTask(new CompileTask(cachedCompile, diagnostics, false));
+          synchronizedTask.setTask(
+              new CompileTask(cachedCompile, diagnostics, false, latestStableInputShape));
         });
 
     return synchronizedTask;
@@ -359,236 +353,20 @@ public class JavaCompilerService implements CompilerProvider {
     return false;
   }
 
+  /**
+   * Recompiles the current request on the stable semantic path.
+   *
+   * <p>Legacy javac AST mutation is intentionally not routed here. Incremental analysis must first
+   * establish a revision-based plan, an isolated analysis task, differential validation, and a
+   * demonstrable latency benefit before it can become a request strategy.
+   */
   private synchronized void reparseOrRecompile(CompilationRequest request) {
-    final PartialReparseEligibility eligibility =
-        PartialReparseEligibility.from(request, needsRecompilation(request), incrementalState);
-    final PartialReparseDecision decision = partialReparseDecider.decide(eligibility);
-    logPartialReparseDecision(eligibility, decision);
-    if (IdeLogConfig.shouldLogDebug()) {
-      LOG.debug(
-          "reparseOrRecompile requestHash={} action={} sourceCount={} needsRecompilation={} currentContextPresent={}",
-          System.identityHashCode(request),
-          decision.action,
-          eligibility.sourceCount,
-          eligibility.needsRecompilation,
-          compiler.currentContext != null);
-    }
-    partialReparseRouter.route(
-        decision,
-        () -> recompile(request),
-        () -> {
-          if (request.allowPartialReparse) {
-            tryPartialReparseWithFallback(request);
-          } else {
-            recompile(request);
-          }
-        });
+    recompile(request);
   }
 
-
-  private void logPartialReparseDecision(
-      @NonNull final PartialReparseEligibility eligibility,
-      @NonNull final PartialReparseDecision decision) {
-    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogDebug()) {
-      return;
-    }
-
-    LOG.debug(
-        "Partial reparse decision: action={} reason={} needsRecompilation={} changeValid={} changeDeltaWithinLimit={} maxChangeDelta={} sources={} hasPartialRequest={} hasLatestChangeRange={} cursor={} contentsLength={} changeDelta={} newCursorPosition={}",
-        decision.action,
-        decision.reason,
-        eligibility.needsRecompilation,
-        eligibility.changeValidForReparse,
-        eligibility.changeDeltaWithinLimit,
-        JavaLspFeatureFlags.MAX_PARTIAL_REPARSE_CHANGE_DELTA,
-        eligibility.sourceCount,
-        eligibility.hasPartialRequest,
-        eligibility.latestChangeRange != null,
-        eligibility.cursor,
-        eligibility.contentsLength,
-        eligibility.changeDelta,
-        eligibility.newCursorPosition);
-  }
-
-  private void tryPartialReparseWithFallback(@NonNull final CompilationRequest request) {
-    final PartialReparseFallbackHandler.Outcome outcome =
-        partialReparseFallbackHandler.handle(
-            () -> tryReparse(request),
-            () -> recompile(request),
-            (result, err) -> logPartialReparseFallback(result, err));
-    logPartialReparseOutcome(request, outcome);
-  }
-
-  private void logPartialReparseOutcome(
-      @NonNull final CompilationRequest request,
-      @NonNull final PartialReparseFallbackHandler.Outcome outcome) {
-    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogDebug()) {
-      return;
-    }
-    LOG.debug(
-        "Partial reparse live outcome: outcome={} requestHash={} sources={} currentContextPresent={}",
-        outcome,
-        System.identityHashCode(request),
-        request.sources == null ? -1 : request.sources.size(),
-        compiler.currentContext != null);
-  }
-
-  private void logPartialReparseFallback(
-      @Nullable final PartialReparseAttemptResult result, @Nullable final Throwable err) {
-
-    if (!JavaLspFeatureFlags.ENABLE_PARTIAL_REPARSE_LOGGING || !IdeLogConfig.shouldLogWarn()) {
-      return;
-    }
-    if (err != null) {
-      LOG.warn("Partial reparse failed. Falling back to full recompile", err);
-      return;
-    }
-    if (result != null) {
-      LOG.warn(
-          "Partial reparse did not produce a reusable result. status={} reason={}. Falling back to full recompile",
-          result.status,
-          result.reason);
-    }
-  }
-
-  private boolean needsRecompilation(final CompilationRequest request) {
-    return this.cachedCompile == null
-        || this.cachedCompile.closed;
-  }
-
-  private PartialReparseAttemptResult tryReparse(@NonNull final CompilationRequest request) {
-
-    // Satisfy lint
-    final PartialReparseRequest partialRequest = request.partialRequest;
-    Objects.requireNonNull(partialRequest);
-
-    final StopWatch watch = new StopWatch("Method reparse");
-    final File file = new File(request.sources.iterator().next().toUri());
-    final String path = file.getAbsolutePath();
-    final List<Pair<Range, TreePath>> positions = this.cachedCompile.methodPositions.get(path);
-    if (positions == null) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        LOG.warn("Cannot perform reparse. No method positions found.");
-      }
-      return PartialReparseAttemptResult.notApplicable("method positions not found");
-    }
-
-    final Pair<Range, TreePath> currentMethod =
-        partialReparseMethodLocator.findCurrentMethod(positions, partialRequest.cursor);
-    final PartialReparseAttemptResult currentMethodPreflight =
-        partialReparsePreflight.validateCurrentMethod(currentMethod, partialRequest.cursor);
-    if (currentMethodPreflight != null) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        LOG.warn("Cannot perform reparse. {}", currentMethodPreflight.reason);
-      }
-      return currentMethodPreflight;
-    }
-    if (IdeLogConfig.shouldLogDebug()) {
-      watch.lapFromLast("Found method at cursor position");
-    }
-
-    final MethodTree methodTree = (MethodTree) currentMethod.second.getLeaf();
-    final PartialReparseAttemptResult methodTreePreflight =
-        partialReparsePreflight.validateMethodTree(methodTree);
-    if (methodTreePreflight != null) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        LOG.warn("Cannot perform reparse. {}", methodTreePreflight.reason);
-      }
-      return methodTreePreflight;
-    }
-
-    if (IdeLogConfig.shouldLogDebug()) {
-      LOG.debug("Trying to reparse method: {}", methodTree.getName());
-    }
-
-    // The cached task may contain a multi-source working set. Use the compilation unit that owns
-    // the method path instead of assuming that the primary source is the first root.
-    final CompilationInfo info =
-        new CompilationInfo(
-            cachedCompile.task,
-            cachedCompile.diagnosticListener,
-            currentMethod.second.getCompilationUnit());
-    watch.setLastLap(System.currentTimeMillis());
-    final SourcePositions sourcePositions = Trees.instance(cachedCompile.task).getSourcePositions();
-    final int start = (int) sourcePositions.getStartPosition(info.cu, methodTree.getBody());
-    final int end =
-        (int) sourcePositions.getEndPosition(info.cu, methodTree.getBody())
-            + this.incrementalState.getChangeDelta()
-            - 1;
-
-    final PartialReparseAttemptResult rangePreflight =
-        partialReparsePreflight.validateRanges(
-            this.incrementalState.getLatestChangeRange(),
-            start,
-            end,
-            partialRequest.contents.length());
-    if (rangePreflight != null) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        if (rangePreflight.status == PartialReparseAttemptResult.Status.FAILED) {
-          LOG.warn(
-              "Cannot reparse. {}. end: {} changeDelta: {} content.length: {}",
-              rangePreflight.reason,
-              end,
-              this.incrementalState.getChangeDelta(),
-              partialRequest.contents.length());
-        } else {
-          LOG.warn(
-              "Cannot reparse. {}. methodBodyStart: {} methodBodyEnd: {} changeRange: {}",
-              rangePreflight.reason,
-              start,
-              end,
-              this.incrementalState.getLatestChangeRange());
-        }
-      }
-      return rangePreflight;
-    }
-
-    if (IdeLogConfig.shouldLogDebug()) {
-      watch.lapFromLast("Found start and end positions of current method");
-      final int previewEnd = Math.min(end, start + 160);
-      final String newBodyPreview =
-          start >= 0 && start <= previewEnd && previewEnd <= partialRequest.contents.length()
-              ? partialRequest.contents.substring(start, previewEnd)
-              : "<out-of-range>";
-      LOG.debug(
-          "Partial reparse execute request file={} method={} cursor={} methodBodyStart={} methodBodyEnd={} changeDelta={} contentLength={} latestChangeRange={} newBodyPreview={}",
-          path,
-          methodTree.getName(),
-          partialRequest.cursor,
-          start,
-          end,
-          this.incrementalState.getChangeDelta(),
-          partialRequest.contents.length(),
-          this.incrementalState.getLatestChangeRange(),
-          newBodyPreview.replace('\n', ' ').replace('\r', ' '));
-    }
-    final PartialReparser reparser = new PartialReparserImpl();
-    final PartialReparseAttemptResult executeResult =
-        partialReparseExecutor.execute(
-            partialRequest.contents,
-            start,
-            end,
-            newBody -> reparser.reparseMethod(info, currentMethod.second, newBody, partialRequest.contents));
-    if (!executeResult.isSuccess()) {
-      if (IdeLogConfig.shouldLogWarn()) {
-        LOG.warn("Failed to reparse method body; falling back to full recompile. {}", executeResult.reason);
-      }
-      return executeResult;
-    }
-
-    if (IdeLogConfig.shouldLogDebug()) {
-      watch.log();
-      LOG.debug("Successfully reparsed method: {}", methodTree.getName());
-    }
-    updateModificationCache(request);
-    cachedCompile.updatePositions(info.cu, true);
-    this.incrementalState.markReparseSucceeded();
-    return PartialReparseAttemptResult.success("method body reparsed");
-  }
   private synchronized void recompile(CompilationRequest request) {
     close();
     this.cachedCompile = performCompilation(request);
-    this.incrementalState.resetAfterFullRecompile();
     updateModificationCache(request);
   }
 
@@ -602,6 +380,7 @@ public class JavaCompilerService implements CompilerProvider {
       cachedCompile.borrow.close();
       cachedCompile = null;
     }
+    latestStableInputShape = null;
     final boolean shouldRecreateForMemoryPressure = usedBeforeClose >= RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES;
     final boolean shouldRecreateCompiler =
         compiler != null && compiler.currentContext != null && shouldRecreateForMemoryPressure;
@@ -620,12 +399,8 @@ public class JavaCompilerService implements CompilerProvider {
   }
   private CompileBatch performCompilation(CompilationRequest request) {
     Collection<? extends JavaFileObject> sources = request.sources;
-    // Kotlin stubs are diagnostics/full-compile input only. Partial reparse is deliberately kept
-    // isolated from cross-language synthetic sources because its cached javac state is not
-    // diagnostics-grade and cannot safely track Kotlin document revisions.
-    if (module != null
-        && JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()
-        && !request.allowPartialReparse) {
+    // Kotlin stubs are part of the stable full-compilation input whenever Kotlin recognition is on.
+    if (module != null && JavaPreferences.INSTANCE.isJavaKotlinRecognitionEnabled()) {
       final Collection<JavaFileObject> kotlinStubs = KotlinSourceStubProvider.stubsFor(module, sources);
       if (!kotlinStubs.isEmpty()) {
         final List<JavaFileObject> withKotlinStubs = new ArrayList<>(sources);
@@ -659,8 +434,8 @@ public class JavaCompilerService implements CompilerProvider {
     }
     Set<Path> addFiles = firstAttempt.needsAdditionalSources();
 
-
     if (addFiles.isEmpty()) {
+      recordStableInputShape(request.sources.size(), sources, 0);
       return firstAttempt;
     }
 
@@ -680,9 +455,28 @@ public class JavaCompilerService implements CompilerProvider {
       }
     }
  
-    return new CompileBatch(this, moreSources, request);
+    final CompileBatch finalAttempt = new CompileBatch(this, moreSources, request);
+    recordStableInputShape(request.sources.size(), moreSources, moreSources.size() - sources.size());
+    return finalAttempt;
   }
 
+  private void recordStableInputShape(
+      int requestedSourceCount,
+      Collection<? extends JavaFileObject> effectiveSources,
+      int additionalJavaSourceCount) {
+    int kotlinAbiStubCount = 0;
+    for (JavaFileObject source : effectiveSources) {
+      if (KotlinAbiStubJavaFileObject.isKotlinAbiStub(source)) {
+        kotlinAbiStubCount++;
+      }
+    }
+    latestStableInputShape =
+        new StableCompilationInputShape(
+            requestedSourceCount,
+            effectiveSources.size(),
+            kotlinAbiStubCount,
+            additionalJavaSourceCount);
+  }
 
   private boolean containsWord(Path file, String word) {
     if (cacheContainsWord.needs(file, word)) {
@@ -758,21 +552,11 @@ public class JavaCompilerService implements CompilerProvider {
     return synchronizedTask;
   }
 
-  @NonNull
-  public JavaIncrementalState getIncrementalState() {
-    return incrementalState;
-  }
-
-  public void onDocumentChange(@NonNull DocumentChangeEvent event) {
-    this.incrementalState.onDocumentChange(event);
-  }
-
   public JavaCompilerService copy() {
     final JavaCompilerService compiler =
         new JavaCompilerService(
             this.module, this.fileManager, this.bootClasspathClasses, this.classPathClasses);
     compiler.cachedCompile = null;
-    compiler.incrementalState.resetForCopy();
     compiler.compiler = new ReusableCompiler();
     compiler.diagnostics.clear();
     compiler.cachedModified.clear();
