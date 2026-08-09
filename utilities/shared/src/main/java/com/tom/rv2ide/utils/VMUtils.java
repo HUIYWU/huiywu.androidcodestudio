@@ -35,8 +35,16 @@ public class VMUtils {
       return isJvm;
     }
 
+    // Instrumentation APKs include JUnit too, so its presence alone cannot identify a host JVM.
+    // Android's ART exposes the historical Dalvik VM name; recognize it before the JUnit/Robolectric
+    // fallback below so Android-only Handler scheduling remains enabled on devices.
+    final String vmName = System.getProperty("java.vm.name", "");
+    if (vmName.contains("Dalvik")) {
+      return isJvm = false;
+    }
+
     try {
-      // If we're in a testing environment
+      // Host JVM tests (including Robolectric) carry JUnit and must retain their JVM behavior.
       Class.forName("org.junit.runners.JUnit4");
       return isJvm = true;
     } catch (ClassNotFoundException e) {

@@ -56,16 +56,30 @@ public class BaseApplication extends Application {
     return instance;
   }
 
-  @Override
-  public void onCreate() {
+  /**
+   * Initializes the application state shared by production and instrumentation test applications.
+   *
+   * Test subclasses reuse this through the normal {@link #onCreate()} lifecycle while opting out of
+   * the production-only tool extraction performed below.
+   */
+  protected final void initializeBaseApplicationState() {
     instance = this;
     Environment.init(this);
-    super.onCreate();
-
     mPrefsManager = new PreferenceManager(this);
     JavaCharacter.initMap();
+  }
 
-    if (!VMUtils.isJvm()) {
+  /** Whether this application instance should start the production tool extraction job. */
+  protected boolean shouldInitializeTools() {
+    return true;
+  }
+
+  @Override
+  public void onCreate() {
+    super.onCreate();
+    initializeBaseApplicationState();
+
+    if (shouldInitializeTools() && !VMUtils.isJvm()) {
       ToolsManager.init(this, null);
     }
   }

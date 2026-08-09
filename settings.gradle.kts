@@ -147,6 +147,9 @@ include(
   ":termux:emulator",
   ":termux:shared",
   ":termux:view",
+  // JVM-only tooling/LSP fixture support. Android instrumentation support remains intentionally separate.
+  ":testing:gradleToolingTest",
+  ":testing:lspTest",
   ":tooling:api",
   ":tooling:builder-model-impl",
   ":tooling:events",

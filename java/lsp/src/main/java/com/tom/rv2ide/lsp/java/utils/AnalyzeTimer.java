@@ -18,6 +18,7 @@
 package com.tom.rv2ide.lsp.java.utils;
 
 import android.os.Handler;
+import android.os.Looper;
 import androidx.annotation.NonNull;
 import java.util.Objects;
 
@@ -41,7 +42,9 @@ public class AnalyzeTimer {
    * @param timerCallback The callback that will be invoked after the timer has ended.
    */
   public AnalyzeTimer(@NonNull Runnable timerCallback) {
-    this.timerHandler = new Handler();
+    // Diagnostics publication ultimately returns through Dispatchers.Main; bind debounce work to the
+    // same explicit main Looper rather than requiring the construction thread to own a Looper.
+    this.timerHandler = new Handler(Looper.getMainLooper());
     this.interval = DEFAULT_INTERVAL;
     this.timerCallback = timerCallback;
 

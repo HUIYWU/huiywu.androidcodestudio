@@ -46,7 +46,7 @@ class JavaDiagnosticProvider {
   private val analyzeTimestamps = mutableMapOf<Path, Instant>()
   private val cachedDiagnostics = mutableMapOf<Path, DiagnosticResult>()
   private val analyzeGeneration = AtomicLong(0)
-  private val retryAfterInteractiveYield = AtomicBoolean(false)
+  private val interactiveYieldState = DiagnosticInteractiveYieldState()
   private var analyzing = AtomicBoolean(false)
   private var analyzingThread: AnalyzingThread? = null
 
@@ -126,8 +126,9 @@ class JavaDiagnosticProvider {
     return this.analyzing.get()
   }
 
-  /** Returns true once when a background analysis yielded to an interactive semantic request. */
-  fun consumeInteractiveYield(): Boolean = retryAfterInteractiveYield.getAndSet(false)
+  /** Consumes a retry request only when the completed analysis yielded with [DiagnosticResult.NO_UPDATE]. */
+  fun consumeInteractiveYield(result: DiagnosticResult): Boolean =
+      interactiveYieldState.consumeRetryAfter(result)
 
   fun cancel() {
     this.analyzingThread?.cancel()
@@ -227,7 +228,7 @@ class JavaDiagnosticProvider {
                 // foreground semantic request is active for this module, rather than waiting
                 // behind it and competing for the same reusable compiler.
                 if (session.hasInteractiveRequest) {
-                  retryAfterInteractiveYield.set(true)
+                  interactiveYieldState.markYielded()
                   if (IdeLogConfig.shouldLogInfo()) {
                     log.info("Analyze yielded to interactive semantic request file={}", file)
                   }
@@ -305,4 +306,21 @@ class JavaDiagnosticProvider {
               }
     }
   }
+}
+
+/**
+ * One-shot handoff from speculative diagnostics to the server debounce scheduler.
+ *
+ * The provider marks this only after yielding to a foreground semantic lease. The server consumes it
+ * only for [DiagnosticResult.NO_UPDATE], so ordinary no-update results cannot create a retry loop.
+ */
+internal class DiagnosticInteractiveYieldState {
+  private val yielded = AtomicBoolean(false)
+
+  fun markYielded() {
+    yielded.set(true)
+  }
+
+  fun consumeRetryAfter(result: DiagnosticResult): Boolean =
+      result == DiagnosticResult.NO_UPDATE && yielded.getAndSet(false)
 }

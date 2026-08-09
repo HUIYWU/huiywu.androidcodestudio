@@ -33,9 +33,20 @@ android {
       assets.srcDirs(rootProject.file("utilities/framework-stubs/libs"))
     }
   }
+
+  // kotlin-compiler-embeddable and the resolved Kotlin runtime both package these builtins metadata
+  // files. Keep one copy for the APK instead of excluding both copies; AGP requires explicit patterns
+  // for the root and one-package layouts observed during Android test resource merging.
+  packaging {
+    resources.pickFirsts += "kotlin/*.kotlin_builtins"
+    resources.pickFirsts += "kotlin/*/*.kotlin_builtins"
+  }
 }
 
 tasks.withType<Test>().configureEach {
+  // Workspace integration tests launch this standalone Tooling API artifact in a child process.
+  dependsOn(":tooling:impl:jar")
+
   val hostNativeLibraryDir =
       rootProject.file("/data/data/com.tom.rv2ide/files/home/usr/jvm-test-lib").absoluteFile
   systemProperty("java.library.path", hostNativeLibraryDir.absolutePath)
@@ -48,6 +59,12 @@ kapt {
 }
 dependencies {
   testImplementation(libs.tests.junit)
+  testImplementation(libs.tests.robolectric)
+  testImplementation(projects.testing.lspTest)
+
+  androidTestImplementation(libs.tests.junit)
+  androidTestImplementation(libs.tests.androidx.junit)
+  androidTestImplementation(libs.tests.androidx.test.runner)
 
   kapt(projects.annotation.processors)
   kapt(libs.google.auto.service)

@@ -107,6 +107,16 @@ class JavaLanguageServer : ILanguageServer {
   private val analyzeLaunchInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
   private val analyzeRerunRequested = java.util.concurrent.atomic.AtomicBoolean(false)
   private val lastInteractiveRequestAt = AtomicLong(0)
+
+  /**
+   * Instrumentation-only seam for the scheduling boundary.
+   *
+   * Production leaves this null and follows the real analyze/provider-yield path below. It lets the
+   * Android test exercise Handler debounce, retry scheduling, and main-thread publication without
+   * coupling those timing assertions to Tooling/javac setup, which is covered separately on JVM.
+   */
+  @RestrictTo(RestrictTo.Scope.TESTS)
+  internal var scheduledDiagnosticAttemptOverride: (suspend (Path) -> ScheduledDiagnosticAttempt)? = null
   private val cachedCompletion = AtomicReference(CachedCompletion.EMPTY)
   private var lastJavaChangeDelta = 0
 
@@ -279,8 +289,11 @@ class JavaLanguageServer : ILanguageServer {
         } catch (error: Throwable) {
           state.fail(error)
           if (IdeLogConfig.shouldLogInfo()) {
+            // Subscriber-driven cancellation is an expected terminal state during rapid edits,
+            // not a provider/compiler failure. Keep it distinct for pressure-test metrics.
             log.info(
-                "Completion worker terminal=failed file={} version={} revision={} environmentGeneration={} cursor={} errorType={} durationMs={}",
+                "Completion worker terminal={} file={} version={} revision={} environmentGeneration={} cursor={} errorType={} durationMs={}",
+                if (isCancelled(error)) "cancelled" else "failed",
                 key.file,
                 key.documentVersion,
                 key.documentRevision,
@@ -482,8 +495,10 @@ class JavaLanguageServer : ILanguageServer {
         } catch (error: Throwable) {
           state.fail(error)
           if (IdeLogConfig.shouldLogInfo()) {
+            // Keep expected coroutine/subscriber cancellation separate from a semantic failure.
             log.info(
-                "Signature Help worker terminal=failed file={} version={} revision={} environmentGeneration={} cursor={} errorType={} durationMs={}",
+                "Signature Help worker terminal={} file={} version={} revision={} environmentGeneration={} cursor={} errorType={} durationMs={}",
+                if (isCancelled(error)) "cancelled" else "failed",
                 key.file,
                 key.documentVersion,
                 key.documentRevision,
@@ -712,15 +727,21 @@ class JavaLanguageServer : ILanguageServer {
               SIGNATURE_HELP_DIAGNOSTIC_GRACE_MS - sinceInteractive
           else -> 0L
         }
-    val interval = maxOf(baseInterval.toLong(), interactiveDelay)
-    val shouldRestart = !timer.isStarted || forceRestart || timer.interval < interval
-    if (timer.interval != interval) {
-      timer.interval = interval
+    val schedule =
+        AnalyzeScheduleDecision.decide(
+            timerStarted = timer.isStarted,
+            currentIntervalMs = timer.interval,
+            baseIntervalMs = baseInterval.toLong(),
+            interactiveDelayMs = interactiveDelay,
+            forceRestart = forceRestart,
+        )
+    if (timer.interval != schedule.intervalMs) {
+      timer.interval = schedule.intervalMs
     }
-    if (!timer.isStarted) {
-      timer.start()
-    } else if (shouldRestart) {
-      timer.restart()
+    when (schedule.action) {
+      AnalyzeScheduleDecision.Action.START -> timer.start()
+      AnalyzeScheduleDecision.Action.RESTART -> timer.restart()
+      AnalyzeScheduleDecision.Action.KEEP -> Unit
     }
   }
 
@@ -921,15 +942,30 @@ class JavaLanguageServer : ILanguageServer {
           }
           return@launch
         }
-        val result = analyze(fileToAnalyze)
-        if (requestedGeneration != analyzeGeneration.get()) {
-          return@launch
-        }
-        if (result == DiagnosticResult.NO_UPDATE) {
-          // JavaDiagnosticProvider yields only when a live completion/signature request owns this
-          // module's compiler. Re-arm the one-shot debounce so diagnostics eventually run once
-          // interactive work has settled; do not retry ordinary NO_UPDATE outcomes.
-          if (diagnosticProvider?.consumeInteractiveYield() == true) {
+        val attempt =
+            scheduledDiagnosticAttemptOverride?.invoke(fileToAnalyze)
+                ?: run {
+                  val result = analyze(fileToAnalyze)
+                  ScheduledDiagnosticAttempt(
+                      result = result,
+                      retryAfterInteractiveYield = diagnosticProvider?.consumeInteractiveYield(result) == true,
+                  )
+                }
+        val result = attempt.result
+        val currentGeneration = analyzeGeneration.get()
+        // A stale attempt must not consume a yield belonging to the latest diagnostics generation.
+        val retryAfterInteractiveYield =
+            requestedGeneration == currentGeneration && attempt.retryAfterInteractiveYield
+        val dispatch =
+            DiagnosticDispatchDecision.decide(
+                result = result,
+                requestedGeneration = requestedGeneration,
+                currentGeneration = currentGeneration,
+                retryAfterInteractiveYield = retryAfterInteractiveYield,
+            )
+        when (dispatch) {
+          DiagnosticDispatchDecision.Action.DROP -> return@launch
+          DiagnosticDispatchDecision.Action.RETRY -> {
             if (IdeLogConfig.shouldLogInfo()) {
               log.info(
                   "Analyze retry scheduled after interactive yield requestedGeneration={} file={}",
@@ -938,8 +974,9 @@ class JavaLanguageServer : ILanguageServer {
               )
             }
             startOrRestartAnalyzeTimer(forceRestart = true)
+            return@launch
           }
-          return@launch
+          DiagnosticDispatchDecision.Action.PUBLISH -> Unit
         }
         withContext(Dispatchers.Main) {
           if (requestedGeneration == analyzeGeneration.get()) {
@@ -967,5 +1004,69 @@ class JavaLanguageServer : ILanguageServer {
         }
       }
     }
+  }
+}
+
+/** One scheduled diagnostics execution and whether it yielded a one-shot retry request. */
+@RestrictTo(RestrictTo.Scope.TESTS)
+internal data class ScheduledDiagnosticAttempt(
+    val result: DiagnosticResult,
+    val retryAfterInteractiveYield: Boolean,
+)
+
+/**
+ * Pure result dispatch decision kept beside the server that owns generation and debounce state.
+ */
+internal object DiagnosticDispatchDecision {
+  enum class Action {
+    DROP,
+    RETRY,
+    PUBLISH,
+  }
+
+  fun decide(
+      result: DiagnosticResult,
+      requestedGeneration: Long,
+      currentGeneration: Long,
+      retryAfterInteractiveYield: Boolean,
+  ): Action =
+      when {
+        requestedGeneration != currentGeneration -> Action.DROP
+        result == DiagnosticResult.NO_UPDATE && retryAfterInteractiveYield -> Action.RETRY
+        result == DiagnosticResult.NO_UPDATE -> Action.DROP
+        else -> Action.PUBLISH
+      }
+}
+
+/** Platform-independent debounce choice kept beside the server that owns AnalyzeTimer. */
+internal object AnalyzeScheduleDecision {
+  enum class Action {
+    KEEP,
+    START,
+    RESTART,
+  }
+
+  data class Plan(
+      val intervalMs: Long,
+      val action: Action,
+  )
+
+  fun decide(
+      timerStarted: Boolean,
+      currentIntervalMs: Long,
+      baseIntervalMs: Long,
+      interactiveDelayMs: Long,
+      forceRestart: Boolean,
+  ): Plan {
+    require(baseIntervalMs > 0L) { "baseIntervalMs must be positive" }
+    require(interactiveDelayMs >= 0L) { "interactiveDelayMs must not be negative" }
+    val intervalMs = maxOf(baseIntervalMs, interactiveDelayMs)
+    val action =
+        when {
+          !timerStarted -> Action.START
+          forceRestart || currentIntervalMs < intervalMs -> Action.RESTART
+          else -> Action.KEEP
+        }
+    return Plan(intervalMs, action)
   }
 }

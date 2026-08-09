@@ -1,0 +1,2 @@
+<!-- Minimal manifest required for the Android application model used by Java LSP integration tests. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

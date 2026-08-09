@@ -1,0 +1,17 @@
+// Deliberately dependency-free: the fixture exists to provide one Android Java module to Tooling and LSP.
+plugins {
+  id 'com.android.application'
+}
+
+android {
+  namespace 'com.tom.rv2ide.testing.fixture'
+  compileSdk 35
+
+  defaultConfig {
+    applicationId 'com.tom.rv2ide.testing.fixture'
+    minSdk 23
+    targetSdk 35
+    versionCode 1
+    versionName '1.0'
+  }
+}
