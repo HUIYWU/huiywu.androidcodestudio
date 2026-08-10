@@ -27,8 +27,11 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * @author Akash Yadav
  */
-class IDECompletionPublisher(handler: Handler, callback: Runnable, languageInterruptionLevel: Int) :
-    CompletionPublisher(handler, callback, languageInterruptionLevel) {
+class IDECompletionPublisher(
+    private val handler: Handler,
+    private val updateCallback: Runnable,
+    languageInterruptionLevel: Int,
+) : CompletionPublisher(handler, updateCallback, languageInterruptionLevel) {
 
   companion object {
     private val generationCounter = AtomicLong()
@@ -96,6 +99,18 @@ class IDECompletionPublisher(handler: Handler, callback: Runnable, languageInter
   /** Clears the marker when a deferred worker cannot provide a result. */
   fun completeDeferredResult() {
     awaitingDeferredResult = false
+  }
+
+  /**
+   * Publishes a successful empty deferred result through the same guarded UI callback as items.
+   *
+   * Sora does not schedule an update for [addLSPItems] with an empty collection. Without this
+   * explicit callback, a current request that correctly has no candidates can leave the prior
+   * generation's list visible after its placeholder callback was consumed.
+   */
+  fun publishEmptyDeferredResult() {
+    awaitingDeferredResult = false
+    handler.post(updateCallback)
   }
 
   override fun hasData(): Boolean = awaitingDeferredResult || super.hasData()

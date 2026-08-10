@@ -255,13 +255,6 @@ class EditorCompletionWindow(val editor: IDEEditor) : EditorAutoCompletion(edito
               // request intentionally has no candidates yet; do not clear/hide the window before
               // the session worker publishes its result through this same publisher.
               if (requestPublisher.consumeDeferredResultMarker()) {
-                if (IdeLogConfig.shouldLogWarn()) {
-                  log.warn(
-                      "Deferred completion placeholder consumed without rendering generation={} itemCount={}; a later empty worker result must still clear any prior completion list",
-                      requestPublisher.generation,
-                      requestPublisher.items.size,
-                  )
-                }
                 return@IDECompletionPublisher
               }
 
