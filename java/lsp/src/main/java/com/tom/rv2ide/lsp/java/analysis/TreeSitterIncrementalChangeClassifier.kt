@@ -21,6 +21,7 @@ import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContext
 import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContextClassifier
 import com.tom.rv2ide.projects.models.OneHopDocumentEdit
 import java.nio.file.Path
+import org.slf4j.LoggerFactory
 
 /**
  * Maps a verified edit to a conservative semantic-impact class using the existing Tree-sitter
@@ -28,8 +29,20 @@ import java.nio.file.Path
  * candidate/full semantic result.
  */
 object TreeSitterIncrementalChangeClassifier {
+  private val log = LoggerFactory.getLogger(TreeSitterIncrementalChangeClassifier::class.java)
+
   fun classify(file: Path, targetContent: String, edit: OneHopDocumentEdit): IncrementalChangeClass {
     if (edit.target.file != file.normalize() || edit.targetIndexOutside(targetContent)) {
+      log.warn(
+          "Incremental observation classified edit as UNKNOWN reason=TARGET_OR_RANGE_MISMATCH file={} kind={} targetMatchesFile={} start={} baseEnd={} replacementLength={} targetLength={}",
+          file,
+          edit.kind,
+          edit.target.file == file.normalize(),
+          edit.baseStartIndex,
+          edit.baseEndIndex,
+          edit.replacementText.length,
+          targetContent.length,
+      )
       return IncrementalChangeClass.UNKNOWN
     }
 
@@ -43,6 +56,7 @@ object TreeSitterIncrementalChangeClassifier {
       // A line terminator can merge or split a line comment and adjacent code. Even when the
       // target endpoints both resolve to COMMENT, the edit may have changed Java semantics.
       if (changedText.any { it == '\n' || it == '\r' }) {
+        logUnknownContext(edit, startOffset, endOffset, startContext, endContext, "WHITESPACE_LINE_BREAK")
         return IncrementalChangeClass.UNKNOWN
       }
       if (startContext == TSCompletionContext.COMMENT && endContext == TSCompletionContext.COMMENT) {
@@ -64,17 +78,24 @@ object TreeSitterIncrementalChangeClassifier {
           boundaryContexts[1] == TSCompletionContext.COMMENT) {
         return IncrementalChangeClass.WHITESPACE_OR_COMMENT
       }
+      logUnknownContext(edit, startOffset, endOffset, startContext, endContext, "WHITESPACE_NON_COMMENT")
       return IncrementalChangeClass.UNKNOWN
     }
 
-    if (startContext != endContext) return IncrementalChangeClass.UNKNOWN
+    if (startContext != endContext) {
+      logUnknownContext(edit, startOffset, endOffset, startContext, endContext, "CONTEXT_MISMATCH")
+      return IncrementalChangeClass.UNKNOWN
+    }
 
     return when (startContext) {
       TSCompletionContext.COMMENT,
       TSCompletionContext.STRING_LITERAL,
       TSCompletionContext.CHARACTER_LITERAL,
       TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR,
-      TSCompletionContext.UNKNOWN -> IncrementalChangeClass.UNKNOWN
+      TSCompletionContext.UNKNOWN -> {
+        logUnknownContext(edit, startOffset, endOffset, startContext, endContext, "UNSAFE_CONTEXT")
+        IncrementalChangeClass.UNKNOWN
+      }
       TSCompletionContext.IMPORT_DECLARATION,
       TSCompletionContext.PACKAGE_DECLARATION -> IncrementalChangeClass.FILE_STRUCTURE
       TSCompletionContext.TYPE_BODY -> IncrementalChangeClass.MEMBER_DECLARATION
@@ -82,6 +103,28 @@ object TreeSitterIncrementalChangeClassifier {
       TSCompletionContext.MEMBER_ACCESS,
       TSCompletionContext.METHOD_CALL_ARGUMENTS -> IncrementalChangeClass.EXPRESSION_OR_STATEMENT
     }
+  }
+
+  private fun logUnknownContext(
+      edit: OneHopDocumentEdit,
+      startOffset: Int,
+      endOffset: Int,
+      startContext: TSCompletionContext,
+      endContext: TSCompletionContext,
+      reason: String,
+  ) {
+    log.warn(
+        "Incremental observation classified edit as UNKNOWN reason={} kind={} start={} baseEnd={} end={} removedLength={} replacementLength={} startContext={} endContext={}",
+        reason,
+        edit.kind,
+        startOffset,
+        edit.baseEndIndex,
+        endOffset,
+        edit.removedText.length,
+        edit.replacementText.length,
+        startContext,
+        endContext,
+    )
   }
 
   private fun contextsAt(
