@@ -171,11 +171,25 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     if (this.cache.canUseCache(params)) {
       return mapCachedBusyResult(partial);
     }
-
     if (this.cache.params != null
         && DocumentUtils.isSameFile(this.cache.params.getFile(), params.getFile())) {
-      return mapCachedBusyResult(partial);
+      final CompletionResult fallback = mapCachedBusyResult(partial);
+      LOG.warn(
+          "Completion busy fallback bypassed exact cache proof entry=same-file cachedVersion={} cachedRevision={} cachedLine={} cachedColumn={} cachedPrefix={} requestVersion={} requestRevision={} requestLine={} requestColumn={} requestPrefix={} itemCount={}",
+          this.cache.params.getDocumentVersion(),
+          this.cache.params.getDocumentRevision(),
+          this.cache.params.getPosition().getLine(),
+          this.cache.params.getPosition().getColumn(),
+          this.cache.params.getPrefix(),
+          params.getDocumentVersion(),
+          params.getDocumentRevision(),
+          params.getPosition().getLine(),
+          params.getPosition().getColumn(),
+          params.getPrefix(),
+          fallback.getItems().size());
+      return fallback;
     }
+
 
     return null;
   }
@@ -190,7 +204,21 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       return null;
     }
     final String partial = params.getPrefix() == null ? "" : partialIdentifier(params.requirePrefix(), params.requirePrefix().length());
-    return mapCachedBusyResult(partial);
+    final CompletionResult fallback = mapCachedBusyResult(partial);
+    LOG.warn(
+        "Completion busy fallback bypassed exact cache proof entry=member-access cachedVersion={} cachedRevision={} cachedLine={} cachedColumn={} cachedPrefix={} requestVersion={} requestRevision={} requestLine={} requestColumn={} requestPrefix={} itemCount={}",
+        this.cache.params.getDocumentVersion(),
+        this.cache.params.getDocumentRevision(),
+        this.cache.params.getPosition().getLine(),
+        this.cache.params.getPosition().getColumn(),
+        this.cache.params.getPrefix(),
+        params.getDocumentVersion(),
+        params.getDocumentRevision(),
+        params.getPosition().getLine(),
+        params.getPosition().getColumn(),
+        params.getPrefix(),
+        fallback.getItems().size());
+    return fallback;
   }
 
   @NonNull
