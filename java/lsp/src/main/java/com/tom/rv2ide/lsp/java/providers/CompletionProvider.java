@@ -98,9 +98,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     if (synchronizedTask.isBusy()) {
       final TSCompletionContext busyContext = classifyCompletionContext(params);
       CompletionResult busyFallback = tryServeBusyFallback(params);
-      if (busyFallback == null && busyContext == TSCompletionContext.MEMBER_ACCESS) {
-        busyFallback = tryServeSameFileBusyFallback(params);
-      }
       if (busyFallback != null) {
         return busyFallback;
       }
@@ -171,54 +168,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     if (this.cache.canUseCache(params)) {
       return mapCachedBusyResult(partial);
     }
-    if (this.cache.params != null
-        && DocumentUtils.isSameFile(this.cache.params.getFile(), params.getFile())) {
-      final CompletionResult fallback = mapCachedBusyResult(partial);
-      LOG.warn(
-          "Completion busy fallback bypassed exact cache proof entry=same-file cachedVersion={} cachedRevision={} cachedLine={} cachedColumn={} cachedPrefix={} requestVersion={} requestRevision={} requestLine={} requestColumn={} requestPrefix={} itemCount={}",
-          this.cache.params.getDocumentVersion(),
-          this.cache.params.getDocumentRevision(),
-          this.cache.params.getPosition().getLine(),
-          this.cache.params.getPosition().getColumn(),
-          this.cache.params.getPrefix(),
-          params.getDocumentVersion(),
-          params.getDocumentRevision(),
-          params.getPosition().getLine(),
-          params.getPosition().getColumn(),
-          params.getPrefix(),
-          fallback.getItems().size());
-      return fallback;
-    }
-
-
     return null;
-  }
-
-  @Nullable
-  private CompletionResult tryServeSameFileBusyFallback(@NonNull final CompletionParams params) {
-    if (this.cache == null || this.cache.params == null
-        || isQualifiedNewClassPrefix(params.getPrefix())) {
-      return null;
-    }
-    if (!DocumentUtils.isSameFile(this.cache.params.getFile(), params.getFile())) {
-      return null;
-    }
-    final String partial = params.getPrefix() == null ? "" : partialIdentifier(params.requirePrefix(), params.requirePrefix().length());
-    final CompletionResult fallback = mapCachedBusyResult(partial);
-    LOG.warn(
-        "Completion busy fallback bypassed exact cache proof entry=member-access cachedVersion={} cachedRevision={} cachedLine={} cachedColumn={} cachedPrefix={} requestVersion={} requestRevision={} requestLine={} requestColumn={} requestPrefix={} itemCount={}",
-        this.cache.params.getDocumentVersion(),
-        this.cache.params.getDocumentRevision(),
-        this.cache.params.getPosition().getLine(),
-        this.cache.params.getPosition().getColumn(),
-        this.cache.params.getPrefix(),
-        params.getDocumentVersion(),
-        params.getDocumentRevision(),
-        params.getPosition().getLine(),
-        params.getPosition().getColumn(),
-        params.getPrefix(),
-        fallback.getItems().size());
-    return fallback;
   }
 
   @NonNull
