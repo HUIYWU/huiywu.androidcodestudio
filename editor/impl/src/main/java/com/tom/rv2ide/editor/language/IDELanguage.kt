@@ -110,6 +110,13 @@ abstract class IDELanguage : Language {
         if (error == null && result != null && !idePublisher.isCancelled()) {
           // Keep the marker until the callback observes these items. The worker can finish before
           // Sora 0.23.7 performs CompletionThread's initial updateList(true) callback.
+          if (result.items.isEmpty()) {
+            log.warn(
+                "Deferred completion delivered an empty result generation={} publisherCancelled={} awaitingDeferredResult=true; verifying whether the completion window clears the prior generation",
+                idePublisher.generation,
+                idePublisher.isCancelled(),
+            )
+          }
           idePublisher.addLSPItems(result.items)
         } else {
           // A failed or cancelled worker must not leave the initial Sora callback permanently
