@@ -82,6 +82,17 @@ object TreeSitterIncrementalChangeClassifier {
       return IncrementalChangeClass.UNKNOWN
     }
 
+    // A comma is the editor's concrete transition from one completed argument to the next.
+    // Tree-sitter may classify the new endpoint as BROKEN_SYNTAX_NEAR_CURSOR while the call is
+    // intentionally still open for Signature Help. Keep this exception narrow: only a single
+    // comma inserted in an existing method-call argument context is a candidate edit.
+    if (edit.kind == OneHopDocumentEdit.Kind.INSERT &&
+        edit.replacementText == "," &&
+        startContext == TSCompletionContext.METHOD_CALL_ARGUMENTS &&
+        endContext == TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR) {
+      return IncrementalChangeClass.EXPRESSION_OR_STATEMENT
+    }
+
     if (startContext != endContext) {
       logUnknownContext(edit, startOffset, endOffset, startContext, endContext, "CONTEXT_MISMATCH")
       return IncrementalChangeClass.UNKNOWN
