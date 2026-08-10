@@ -114,7 +114,7 @@ object TreeSitterIncrementalChangeClassifier {
       reason: String,
   ) {
     log.warn(
-        "Incremental observation classified edit as UNKNOWN reason={} kind={} start={} baseEnd={} end={} removedLength={} replacementLength={} startContext={} endContext={}",
+        "Incremental observation classified edit as UNKNOWN reason={} kind={} start={} baseEnd={} end={} removedLength={} replacementLength={} removedCodePoints={} replacementCodePoints={} startContext={} endContext={}",
         reason,
         edit.kind,
         startOffset,
@@ -122,9 +122,16 @@ object TreeSitterIncrementalChangeClassifier {
         endOffset,
         edit.removedText.length,
         edit.replacementText.length,
+        codePointSummary(edit.removedText),
+        codePointSummary(edit.replacementText),
         startContext,
         endContext,
     )
+  }
+
+  private fun codePointSummary(text: String): String {
+    if (text.isEmpty()) return "[]"
+    return text.codePoints().toArray().joinToString(prefix = "[", postfix = "]")
   }
 
   private fun contextsAt(
