@@ -89,10 +89,9 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     //    watch.lapFromLast("Entered trees")
     //
     //    val analyzed = JavacTaskUtil.analyze(task, entered)
-    val analyzeListener = AnalyzeTaskListener()
+    val analyzeListener = AnalyzeTaskListener(task)
     try {
       task.addTaskListener(analyzeListener)
-      logTodoSnapshot(task, "before")
       val memoryBeforeBytes = usedHeapBytes()
       val analyzeStartedNs = System.nanoTime()
       task.analyze()
@@ -129,13 +128,18 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     }
   }
 
-  private class AnalyzeTaskListener : TaskListener {
+  private inner class AnalyzeTaskListener(private val task: JavacTaskImpl) : TaskListener {
     private val stack = ArrayDeque<AnalyzeFrame>()
+    private var todoLogged = false
     var completedTypeCount = 0
       private set
 
     override fun started(event: TaskEvent) {
       if (event.kind != TaskEvent.Kind.ANALYZE) return
+      if (!todoLogged) {
+        todoLogged = true
+        logTodoSnapshot(task, "analyze-start")
+      }
       stack.addLast(AnalyzeFrame(event, System.nanoTime()))
     }
 
