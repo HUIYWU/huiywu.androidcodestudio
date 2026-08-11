@@ -162,17 +162,10 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
       while (node != null) {
         if (tailNodes.contains(node)) {
           errors.unlink(node);
-          final JCDiagnostic diagnostic;
-          if (node.diag instanceof ClientCodeWrapper.DiagnosticSourceUnwrapper) {
-            diagnostic = ((ClientCodeWrapper.DiagnosticSourceUnwrapper) node.diag).d;
-          } else {
-            diagnostic = (JCDiagnostic) node.diag;
-          }
-          if (diagnostic == null) {
-            throw new IllegalStateException(
-                "diagnostic == null " + mapArraysToLists(Thread.getAllStackTraces())); // NOI18N
-          }
-          this.affectedErrors.add(new D(diagnostic));
+          // A diagnostic may already be a DeltaDiagnostic from an earlier successful
+          // partial reparse. Do not cast it back to JCDiagnostic; preserve the public
+          // Diagnostic wrapper and apply the next offset translation on top of it.
+          this.affectedErrors.add(node.diag);
         }
         node = node.next;
       }
