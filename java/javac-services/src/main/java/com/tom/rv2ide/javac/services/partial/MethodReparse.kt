@@ -135,11 +135,17 @@ class MethodReparse : PartialReparse {
           dl.startPartialReparse(origStartPos, origEndPos)
         } catch (err: Throwable) {
           log.error(
-              "Partial reparse stage failed: stage=diagnostic-begin method={} origStartPos={} origEndPos={} newBodyLength={}",
+              "Partial reparse stage failed: stage=diagnostic-begin method={} source={} sourceUri={} listenerSource={} listenerSourceUri={} origStartPos={} origEndPos={} newBodyLength={} errorType={} errorMessage={}",
               method.name,
+              fo,
+              fo.toUri(),
+              dl.jfoForDebug(),
+              dl.sourceUriForDebug(),
               origStartPos,
               origEndPos,
               newBody.length,
+              err.javaClass.name,
+              err.message,
               err,
           )
           return false

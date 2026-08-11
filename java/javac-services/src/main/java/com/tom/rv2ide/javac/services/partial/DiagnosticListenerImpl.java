@@ -18,6 +18,7 @@
 package com.tom.rv2ide.javac.services.partial;
 
 import androidx.annotation.Nullable;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -55,10 +56,18 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
     this.source2Errors = new HashMap<>();
   }
 
+  public final JavaFileObject jfoForDebug() {
+    return jfo;
+  }
+
+  public final URI sourceUriForDebug() {
+    return jfo == null ? null : jfo.toUri().normalize();
+  }
+
   @Override
-  public void report(Diagnostic<? extends JavaFileObject> message) {
+  public synchronized void report(Diagnostic<? extends JavaFileObject> message) {
     if (partialReparseErrors != null) {
-      if (this.jfo != null && this.jfo == message.getSource()) {
+      if (sameSource(this.jfo, message.getSource())) {
         partialReparseErrors.add(message);
         if (message.getKind() == Diagnostic.Kind.ERROR) {
           partialReparseRealErrors = true;
@@ -67,6 +76,20 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
     } else {
       Diagnostics errors = getErrors(message.getSource());
       errors.add((int) message.getPosition(), message);
+    }
+  }
+
+  private boolean sameSource(JavaFileObject left, JavaFileObject right) {
+    if (left == right) {
+      return left != null;
+    }
+    if (left == null || right == null) {
+      return false;
+    }
+    try {
+      return left.toUri().normalize().equals(right.toUri().normalize());
+    } catch (Throwable ignored) {
+      return false;
     }
   }
 
@@ -88,7 +111,14 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
         //          }
       }
     } else {
-      errors = source2Errors.get(file);
+      JavaFileObject key = null;
+      for (JavaFileObject candidate : source2Errors.keySet()) {
+        if (sameSource(candidate, file)) {
+          key = candidate;
+          break;
+        }
+      }
+      errors = key == null ? null : source2Errors.get(key);
       if (errors == null) {
         source2Errors.put(file, errors = new Diagnostics());
       }
@@ -104,7 +134,10 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
     return this.partialReparseErrors != null && partialReparseRealErrors;
   }
 
-  public final void startPartialReparse(int from, int to) {
+  public final synchronized void startPartialReparse(int from, int to) {
+    if (from < 0 || to < from) {
+      throw new IllegalArgumentException("Invalid partial diagnostic range from=" + from + " to=" + to);
+    }
     if (partialReparseErrors == null) {
       partialReparseErrors = new ArrayList<>();
       Diagnostics errors = getErrors(jfo);
@@ -156,7 +189,7 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
     }
     return result;
   }
-  public final void endPartialReparse(final int delta) {
+  public final synchronized void endPartialReparse(final int delta) {
     this.currentDelta += delta;
     final Diagnostics errors = getErrors(jfo);
     if (partialReparseErrors != null) {
@@ -178,7 +211,7 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
     partialReparseRealErrors = false;
   }
   /** Aborts the current partial transaction and restores diagnostics removed at its start. */
-  public final void abortPartialReparse() {
+  public final synchronized void abortPartialReparse() {
     if (partialReparseErrors == null) {
       return;
     }
