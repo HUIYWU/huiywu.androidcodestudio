@@ -94,11 +94,22 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
   @NonNull
   @Override
   public CompletionResult complete(@NonNull CompletionParams params) {
+    final long requestStartedNs = System.nanoTime();
+    final String requestTag = completionRequestTag(params);
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info("Completion stage=enter tag={} file={} version={} revision={} cursor={} line={} column={} prefixLength={} contentLength={} compilerHash={} cachePresent={} taskBusy={}",
+          requestTag, params.getFile(), params.getDocumentVersion(), params.getDocumentRevision(),
+          params.getPosition().requireIndex(), params.getPosition().getLine(), params.getPosition().getColumn(),
+          params.getPrefix() == null ? -1 : params.getPrefix().length(),
+          params.getContent() == null ? -1 : params.getContent().length(),
+          System.identityHashCode(compiler), cache != null, compiler.getSynchronizedTask().isBusy());
+    }
     final var synchronizedTask = compiler.getSynchronizedTask();
     if (synchronizedTask.isBusy()) {
       final TSCompletionContext busyContext = classifyCompletionContext(params);
       CompletionResult busyFallback = tryServeBusyFallback(params);
       if (busyFallback != null) {
+        logStage(requestTag, "busy-cache-fallback", requestStartedNs, busyFallback);
         return busyFallback;
       }
       if (busyContext == TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR) {
@@ -128,7 +139,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     try {
       abortIfCancelled();
       abortCompletionIfCancelled();
-      return completeInternal(params);
+      CompletionResult result = completeInternal(params);
+      logStage(requestTag, "complete-total", requestStartedNs, result);
+      return result;
     } catch (Throwable err) {
       if (CancelChecker.isCancelled(err)) {
         if (IdeLogConfig.shouldLogIde()) {
@@ -212,6 +225,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     }
 
     Instant started = Instant.now();
+    final long cacheStartedNs = System.nanoTime();
 
     if (this.cache != null && !isQualifiedNewClassPrefix(params.getPrefix())
         && this.cache.canUseCache(params)) {
@@ -242,6 +256,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         }
 
         logCompletionDuration(started, result);
+        logStage(requestTag(params), "cache-hit", cacheStartedNs, result);
         return result;
       } else {
         if (IdeLogConfig.shouldLogIde()) {
@@ -261,13 +276,19 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final long cursor = params.getPosition().requireIndex();
     final int tsLine = params.getPosition().getLine();
     final int tsColumn = params.getPosition().getColumn();
+    final long contentStartedNs = System.nanoTime();
     final String originalContents = requestContents(params);
     final var contentBuilder = new StringBuilder(originalContents);
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info("Completion stage=request-content tag={} durationMs={} contentLength={} contentProvidedByRequest={}",
+          requestTag(params), elapsedMs(contentStartedNs), originalContents.length(), params.getContent() != null);
+    }
 
     int endOfLine = endOfLine(contentBuilder, (int) cursor);
     contentBuilder.insert(endOfLine, ';');
 
     final StringBuilder contents;
+    final long fixerStartedNs = System.nanoTime();
     final var context = compiler.compiler.currentContext;
     if (context != null) {
       abortIfCancelled();
@@ -277,7 +298,14 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       contents = contentBuilder;
     }
     final String contentString = contents.toString();
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info("Completion stage=ast-fixer tag={} durationMs={} contextPresent={} changed={} originalLength={} finalLength={} injectedChars={}",
+          requestTag(params), elapsedMs(fixerStartedNs), context != null,
+          !contentString.contentEquals(contentBuilder), originalContents.length(), contentString.length(),
+          contentString.length() - originalContents.length());
+    }
     TSCompletionContext tsContext;
+    final long tsStartedNs = System.nanoTime();
     try {
       tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor, tsLine, tsColumn);
     } catch (Throwable err) {
@@ -292,6 +320,10 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
             err.getMessage());
       }
       tsContext = TSCompletionContext.UNKNOWN;
+    }
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info("Completion stage=treesitter tag={} durationMs={} context={} fileLength={} cursor={}",
+          requestTag(params), elapsedMs(tsStartedNs), tsContext, contentString.length(), cursor);
     }
     if (tsContext == TSCompletionContext.COMMENT
         || tsContext == TSCompletionContext.STRING_LITERAL
@@ -459,8 +491,21 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       config.setCompletionInfo(new CompletionInfo(params.getPosition()));
     };
 
+    final long compileWaitStartedNs = System.nanoTime();
     SynchronizedTask synchronizedTask = compiler.compile(request);
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info("Completion stage=compile-request tag={} durationMs={} compilerHash={} sourceLength={} prefixLength={} tsContext={}",
+          requestTag(params), elapsedMs(compileWaitStartedNs), System.identityHashCode(compiler),
+          contents.length(), partial.length(), tsContextFinal);
+    }
+    final long taskGetStartedNs = System.nanoTime();
     return synchronizedTask.get(task -> {
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info("Completion stage=compile-task-ready tag={} waitMs={} taskPresent={} roots={} diagnostics={}",
+            requestTag(params), elapsedMs(taskGetStartedNs), task != null,
+            task == null || task.roots == null ? -1 : task.roots.size(),
+            task == null || task.diagnostics == null ? -1 : task.diagnostics.size());
+      }
       if (task == null || task.task == null || task.task.getContext() == null) {
         LOG.warn(
             "Compilation resulted in an invalid JavacTask file={} cursor={} taskPresent={} javacTaskPresent={} contextPresent={}",
@@ -477,7 +522,14 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         LOG.debug("...compiled in {}ms", Duration.between(started, Instant.now()).toMillis());
       }
       final var completionRoot = task.root(file);
+      final long scanStartedNs = System.nanoTime();
       TreePath path = new FindCompletionsAt(task.task).scan(completionRoot, cursor);
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info("Completion stage=tree-scan tag={} durationMs={} leafKind={} pathPresent={} rootSourceLength={}",
+            requestTag(params), elapsedMs(scanStartedNs),
+            path == null || path.getLeaf() == null ? null : path.getLeaf().getKind(),
+            path != null, contents.length());
+      }
       if (path == null || path.getLeaf() == null) {
         LOG.warn(
             "Completion scan returned null path file={} cursor={} rootPresent={} diagnosticsCountUnknown=true",
@@ -581,8 +633,15 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
     abortIfCancelled();
     abortCompletionIfCancelled();
+    final long providerStartedNs = System.nanoTime();
     try {
-      return provider.complete(task, path, partial, endsWithParen);
+      CompletionResult result = provider.complete(task, path, partial, endsWithParen);
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info("Completion stage=provider tag={} provider={} durationMs={} itemCount={} incomplete={}",
+            completionRequestTag(file, cursor, partial), klass.getSimpleName(), elapsedMs(providerStartedNs),
+            result == null ? -1 : result.getItems().size(), result != null && result.isIncomplete());
+      }
+      return result;
     } catch (Throwable err) {
       LOG.error(
           "Completion provider failed file={} cursor={} leafKind={} provider={} partial={} endsWithParen={}",
@@ -594,6 +653,30 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
           endsWithParen,
           err);
       throw err;
+    }
+  }
+
+  private static long elapsedMs(long startedNs) {
+    return (System.nanoTime() - startedNs) / 1_000_000L;
+  }
+
+  private String requestTag(@NonNull CompletionParams params) {
+    return completionRequestTag(params);
+  }
+
+  private static String completionRequestTag(@NonNull CompletionParams params) {
+    return completionRequestTag(params.getFile(), params.getPosition().requireIndex(), params.getPrefix());
+  }
+
+  private static String completionRequestTag(Path file, long cursor, String prefix) {
+    return Integer.toHexString(System.identityHashCode(file)) + "-" + cursor + "-" + (prefix == null ? 0 : prefix.length());
+  }
+
+  private static void logStage(String tag, String stage, long startedNs, CompletionResult result) {
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info("Completion stage={} tag={} durationMs={} itemCount={} cached={} incomplete={}",
+          stage, tag, elapsedMs(startedNs), result == null ? -1 : result.getItems().size(),
+          result != null && result.isCached(), result != null && result.isIncomplete());
     }
   }
 

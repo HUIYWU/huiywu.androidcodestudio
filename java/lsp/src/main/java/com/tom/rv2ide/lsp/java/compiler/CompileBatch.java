@@ -106,9 +106,29 @@ public class CompileBatch implements AutoCloseable {
   
     Objects.requireNonNull(compilationRequest, "A task processor is required");
 
+    final long processStartedNs = System.nanoTime();
     try {
       compilationRequest.compilationTaskProcessor.process(borrow.task, this::processCompilationUnit);
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info(
+            "CompileBatch stage=task-process parentHash={} durationMs={} sourceCount={} rootCount={} diagnostics={}",
+            System.identityHashCode(parent),
+            (System.nanoTime() - processStartedNs) / 1_000_000L,
+            files.size(),
+            roots.size(),
+            parent.diagnostics.size());
+      }
     } catch (Throwable e) {
+      if (IdeLogConfig.shouldLogInfo()) {
+        LOG.info(
+            "CompileBatch stage=task-process-failed parentHash={} durationMs={} sourceCount={} rootCount={} diagnostics={} errorType={}",
+            System.identityHashCode(parent),
+            (System.nanoTime() - processStartedNs) / 1_000_000L,
+            files.size(),
+            roots.size(),
+            parent.diagnostics.size(),
+            e.getClass().getSimpleName());
+      }
       LOG.error(
           "CompileBatch processing failed parentHash={} files={} contextPresent={} firstSource={}",
           System.identityHashCode(parent),
