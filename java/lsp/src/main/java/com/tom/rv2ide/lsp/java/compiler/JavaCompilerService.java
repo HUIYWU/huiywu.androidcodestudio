@@ -427,12 +427,17 @@ public class JavaCompilerService implements CompilerProvider {
     if (oldContents == null) {
       return false;
     }
-    if (cachedCompile.documentVersion() >= 0
-        && (plan.documentVersion < 0 || plan.documentVersion != cachedCompile.documentVersion() + 1)) {
+    // The MVP requires an explicit contiguous document identity. A task produced by
+    // Diagnostics or another request without version metadata must be re-established first;
+    // otherwise we could mutate a task whose source snapshot is only approximately known.
+    if (cachedCompile.documentVersion() < 0
+        || plan.documentVersion < 0
+        || plan.documentVersion != cachedCompile.documentVersion() + 1) {
       return false;
     }
-    if (cachedCompile.documentRevision() >= 0
-        && (plan.documentRevision < 0 || plan.documentRevision <= cachedCompile.documentRevision())) {
+    if (cachedCompile.documentRevision() < 0
+        || plan.documentRevision < 0
+        || plan.documentRevision <= cachedCompile.documentRevision()) {
       return false;
     }
 
