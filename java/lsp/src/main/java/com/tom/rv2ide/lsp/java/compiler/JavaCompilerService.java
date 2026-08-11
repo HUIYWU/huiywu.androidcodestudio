@@ -85,10 +85,6 @@ public class JavaCompilerService implements CompilerProvider {
       BootClasspathProvider.getTopLevelClasses(
           Collections.singleton(Environment.ANDROID_JAR.getAbsolutePath()));
   private CompileBatch cachedCompile;
-  // Keep the former limit visible in telemetry while Context retention is evaluated.
-  private static final long RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES = 160L * 1024L * 1024L;
-  private static final boolean AUTOMATIC_COMPILER_RECREATE_FOR_MEMORY = false;
-  private long compilerGeneration = 1L;
 
   // The module project must not be null
   // It is marked as nullable just for some special cases like tests
@@ -313,53 +309,33 @@ public class JavaCompilerService implements CompilerProvider {
   private SynchronizedTask compileBatch(CompilationRequest request) {
     synchronizedTask.post(
         () -> {
-          final String recompileReason = compilationChangeReason(request.sources);
-          if (recompileReason != null) {
-            if (IdeLogConfig.shouldLogInfo()) {
-              LOG.info(
-                  "Javac compile-decision action=recompile reason={} parentHash={} cachedBatchPresent={} contextHash={} sourceCount={}",
-                  recompileReason,
-                  System.identityHashCode(this),
-                  cachedCompile != null,
-                  compiler.currentContext == null ? 0 : System.identityHashCode(compiler.currentContext),
-                  request.sources.size());
-            }
+          if (needsCompilation(request.sources)) {
             reparseOrRecompile(request);
-          } else if (IdeLogConfig.shouldLogInfo()) {
-            LOG.info(
-                "Javac compile-decision action=reuse-batch parentHash={} contextHash={} sourceCount={}",
-                System.identityHashCode(this),
-                compiler.currentContext == null ? 0 : System.identityHashCode(compiler.currentContext),
-                request.sources.size());
           }
+
           synchronizedTask.setTask(
               new CompileTask(cachedCompile, diagnostics, false));
         });
 
     return synchronizedTask;
   }
-
   private boolean needsCompilation(Collection<? extends JavaFileObject> sources) {
-    return compilationChangeReason(sources) != null;
-  }
-
-  @Nullable
-  private String compilationChangeReason(Collection<? extends JavaFileObject> sources) {
     if (cachedModified.size() != sources.size()) {
-      return "source-count";
+      return true;
     }
     for (JavaFileObject f : sources) {
       if (!cachedModified.containsKey(f)) {
-        return "source-set";
+        return true;
       }
 
       final Long modified = cachedModified.get(f);
       if (modified != null && f.getLastModified() != modified) {
-        return "source-modified";
+        return true;
       }
     }
-    return null;
+    return false;
   }
+
 
   /**
    * Recompiles the current request on the stable semantic path.
@@ -379,45 +355,10 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   public synchronized void close() {
-    final Runtime runtime = Runtime.getRuntime();
-    final long usedBeforeClose = runtime.totalMemory() - runtime.freeMemory();
-
-    boolean recreatedReusableCompiler = false;
-    final boolean releasedBatch = cachedCompile != null;
-    if (releasedBatch) {
+    if (cachedCompile != null) {
       cachedCompile.close();
       cachedCompile.borrow.close();
       cachedCompile = null;
-    }
-    final long usedAfterBatchRelease = runtime.totalMemory() - runtime.freeMemory();
-    final boolean thresholdExceeded = usedBeforeClose >= RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES;
-    final boolean recreateDeferred =
-        thresholdExceeded && !AUTOMATIC_COMPILER_RECREATE_FOR_MEMORY;
-    final boolean shouldRecreateCompiler =
-        AUTOMATIC_COMPILER_RECREATE_FOR_MEMORY &&
-            compiler != null &&
-            compiler.currentContext != null &&
-            thresholdExceeded;
-    if (shouldRecreateCompiler) {
-      compiler = new ReusableCompiler();
-      compilerGeneration++;
-      recreatedReusableCompiler = true;
-    }
-    if (IdeLogConfig.shouldLogInfo()) {
-      LOG.info(
-          "Javac batch-close parentHash={} releasedBatch={} thresholdExceeded={} automaticRecreateEnabled={} recreateDeferred={} recreatedCompilerForMemory={} usedHeapBeforeMiB={} usedHeapAfterBatchReleaseMiB={} maxHeapMiB={} thresholdMiB={} compilerGeneration={} contextHashAfterClose={}",
-          System.identityHashCode(this),
-          releasedBatch,
-          thresholdExceeded,
-          AUTOMATIC_COMPILER_RECREATE_FOR_MEMORY,
-          recreateDeferred,
-          recreatedReusableCompiler,
-          usedBeforeClose / (1024L * 1024L),
-          usedAfterBatchRelease / (1024L * 1024L),
-          runtime.maxMemory() / (1024L * 1024L),
-          RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES / (1024L * 1024L),
-          compilerGeneration,
-          compiler.currentContext == null ? 0 : System.identityHashCode(compiler.currentContext));
     }
   }
 
@@ -555,7 +496,6 @@ public class JavaCompilerService implements CompilerProvider {
           cachedCompile = null;
           cachedModified.clear();
           compiler = new ReusableCompiler();
-          compilerGeneration++;
         });
   }
 

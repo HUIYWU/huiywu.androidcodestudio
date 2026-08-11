@@ -103,17 +103,6 @@ public class CompileBatch implements AutoCloseable {
     if (compilationRequest.configureContext != null) {
       compilationRequest.configureContext.accept(context);
     }
-    if (IdeLogConfig.shouldLogInfo()) {
-      LOG.info(
-          "Javac batch-start requestKind={} parentHash={} taskHash={} contextHash={} compilerHash={} sourceCount={}",
-          config.getCompletionInfo() == null ? "diagnostics-or-general" : "completion",
-          System.identityHashCode(parent),
-          System.identityHashCode(task),
-          System.identityHashCode(context),
-          System.identityHashCode(parent.compiler),
-          files.size());
-    }
-  
     Objects.requireNonNull(compilationRequest, "A task processor is required");
 
     try {
@@ -195,7 +184,6 @@ public class CompileBatch implements AutoCloseable {
         new DiagnosticListenerWrapper(parent.diagnostics::add, sources.iterator().next());
 
     final ReusableBorrow borrow;
-    final long getTaskStartedNs = System.nanoTime();
     try {
       borrow =
           parent.compiler.getTask(
@@ -212,15 +200,6 @@ public class CompileBatch implements AutoCloseable {
       throw err;
     }
  
-    if (IdeLogConfig.shouldLogInfo()) {
-      LOG.info(
-          "Javac stage=getTask parentHash={} durationMs={} sourceCount={} fileManagerClass={}",
-          System.identityHashCode(parent),
-          (System.nanoTime() - getTaskStartedNs) / 1_000_000L,
-          sources.size(),
-          parent.fileManager == null ? null : parent.fileManager.getClass().getSimpleName());
-    }
-
     if (parent.fileManager != null) {
       try {
         parent.fileManager.setContext(borrow.task.getContext());
