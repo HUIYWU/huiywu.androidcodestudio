@@ -352,10 +352,48 @@ public class JavaCompilerService implements CompilerProvider {
    * otherwise recompiles the current request on the stable semantic path.
    */
   private synchronized void reparseOrRecompile(CompilationRequest request) {
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug(
+          "MethodReparse attempt requestHash={} cachedTaskHash={} sourceCount={} planPresent={} cachedVersion={} requestedVersion={} cachedRevision={} requestedRevision={}",
+          System.identityHashCode(request),
+          cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task),
+          request.sources.size(),
+          request.methodReparsePlan != null,
+          cachedCompile == null ? -1 : cachedCompile.documentVersion(),
+          request.methodReparsePlan == null ? -1 : request.methodReparsePlan.documentVersion,
+          cachedCompile == null ? -1 : cachedCompile.documentRevision(),
+          request.methodReparsePlan == null ? -1 : request.methodReparsePlan.documentRevision);
+    }
     if (!methodReparseCorruptedTask
         && request.methodReparsePlan != null
         && tryMethodReparse(request)) {
+      if (IdeLogConfig.shouldLogDebug()) {
+        LOG.debug(
+            "MethodReparse success requestHash={} taskHash={} source={}",
+            System.identityHashCode(request),
+            cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task),
+            request.methodReparsePlan.file);
+        LOG.info(
+            "JAVAC_METHOD_REPARSE_SUCCESS taskHash={} source={} version={} revision={}",
+            cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task),
+            request.methodReparsePlan.file,
+            request.methodReparsePlan.documentVersion,
+            request.methodReparsePlan.documentRevision);
+      }
       return;
+    }
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.debug(
+          "MethodReparse fallback requestHash={} corrupted={} cachedTaskHash={}",
+          System.identityHashCode(request),
+          methodReparseCorruptedTask,
+          cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task));
+      LOG.info(
+          "JAVAC_METHOD_REPARSE_FALLBACK corrupted={} source={} version={} revision={}",
+          methodReparseCorruptedTask,
+          request.methodReparsePlan == null ? null : request.methodReparsePlan.file,
+          request.methodReparsePlan == null ? -1 : request.methodReparsePlan.documentVersion,
+          request.methodReparsePlan == null ? -1 : request.methodReparsePlan.documentRevision);
     }
     // A failed in-place mutation must never be reused. recompile() closes and replaces it.
     recompile(request);

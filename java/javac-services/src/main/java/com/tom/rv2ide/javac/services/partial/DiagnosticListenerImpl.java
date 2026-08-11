@@ -173,6 +173,7 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
     }
     partialReparseErrors = null;
     affectedErrors = null;
+    removedErrors = null;
     currentDelta = 0;
     partialReparseRealErrors = false;
   }
