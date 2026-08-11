@@ -85,7 +85,9 @@ public class JavaCompilerService implements CompilerProvider {
       BootClasspathProvider.getTopLevelClasses(
           Collections.singleton(Environment.ANDROID_JAR.getAbsolutePath()));
   private CompileBatch cachedCompile;
+  // Keep the former limit visible in telemetry while Context retention is evaluated.
   private static final long RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES = 160L * 1024L * 1024L;
+  private static final boolean AUTOMATIC_COMPILER_RECREATE_FOR_MEMORY = false;
   private long compilerGeneration = 1L;
 
   // The module project must not be null
@@ -388,9 +390,14 @@ public class JavaCompilerService implements CompilerProvider {
       cachedCompile = null;
     }
     final long usedAfterBatchRelease = runtime.totalMemory() - runtime.freeMemory();
-    final boolean shouldRecreateForMemoryPressure = usedBeforeClose >= RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES;
+    final boolean thresholdExceeded = usedBeforeClose >= RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES;
+    final boolean recreateDeferred =
+        thresholdExceeded && !AUTOMATIC_COMPILER_RECREATE_FOR_MEMORY;
     final boolean shouldRecreateCompiler =
-        compiler != null && compiler.currentContext != null && shouldRecreateForMemoryPressure;
+        AUTOMATIC_COMPILER_RECREATE_FOR_MEMORY &&
+            compiler != null &&
+            compiler.currentContext != null &&
+            thresholdExceeded;
     if (shouldRecreateCompiler) {
       compiler = new ReusableCompiler();
       compilerGeneration++;
@@ -398,9 +405,12 @@ public class JavaCompilerService implements CompilerProvider {
     }
     if (IdeLogConfig.shouldLogInfo()) {
       LOG.info(
-          "Javac batch-close parentHash={} releasedBatch={} recreatedCompilerForMemory={} usedHeapBeforeMiB={} usedHeapAfterBatchReleaseMiB={} maxHeapMiB={} thresholdMiB={} compilerGeneration={} contextHashAfterClose={}",
+          "Javac batch-close parentHash={} releasedBatch={} thresholdExceeded={} automaticRecreateEnabled={} recreateDeferred={} recreatedCompilerForMemory={} usedHeapBeforeMiB={} usedHeapAfterBatchReleaseMiB={} maxHeapMiB={} thresholdMiB={} compilerGeneration={} contextHashAfterClose={}",
           System.identityHashCode(this),
           releasedBatch,
+          thresholdExceeded,
+          AUTOMATIC_COMPILER_RECREATE_FOR_MEMORY,
+          recreateDeferred,
           recreatedReusableCompiler,
           usedBeforeClose / (1024L * 1024L),
           usedAfterBatchRelease / (1024L * 1024L),
