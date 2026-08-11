@@ -377,8 +377,8 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   public synchronized void close() {
-    final Runtime runtimeBeforeClose = Runtime.getRuntime();
-    final long usedBeforeClose = runtimeBeforeClose.totalMemory() - runtimeBeforeClose.freeMemory();
+    final Runtime runtime = Runtime.getRuntime();
+    final long usedBeforeClose = runtime.totalMemory() - runtime.freeMemory();
 
     boolean recreatedReusableCompiler = false;
     final boolean releasedBatch = cachedCompile != null;
@@ -387,6 +387,7 @@ public class JavaCompilerService implements CompilerProvider {
       cachedCompile.borrow.close();
       cachedCompile = null;
     }
+    final long usedAfterBatchRelease = runtime.totalMemory() - runtime.freeMemory();
     final boolean shouldRecreateForMemoryPressure = usedBeforeClose >= RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES;
     final boolean shouldRecreateCompiler =
         compiler != null && compiler.currentContext != null && shouldRecreateForMemoryPressure;
@@ -397,11 +398,13 @@ public class JavaCompilerService implements CompilerProvider {
     }
     if (IdeLogConfig.shouldLogInfo()) {
       LOG.info(
-          "Javac batch-close parentHash={} releasedBatch={} recreatedCompilerForMemory={} usedHeapMiB={} thresholdMiB={} compilerGeneration={} contextHashAfterClose={}",
+          "Javac batch-close parentHash={} releasedBatch={} recreatedCompilerForMemory={} usedHeapBeforeMiB={} usedHeapAfterBatchReleaseMiB={} maxHeapMiB={} thresholdMiB={} compilerGeneration={} contextHashAfterClose={}",
           System.identityHashCode(this),
           releasedBatch,
           recreatedReusableCompiler,
           usedBeforeClose / (1024L * 1024L),
+          usedAfterBatchRelease / (1024L * 1024L),
+          runtime.maxMemory() / (1024L * 1024L),
           RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES / (1024L * 1024L),
           compilerGeneration,
           compiler.currentContext == null ? 0 : System.identityHashCode(compiler.currentContext));
