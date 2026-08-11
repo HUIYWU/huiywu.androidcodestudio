@@ -89,7 +89,8 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     //    watch.lapFromLast("Entered trees")
     //
     //    val analyzed = JavacTaskUtil.analyze(task, entered)
-    val analyzeListener = AnalyzeTaskListener(task)
+    val rootSources = trees.mapNotNull { it.sourceFile?.toUri()?.toString() }.toSet()
+    val analyzeListener = AnalyzeTaskListener(task, rootSources)
     try {
       task.addTaskListener(analyzeListener)
       val memoryBeforeBytes = usedHeapBytes()
@@ -128,22 +129,37 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     }
   }
 
-  private inner class AnalyzeTaskListener(private val task: JavacTaskImpl) : TaskListener {
+  private inner class AnalyzeTaskListener(
+      private val task: JavacTaskImpl,
+      private val rootSources: Set<String>,
+  ) : TaskListener {
     private val stack = ArrayDeque<AnalyzeFrame>()
     private var todoLogged = false
+    private var enterStartedNs: Long = 0
     var completedTypeCount = 0
       private set
 
     override fun started(event: TaskEvent) {
-      if (event.kind != TaskEvent.Kind.ANALYZE) return
-      if (!todoLogged) {
-        todoLogged = true
-        logTodoSnapshot(task, "analyze-start")
+      when (event.kind) {
+        TaskEvent.Kind.ENTER -> {
+          enterStartedNs = System.nanoTime()
+        }
+        TaskEvent.Kind.ANALYZE -> {
+          if (!todoLogged) {
+            todoLogged = true
+            logTodoSnapshot(task, "analyze-start")
+          }
+          stack.addLast(AnalyzeFrame(event, System.nanoTime()))
+        }
+        else -> Unit
       }
-      stack.addLast(AnalyzeFrame(event, System.nanoTime()))
     }
 
     override fun finished(event: TaskEvent) {
+      if (event.kind == TaskEvent.Kind.ENTER) {
+        logEnter(event)
+        return
+      }
       if (event.kind != TaskEvent.Kind.ANALYZE) return
       completedTypeCount++
       val finishedNs = System.nanoTime()
@@ -164,6 +180,18 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
             event.sourceFile?.toUri() ?: "<unknown-source>",
         )
       }
+    }
+
+    private fun logEnter(event: TaskEvent) {
+      if (!IdeLogConfig.shouldLogInfo()) return
+      val source = event.sourceFile?.toUri()?.toString() ?: "<unknown-source>"
+      log.info(
+          "Javac stage=enter durationMs={} rootSource={} source={} todoSize={}",
+          (System.nanoTime() - enterStartedNs) / 1_000_000L,
+          rootSources.contains(source),
+          source,
+          Todo.instance(task.context).size,
+      )
     }
   }
 
