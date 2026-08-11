@@ -33,10 +33,6 @@ import com.tom.rv2ide.lsp.api.ILanguageServer
 import com.tom.rv2ide.lsp.api.IServerSettings
 import com.tom.rv2ide.lsp.internal.model.CachedCompletion
 import com.tom.rv2ide.lsp.java.actions.JavaCodeActionsMenu
-import com.tom.rv2ide.lsp.java.analysis.IncrementalAnalysisObservationInput
-import com.tom.rv2ide.lsp.java.analysis.IncrementalAnalysisObserver
-import com.tom.rv2ide.lsp.java.analysis.IncrementalAnalysisRequest
-import com.tom.rv2ide.lsp.java.compiler.CompileTask
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.lsp.java.compiler.SourceFileManager
 import com.tom.rv2ide.lsp.java.kotlin.KotlinClassOutputProvider
@@ -549,16 +545,7 @@ class JavaLanguageServer : ILanguageServer {
     val interactiveLease = semanticSession?.beginInteractiveRequest()
     try {
       val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
-      val stableTaskObserver =
-          if (IdeLogConfig.shouldLogDebug()) {
-            java.util.function.Consumer<CompileTask> { task ->
-              observeSignatureIncrementalPlan(task, params, semanticSession, environmentGeneration)
-            }
-          } else {
-            null
-          }
-      val result =
-          SignatureProvider(compiler, params.cancelChecker, stableTaskObserver).signatureHelp(params)
+      val result = SignatureProvider(compiler, params.cancelChecker).signatureHelp(params)
       return if (
           isCurrentDocument(params.file, params.documentVersion, params.documentRevision) &&
               isCurrentSemanticSession(semanticSession, environmentGeneration)
@@ -569,73 +556,6 @@ class JavaLanguageServer : ILanguageServer {
       }
     } finally {
       interactiveLease?.close()
-    }
-  }
-
-  private fun observeSignatureIncrementalPlan(
-      task: CompileTask,
-      params: SignatureHelpParams,
-      semanticSession: JavaSemanticSession?,
-      environmentGeneration: Long?,
-  ) {
-    try {
-      val snapshot = FileManager.getActiveDocumentSnapshot(params.file)
-      val current =
-          snapshot?.let {
-            com.tom.rv2ide.projects.models.DocumentSnapshotIdentity(
-                it.file,
-                it.version,
-                it.revision,
-            )
-          }
-          ?: return
-      val requestIdentityMatchesSnapshot =
-          params.documentVersion >= 0 &&
-              params.documentRevision >= 0L &&
-              params.documentVersion == snapshot.version &&
-              params.documentRevision == snapshot.revision
-      val stableInputMatchesTarget =
-          requestIdentityMatchesSnapshot && params.content?.toString() == snapshot.content
-      val observation =
-          IncrementalAnalysisObserver.observe(
-              IncrementalAnalysisObservationInput(
-                  request = IncrementalAnalysisRequest.SIGNATURE,
-                  file = params.file,
-                  targetContent = snapshot.content,
-                  current = current,
-                  edit = FileManager.getLatestOneHopDocumentEdit(params.file),
-                  environmentGenerationMatches =
-                      semanticSession != null &&
-                          environmentGeneration != null &&
-                          isCurrentSemanticSession(semanticSession, environmentGeneration),
-                  stableInputShape = task.inputShape,
-                  stableInputMatchesTarget = stableInputMatchesTarget,
-              ))
-      val shape = task.inputShape
-      log.debug(
-          "Signature incremental shadow observation file={} version={} revision={} environmentGeneration={} shapePresent={} requestedSources={} effectiveSources={} kotlinAbiStubs={} additionalJavaSources={} stableInputMatchesTarget={} changeClass={} planKind={} planReason={}",
-          params.file,
-          params.documentVersion,
-          params.documentRevision,
-          environmentGeneration,
-          shape != null,
-          shape?.requestedSourceCount ?: -1,
-          shape?.effectiveSourceCount ?: -1,
-          shape?.kotlinAbiStubCount ?: -1,
-          shape?.additionalJavaSourceCount ?: -1,
-          stableInputMatchesTarget,
-          observation.changeClass,
-          observation.plan.kind,
-          observation.plan.reason,
-      )
-    } catch (error: Throwable) {
-      log.debug(
-          "Signature incremental shadow observation failed file={} version={} revision={} errorType={}",
-          params.file,
-          params.documentVersion,
-          params.documentRevision,
-          error.javaClass.simpleName,
-      )
     }
   }
 

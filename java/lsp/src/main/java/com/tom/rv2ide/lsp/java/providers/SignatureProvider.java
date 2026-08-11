@@ -18,9 +18,8 @@
 package com.tom.rv2ide.lsp.java.providers;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import com.tom.rv2ide.lsp.java.compiler.CompileTask;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinAbiSyntheticMembers;
+import com.tom.rv2ide.lsp.java.compiler.CompileTask;
 import com.tom.rv2ide.lsp.java.compiler.CompilerProvider;
 import com.tom.rv2ide.lsp.java.compiler.SourceFileObject;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
@@ -41,7 +40,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.StringJoiner;
-import java.util.function.Consumer;
 import java.util.function.Predicate;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
@@ -72,19 +70,10 @@ public class SignatureProvider extends CancelableServiceProvider {
   public static final SignatureHelp NOT_SUPPORTED =
       new SignatureHelp(Collections.emptyList(), -1, -1);
   private final CompilerProvider compiler;
-  @Nullable private final Consumer<CompileTask> stableTaskObserver;
 
   public SignatureProvider(CompilerProvider compiler, ICancelChecker cancelChecker) {
-    this(compiler, cancelChecker, null);
-  }
-
-  public SignatureProvider(
-      CompilerProvider compiler,
-      ICancelChecker cancelChecker,
-      @Nullable Consumer<CompileTask> stableTaskObserver) {
     super(cancelChecker);
     this.compiler = compiler;
-    this.stableTaskObserver = stableTaskObserver;
   }
   @NonNull
   public SignatureHelp signatureHelp(@NonNull SignatureHelpParams params) {
@@ -117,7 +106,6 @@ public class SignatureProvider extends CancelableServiceProvider {
     abortIfCancelled();
     return synchronizedTask.get(
         task -> {
-          observeStableTask(task);
           final CompilationUnitTree root = task.root(file);
           // Position.index is the editor's authoritative UTF-16 offset. Recomputing it from
           // line/column can drift when the client and javac line maps normalize line endings
@@ -161,12 +149,6 @@ public class SignatureProvider extends CancelableServiceProvider {
           }
           return NOT_SUPPORTED;
         });
-  }
-
-  private void observeStableTask(CompileTask task) {
-    if (stableTaskObserver != null) {
-      stableTaskObserver.accept(task);
-    }
   }
 
   private List<ExecutableElement> methodOverloads(

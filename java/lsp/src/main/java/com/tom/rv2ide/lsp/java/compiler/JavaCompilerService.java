@@ -21,7 +21,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.javac.services.compiler.ReusableCompiler;
-import com.tom.rv2ide.lsp.java.kotlin.KotlinAbiStubJavaFileObject;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinClassOutputProvider;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinSourceStubProvider;
@@ -86,7 +85,6 @@ public class JavaCompilerService implements CompilerProvider {
       BootClasspathProvider.getTopLevelClasses(
           Collections.singleton(Environment.ANDROID_JAR.getAbsolutePath()));
   private CompileBatch cachedCompile;
-  private volatile StableCompilationInputShape latestStableInputShape;
   private static final long RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES = 160L * 1024L * 1024L;
 
   // The module project must not be null
@@ -172,15 +170,6 @@ public class JavaCompilerService implements CompilerProvider {
     return module;
   }
 
-  /**
-   * Returns metadata from the latest successfully established stable compilation, or {@code null}
-   * when no stable batch is currently retained. The shape is observational and must not select a
-   * request strategy by itself.
-   */
-  @Nullable
-  public StableCompilationInputShape getLatestStableInputShape() {
-    return latestStableInputShape;
-  }
   @Override
   public TreeSet<String> publicTopLevelTypes() {
     TreeSet<String> all = new TreeSet<>();
@@ -330,7 +319,7 @@ public class JavaCompilerService implements CompilerProvider {
             }
           }
           synchronizedTask.setTask(
-              new CompileTask(cachedCompile, diagnostics, false, latestStableInputShape));
+              new CompileTask(cachedCompile, diagnostics, false));
         });
 
     return synchronizedTask;
@@ -380,7 +369,6 @@ public class JavaCompilerService implements CompilerProvider {
       cachedCompile.borrow.close();
       cachedCompile = null;
     }
-    latestStableInputShape = null;
     final boolean shouldRecreateForMemoryPressure = usedBeforeClose >= RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES;
     final boolean shouldRecreateCompiler =
         compiler != null && compiler.currentContext != null && shouldRecreateForMemoryPressure;
@@ -435,7 +423,6 @@ public class JavaCompilerService implements CompilerProvider {
     Set<Path> addFiles = firstAttempt.needsAdditionalSources();
 
     if (addFiles.isEmpty()) {
-      recordStableInputShape(request.sources.size(), sources, 0);
       return firstAttempt;
     }
 
@@ -455,27 +442,7 @@ public class JavaCompilerService implements CompilerProvider {
       }
     }
  
-    final CompileBatch finalAttempt = new CompileBatch(this, moreSources, request);
-    recordStableInputShape(request.sources.size(), moreSources, moreSources.size() - sources.size());
-    return finalAttempt;
-  }
-
-  private void recordStableInputShape(
-      int requestedSourceCount,
-      Collection<? extends JavaFileObject> effectiveSources,
-      int additionalJavaSourceCount) {
-    int kotlinAbiStubCount = 0;
-    for (JavaFileObject source : effectiveSources) {
-      if (KotlinAbiStubJavaFileObject.isKotlinAbiStub(source)) {
-        kotlinAbiStubCount++;
-      }
-    }
-    latestStableInputShape =
-        new StableCompilationInputShape(
-            requestedSourceCount,
-            effectiveSources.size(),
-            kotlinAbiStubCount,
-            additionalJavaSourceCount);
+    return new CompileBatch(this, moreSources, request);
   }
 
   private boolean containsWord(Path file, String word) {
@@ -552,16 +519,6 @@ public class JavaCompilerService implements CompilerProvider {
     return synchronizedTask;
   }
 
-  public JavaCompilerService copy() {
-    final JavaCompilerService compiler =
-        new JavaCompilerService(
-            this.module, this.fileManager, this.bootClasspathClasses, this.classPathClasses);
-    compiler.cachedCompile = null;
-    compiler.compiler = new ReusableCompiler();
-    compiler.diagnostics.clear();
-    compiler.cachedModified.clear();
-    return compiler;
-  }
 
   private boolean containsType(Path file, String className) {
     if (cacheContainsType.needs(file, null)) {

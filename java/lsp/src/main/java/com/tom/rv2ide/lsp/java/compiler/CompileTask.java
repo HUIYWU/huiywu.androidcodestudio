@@ -17,7 +17,6 @@
 package com.tom.rv2ide.lsp.java.compiler;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.javac.services.partial.DiagnosticListenerImpl;
 import java.nio.file.Path;
@@ -39,33 +38,22 @@ public class CompileTask implements AutoCloseable {
   public final List<Diagnostic<? extends JavaFileObject>> diagnostics;
   public final CompileBatch compileBatch;
   public final DiagnosticListenerImpl diagnosticListener;
-  /** Immutable shape captured for this task's stable batch, or null when no batch shape exists. */
-  @Nullable public final StableCompilationInputShape inputShape;
   private final boolean ownsCompileBatch;
 
   public CompileTask(
       @NonNull CompileBatch compileBatch, List<Diagnostic<? extends JavaFileObject>> diagnostics) {
-    this(compileBatch, diagnostics, true, null);
+    this(compileBatch, diagnostics, true);
   }
 
   public CompileTask(
       @NonNull CompileBatch compileBatch,
       List<Diagnostic<? extends JavaFileObject>> diagnostics,
       boolean ownsCompileBatch) {
-    this(compileBatch, diagnostics, ownsCompileBatch, null);
-  }
-
-  public CompileTask(
-      @NonNull CompileBatch compileBatch,
-      List<Diagnostic<? extends JavaFileObject>> diagnostics,
-      boolean ownsCompileBatch,
-      @Nullable StableCompilationInputShape inputShape) {
     this.compileBatch = compileBatch;
     this.task = compileBatch.task;
     this.roots = compileBatch.roots;
     this.diagnostics = diagnostics;
     this.diagnosticListener = compileBatch.diagnosticListener;
-    this.inputShape = inputShape;
     this.ownsCompileBatch = ownsCompileBatch;
   }
 
