@@ -66,7 +66,11 @@ class MethodRangeScanner(val task: JavacTaskImpl) :
     val end = getEndPosition(node)
 
     if (start == null || end == null) {
-      log.warn("Method '{}' skipped. Invalid position.", node.name)
+      if (node.name.contentEquals("<init>")) {
+        log.debug("Constructor skipped because javac returned an invalid source position")
+      } else {
+        log.warn("Method '{}' skipped. Invalid position.", node.name)
+      }
       return
     }
 

@@ -27,6 +27,7 @@ internal object KotlinCompilerJvmAbiProbe {
     val name: String,
     val descriptor: String,
     val access: Int,
+    val signature: String? = null,
   )
 
   data class ClassSurface(
@@ -113,7 +114,7 @@ internal object KotlinCompilerJvmAbiProbe {
         signature: String?,
         value: Any?,
       ): FieldVisitor? {
-        fields += Member(name, descriptor, fieldAccess)
+        fields += Member(name, descriptor, fieldAccess, signature)
         return null
       }
 
@@ -124,7 +125,7 @@ internal object KotlinCompilerJvmAbiProbe {
         signature: String?,
         exceptions: Array<out String>?,
       ): MethodVisitor? {
-        members += Member(name, descriptor, methodAccess)
+        members += Member(name, descriptor, methodAccess, signature)
         return null
       }
     }, ClassReader.SKIP_CODE or ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)

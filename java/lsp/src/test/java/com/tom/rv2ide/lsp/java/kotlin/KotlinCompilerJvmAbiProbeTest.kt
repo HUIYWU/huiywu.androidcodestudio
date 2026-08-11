@@ -1194,6 +1194,39 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
     }
   }
 
+  @Test
+  fun genericVarianceAndWildcardAnnotations_recordJvmSignatures() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      class WildcardApi {
+        fun plain(values: List<String>) {}
+        fun declarationOut(values: List<out CharSequence>) {}
+        fun forced(values: List<@JvmWildcard String>) {}
+        fun suppressed(values: List<@JvmSuppressWildcards String>) {}
+      }
+      """.trimIndent(),
+      "GenericWildcards.kt",
+    ).associateBy { it.internalName }
+
+    val api = surfaces.getValue("evidence/WildcardApi")
+    val plain = api.methodsNamed("plain").single()
+    val declarationOut = api.methodsNamed("declarationOut").single()
+    val forced = api.methodsNamed("forced").single()
+    val suppressed = api.methodsNamed("suppressed").single()
+
+    assertTrue("Generic method signature must be recorded: $plain", plain.signature != null)
+    assertTrue("Declaration-site out signature must be recorded: $declarationOut", declarationOut.signature != null)
+    assertTrue("@JvmWildcard signature must be recorded: $forced", forced.signature != null)
+    assertTrue("@JvmSuppressWildcards signature must be recorded: $suppressed", suppressed.signature != null)
+    assertTrue("Wildcard annotations must affect JVM generic signature:
+plain=${plain.signature}
+forced=${forced.signature}
+suppressed=${suppressed.signature}",
+      forced.signature != suppressed.signature || declarationOut.signature != plain.signature)
+  }
+
   private fun assertSyntheticBridge(
 
 

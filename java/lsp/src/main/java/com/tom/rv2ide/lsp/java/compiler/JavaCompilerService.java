@@ -352,6 +352,18 @@ public class JavaCompilerService implements CompilerProvider {
    * otherwise recompiles the current request on the stable semantic path.
    */
   private synchronized void reparseOrRecompile(CompilationRequest request) {
+    final long strategyStartedNs = System.nanoTime();
+    if (request.methodReparsePlan == null) {
+      if (IdeLogConfig.shouldLogDebug()) {
+        LOG.debug(
+            "MethodReparse skip requestHash={} reason=NO_PLAN sourceCount={} strategyDurationUs={}",
+            System.identityHashCode(request),
+            request.sources.size(),
+            (System.nanoTime() - strategyStartedNs) / 1_000L);
+      }
+      recompile(request);
+      return;
+    }
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
           "MethodReparse attempt requestHash={} cachedTaskHash={} sourceCount={} planPresent={} cachedVersion={} requestedVersion={} cachedRevision={} requestedRevision={}",
@@ -389,11 +401,11 @@ public class JavaCompilerService implements CompilerProvider {
           methodReparseCorruptedTask,
           cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task));
       LOG.info(
-          "JAVAC_METHOD_REPARSE_FALLBACK corrupted={} source={} version={} revision={}",
+          "JAVAC_METHOD_REPARSE_FALLBACK reason=QUALIFICATION_OR_REPARSE_FAILURE corrupted={} source={} version={} revision={}",
           methodReparseCorruptedTask,
-          request.methodReparsePlan == null ? null : request.methodReparsePlan.file,
-          request.methodReparsePlan == null ? -1 : request.methodReparsePlan.documentVersion,
-          request.methodReparsePlan == null ? -1 : request.methodReparsePlan.documentRevision);
+          request.methodReparsePlan.file,
+          request.methodReparsePlan.documentVersion,
+          request.methodReparsePlan.documentRevision);
     }
     // A failed in-place mutation must never be reused. recompile() closes and replaces it.
     recompile(request);
@@ -526,10 +538,23 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   private synchronized void recompile(CompilationRequest request) {
-   close();
-   methodReparseCorruptedTask = false;
-   this.cachedCompile = performCompilation(request);
+    final int previousTaskHash =
+        cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task);
+    close();
+    methodReparseCorruptedTask = false;
+    final long startedNs = System.nanoTime();
+    this.cachedCompile = performCompilation(request);
     updateModificationCache(request);
+    if (IdeLogConfig.shouldLogDebug()) {
+      LOG.info(
+          "JAVAC_FULL_COMPILE_COMPLETE previousTaskHash={} taskHash={} source={} sourceCount={} durationMs={} planPresent={}",
+          previousTaskHash,
+          cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task),
+          request.sources.size() == 1 ? request.sources.iterator().next().toUri() : null,
+          request.sources.size(),
+          (System.nanoTime() - startedNs) / 1_000_000L,
+          request.methodReparsePlan != null);
+    }
   }
 
   public synchronized void close() {
