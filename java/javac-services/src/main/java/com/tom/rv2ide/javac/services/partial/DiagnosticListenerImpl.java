@@ -47,6 +47,7 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
   private volatile boolean partialReparseRealErrors;
 
   private volatile List<Diagnostic<? extends JavaFileObject>> affectedErrors;
+  private volatile List<Diagnostic<? extends JavaFileObject>> removedErrors;
   private volatile int currentDelta;
 
   public DiagnosticListenerImpl(@Nullable final JavaFileObject jfo) {
@@ -107,9 +108,15 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
     if (partialReparseErrors == null) {
       partialReparseErrors = new ArrayList<>();
       Diagnostics errors = getErrors(jfo);
+      this.removedErrors = new ArrayList<>();
       SortedMap<Integer, Collection<DiagNode>> subMap = errors.subMap(from, to);
-      subMap.values().forEach(value -> value.forEach(errors::unlink));
-      subMap.clear(); // Remove errors in changed method durring the partial reparse
+      final List<DiagNode> removedNodes = new ArrayList<>();
+      subMap.values().forEach(removedNodes::addAll);
+      for (DiagNode node : removedNodes) {
+        removedErrors.add(node.diag);
+        errors.unlink(node);
+      }
+      subMap.clear(); // Remove errors in changed method during the partial reparse
       Map<Integer, Collection<DiagNode>> tail = errors.tailMap(to);
       this.affectedErrors = new ArrayList<>(tail.size());
       HashSet<DiagNode> tailNodes = new HashSet<>();
@@ -169,8 +176,31 @@ public class DiagnosticListenerImpl implements DiagnosticListener<JavaFileObject
     currentDelta = 0;
     partialReparseRealErrors = false;
   }
+  /** Aborts the current partial transaction and restores diagnostics removed at its start. */
+  public final void abortPartialReparse() {
+    if (partialReparseErrors == null) {
+      return;
+    }
+    final Diagnostics errors = getErrors(jfo);
+    if (removedErrors != null) {
+      for (Diagnostic<? extends JavaFileObject> diagnostic : removedErrors) {
+        errors.add((int) diagnostic.getPosition(), diagnostic);
+      }
+    }
+    if (affectedErrors != null) {
+      for (Diagnostic<? extends JavaFileObject> diagnostic : affectedErrors) {
+        errors.add((int) diagnostic.getPosition(), diagnostic);
+      }
+    }
+    partialReparseErrors = null;
+    affectedErrors = null;
+    removedErrors = null;
+    currentDelta = 0;
+    partialReparseRealErrors = false;
+  }
 
   private static final class D implements Diagnostic {
+
 
 
     private final JCDiagnostic delegate;

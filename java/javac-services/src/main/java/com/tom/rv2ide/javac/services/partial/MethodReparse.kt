@@ -58,27 +58,32 @@ import openjdk.tools.javac.util.Names
 import org.slf4j.LoggerFactory
 
 /**
- * Legacy javac AST mutation primitive.
+ * Method-level partial reparse implementation.
  *
- * <p>This directly mutates a supplied javac task and must remain disconnected from the stable Java
- * semantic path until an isolated-task incremental analysis strategy is proven safe.
+ * <p>This directly mutates a supplied javac task and is intended to update one method body in place.
  *
  * @author Akash Yadav
  */
-internal class LegacyJavacAstMutation {
+class MethodReparse : PartialReparse {
 
-  private var allowPartialReparse: Boolean = ReparserUtils.canReparse()
+  /** True when the current attempt changed the cached javac AST or its semantic state. */
+  var taskMutated: Boolean = false
+    private set
+
+  private val allowPartialReparse: Boolean = ReparserUtils.canReparse()
 
   companion object {
-    private val log = LoggerFactory.getLogger(LegacyJavacAstMutation::class.java)
+    private val log = LoggerFactory.getLogger(MethodReparse::class.java)
   }
+  override fun reparseMethod(
 
-  fun applyMethodBodyMutation(
       ci: CompilationInfo,
       methodPath: TreePath,
       newBody: String,
       fileContents: CharSequence,
   ): Boolean {
+    taskMutated = false
+    var partialReparseCommitted = false
 
     if (!allowPartialReparse) {
       log.debug("Partial reparse is disabled")
@@ -88,11 +93,11 @@ internal class LegacyJavacAstMutation {
     val cu = ci.cu
     val fo = cu.sourceFile
     val task = ci.task
-    val method = methodPath.leaf as JCMethodDecl
     if (methodPath.leaf.kind != METHOD) {
       log.warn("Provided TreePath does not correspond to a MethodTree")
       return false
     }
+    val method = methodPath.leaf as JCMethodDecl
 
     val methodScope = ci.trees.getScope(TreePath(methodPath, method.body))
     val jt = JavacTrees.instance(task)
@@ -186,6 +191,8 @@ internal class LegacyJavacAstMutation {
           log.debug("Skipped method reparse (new local class): {}", fo)
           return false
         }
+        // End positions/doc-comments/unenter have already started mutating the cached task.
+        taskMutated = true
         val cuDocComments = cu.docComments
         if (cuDocComments == null) {
           log.debug(
@@ -281,8 +288,9 @@ internal class LegacyJavacAstMutation {
           )
           return false
         }
+        // From this point the cached task is no longer safely retryable as the old task.
         method.body = block
-
+        taskMutated = true
 
         log.debug("ReAttr method...")
         try {
@@ -341,6 +349,7 @@ internal class LegacyJavacAstMutation {
         }
         try {
           dl.endPartialReparse(delta)
+          partialReparseCommitted = true
         } catch (err: Throwable) {
           log.error(
               "Partial reparse stage failed: stage=diagnostic-end method={} origStartPos={} origEndPos={} newBodyLength={} delta={}",
@@ -354,6 +363,13 @@ internal class LegacyJavacAstMutation {
           return false
         }
       } finally {
+        if (!partialReparseCommitted) {
+          try {
+            (ci.diagnosticListener as? DiagnosticListenerImpl)?.abortPartialReparse()
+          } catch (ignored: Throwable) {
+            log.debug("Unable to rollback partial diagnostics", ignored)
+          }
+        }
         l.endPartialReparse(cu.sourceFile)
         l.useSource(prevLogged)
       }
