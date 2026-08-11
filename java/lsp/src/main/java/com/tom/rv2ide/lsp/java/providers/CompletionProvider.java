@@ -460,8 +460,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     };
 
     SynchronizedTask synchronizedTask = compiler.compile(request);
-    return synchronizedTask.get(task -> {
-      if (task == null || task.task == null || task.task.getContext() == null) {
+    try {
+      return synchronizedTask.get(task -> {
+        if (task == null || task.task == null || task.task.getContext() == null) {
         LOG.warn(
             "Compilation resulted in an invalid JavacTask file={} cursor={} taskPresent={} javacTaskPresent={} contextPresent={}",
             file,
@@ -503,14 +504,14 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
       final var result = doComplete(file, contents, cursor, newPartial, endsWithParen, task, path, tsContextFinal);
 
-      // IMPORTANT: Unregister the completion info from the compiler configuration
-      if (task.task.getContext() != null) {
-        final var compilerConfig = JavaCompilerConfig.instance(task.task.getContext());
-        compilerConfig.setCompletionInfo(null);
-      }
-
       return result;
-    });
+      });
+    } finally {
+      final var context = compiler.compiler.currentContext;
+      if (context != null) {
+        JavaCompilerConfig.instance(context).setCompletionInfo(null);
+      }
+    }
   }
 
   @NonNull

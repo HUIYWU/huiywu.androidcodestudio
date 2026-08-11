@@ -86,6 +86,7 @@ public class JavaCompilerService implements CompilerProvider {
           Collections.singleton(Environment.ANDROID_JAR.getAbsolutePath()));
   private CompileBatch cachedCompile;
   private static final long RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES = 160L * 1024L * 1024L;
+  private long compilerGeneration = 1L;
 
   // The module project must not be null
   // It is marked as nullable just for some special cases like tests
@@ -380,7 +381,8 @@ public class JavaCompilerService implements CompilerProvider {
     final long usedBeforeClose = runtimeBeforeClose.totalMemory() - runtimeBeforeClose.freeMemory();
 
     boolean recreatedReusableCompiler = false;
-    if (cachedCompile != null) {
+    final boolean releasedBatch = cachedCompile != null;
+    if (releasedBatch) {
       cachedCompile.close();
       cachedCompile.borrow.close();
       cachedCompile = null;
@@ -390,14 +392,18 @@ public class JavaCompilerService implements CompilerProvider {
         compiler != null && compiler.currentContext != null && shouldRecreateForMemoryPressure;
     if (shouldRecreateCompiler) {
       compiler = new ReusableCompiler();
+      compilerGeneration++;
       recreatedReusableCompiler = true;
     }
     if (IdeLogConfig.shouldLogInfo()) {
       LOG.info(
-          "Javac batch-close parentHash={} releasedBatch={} recreatedCompilerForMemory={} contextHashAfterClose={}",
+          "Javac batch-close parentHash={} releasedBatch={} recreatedCompilerForMemory={} usedHeapMiB={} thresholdMiB={} compilerGeneration={} contextHashAfterClose={}",
           System.identityHashCode(this),
-          cachedCompile == null,
+          releasedBatch,
           recreatedReusableCompiler,
+          usedBeforeClose / (1024L * 1024L),
+          RECREATE_COMPILER_MEMORY_THRESHOLD_BYTES / (1024L * 1024L),
+          compilerGeneration,
           compiler.currentContext == null ? 0 : System.identityHashCode(compiler.currentContext));
     }
   }
@@ -536,6 +542,7 @@ public class JavaCompilerService implements CompilerProvider {
           cachedCompile = null;
           cachedModified.clear();
           compiler = new ReusableCompiler();
+          compilerGeneration++;
         });
   }
 
