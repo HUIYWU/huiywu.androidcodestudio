@@ -106,29 +106,9 @@ public class CompileBatch implements AutoCloseable {
   
     Objects.requireNonNull(compilationRequest, "A task processor is required");
 
-    final long processStartedNs = System.nanoTime();
     try {
       compilationRequest.compilationTaskProcessor.process(borrow.task, this::processCompilationUnit);
-      if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info(
-            "CompileBatch stage=task-process parentHash={} durationMs={} sourceCount={} rootCount={} diagnostics={}",
-            System.identityHashCode(parent),
-            (System.nanoTime() - processStartedNs) / 1_000_000L,
-            files.size(),
-            roots.size(),
-            parent.diagnostics.size());
-      }
     } catch (Throwable e) {
-      if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info(
-            "CompileBatch stage=task-process-failed parentHash={} durationMs={} sourceCount={} rootCount={} diagnostics={} errorType={}",
-            System.identityHashCode(parent),
-            (System.nanoTime() - processStartedNs) / 1_000_000L,
-            files.size(),
-            roots.size(),
-            parent.diagnostics.size(),
-            e.getClass().getSimpleName());
-      }
       LOG.error(
           "CompileBatch processing failed parentHash={} files={} contextPresent={} firstSource={}",
           System.identityHashCode(parent),
@@ -205,6 +185,7 @@ public class CompileBatch implements AutoCloseable {
         new DiagnosticListenerWrapper(parent.diagnostics::add, sources.iterator().next());
 
     final ReusableBorrow borrow;
+    final long getTaskStartedNs = System.nanoTime();
     try {
       borrow =
           parent.compiler.getTask(
@@ -221,6 +202,15 @@ public class CompileBatch implements AutoCloseable {
       throw err;
     }
  
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info(
+          "Javac stage=getTask parentHash={} durationMs={} sourceCount={} fileManagerClass={}",
+          System.identityHashCode(parent),
+          (System.nanoTime() - getTaskStartedNs) / 1_000_000L,
+          sources.size(),
+          parent.fileManager == null ? null : parent.fileManager.getClass().getSimpleName());
+    }
+
     if (parent.fileManager != null) {
       try {
         parent.fileManager.setContext(borrow.task.getContext());

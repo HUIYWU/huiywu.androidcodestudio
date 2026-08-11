@@ -35,9 +35,20 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
   override fun process(task: JavacTaskImpl, processCompilationUnit: Consumer<CompilationUnitTree>) {
     val watch = StopWatch("Process compilation task")
     val trees = try {
-      task.parse().also {
+      val parseStartedNs = System.nanoTime()
+      val parsed = task.parse().toList()
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "Javac stage=parse durationMs={} treeCount={} taskClass={} contextPresent={}",
+            (System.nanoTime() - parseStartedNs) / 1_000_000L,
+            parsed.size,
+            task.javaClass.simpleName,
+            task.context != null,
+        )
+      }
+      parsed.also {
         if (IdeLogConfig.shouldLogDebug()) {
-          watch.lapFromLast("Parsed treees")
+          watch.lapFromLast("Parsed trees")
         }
       }
     } catch (err: Throwable) {
@@ -53,9 +64,17 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     }
 
     var treeCount = 0
+    val processTreesStartedNs = System.nanoTime()
     trees.forEach {
       treeCount++
       processCompilationUnit.accept(it)
+    }
+    if (IdeLogConfig.shouldLogInfo()) {
+      log.info(
+          "Javac stage=process-trees durationMs={} treeCount={}",
+          (System.nanoTime() - processTreesStartedNs) / 1_000_000L,
+          treeCount,
+      )
     }
     if (IdeLogConfig.shouldLogDebug()) {
       watch.lapFromLast("Processed trees")
@@ -66,7 +85,16 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     //
     //    val analyzed = JavacTaskUtil.analyze(task, entered)
     try {
+      val analyzeStartedNs = System.nanoTime()
       task.analyze()
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "Javac stage=analyze durationMs={} treeCount={} contextPresent={}",
+            (System.nanoTime() - analyzeStartedNs) / 1_000_000L,
+            treeCount,
+            task.context != null,
+        )
+      }
       if (IdeLogConfig.shouldLogDebug()) {
         watch.lapFromLast("Analyzed all trees")
       }
