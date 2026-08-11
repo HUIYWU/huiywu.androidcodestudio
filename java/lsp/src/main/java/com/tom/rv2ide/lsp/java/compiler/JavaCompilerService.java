@@ -19,12 +19,17 @@ package com.tom.rv2ide.lsp.java.compiler;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.util.Pair;
 import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.tom.rv2ide.javac.services.compiler.ReusableCompiler;
+import com.tom.rv2ide.javac.services.partial.CompilationInfo;
+import com.tom.rv2ide.javac.services.partial.MethodReparse;
+import com.tom.rv2ide.javac.services.partial.PartialReparse;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinClassOutputProvider;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinJvmTypeIndex;
 import com.tom.rv2ide.lsp.java.kotlin.KotlinSourceStubProvider;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
+import com.tom.rv2ide.lsp.java.models.MethodReparsePlan;
 import com.tom.rv2ide.preferences.internal.JavaPreferences;
 import com.tom.rv2ide.lsp.java.parser.ParseTask;
 import com.tom.rv2ide.lsp.java.parser.Parser;
@@ -64,6 +69,9 @@ import jdkx.tools.Diagnostic;
 import jdkx.tools.JavaFileObject;
 import jdkx.tools.StandardLocation;
 import openjdk.source.tree.CompilationUnitTree;
+import openjdk.source.tree.MethodTree;
+import openjdk.source.util.TreePath;
+import openjdk.tools.javac.api.JavacTrees;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,6 +93,8 @@ public class JavaCompilerService implements CompilerProvider {
       BootClasspathProvider.getTopLevelClasses(
           Collections.singleton(Environment.ANDROID_JAR.getAbsolutePath()));
   private CompileBatch cachedCompile;
+  /** Set when a failed method reparse has already mutated the cached javac task. */
+  private boolean methodReparseCorruptedTask;
 
   // The module project must not be null
   // It is marked as nullable just for some special cases like tests
@@ -338,29 +348,160 @@ public class JavaCompilerService implements CompilerProvider {
 
 
   /**
-   * Recompiles the current request on the stable semantic path.
-   *
-   * <p>Legacy javac AST mutation is intentionally not routed here. Incremental analysis must first
-   * establish a revision-based plan, an isolated analysis task, differential validation, and a
-   * demonstrable latency benefit before it can become a request strategy.
+   * Advances the cached semantic task when the strict method-reparse MVP accepts the request;
+   * otherwise recompiles the current request on the stable semantic path.
    */
   private synchronized void reparseOrRecompile(CompilationRequest request) {
+    if (!methodReparseCorruptedTask
+        && request.methodReparsePlan != null
+        && tryMethodReparse(request)) {
+      return;
+    }
+    // A failed in-place mutation must never be reused. recompile() closes and replaces it.
     recompile(request);
   }
 
+  private boolean tryMethodReparse(CompilationRequest request) {
+    final MethodReparsePlan plan = request.methodReparsePlan;
+    if (plan == null || cachedCompile == null || cachedCompile.closed) {
+      return false;
+    }
+    if (request.sources.size() != 1 || plan.contents == null || plan.cursor < 0) {
+      return false;
+    }
+    final JavaFileObject requestedSource = request.sources.iterator().next();
+    if (!requestedSource.toUri().normalize().equals(plan.file.toUri().normalize())) {
+      return false;
+    }
+    final String oldContents = cachedCompile.currentSourceContents();
+    if (oldContents == null) {
+      return false;
+    }
+    if (cachedCompile.documentVersion() >= 0
+        && (plan.documentVersion < 0 || plan.documentVersion != cachedCompile.documentVersion() + 1)) {
+      return false;
+    }
+    if (cachedCompile.documentRevision() >= 0
+        && (plan.documentRevision < 0 || plan.documentRevision <= cachedCompile.documentRevision())) {
+      return false;
+    }
+
+    final SingleTextEdit edit = SingleTextEdit.compute(oldContents, plan.contents);
+    if (edit == null) {
+      return false;
+    }
+    final CompilationUnitTree root = cachedCompile.root(plan.file);
+    if (root == null) {
+      return false;
+    }
+    final List<Pair<Range, TreePath>> positions =
+        cachedCompile.methodPositions.get(plan.file.toAbsolutePath().toString());
+    if (positions == null) {
+      return false;
+    }
+
+    Pair<Range, TreePath> candidate = null;
+    for (Pair<Range, TreePath> position : positions) {
+      final Range range = position.first;
+      final int start = range.getStart().requireIndex();
+      final int end = range.getEnd().requireIndex();
+      if (plan.cursor >= start && plan.cursor <= end) {
+        candidate = position;
+        break;
+      }
+    }
+    if (candidate == null || !(candidate.second.getLeaf() instanceof MethodTree)) {
+      return false;
+    }
+    final MethodTree method = (MethodTree) candidate.second.getLeaf();
+    if (method.getBody() == null || method.getName().contentEquals("<init>")) {
+      return false;
+    }
+
+    final JavacTrees trees = JavacTrees.instance(cachedCompile.task);
+    final long bodyStartLong = trees.getSourcePositions().getStartPosition(root, method.getBody());
+    final long bodyEndLong = trees.getSourcePositions().getEndPosition(root, method.getBody());
+    if (bodyStartLong < 0 || bodyEndLong < bodyStartLong) {
+      return false;
+    }
+    final int bodyStart = (int) bodyStartLong;
+    final int bodyEnd = (int) bodyEndLong;
+    if (edit.start <= bodyStart || edit.oldEnd >= bodyEnd) {
+      return false;
+    }
+    final int newBodyEnd = bodyEnd + edit.delta();
+    if (newBodyEnd > plan.contents.length() || newBodyEnd <= bodyStart) {
+      return false;
+    }
+
+    if (request.configureContext != null) {
+      request.configureContext.accept(cachedCompile.task.getContext());
+    }
+    final PartialReparse reparser = new MethodReparse();
+    final CompilationInfo info =
+        new CompilationInfo(cachedCompile.task, cachedCompile.diagnosticListener, root);
+    final String newBody = plan.contents.substring(bodyStart, newBodyEnd);
+    final boolean success = reparser.reparseMethod(info, candidate.second, newBody, plan.contents);
+    if (!success) {
+      if (reparser instanceof MethodReparse
+          && ((MethodReparse) reparser).getTaskMutated()) {
+        methodReparseCorruptedTask = true;
+      }
+      return false;
+    }
+    cachedCompile.updatePositions(root, true);
+    cachedCompile.updateDocumentState(plan.contents, plan.documentVersion, plan.documentRevision);
+    updateModificationCache(request);
+    return true;
+  }
+
+  private static final class SingleTextEdit {
+    final int start;
+    final int oldEnd;
+    final int newEnd;
+
+    private SingleTextEdit(int start, int oldEnd, int newEnd) {
+      this.start = start;
+      this.oldEnd = oldEnd;
+      this.newEnd = newEnd;
+    }
+
+    static SingleTextEdit compute(String oldText, String newText) {
+      int prefix = 0;
+      final int commonLength = Math.min(oldText.length(), newText.length());
+      while (prefix < commonLength && oldText.charAt(prefix) == newText.charAt(prefix)) {
+        prefix++;
+      }
+      int oldSuffix = oldText.length();
+      int newSuffix = newText.length();
+      while (oldSuffix > prefix && newSuffix > prefix
+          && oldText.charAt(oldSuffix - 1) == newText.charAt(newSuffix - 1)) {
+        oldSuffix--;
+        newSuffix--;
+      }
+      return new SingleTextEdit(prefix, oldSuffix, newSuffix);
+    }
+
+    int delta() {
+      return newEnd - oldEnd;
+    }
+  }
+
   private synchronized void recompile(CompilationRequest request) {
-    close();
-    this.cachedCompile = performCompilation(request);
+   close();
+   methodReparseCorruptedTask = false;
+   this.cachedCompile = performCompilation(request);
     updateModificationCache(request);
   }
 
   public synchronized void close() {
     if (cachedCompile != null) {
-      cachedCompile.close();
-      cachedCompile.borrow.close();
-      cachedCompile = null;
-    }
-  }
+     cachedCompile.close();
+     cachedCompile.borrow.close();
+     cachedCompile = null;
+   }
+   methodReparseCorruptedTask = false;
+ }
 
 
   private void updateModificationCache(final CompilationRequest request) {

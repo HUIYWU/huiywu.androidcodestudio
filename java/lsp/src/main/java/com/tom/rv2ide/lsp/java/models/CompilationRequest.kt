@@ -26,9 +26,8 @@ import openjdk.tools.javac.util.Context
 /**
  * Data sent to the stable Java compilation path.
  *
- * <p>Incremental analysis is not encoded as mutable compiler-request state. A future incremental
- * strategy must receive a revision-based analysis plan and keep its work isolated from this full
- * compilation request.
+ * <p>Method-level incremental analysis is optional and remains a request-scoped plan. Requests
+ * without a plan continue to use the stable full compilation path.
  *
  * @param sources The source files to compile.
  * @author Akash Yadav
@@ -39,4 +38,5 @@ constructor(
     @JvmField val sources: Collection<JavaFileObject>,
     @JvmField val compilationTaskProcessor: CompilationTaskProcessor = DefaultCompilationTaskProcessor(),
     @JvmField var configureContext: Consumer<Context>? = null,
+    @JvmField val methodReparsePlan: MethodReparsePlan? = null,
 )

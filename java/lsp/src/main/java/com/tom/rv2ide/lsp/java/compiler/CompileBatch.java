@@ -77,6 +77,9 @@ public class CompileBatch implements AutoCloseable {
   private final Set<String> processedSourceUris = new HashSet<>();
   protected final Map<String, List<Pair<Range, TreePath>>> methodPositions = new HashMap<>();
   protected DiagnosticListenerImpl diagnosticListener;
+  private String currentSourceContents;
+  private int documentVersion = -1;
+  private long documentRevision = -1L;
   /** Indicates the task that requested the compilation is finished with it. */
   boolean closed;
 
@@ -88,6 +91,18 @@ public class CompileBatch implements AutoCloseable {
     this.borrow = batchTask(parent, files);
     this.task = borrow.task;
     this.roots = new ArrayList<>();
+    if (compilationRequest.methodReparsePlan != null) {
+      final var plan = compilationRequest.methodReparsePlan;
+      this.currentSourceContents = plan.contents;
+      this.documentVersion = plan.documentVersion;
+      this.documentRevision = plan.documentRevision;
+    } else if (files.size() == 1 && files.iterator().next() instanceof SourceFileObject) {
+      try {
+        this.currentSourceContents = files.iterator().next().getCharContent(true).toString();
+      } catch (Exception ignored) {
+        this.currentSourceContents = null;
+      }
+    }
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
           "CompileBatch init parentHash={} fileCount={} files={}",
@@ -276,6 +291,34 @@ public class CompileBatch implements AutoCloseable {
     options.add("-target");
     options.add(compilerSettings.getJavaBytecodeVersion());
   }
+  String currentSourceContents() {
+    return currentSourceContents;
+  }
+
+  int documentVersion() {
+    return documentVersion;
+  }
+
+  long documentRevision() {
+    return documentRevision;
+  }
+
+  void updateDocumentState(String contents, int version, long revision) {
+    this.currentSourceContents = contents;
+    this.documentVersion = version;
+    this.documentRevision = revision;
+  }
+
+  CompilationUnitTree root(Path file) {
+    final String target = file.toUri().normalize().toString();
+    for (CompilationUnitTree root : roots) {
+      if (root.getSourceFile().toUri().normalize().toString().equals(target)) {
+        return root;
+      }
+    }
+    return null;
+  }
+
   @Override
   public void close() {
     closed = true;

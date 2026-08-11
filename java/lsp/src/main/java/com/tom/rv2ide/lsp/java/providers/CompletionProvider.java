@@ -35,6 +35,8 @@ import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService;
 import com.tom.rv2ide.lsp.java.compiler.SourceFileObject;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
+import com.tom.rv2ide.lsp.java.models.MethodReparsePlan;
+
 import com.tom.rv2ide.lsp.java.providers.completion.IJavaCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.IdentifierCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.ImportCompletionProvider;
@@ -453,8 +455,20 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
     // Kotlin source ABI stubs are added by JavaCompilerService's stable compilation path when
     // Kotlin recognition is enabled, so completion always uses one consistent request shape.
-    final CompilationRequest request = new CompilationRequest(Collections.singletonList(source));
+    final openjdk.tools.javac.util.Context[] completionContext =
+        new openjdk.tools.javac.util.Context[1];
+    final CompilationRequest request = new CompilationRequest(
+        Collections.singletonList(source),
+        new com.tom.rv2ide.lsp.java.compiler.DefaultCompilationTaskProcessor(),
+        null,
+        new MethodReparsePlan(
+            file,
+            contents,
+            params.getDocumentVersion(),
+            params.getDocumentRevision(),
+            cursor));
     request.configureContext = ctx -> {
+      completionContext[0] = ctx;
       final var config = JavaCompilerConfig.instance(ctx);
       config.setCompletionInfo(new CompletionInfo(params.getPosition()));
     };
@@ -507,7 +521,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       return result;
       });
     } finally {
-      final var context = compiler.compiler.currentContext;
+      final var context = completionContext[0];
       if (context != null) {
         JavaCompilerConfig.instance(context).setCompletionInfo(null);
       }
