@@ -19,8 +19,11 @@ package com.tom.rv2ide.lsp.java.compiler
 
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.utils.StopWatch
+import java.util.HashMap
 import java.util.function.Consumer
 import openjdk.source.tree.CompilationUnitTree
+import openjdk.source.util.TaskEvent
+import openjdk.source.util.TaskListener
 import openjdk.tools.javac.api.JavacTaskImpl
 
 /**
@@ -84,15 +87,23 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     //    watch.lapFromLast("Entered trees")
     //
     //    val analyzed = JavacTaskUtil.analyze(task, entered)
+    val analyzeListener = AnalyzeTaskListener()
     try {
+      task.addTaskListener(analyzeListener)
+      val memoryBeforeBytes = usedHeapBytes()
       val analyzeStartedNs = System.nanoTime()
       task.analyze()
       if (IdeLogConfig.shouldLogInfo()) {
+        val memoryAfterBytes = usedHeapBytes()
         log.info(
-            "Javac stage=analyze durationMs={} treeCount={} contextPresent={}",
+            "Javac stage=analyze durationMs={} treeCount={} contextPresent={} heapBeforeMiB={} heapAfterMiB={} heapDeltaMiB={} analyzedTypeCount={}",
             (System.nanoTime() - analyzeStartedNs) / 1_000_000L,
             treeCount,
             task.context != null,
+            memoryBeforeBytes / MEBIBYTE,
+            memoryAfterBytes / MEBIBYTE,
+            (memoryAfterBytes - memoryBeforeBytes) / MEBIBYTE,
+            analyzeListener.completedTypeCount,
         )
       }
       if (IdeLogConfig.shouldLogDebug()) {
@@ -109,10 +120,48 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
         )
       }
       throw err
+    } finally {
+      task.removeTaskListener(analyzeListener)
     }
   }
 
+  private class AnalyzeTaskListener : TaskListener {
+    private val startedAtNs = HashMap<String, Long>()
+    var completedTypeCount = 0
+      private set
+
+    override fun started(event: TaskEvent) {
+      if (event.kind != TaskEvent.Kind.ANALYZE) return
+      startedAtNs[identity(event)] = System.nanoTime()
+    }
+
+    override fun finished(event: TaskEvent) {
+      if (event.kind != TaskEvent.Kind.ANALYZE) return
+      completedTypeCount++
+      val key = identity(event)
+      val startedNs = startedAtNs.remove(key) ?: return
+      if (IdeLogConfig.shouldLogInfo()) {
+        log.info(
+            "Javac stage=analyze-type durationMs={} type={} source={}",
+            (System.nanoTime() - startedNs) / 1_000_000L,
+            event.typeElement?.qualifiedName ?: "<unknown-type>",
+            event.sourceFile?.toUri() ?: "<unknown-source>",
+        )
+      }
+    }
+
+    private fun identity(event: TaskEvent): String {
+      return "${event.sourceFile?.toUri()}|${event.typeElement?.qualifiedName}"
+    }
+  }
+
+  private fun usedHeapBytes(): Long {
+    val runtime = Runtime.getRuntime()
+    return runtime.totalMemory() - runtime.freeMemory()
+  }
+
   companion object {
+    private const val MEBIBYTE = 1024L * 1024L
     private val log = org.slf4j.LoggerFactory.getLogger(DefaultCompilationTaskProcessor::class.java)
   }
 }
