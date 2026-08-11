@@ -19,8 +19,6 @@ package com.tom.rv2ide.lsp.java.compiler
 
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.utils.StopWatch
-import java.util.ArrayDeque
-import java.util.ArrayList
 import java.util.function.Consumer
 import openjdk.source.tree.CompilationUnitTree
 import openjdk.source.util.TaskEvent
@@ -89,21 +87,21 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
     //    watch.lapFromLast("Entered trees")
     //
     //    val analyzed = JavacTaskUtil.analyze(task, entered)
-    val rootSources = trees.mapNotNull { it.sourceFile?.toUri()?.toString() }.toSet()
-    val analyzeListener = AnalyzeTaskListener(task, rootSources)
+    val analyzeListener = AnalyzeTaskListener(task)
     try {
       task.addTaskListener(analyzeListener)
       val memoryBeforeBytes = usedHeapBytes()
       val analyzeStartedNs = System.nanoTime()
       task.analyze()
-      logTodoSnapshot(task, "after")
       if (IdeLogConfig.shouldLogInfo()) {
         val memoryAfterBytes = usedHeapBytes()
         log.info(
-            "Javac stage=analyze durationMs={} treeCount={} contextPresent={} heapBeforeMiB={} heapAfterMiB={} heapDeltaMiB={} analyzedTypeCount={}",
+            "Javac stage=analyze durationMs={} treeCount={} contextHash={} todoAtAnalyzeStart={} todoAfter={} heapBeforeMiB={} heapAfterMiB={} heapDeltaMiB={} analyzedTypeCount={}",
             (System.nanoTime() - analyzeStartedNs) / 1_000_000L,
             treeCount,
-            task.context != null,
+            System.identityHashCode(task.context),
+            analyzeListener.todoAtAnalyzeStart,
+            todoSize(task),
             memoryBeforeBytes / MEBIBYTE,
             memoryAfterBytes / MEBIBYTE,
             (memoryAfterBytes - memoryBeforeBytes) / MEBIBYTE,
@@ -131,90 +129,28 @@ class DefaultCompilationTaskProcessor : CompilationTaskProcessor {
 
   private inner class AnalyzeTaskListener(
       private val task: JavacTaskImpl,
-      private val rootSources: Set<String>,
   ) : TaskListener {
-    private val stack = ArrayDeque<AnalyzeFrame>()
-    private var todoLogged = false
-    private var enterStartedNs: Long = 0
+    private var analyzeStarted = false
     var completedTypeCount = 0
+      private set
+    var todoAtAnalyzeStart = 0
       private set
 
     override fun started(event: TaskEvent) {
-      when (event.kind) {
-        TaskEvent.Kind.ENTER -> {
-          enterStartedNs = System.nanoTime()
-        }
-        TaskEvent.Kind.ANALYZE -> {
-          if (!todoLogged) {
-            todoLogged = true
-            logTodoSnapshot(task, "analyze-start")
-          }
-          stack.addLast(AnalyzeFrame(event, System.nanoTime()))
-        }
-        else -> Unit
+      if (event.kind == TaskEvent.Kind.ANALYZE && !analyzeStarted) {
+        analyzeStarted = true
+        todoAtAnalyzeStart = Todo.instance(task.context).size
       }
     }
 
     override fun finished(event: TaskEvent) {
-      if (event.kind == TaskEvent.Kind.ENTER) {
-        logEnter(event)
-        return
+      if (event.kind == TaskEvent.Kind.ANALYZE) {
+        completedTypeCount++
       }
-      if (event.kind != TaskEvent.Kind.ANALYZE) return
-      completedTypeCount++
-      val finishedNs = System.nanoTime()
-      val frame = if (stack.isEmpty()) null else stack.removeLast()
-      if (frame == null) return
-      val inclusiveNs = finishedNs - frame.startedNs
-      val exclusiveNs = inclusiveNs - frame.childNs
-      if (!stack.isEmpty()) {
-        stack.peekLast().childNs += inclusiveNs
-      }
-      if (IdeLogConfig.shouldLogInfo()) {
-        log.info(
-            "Javac stage=analyze-type durationMs={} exclusiveMs={} depth={} type={} source={}",
-            inclusiveNs / 1_000_000L,
-            exclusiveNs / 1_000_000L,
-            stack.size,
-            event.typeElement?.qualifiedName ?: "<unknown-type>",
-            event.sourceFile?.toUri() ?: "<unknown-source>",
-        )
-      }
-    }
-
-    private fun logEnter(event: TaskEvent) {
-      if (!IdeLogConfig.shouldLogInfo()) return
-      val source = event.sourceFile?.toUri()?.toString() ?: "<unknown-source>"
-      log.info(
-          "Javac stage=enter durationMs={} rootSource={} source={} todoSize={}",
-          (System.nanoTime() - enterStartedNs) / 1_000_000L,
-          rootSources.contains(source),
-          source,
-          Todo.instance(task.context).size,
-      )
     }
   }
 
-  private class AnalyzeFrame(val event: TaskEvent, val startedNs: Long) {
-    var childNs: Long = 0
-  }
-
-  private fun logTodoSnapshot(task: JavacTaskImpl, phase: String) {
-    if (!IdeLogConfig.shouldLogInfo()) return
-    val todo = Todo.instance(task.context)
-    val entries = ArrayList<String>()
-    for (env in todo) {
-      val type = env.enclClass?.sym?.flatname?.toString() ?: "<unknown-type>"
-      val source = env.toplevel?.sourcefile?.toUri()?.toString() ?: "<unknown-source>"
-      entries.add("$type@$source")
-    }
-    log.info(
-        "Javac stage=analyze-todo phase={} size={} entries={}",
-        phase,
-        entries.size,
-        entries.joinToString(","),
-    )
-  }
+  private fun todoSize(task: JavacTaskImpl): Int = Todo.instance(task.context).size
 
   private fun usedHeapBytes(): Long {
     val runtime = Runtime.getRuntime()

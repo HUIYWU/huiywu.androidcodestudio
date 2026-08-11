@@ -310,13 +310,24 @@ public class JavaCompilerService implements CompilerProvider {
   private SynchronizedTask compileBatch(CompilationRequest request) {
     synchronizedTask.post(
         () -> {
-          final boolean needsCompilation = needsCompilation(request.sources);
-          if (needsCompilation) {
-            reparseOrRecompile(request);
-          } else {
-            if (IdeLogConfig.shouldLogDebug()) {
-              LOG.debug("...using cached compile");
+          final String recompileReason = compilationChangeReason(request.sources);
+          if (recompileReason != null) {
+            if (IdeLogConfig.shouldLogInfo()) {
+              LOG.info(
+                  "Javac compile-decision action=recompile reason={} parentHash={} cachedBatchPresent={} contextHash={} sourceCount={}",
+                  recompileReason,
+                  System.identityHashCode(this),
+                  cachedCompile != null,
+                  compiler.currentContext == null ? 0 : System.identityHashCode(compiler.currentContext),
+                  request.sources.size());
             }
+            reparseOrRecompile(request);
+          } else if (IdeLogConfig.shouldLogInfo()) {
+            LOG.info(
+                "Javac compile-decision action=reuse-batch parentHash={} contextHash={} sourceCount={}",
+                System.identityHashCode(this),
+                compiler.currentContext == null ? 0 : System.identityHashCode(compiler.currentContext),
+                request.sources.size());
           }
           synchronizedTask.setTask(
               new CompileTask(cachedCompile, diagnostics, false));
@@ -326,20 +337,25 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   private boolean needsCompilation(Collection<? extends JavaFileObject> sources) {
+    return compilationChangeReason(sources) != null;
+  }
+
+  @Nullable
+  private String compilationChangeReason(Collection<? extends JavaFileObject> sources) {
     if (cachedModified.size() != sources.size()) {
-      return true;
+      return "source-count";
     }
     for (JavaFileObject f : sources) {
       if (!cachedModified.containsKey(f)) {
-        return true;
+        return "source-set";
       }
 
       final Long modified = cachedModified.get(f);
       if (modified != null && f.getLastModified() != modified) {
-        return true;
+        return "source-modified";
       }
     }
-    return false;
+    return null;
   }
 
   /**
@@ -375,6 +391,14 @@ public class JavaCompilerService implements CompilerProvider {
     if (shouldRecreateCompiler) {
       compiler = new ReusableCompiler();
       recreatedReusableCompiler = true;
+    }
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info(
+          "Javac batch-close parentHash={} releasedBatch={} recreatedCompilerForMemory={} contextHashAfterClose={}",
+          System.identityHashCode(this),
+          cachedCompile == null,
+          recreatedReusableCompiler,
+          compiler.currentContext == null ? 0 : System.identityHashCode(compiler.currentContext));
     }
   }
 

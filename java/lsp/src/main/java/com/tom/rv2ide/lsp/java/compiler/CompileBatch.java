@@ -103,6 +103,16 @@ public class CompileBatch implements AutoCloseable {
     if (compilationRequest.configureContext != null) {
       compilationRequest.configureContext.accept(context);
     }
+    if (IdeLogConfig.shouldLogInfo()) {
+      LOG.info(
+          "Javac batch-start requestKind={} parentHash={} taskHash={} contextHash={} compilerHash={} sourceCount={}",
+          config.getCompletionInfo() == null ? "diagnostics-or-general" : "completion",
+          System.identityHashCode(parent),
+          System.identityHashCode(task),
+          System.identityHashCode(context),
+          System.identityHashCode(parent.compiler),
+          files.size());
+    }
   
     Objects.requireNonNull(compilationRequest, "A task processor is required");
 
