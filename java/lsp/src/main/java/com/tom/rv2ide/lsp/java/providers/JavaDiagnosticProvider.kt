@@ -261,13 +261,21 @@ class JavaDiagnosticProvider {
                 compiler
                     .compile(
                         com.tom.rv2ide.lsp.java.models.CompilationRequest(
-                            listOf(
-                                com.tom.rv2ide.lsp.java.compiler.SourceFileObject(
+                            sources =
+                                listOf(
+                                    com.tom.rv2ide.lsp.java.compiler.SourceFileObject(
+                                        file,
+                                        contents,
+                                        modified,
+                                    )
+                                ),
+                            documentState =
+                                com.tom.rv2ide.lsp.java.models.CompilationDocumentState(
                                     file,
                                     contents,
-                                    modified,
-                                )
-                            )
+                                    documentVersion,
+                                    documentRevision,
+                                ),
                         )
                     )
                     .get { task ->

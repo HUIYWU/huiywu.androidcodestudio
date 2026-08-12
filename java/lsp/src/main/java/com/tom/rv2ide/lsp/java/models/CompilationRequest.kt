@@ -39,4 +39,5 @@ constructor(
     @JvmField val compilationTaskProcessor: CompilationTaskProcessor = DefaultCompilationTaskProcessor(),
     @JvmField var configureContext: Consumer<Context>? = null,
     @JvmField val methodReparsePlan: MethodReparsePlan? = null,
+    @JvmField val documentState: CompilationDocumentState? = null,
 )

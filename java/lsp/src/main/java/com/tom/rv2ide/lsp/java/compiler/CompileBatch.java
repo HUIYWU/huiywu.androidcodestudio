@@ -91,24 +91,55 @@ public class CompileBatch implements AutoCloseable {
     this.borrow = batchTask(parent, files);
     this.task = borrow.task;
     this.roots = new ArrayList<>();
+    String documentStateOrigin = "NONE";
     if (compilationRequest.methodReparsePlan != null) {
       final var plan = compilationRequest.methodReparsePlan;
       this.currentSourceContents = plan.contents;
       this.documentVersion = plan.documentVersion;
       this.documentRevision = plan.documentRevision;
-    } else if (files.size() == 1 && files.iterator().next() instanceof SourceFileObject) {
+      documentStateOrigin = "METHOD_REPARSE_PLAN";
+    } else if (compilationRequest.documentState != null
+        && compilationRequest.sources.size() == 1) {
+      final var state = compilationRequest.documentState;
+      final var requestedSource = compilationRequest.sources.iterator().next();
       try {
-        this.currentSourceContents = files.iterator().next().getCharContent(true).toString();
+        final boolean sameSource =
+            requestedSource.toUri().normalize().equals(state.file.toUri().normalize());
+        final boolean sameContents =
+            requestedSource.getCharContent(true).toString().equals(state.contents);
+        if (sameSource
+            && sameContents
+            && state.documentVersion >= 0
+            && state.documentRevision >= 0) {
+          this.currentSourceContents = state.contents;
+          this.documentVersion = state.documentVersion;
+          this.documentRevision = state.documentRevision;
+          documentStateOrigin = "DOCUMENT_STATE";
+        }
+      } catch (Exception ignored) {
+        // Keep the document identity unknown when the supplied snapshot cannot be proven.
+      }
+    }
+    if (this.currentSourceContents == null
+        && compilationRequest.sources.size() == 1
+        && compilationRequest.sources.iterator().next() instanceof SourceFileObject) {
+      try {
+        this.currentSourceContents =
+            compilationRequest.sources.iterator().next().getCharContent(true).toString();
+        documentStateOrigin = "SOURCE_CONTENTS_ONLY";
       } catch (Exception ignored) {
         this.currentSourceContents = null;
       }
     }
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
-          "CompileBatch init parentHash={} fileCount={} files={}",
+          "CompileBatch init parentHash={} fileCount={} files={} documentStateOrigin={} documentVersion={} documentRevision={}",
           System.identityHashCode(parent),
           files.size(),
-          describeSources(files));
+          describeSources(files),
+          documentStateOrigin,
+          documentVersion,
+          documentRevision);
     }
   
     final var context = task.getContext();
