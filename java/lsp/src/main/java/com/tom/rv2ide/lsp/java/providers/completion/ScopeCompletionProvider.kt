@@ -24,6 +24,7 @@ import com.tom.rv2ide.lsp.java.compiler.CompileTask
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService
 import com.tom.rv2ide.lsp.java.edits.MultipleClassImportEditHandler
 import com.tom.rv2ide.lsp.java.models.JavaCompletionItem
+import com.tom.rv2ide.lsp.java.utils.CancelChecker
 import com.tom.rv2ide.lsp.java.utils.MethodStubGenerator
 import com.tom.rv2ide.lsp.java.utils.ScopeHelper
 import com.tom.rv2ide.lsp.models.CompletionItem
@@ -139,7 +140,8 @@ class ScopeCompletionProvider(
             )
             list.add(method(task, listOf(method), !endsWithParen, matchLevel, partial))
           } else {
-            list.add(overrideIfPossible(task, parentPath, method, endsWithParen, matchLevel, partial))
+            overrideIfPossible(task, parentPath, method, endsWithParen, matchLevel, partial)
+                ?.let(list::add)
           }
         } catch (error: Throwable) {
           log.error(
@@ -183,7 +185,7 @@ class ScopeCompletionProvider(
       endsWithParen: Boolean,
       matchLevel: MatchLevel,
       partial: String,
-  ): CompletionItem {
+  ): CompletionItem? {
     var stage = "parentPathKind"
     try {
       if (parentPath.leaf.kind != CLASS) {
@@ -198,8 +200,22 @@ class ScopeCompletionProvider(
       val parentElement =
           Trees.instance(task.task).getElement(parentPath)
               ?: return method(task, listOf(method), !endsWithParen, matchLevel, partial)
+      if (method.enclosingElement == parentElement) {
+        // Scope includes members declared by this anonymous class. They are already implemented,
+        // so offering an override stub again is both redundant and unsafe during error recovery.
+        if (IdeLogConfig.shouldLogIde()) {
+          log.debug(
+              "Scope completion skipping already-declared method member={} owner={} parentLeafKind={}",
+              method,
+              parentElement,
+              parentPath.leaf.kind,
+          )
+        }
+        return null
+      }
       stage = "parentDeclaredType"
-      val type = parentElement.asType() as DeclaredType
+      val type = parentElement.asType() as? DeclaredType
+          ?: return method(task, listOf(method), !endsWithParen, matchLevel, partial)
       stage = "methodEnclosingElement"
       val enclosing = method.enclosingElement
       val isFinalClass = enclosing.modifiers.contains(FINAL)
@@ -271,7 +287,10 @@ class ScopeCompletionProvider(
           error.message,
           error,
       )
-      throw error
+      if (CancelChecker.isCancelled(error)) {
+        throw error
+      }
+      return method(task, listOf(method), !endsWithParen, matchLevel, partial)
     }
   }
 

@@ -2300,6 +2300,54 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generatedWildcardTypeArguments_preserveProvenVarianceAndAnnotations() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+      """
+      package sample
+
+      class WildcardApi {
+        fun plain(values: List<String>) {}
+        fun declarationOut(values: MutableList<out CharSequence>) {}
+        fun forced(values: List<@JvmWildcard String>) {}
+        fun suppressed(values: List<@JvmSuppressWildcards String>) {}
+      }
+      """.trimIndent()
+
+    for (mode in listOf(
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK,
+    )) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.WildcardApi", "GenericWildcards.kt", source, emptySet(), mode)
+        ?: error("Missing wildcard stub in $mode")
+      assertContains(stub, "void plain(java.util.List<String> values)")
+      assertContains(stub, "void declarationOut(java.util.List<? extends CharSequence> values)")
+      assertContains(stub, "void forced(java.util.List<? extends String> values)")
+      assertContains(stub, "void suppressed(java.util.List<String> values)")
+      assertTrue("Wildcard surfaces must be attributable in $mode:\n$stub", javacSucceeds(
+        mapOf("sample.WildcardApi" to stub),
+        "consumer.WildcardUse",
+        """
+        package consumer;
+        import sample.WildcardApi;
+        import java.util.ArrayList;
+        import java.util.List;
+        class WildcardUse {
+          void use(WildcardApi api, List<String> strings, ArrayList<CharSequence> mutable) {
+            api.plain(strings);
+            api.declarationOut(mutable);
+            api.forced(strings);
+            api.suppressed(strings);
+          }
+        }
+        """.trimIndent(),
+      ))
+    }
+  }
+
+  @Test
   fun generatedGenericOverrideStubs_omitSyntheticBridgesButRemainJavacAttributable() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

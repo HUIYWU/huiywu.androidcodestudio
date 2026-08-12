@@ -1202,7 +1202,7 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
 
       class WildcardApi {
         fun plain(values: List<String>) {}
-        fun declarationOut(values: List<out CharSequence>) {}
+        fun declarationOut(values: MutableList<out CharSequence>) {}
         fun forced(values: List<@JvmWildcard String>) {}
         fun suppressed(values: List<@JvmSuppressWildcards String>) {}
       }
@@ -1220,11 +1220,16 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
     assertTrue("Declaration-site out signature must be recorded: $declarationOut", declarationOut.signature != null)
     assertTrue("@JvmWildcard signature must be recorded: $forced", forced.signature != null)
     assertTrue("@JvmSuppressWildcards signature must be recorded: $suppressed", suppressed.signature != null)
-    assertTrue("""Wildcard annotations must affect JVM generic signature:
-plain=${plain.signature}
-forced=${forced.signature}
-suppressed=${suppressed.signature}""",
-      forced.signature != suppressed.signature || declarationOut.signature != plain.signature)
+    assertTrue("Plain List<String> parameter must be invariant in Java signature: ${plain.signature}",
+      plain.signature!!.contains("<Ljava/lang/String;>")
+        && !plain.signature.contains("<+Ljava/lang/String;>"))
+    assertTrue("Explicit out parameter must retain an extends wildcard: ${declarationOut.signature}",
+      declarationOut.signature!!.contains("<+Ljava/lang/CharSequence;>"))
+    assertTrue("@JvmWildcard must force an extends wildcard: ${forced.signature}",
+      forced.signature!!.contains("<+Ljava/lang/String;>"))
+    assertTrue("@JvmSuppressWildcards must remove the extends wildcard: ${suppressed.signature}",
+      suppressed.signature!!.contains("<Ljava/lang/String;>")
+        && !suppressed.signature.contains("<+Ljava/lang/String;>"))
   }
 
   private fun assertSyntheticBridge(

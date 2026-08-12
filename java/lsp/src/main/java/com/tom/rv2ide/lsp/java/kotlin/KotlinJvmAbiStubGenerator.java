@@ -2837,13 +2837,23 @@ private static final Pattern PROPERTY_PATTERN =
   private static String javaTypeArgument(String kotlinArgument) {
     String argument = kotlinArgument.trim();
     if ("*".equals(argument)) return "?";
+    final boolean forceWildcard = argument.startsWith("@JvmWildcard ")
+        || argument.startsWith("@kotlin.jvm.JvmWildcard ");
+    final boolean suppressWildcard = argument.startsWith("@JvmSuppressWildcards ")
+        || argument.startsWith("@kotlin.jvm.JvmSuppressWildcards ");
+    if (forceWildcard) {
+      argument = argument.substring(argument.indexOf(' ') + 1).trim();
+    } else if (suppressWildcard) {
+      argument = argument.substring(argument.indexOf(' ') + 1).trim();
+    }
     if (argument.startsWith("out ")) {
       return "? extends " + boxedTypeArgument(javaType(argument.substring(4)));
     }
     if (argument.startsWith("in ")) {
       return "? super " + boxedTypeArgument(javaType(argument.substring(3)));
     }
-    return boxedTypeArgument(javaType(argument));
+    final String mapped = boxedTypeArgument(javaType(argument));
+    return forceWildcard ? "? extends " + mapped : mapped;
   }
 
   private static String boxedTypeArgument(String javaType) {
