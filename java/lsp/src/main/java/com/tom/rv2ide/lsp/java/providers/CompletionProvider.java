@@ -265,12 +265,17 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final long cursor = params.getPosition().requireIndex();
     final int tsLine = params.getPosition().getLine();
     final int tsColumn = params.getPosition().getColumn();
+    final long requestContentsStartedNs = System.nanoTime();
     final String originalContents = requestContents(params);
+    pipelineTiming.requestContentsUs = elapsedUs(requestContentsStartedNs);
     final var contentBuilder = new StringBuilder(originalContents);
 
+    final long semicolonStartedNs = System.nanoTime();
     int endOfLine = endOfLine(contentBuilder, (int) cursor);
     contentBuilder.insert(endOfLine, ';');
+    pipelineTiming.semicolonUs = elapsedUs(semicolonStartedNs);
 
+    final long astFixerStartedNs = System.nanoTime();
     final StringBuilder contents;
     final var context = compiler.compiler.currentContext;
     if (context != null) {
@@ -280,6 +285,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     } else {
       contents = contentBuilder;
     }
+    pipelineTiming.astFixerUs = elapsedUs(astFixerStartedNs);
     final String contentString = contents.toString();
     pipelineTiming.prepareUs = elapsedUs(pipelineTiming.startedNs);
     final long classifyStartedNs = System.nanoTime();
@@ -336,7 +342,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
  
-    CompletionResult result = compileAndComplete(contentString, params, pipelineTiming);
+    CompletionResult result = compileAndComplete(contentString, params, tsContext, pipelineTiming);
     if (result == null) {
       LOG.warn(
           "Completion provider returned null result file={} cursor={} prefix={} version={} revision={} tsContext={}",
@@ -427,35 +433,17 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
   }
 
   private CompletionResult compileAndComplete(
-      String contents, CompletionParams params, CompletionPipelineTiming pipelineTiming) {
+      String contents,
+      CompletionParams params,
+      TSCompletionContext tsContext,
+      CompletionPipelineTiming pipelineTiming) {
     final long cursor = params.getPosition().requireIndex();
-    final int tsLine = params.getPosition().getLine();
-    final int tsColumn = params.getPosition().getColumn();
     final var file = params.getFile();
 
     final var started = Instant.now();
     final var source = new SourceFileObject(file, contents, Instant.now());
     final var partial = partialIdentifier(contents, (int) cursor);
     final var endsWithParen = endsWithParen(contents, (int) cursor);
-    final long classifyStartedNs = System.nanoTime();
-    TSCompletionContext tsContext;
-    try {
-      tsContext = TSCompletionContextClassifier.classify(file, contents, cursor, tsLine, tsColumn);
-    } catch (Throwable err) {
-      // Keep compile-stage routing resilient for the same reason as the primary
-      // classification path above: classifier failure must degrade to UNKNOWN,
-      // not break completion end-to-end.
-      if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info("Tree-sitter compile-stage context classification failed; falling back to UNKNOWN file={} cursor={} errorType={} errorMessage={}",
-            file,
-            cursor,
-            err.getClass().getName(),
-            err.getMessage());
-      }
-      tsContext = TSCompletionContext.UNKNOWN;
-    }
-
-    pipelineTiming.classifyUs += elapsedUs(classifyStartedNs);
     final TSCompletionContext tsContextFinal = tsContext;
 
     abortIfCancelled();
@@ -636,6 +624,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
   private static final class CompletionPipelineTiming {
     long startedNs;
     long prepareUs;
+    long requestContentsUs;
+    long semicolonUs;
+    long astFixerUs;
     long classifyUs;
     long compileUs;
     long scanUs;
@@ -654,7 +645,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       final long totalUs = elapsedUs(startedNs);
       LOG.debug(
           "JAVA_COMPLETION_PIPELINE file={} cursor={} leafKind={} tsContext={} partialLength={} "
-              + "prepareUs={} classifyUs={} compileUs={} scanUs={} providerUs={} totalUs={} "
+              + "prepareUs={} requestContentsUs={} semicolonUs={} astFixerUs={} classifyUs={} "
+              + "compileUs={} scanUs={} providerUs={} totalUs={} "
               + "itemCount={} incomplete={} cached={}",
           file,
           cursor,
@@ -662,6 +654,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
           tsContext,
           partial == null ? -1 : partial.length(),
           prepareUs,
+          requestContentsUs,
+          semicolonUs,
+          astFixerUs,
           classifyUs,
           compileUs,
           scanUs,
