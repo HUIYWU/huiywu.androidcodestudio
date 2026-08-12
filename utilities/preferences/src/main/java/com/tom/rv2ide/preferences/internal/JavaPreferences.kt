@@ -23,7 +23,6 @@ object JavaPreferences {
 
   const val GOOGLE_CODE_STYLE = "idepref_editor_java_googleCodeStyle"
   const val JAVA_DIAGNOSTICS_ENABLED = "idepref_editor_java_diagnosticsEnabled"
-  const val JAVA_INCREMENTAL_REPARSE_ENABLED = "idepref_editor_java_incrementalReparseEnabled"
   const val JAVA_KOTLIN_RECOGNITION_ENABLED = "idepref_editor_java_kotlinRecognitionEnabled"
 
   var googleCodeStyle: Boolean
@@ -38,13 +37,6 @@ object JavaPreferences {
     set(value) {
       prefManager.putBoolean(JAVA_DIAGNOSTICS_ENABLED, value)
     }
-  /** Whether Java partial reparse is enabled for experimental editor flows. */
-  var isJavaIncrementalReparseEnabled: Boolean
-    get() = prefManager.getBoolean(JAVA_INCREMENTAL_REPARSE_ENABLED, false)
-    set(value) {
-      prefManager.putBoolean(JAVA_INCREMENTAL_REPARSE_ENABLED, value)
-    }
-
   /** Whether Java language services may discover JVM-visible Kotlin source declarations. */
   var isJavaKotlinRecognitionEnabled: Boolean
     get() = prefManager.getBoolean(JAVA_KOTLIN_RECOGNITION_ENABLED, false)

@@ -39,7 +39,6 @@ internal class JavaCodeConfigurations(
     addPreference(GoogleCodeStyle())
     addPreference(JavaDiagnosticsEnabled())
     addPreference(JavaKotlinRecognitionEnabled())
-    addPreference(JavaIncrementalReparseEnabled())
 
   }
 }
@@ -93,15 +92,3 @@ private class JavaKotlinRecognitionEnabled(
     return true
   }
 }
-
-@Parcelize
-private class JavaIncrementalReparseEnabled(
-    override val key: String = JavaPreferences.JAVA_INCREMENTAL_REPARSE_ENABLED,
-    override val title: Int = R.string.idepref_java_incrementalReparseEnabled_title,
-    override val summary: Int? = R.string.idepref_java_incrementalReparseEnabled_summary,
-    override val icon: Int? = drawable.ic_compilation_error,
-) :
-    SwitchPreference(
-        getValue = JavaPreferences::isJavaIncrementalReparseEnabled::get,
-        setValue = JavaPreferences::isJavaIncrementalReparseEnabled::set,
-    )
