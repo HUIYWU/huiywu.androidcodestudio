@@ -45,7 +45,7 @@ import com.tom.rv2ide.lsp.java.providers.completion.MemberReferenceCompletionPro
 import com.tom.rv2ide.lsp.java.providers.completion.MemberSelectCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.QualifiedNewClassCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.SwitchConstantCompletionProvider;
-import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionSuppressionClassifier;
+import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionSuppression;
 import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionSuppressionReason;
 import com.tom.rv2ide.lsp.java.utils.ASTFixer;
 import com.tom.rv2ide.lsp.java.utils.CancelChecker;
@@ -187,7 +187,7 @@ private TSCompletionSuppressionReason classifyCompletionSuppression(
       final int line = params.getPosition().getLine();
       final int column = params.getPosition().getColumn();
       final long cursor = params.getPosition().requireIndex();
-      return TSCompletionSuppressionClassifier.classify(file, contents, cursor, line, column);
+      return TSCompletionSuppression.classify(file, contents, cursor, line, column);
     } catch (Throwable ignored) {
       return TSCompletionSuppressionReason.NONE;
     }

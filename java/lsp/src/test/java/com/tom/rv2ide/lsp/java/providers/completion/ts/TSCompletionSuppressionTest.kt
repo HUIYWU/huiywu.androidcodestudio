@@ -6,7 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-class TSCompletionSuppressionClassifierTest {
+class TSCompletionSuppressionTest {
   companion object {
     @Volatile private var nativeLoadAttempted = false
     @Volatile private var nativeLoadFailure: Throwable? = null
@@ -74,7 +74,7 @@ class TSCompletionSuppressionClassifierTest {
             nativeFailureDescription(loadFailure),
         loadFailure,
     )
-    return TSCompletionSuppressionClassifier.classify(
+    return TSCompletionSuppression.classify(
         Paths.get("/tmp/A.java"), code, offset.toLong(), line, column)
   }
 
