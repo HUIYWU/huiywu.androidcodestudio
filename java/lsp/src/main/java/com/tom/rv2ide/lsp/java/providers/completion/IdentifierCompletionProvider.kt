@@ -42,10 +42,12 @@ class IdentifierCompletionProvider(
       endsWithParen: Boolean,
   ): CompletionResult {
     val list = mutableListOf<CompletionItem>()
+    val totalStartedNs = System.nanoTime()
 
     abortIfCancelled()
     abortCompletionIfCancelled()
 
+    val snippetsStartedNs = System.nanoTime()
     val snippets =
         try {
           SnippetCompletionProvider(cursor, file, compiler, settings)
@@ -55,7 +57,9 @@ class IdentifierCompletionProvider(
           CompletionResult.EMPTY
         }
     list.addAll(snippets.items)
+    val snippetsUs = (System.nanoTime() - snippetsStartedNs) / 1_000L
 
+    val scopeStartedNs = System.nanoTime()
     val scopeMembers =
         try {
           ScopeCompletionProvider(file, cursor, compiler, settings)
@@ -65,9 +69,11 @@ class IdentifierCompletionProvider(
           throw t
         }
     list.addAll(scopeMembers.items)
+    val scopeUs = (System.nanoTime() - scopeStartedNs) / 1_000L
 
     abortIfCancelled()
     abortCompletionIfCancelled()
+    val staticImportsStartedNs = System.nanoTime()
     val staticImports =
         try {
           StaticImportCompletionProvider(file, cursor, compiler, settings, path.compilationUnit)
@@ -77,6 +83,7 @@ class IdentifierCompletionProvider(
           throw t
         }
     list.addAll(staticImports.items)
+    val staticImportsUs = (System.nanoTime() - staticImportsStartedNs) / 1_000L
     if (IdeLogConfig.shouldLogInfo()) {
       log.info(
           "identifier completion partial='{}' preClassItems={} trimToMax={} maxItems={} allLower={} startsUpper={}",
@@ -87,12 +94,15 @@ class IdentifierCompletionProvider(
           settings.shouldMatchAllLowerCase(),
           partial.isNotEmpty() && Character.isUpperCase(partial[0]))
     }
+    var classNamesUs = 0L
+    var classNamesCount = 0
     if (CompletionResult.TRIM_TO_MAX && list.size < CompletionResult.MAX_ITEMS) {
 
       val allLower: Boolean = settings.shouldMatchAllLowerCase()
       if (allLower || partial.isNotEmpty() && Character.isUpperCase(partial[0])) {
         abortIfCancelled()
         abortCompletionIfCancelled()
+        val classNamesStartedNs = System.nanoTime()
         val classNames =
             try {
               ClassNamesCompletionProvider(file, cursor, compiler, settings, path.compilationUnit)
@@ -102,11 +112,14 @@ class IdentifierCompletionProvider(
               throw t
             }
         list.addAll(classNames.items)
+        classNamesCount = classNames.items.size
+        classNamesUs = (System.nanoTime() - classNamesStartedNs) / 1_000L
       }
     }
 
     abortIfCancelled()
     abortCompletionIfCancelled()
+    val keywordsStartedNs = System.nanoTime()
     val keywords =
         try {
           KeywordCompletionProvider(file, cursor, compiler, settings)
@@ -116,6 +129,27 @@ class IdentifierCompletionProvider(
           throw t
         }
     list.addAll(keywords.items)
+    val keywordsUs = (System.nanoTime() - keywordsStartedNs) / 1_000L
+    if (IdeLogConfig.shouldLogIde()) {
+      log.debug(
+          "JAVA_IDENTIFIER_COMPLETION partialLength={} snippetsUs={} scopeUs={} " +
+              "staticImportsUs={} classNamesUs={} keywordsUs={} totalUs={} " +
+              "snippetCount={} scopeCount={} staticImportCount={} classNameCount={} " +
+              "keywordCount={} resultCount={}",
+          partial.length,
+          snippetsUs,
+          scopeUs,
+          staticImportsUs,
+          classNamesUs,
+          keywordsUs,
+          (System.nanoTime() - totalStartedNs) / 1_000L,
+          snippets.items.size,
+          scopeMembers.items.size,
+          staticImports.items.size,
+          classNamesCount,
+          keywords.items.size,
+          list.size)
+    }
 
     return CompletionResult(list)
   }

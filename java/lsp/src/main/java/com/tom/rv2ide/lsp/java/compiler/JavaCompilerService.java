@@ -350,6 +350,10 @@ public class JavaCompilerService implements CompilerProvider {
   /**
    * Advances the cached semantic task when the strict method-reparse MVP accepts the request;
    * otherwise recompiles the current request on the stable semantic path.
+   *
+   * <p>This boundary is intentionally conservative and treated as frozen after IDE validation.
+   * Future completion-performance work must not bypass contiguous document identity, method-body
+   * containment, mutation-failure isolation, or partial-diagnostic rollback.
    */
   private synchronized void reparseOrRecompile(CompilationRequest request) {
     final long strategyStartedNs = System.nanoTime();
@@ -387,7 +391,7 @@ public class JavaCompilerService implements CompilerProvider {
             System.identityHashCode(request),
             cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task),
             request.methodReparsePlan.file);
-        LOG.info(
+        LOG.debug(
             "JAVAC_METHOD_REPARSE_SUCCESS taskHash={} source={} version={} revision={}",
             cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task),
             request.methodReparsePlan.file,

@@ -260,6 +260,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
     abortIfCancelled();
     abortCompletionIfCancelled();
+    final CompletionPipelineTiming pipelineTiming = new CompletionPipelineTiming();
+    pipelineTiming.startedNs = System.nanoTime();
     final long cursor = params.getPosition().requireIndex();
     final int tsLine = params.getPosition().getLine();
     final int tsColumn = params.getPosition().getColumn();
@@ -279,6 +281,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       contents = contentBuilder;
     }
     final String contentString = contents.toString();
+    pipelineTiming.prepareUs = elapsedUs(pipelineTiming.startedNs);
+    final long classifyStartedNs = System.nanoTime();
     TSCompletionContext tsContext;
     try {
       tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor, tsLine, tsColumn);
@@ -306,6 +310,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       }
       return CompletionResult.EMPTY;
     }
+    pipelineTiming.classifyUs = elapsedUs(classifyStartedNs);
     if (IdeLogConfig.shouldLogInfo() && tsContext != TSCompletionContext.UNKNOWN) {
       LOG.info("Tree-sitter completion context file={} cursor={} context={}", file, cursor, tsContext);
     }
@@ -331,7 +336,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
  
-    CompletionResult result = compileAndComplete(contentString, params);
+    CompletionResult result = compileAndComplete(contentString, params, pipelineTiming);
     if (result == null) {
       LOG.warn(
           "Completion provider returned null result file={} cursor={} prefix={} version={} revision={} tsContext={}",
@@ -421,7 +426,8 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     return cursor;
   }
 
-  private CompletionResult compileAndComplete(String contents, CompletionParams params) {
+  private CompletionResult compileAndComplete(
+      String contents, CompletionParams params, CompletionPipelineTiming pipelineTiming) {
     final long cursor = params.getPosition().requireIndex();
     final int tsLine = params.getPosition().getLine();
     final int tsColumn = params.getPosition().getColumn();
@@ -431,6 +437,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final var source = new SourceFileObject(file, contents, Instant.now());
     final var partial = partialIdentifier(contents, (int) cursor);
     final var endsWithParen = endsWithParen(contents, (int) cursor);
+    final long classifyStartedNs = System.nanoTime();
     TSCompletionContext tsContext;
     try {
       tsContext = TSCompletionContextClassifier.classify(file, contents, cursor, tsLine, tsColumn);
@@ -448,6 +455,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       tsContext = TSCompletionContext.UNKNOWN;
     }
 
+    pipelineTiming.classifyUs += elapsedUs(classifyStartedNs);
     final TSCompletionContext tsContextFinal = tsContext;
 
     abortIfCancelled();
@@ -473,52 +481,60 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       config.setCompletionInfo(new CompletionInfo(params.getPosition()));
     };
 
+    final long compileStartedNs = System.nanoTime();
     SynchronizedTask synchronizedTask = compiler.compile(request);
     try {
       return synchronizedTask.get(task -> {
+        pipelineTiming.compileUs = elapsedUs(compileStartedNs);
         if (task == null || task.task == null || task.task.getContext() == null) {
-        LOG.warn(
-            "Compilation resulted in an invalid JavacTask file={} cursor={} taskPresent={} javacTaskPresent={} contextPresent={}",
-            file,
-            cursor,
-            task != null,
-            task != null && task.task != null,
-            task != null && task.task != null && task.task.getContext() != null);
-        return CompletionResult.EMPTY;
-      }
-      abortIfCancelled();
-      abortCompletionIfCancelled();
-      if (IdeLogConfig.shouldLogIde()) {
-        LOG.debug("...compiled in {}ms", Duration.between(started, Instant.now()).toMillis());
-      }
-      final var completionRoot = task.root(file);
-      TreePath path = new FindCompletionsAt(task.task).scan(completionRoot, cursor);
-      if (path == null || path.getLeaf() == null) {
-        LOG.warn(
-            "Completion scan returned null path file={} cursor={} rootPresent={} diagnosticsCountUnknown=true",
-            file,
-            cursor,
-            completionRoot != null);
-        return CompletionResult.EMPTY;
-      }
-
-      abortIfCancelled();
-      abortCompletionIfCancelled();
-      String newPartial = partial;
-
-      if (path.getLeaf().getKind() == Tree.Kind.IMPORT) {
-        newPartial = qualifiedPartialIdentifier(contents, (int) cursor);
-        if (newPartial.endsWith(ASTFixer.IDENT)) {
-          newPartial = newPartial.substring(0, newPartial.length() - ASTFixer.IDENT.length());
+          LOG.warn(
+              "Compilation resulted in an invalid JavacTask file={} cursor={} taskPresent={} javacTaskPresent={} contextPresent={}",
+              file,
+              cursor,
+              task != null,
+              task != null && task.task != null,
+              task != null && task.task != null && task.task.getContext() != null);
+          return CompletionResult.EMPTY;
         }
-      } else if (path.getLeaf().getKind() == Tree.Kind.NEW_CLASS && "new".equals(newPartial)) {
-        // At `qualifier.new|`, `new` is syntax rather than the member-type prefix.
-        newPartial = "";
-      }
+        abortIfCancelled();
+        abortCompletionIfCancelled();
+        if (IdeLogConfig.shouldLogIde()) {
+          LOG.debug("...compiled in {}ms", Duration.between(started, Instant.now()).toMillis());
+        }
+        final var completionRoot = task.root(file);
+        final long scanStartedNs = System.nanoTime();
+        TreePath path = new FindCompletionsAt(task.task).scan(completionRoot, cursor);
+        pipelineTiming.scanUs = elapsedUs(scanStartedNs);
+        if (path == null || path.getLeaf() == null) {
+          LOG.warn(
+              "Completion scan returned null path file={} cursor={} rootPresent={} diagnosticsCountUnknown=true",
+              file,
+              cursor,
+              completionRoot != null);
+          return CompletionResult.EMPTY;
+        }
 
-      final var result = doComplete(file, contents, cursor, newPartial, endsWithParen, task, path, tsContextFinal);
+        abortIfCancelled();
+        abortCompletionIfCancelled();
+        String newPartial = partial;
 
-      return result;
+        if (path.getLeaf().getKind() == Tree.Kind.IMPORT) {
+          newPartial = qualifiedPartialIdentifier(contents, (int) cursor);
+          if (newPartial.endsWith(ASTFixer.IDENT)) {
+            newPartial = newPartial.substring(0, newPartial.length() - ASTFixer.IDENT.length());
+          }
+        } else if (path.getLeaf().getKind() == Tree.Kind.NEW_CLASS && "new".equals(newPartial)) {
+          // At `qualifier.new|`, `new` is syntax rather than the member-type prefix.
+          newPartial = "";
+        }
+
+        final long providerStartedNs = System.nanoTime();
+        final var result =
+            doComplete(file, contents, cursor, newPartial, endsWithParen, task, path, tsContextFinal);
+        pipelineTiming.providerUs = elapsedUs(providerStartedNs);
+        pipelineTiming.log(file, cursor, path.getLeaf().getKind(), tsContextFinal, newPartial, result);
+
+        return result;
       });
     } finally {
       final var context = completionContext[0];
@@ -609,6 +625,51 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
           endsWithParen,
           err);
       throw err;
+    }
+  }
+
+  private static long elapsedUs(long startedNs) {
+    return (System.nanoTime() - startedNs) / 1_000L;
+  }
+
+  /** Request-scoped timing only; it does not participate in completion behavior. */
+  private static final class CompletionPipelineTiming {
+    long startedNs;
+    long prepareUs;
+    long classifyUs;
+    long compileUs;
+    long scanUs;
+    long providerUs;
+
+    void log(
+        Path file,
+        long cursor,
+        Tree.Kind leafKind,
+        TSCompletionContext tsContext,
+        String partial,
+        CompletionResult result) {
+      if (!IdeLogConfig.shouldLogIde()) {
+        return;
+      }
+      final long totalUs = elapsedUs(startedNs);
+      LOG.debug(
+          "JAVA_COMPLETION_PIPELINE file={} cursor={} leafKind={} tsContext={} partialLength={} "
+              + "prepareUs={} classifyUs={} compileUs={} scanUs={} providerUs={} totalUs={} "
+              + "itemCount={} incomplete={} cached={}",
+          file,
+          cursor,
+          leafKind,
+          tsContext,
+          partial == null ? -1 : partial.length(),
+          prepareUs,
+          classifyUs,
+          compileUs,
+          scanUs,
+          providerUs,
+          totalUs,
+          result == null ? 0 : result.getItems().size(),
+          result != null && result.isIncomplete(),
+          result != null && result.isCached());
     }
   }
 

@@ -52,6 +52,7 @@ class ClassNamesCompletionProvider(
       partial: String,
       endsWithParen: Boolean,
   ): CompletionResult {
+    val totalStartedNs = System.nanoTime()
     val list = mutableListOf<CompletionItem>()
     val packageName = Objects.toString(root.packageName, "")
     val uniques: MutableSet<String> = HashSet()
@@ -62,7 +63,9 @@ class ClassNamesCompletionProvider(
 
     abortIfCancelled()
     abortCompletionIfCancelled()
-    for (className in compiler.packagePrivateTopLevelTypes(packageName)) {
+    val packagePrivateStartedNs = System.nanoTime()
+    val packagePrivateTypes = compiler.packagePrivateTopLevelTypes(packageName)
+    for (className in packagePrivateTypes) {
       val matchLevel = matchLevel(className, partial)
       if (matchLevel == NO_MATCH) {
         continue
@@ -72,9 +75,12 @@ class ClassNamesCompletionProvider(
       uniques.add(className)
     }
 
+    val packagePrivateUs = (System.nanoTime() - packagePrivateStartedNs) / 1_000L
     abortIfCancelled()
     abortCompletionIfCancelled()
+    val publicIndexStartedNs = System.nanoTime()
     val topLevelTypes = compiler.publicTopLevelTypes()
+    val publicIndexUs = (System.nanoTime() - publicIndexStartedNs) / 1_000L
     if (IdeLogConfig.shouldLogInfo()) {
       log.info(
           "class-name completion partial='{}' topLevelTypes={} hasString={} hasInteger={} hasDouble={}",
@@ -84,6 +90,7 @@ class ClassNamesCompletionProvider(
           topLevelTypes.contains("java.lang.Integer"),
           topLevelTypes.contains("java.lang.Double"))
     }
+    val publicScanStartedNs = System.nanoTime()
     for (className in topLevelTypes) {
       val matchLevel = matchLevel(simpleName(className), partial)
 
@@ -98,8 +105,10 @@ class ClassNamesCompletionProvider(
       list.add(classItem(imports, file, className, matchLevel))
       uniques.add(className)
     }
+    val publicScanUs = (System.nanoTime() - publicScanStartedNs) / 1_000L
     abortIfCancelled()
     abortCompletionIfCancelled()
+    val localTypesStartedNs = System.nanoTime()
     for (t in root.typeDecls) {
       if (t !is ClassTree) {
         continue
@@ -119,8 +128,22 @@ class ClassNamesCompletionProvider(
       }
     }
 
+    val localTypesUs = (System.nanoTime() - localTypesStartedNs) / 1_000L
     if (IdeLogConfig.shouldLogDebug()) {
       log.debug("...found {} class names", list.size)
+      log.debug(
+          "JAVA_CLASS_NAMES_COMPLETION partialLength={} packagePrivateUs={} publicIndexUs={} " +
+              "publicScanUs={} localTypesUs={} totalUs={} packagePrivateCount={} " +
+              "publicTypeCount={} resultCount={}",
+          partial.length,
+          packagePrivateUs,
+          publicIndexUs,
+          publicScanUs,
+          localTypesUs,
+          (System.nanoTime() - totalStartedNs) / 1_000L,
+          packagePrivateTypes.size,
+          topLevelTypes.size,
+          list.size)
     }
 
     return CompletionResult(list)
