@@ -1220,10 +1220,10 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
     assertTrue("Declaration-site out signature must be recorded: $declarationOut", declarationOut.signature != null)
     assertTrue("@JvmWildcard signature must be recorded: $forced", forced.signature != null)
     assertTrue("@JvmSuppressWildcards signature must be recorded: $suppressed", suppressed.signature != null)
-    assertTrue("Wildcard annotations must affect JVM generic signature:
+    assertTrue("""Wildcard annotations must affect JVM generic signature:
 plain=${plain.signature}
 forced=${forced.signature}
-suppressed=${suppressed.signature}",
+suppressed=${suppressed.signature}""",
       forced.signature != suppressed.signature || declarationOut.signature != plain.signature)
   }
 

@@ -65,7 +65,21 @@ class ScopeCompletionProvider(
   ): CompletionResult {
     val trees = Trees.instance(task.task)
     val list: MutableList<CompletionItem> = ArrayList()
-    val scope = trees.getScope(path)
+    val scope =
+        try {
+          trees.getScope(path)
+        } catch (error: Throwable) {
+          log.error(
+              "Scope completion failed stage=getScope file={} cursor={} partial={} leafKind={} pathKinds={}",
+              file,
+              cursor,
+              partial,
+              path.leaf.kind,
+              pathKinds(path),
+              error,
+          )
+          throw error
+        }
     val filter =
         Predicate<CharSequence?> {
           if (it == null || it.isEmpty()) {
@@ -82,7 +96,24 @@ class ScopeCompletionProvider(
 
     abortIfCancelled()
     abortCompletionIfCancelled()
-    for (member in ScopeHelper.scopeMembers(task, scope, filter)) {
+    val scopeMembers =
+        try {
+          ScopeHelper.scopeMembers(task, scope, filter)
+        } catch (error: Throwable) {
+          log.error(
+              "Scope completion failed stage=scopeMembers file={} cursor={} partial={} leafKind={} pathKinds={} enclosingClass={} enclosingMethod={}",
+              file,
+              cursor,
+              partial,
+              path.leaf.kind,
+              pathKinds(path),
+              scope.enclosingClass,
+              scope.enclosingMethod,
+              error,
+          )
+          throw error
+        }
+    for (member in scopeMembers) {
       var name = member.simpleName.toString()
       if (name.contains('(')) {
         name = name.substring(0, name.lastIndexOf('('))
@@ -92,8 +123,38 @@ class ScopeCompletionProvider(
 
       if (member.kind == METHOD) {
         val method = member as ExecutableElement
-        val parentPath = path.parentPath /*method*/.parentPath /*class*/
-        list.add(overrideIfPossible(task, parentPath, method, endsWithParen, matchLevel, partial))
+        try {
+          val methodPath = path.parentPath
+          val parentPath = methodPath?.parentPath
+          if (parentPath == null) {
+            log.warn(
+                "Scope completion override path missing file={} cursor={} partial={} member={} leafKind={} pathKinds={} methodPathPresent={}",
+                file,
+                cursor,
+                partial,
+                method,
+                path.leaf.kind,
+                pathKinds(path),
+                methodPath != null,
+            )
+            list.add(method(task, listOf(method), !endsWithParen, matchLevel, partial))
+          } else {
+            list.add(overrideIfPossible(task, parentPath, method, endsWithParen, matchLevel, partial))
+          }
+        } catch (error: Throwable) {
+          log.error(
+              "Scope completion failed stage=override file={} cursor={} partial={} member={} memberOwner={} leafKind={} pathKinds={}",
+              file,
+              cursor,
+              partial,
+              method,
+              method.enclosingElement,
+              path.leaf.kind,
+              pathKinds(path),
+              error,
+          )
+          throw error
+        }
       } else {
         list.add(item(task, member, matchLevel))
       }
@@ -123,71 +184,104 @@ class ScopeCompletionProvider(
       matchLevel: MatchLevel,
       partial: String,
   ): CompletionItem {
-    if (parentPath.leaf.kind != CLASS) {
-      // Can only override if the cursor is directly in a class declaration
-      return method(task, listOf(method), !endsWithParen, matchLevel, partial)
-    }
+    var stage = "parentPathKind"
+    try {
+      if (parentPath.leaf.kind != CLASS) {
+        // Can only override if the cursor is directly in a class declaration.
+        return method(task, listOf(method), !endsWithParen, matchLevel, partial)
+      }
 
-    abortIfCancelled()
-    abortCompletionIfCancelled()
-    val types = task.task.types
-    val parentElement =
-        Trees.instance(task.task).getElement(parentPath)
-            ?: // Can't get further information for overriding this method
+      abortIfCancelled()
+      abortCompletionIfCancelled()
+      val types = task.task.types
+      stage = "getParentElement"
+      val parentElement =
+          Trees.instance(task.task).getElement(parentPath)
+              ?: return method(task, listOf(method), !endsWithParen, matchLevel, partial)
+      stage = "parentDeclaredType"
+      val type = parentElement.asType() as DeclaredType
+      stage = "methodEnclosingElement"
+      val enclosing = method.enclosingElement
+      val isFinalClass = enclosing.modifiers.contains(FINAL)
+      val isNotOverridable =
+          method.modifiers.contains(STATIC) ||
+              method.modifiers.contains(FINAL) ||
+              method.modifiers.contains(PRIVATE)
+      stage = "overrideEligibility"
+      if (
+          isFinalClass ||
+              isNotOverridable ||
+              !types.isAssignable(type, enclosing.asType()) ||
+              parentPath.leaf !is ClassTree
+      ) {
+        return method(task, listOf(method), !endsWithParen, matchLevel, partial)
+      }
+
+      stage = "generateStub"
+      val generated =
+          try {
+            MethodStubGenerator.generate(
+                method = method,
+                parameterizedType =
+                    types.asMemberOf(type, method) as jdkx.lang.model.type.ExecutableType,
+                source = null,
+                bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
+            )
+          } catch (error: Throwable) {
+            log.warn(
+                "Scope completion override fallback stage=generateStub member={} parentLeafKind={} errorType={} errorMessage={}",
+                method,
+                parentPath.leaf.kind,
+                error.javaClass.name,
+                error.message,
+            )
             return method(task, listOf(method), !endsWithParen, matchLevel, partial)
-    val type = parentElement.asType() as DeclaredType
-    val enclosing = method.enclosingElement
-    val isFinalClass = enclosing.modifiers.contains(FINAL)
-    val isNotOverridable =
-        (method.modifiers.contains(STATIC) ||
-            method.modifiers.contains(FINAL) ||
-            method.modifiers.contains(PRIVATE))
-    if (
-        isFinalClass ||
-            isNotOverridable ||
-            !types.isAssignable(type, enclosing.asType()) ||
-            parentPath.leaf !is ClassTree
-    ) {
-      // Override is not possible
-      return method(task, listOf(method), !endsWithParen, matchLevel, partial)
+          }
+
+      stage = "buildItem"
+      val imports = generated.imports
+      val methodSpec = generated.declaration
+      val item = JavaCompletionItem()
+      item.ideLabel = methodSpec.nameAsString
+      item.completionKind = com.tom.rv2ide.lsp.models.CompletionItemKind.METHOD
+      item.detail = method.returnType.toString() + " " + method
+      item.ideSortText = item.ideLabel
+      item.insertText = generated.renderedText
+      item.insertTextFormat = SNIPPET
+      item.snippetDescription = describeSnippet(partial)
+      item.matchLevel = matchLevel
+      item.data = data(task, method, 1)
+      if (item.additionalTextEdits == null) {
+        item.additionalTextEdits = mutableListOf()
+      }
+
+      stage = "imports"
+      imports.removeIf { "java.lang." == it || fileImports.contains(it) || filePackage == it }
+      item.additionalEditHandler = MultipleClassImportEditHandler(imports, fileImports, file)
+      return item
+    } catch (error: Throwable) {
+      log.error(
+          "Scope completion override failed stage={} member={} memberOwner={} parentLeafKind={} parentPathKinds={} errorType={} errorMessage={}",
+          stage,
+          method,
+          method.enclosingElement,
+          parentPath.leaf.kind,
+          pathKinds(parentPath),
+          error.javaClass.name,
+          error.message,
+          error,
+      )
+      throw error
     }
+  }
 
-    val generated =
-        try {
-          MethodStubGenerator.generate(
-              method = method,
-              parameterizedType = types.asMemberOf(type, method) as jdkx.lang.model.type.ExecutableType,
-              source = null,
-              bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
-          )
-        } catch (error: Throwable) {
-          log.error("Cannot override method:{} err={}", method.simpleName, error.message)
-          return method(task, listOf(method), !endsWithParen, matchLevel, partial)
-        }
-
-    val imports = generated.imports
-    val methodSpec = generated.declaration
-    val insertText = generated.renderedText
-
-    abortIfCancelled()
-    abortCompletionIfCancelled()
-
-    val item = JavaCompletionItem()
-    item.ideLabel = methodSpec.nameAsString
-    item.completionKind = com.tom.rv2ide.lsp.models.CompletionItemKind.METHOD
-    item.detail = method.returnType.toString() + " " + method
-    item.ideSortText = item.ideLabel
-    item.insertText = insertText
-    item.insertTextFormat = SNIPPET
-    item.snippetDescription = describeSnippet(partial)
-    item.matchLevel = matchLevel
-    item.data = data(task, method, 1)
-    if (item.additionalTextEdits == null) {
-      item.additionalTextEdits = mutableListOf()
+  private fun pathKinds(path: TreePath): String {
+    val kinds = ArrayList<String>()
+    var current: TreePath? = path
+    while (current != null) {
+      kinds.add(current.leaf.kind.name)
+      current = current.parentPath
     }
-
-    imports.removeIf { "java.lang." == it || fileImports.contains(it) || filePackage == it }
-    item.additionalEditHandler = MultipleClassImportEditHandler(imports, fileImports, file)
-    return item
+    return kinds.joinToString("->")
   }
 }

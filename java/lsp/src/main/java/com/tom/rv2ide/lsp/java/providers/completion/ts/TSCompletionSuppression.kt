@@ -252,8 +252,10 @@ object TSCompletionSuppression {
       return TSCompletionSuppressionReason.NONE
     }
 
+    // android-tree-sitter represents a missing parent as a non-null TSNode with a null native
+    // pointer. Stop before dereferencing that sentinel; normal source reaches it after the root.
     var current: TSNode? = node
-    while (current != null) {
+    while (current?.canAccess() == true) {
       val type = current.getType()
       when (type) {
         "line_comment", "block_comment", "comment" ->
