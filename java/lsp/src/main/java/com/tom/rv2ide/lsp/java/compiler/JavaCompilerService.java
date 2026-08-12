@@ -361,7 +361,7 @@ public class JavaCompilerService implements CompilerProvider {
             request.sources.size(),
             (System.nanoTime() - strategyStartedNs) / 1_000L);
       }
-      recompile(request);
+      recompile(request, MethodReparseResult.NO_PLAN);
       return;
     }
     if (IdeLogConfig.shouldLogDebug()) {
@@ -376,9 +376,11 @@ public class JavaCompilerService implements CompilerProvider {
           cachedCompile == null ? -1 : cachedCompile.documentRevision(),
           request.methodReparsePlan == null ? -1 : request.methodReparsePlan.documentRevision);
     }
-    if (!methodReparseCorruptedTask
-        && request.methodReparsePlan != null
-        && tryMethodReparse(request)) {
+    final MethodReparseResult reparseResult =
+        methodReparseCorruptedTask
+            ? MethodReparseResult.TASK_CORRUPTED
+            : tryMethodReparse(request);
+    if (reparseResult == MethodReparseResult.SUCCESS) {
       if (IdeLogConfig.shouldLogDebug()) {
         LOG.debug(
             "MethodReparse success requestHash={} taskHash={} source={}",
@@ -396,63 +398,76 @@ public class JavaCompilerService implements CompilerProvider {
     }
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.debug(
-          "MethodReparse fallback requestHash={} corrupted={} cachedTaskHash={}",
+          "MethodReparse fallback requestHash={} reason={} corrupted={} cachedTaskHash={}",
           System.identityHashCode(request),
+          reparseResult,
           methodReparseCorruptedTask,
           cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task));
       LOG.info(
-          "JAVAC_METHOD_REPARSE_FALLBACK reason=QUALIFICATION_OR_REPARSE_FAILURE corrupted={} source={} version={} revision={}",
+          "JAVAC_METHOD_REPARSE_FALLBACK reason={} corrupted={} source={} version={} revision={}",
+          reparseResult,
           methodReparseCorruptedTask,
           request.methodReparsePlan.file,
           request.methodReparsePlan.documentVersion,
           request.methodReparsePlan.documentRevision);
     }
     // A failed in-place mutation must never be reused. recompile() closes and replaces it.
-    recompile(request);
+    recompile(request, reparseResult);
   }
 
-  private boolean tryMethodReparse(CompilationRequest request) {
+  private MethodReparseResult tryMethodReparse(CompilationRequest request) {
     final MethodReparsePlan plan = request.methodReparsePlan;
-    if (plan == null || cachedCompile == null || cachedCompile.closed) {
-      return false;
+    if (plan == null) {
+      return MethodReparseResult.NO_PLAN;
     }
-    if (request.sources.size() != 1 || plan.contents == null || plan.cursor < 0) {
-      return false;
+    if (cachedCompile == null) {
+      return MethodReparseResult.NO_CACHE;
+    }
+    if (cachedCompile.closed) {
+      return MethodReparseResult.CACHE_CLOSED;
+    }
+    if (request.sources.size() != 1) {
+      return MethodReparseResult.MULTIPLE_SOURCES;
+    }
+    if (plan.contents == null || plan.cursor < 0) {
+      return MethodReparseResult.INVALID_PLAN;
     }
     final JavaFileObject requestedSource = request.sources.iterator().next();
     if (!requestedSource.toUri().normalize().equals(plan.file.toUri().normalize())) {
-      return false;
+      return MethodReparseResult.SOURCE_MISMATCH;
     }
     final String oldContents = cachedCompile.currentSourceContents();
     if (oldContents == null) {
-      return false;
+      return MethodReparseResult.NO_CACHED_CONTENTS;
     }
     // The MVP requires an explicit contiguous document identity. A task produced by
     // Diagnostics or another request without version metadata must be re-established first;
     // otherwise we could mutate a task whose source snapshot is only approximately known.
-    if (cachedCompile.documentVersion() < 0
-        || plan.documentVersion < 0
-        || plan.documentVersion != cachedCompile.documentVersion() + 1) {
-      return false;
+    if (cachedCompile.documentVersion() < 0 || plan.documentVersion < 0) {
+      return MethodReparseResult.VERSION_UNKNOWN;
     }
-    if (cachedCompile.documentRevision() < 0
-        || plan.documentRevision < 0
-        || plan.documentRevision <= cachedCompile.documentRevision()) {
-      return false;
+    if (plan.documentVersion != cachedCompile.documentVersion() + 1) {
+      return MethodReparseResult.VERSION_GAP;
+    }
+    if (cachedCompile.documentRevision() < 0 || plan.documentRevision < 0) {
+      return MethodReparseResult.REVISION_UNKNOWN;
+    }
+    if (plan.documentRevision <= cachedCompile.documentRevision()) {
+      return MethodReparseResult.REVISION_NOT_NEWER;
     }
 
     final SingleTextEdit edit = SingleTextEdit.compute(oldContents, plan.contents);
     if (edit == null) {
-      return false;
+      return MethodReparseResult.INVALID_EDIT;
     }
     final CompilationUnitTree root = cachedCompile.root(plan.file);
     if (root == null) {
-      return false;
+      return MethodReparseResult.NO_ROOT;
     }
     final List<Pair<Range, TreePath>> positions =
         cachedCompile.methodPositions.get(plan.file.toAbsolutePath().toString());
     if (positions == null) {
-      return false;
+      return MethodReparseResult.NO_METHOD_INDEX;
     }
 
     Pair<Range, TreePath> candidate = null;
@@ -465,28 +480,34 @@ public class JavaCompilerService implements CompilerProvider {
         break;
       }
     }
-    if (candidate == null || !(candidate.second.getLeaf() instanceof MethodTree)) {
-      return false;
+    if (candidate == null) {
+      return MethodReparseResult.CURSOR_OUTSIDE_METHOD;
+    }
+    if (!(candidate.second.getLeaf() instanceof MethodTree)) {
+      return MethodReparseResult.INVALID_METHOD_PATH;
     }
     final MethodTree method = (MethodTree) candidate.second.getLeaf();
-    if (method.getBody() == null || method.getName().contentEquals("<init>")) {
-      return false;
+    if (method.getBody() == null) {
+      return MethodReparseResult.NO_METHOD_BODY;
+    }
+    if (method.getName().contentEquals("<init>")) {
+      return MethodReparseResult.CONSTRUCTOR;
     }
 
     final JavacTrees trees = JavacTrees.instance(cachedCompile.task);
     final long bodyStartLong = trees.getSourcePositions().getStartPosition(root, method.getBody());
     final long bodyEndLong = trees.getSourcePositions().getEndPosition(root, method.getBody());
     if (bodyStartLong < 0 || bodyEndLong < bodyStartLong) {
-      return false;
+      return MethodReparseResult.INVALID_BODY_POSITION;
     }
     final int bodyStart = (int) bodyStartLong;
     final int bodyEnd = (int) bodyEndLong;
     if (edit.start <= bodyStart || edit.oldEnd >= bodyEnd) {
-      return false;
+      return MethodReparseResult.EDIT_OUTSIDE_BODY;
     }
     final int newBodyEnd = bodyEnd + edit.delta();
     if (newBodyEnd > plan.contents.length() || newBodyEnd <= bodyStart) {
-      return false;
+      return MethodReparseResult.INVALID_NEW_BODY_RANGE;
     }
 
     if (request.configureContext != null) {
@@ -501,13 +522,42 @@ public class JavaCompilerService implements CompilerProvider {
       if (reparser instanceof MethodReparse
           && ((MethodReparse) reparser).getTaskMutated()) {
         methodReparseCorruptedTask = true;
+        return MethodReparseResult.REPARSE_FAILED_AFTER_MUTATION;
       }
-      return false;
+      return MethodReparseResult.REPARSE_FAILED_BEFORE_MUTATION;
     }
     cachedCompile.updatePositions(root, true);
     cachedCompile.updateDocumentState(plan.contents, plan.documentVersion, plan.documentRevision);
     updateModificationCache(request);
-    return true;
+    return MethodReparseResult.SUCCESS;
+  }
+
+  private enum MethodReparseResult {
+    SUCCESS,
+    NO_PLAN,
+    NO_CACHE,
+    CACHE_CLOSED,
+    MULTIPLE_SOURCES,
+    INVALID_PLAN,
+    SOURCE_MISMATCH,
+    NO_CACHED_CONTENTS,
+    VERSION_UNKNOWN,
+    VERSION_GAP,
+    REVISION_UNKNOWN,
+    REVISION_NOT_NEWER,
+    INVALID_EDIT,
+    NO_ROOT,
+    NO_METHOD_INDEX,
+    CURSOR_OUTSIDE_METHOD,
+    INVALID_METHOD_PATH,
+    NO_METHOD_BODY,
+    CONSTRUCTOR,
+    INVALID_BODY_POSITION,
+    EDIT_OUTSIDE_BODY,
+    INVALID_NEW_BODY_RANGE,
+    REPARSE_FAILED_BEFORE_MUTATION,
+    REPARSE_FAILED_AFTER_MUTATION,
+    TASK_CORRUPTED
   }
 
   private static final class SingleTextEdit {
@@ -542,7 +592,8 @@ public class JavaCompilerService implements CompilerProvider {
     }
   }
 
-  private synchronized void recompile(CompilationRequest request) {
+  private synchronized void recompile(
+      CompilationRequest request, MethodReparseResult reason) {
     final int previousTaskHash =
         cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task);
     close();
@@ -552,7 +603,8 @@ public class JavaCompilerService implements CompilerProvider {
     updateModificationCache(request);
     if (IdeLogConfig.shouldLogDebug()) {
       LOG.info(
-          "JAVAC_FULL_COMPILE_COMPLETE previousTaskHash={} taskHash={} source={} sourceCount={} durationMs={} planPresent={}",
+          "JAVAC_FULL_COMPILE_COMPLETE reason={} previousTaskHash={} taskHash={} source={} sourceCount={} durationMs={} planPresent={}",
+          reason,
           previousTaskHash,
           cachedCompile == null ? 0 : System.identityHashCode(cachedCompile.task),
           request.sources.size() == 1 ? request.sources.iterator().next().toUri() : null,
