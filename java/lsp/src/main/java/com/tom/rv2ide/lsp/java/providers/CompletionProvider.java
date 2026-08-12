@@ -45,8 +45,8 @@ import com.tom.rv2ide.lsp.java.providers.completion.MemberReferenceCompletionPro
 import com.tom.rv2ide.lsp.java.providers.completion.MemberSelectCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.QualifiedNewClassCompletionProvider;
 import com.tom.rv2ide.lsp.java.providers.completion.SwitchConstantCompletionProvider;
-import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContext;
-import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionContextClassifier;
+import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionSuppressionClassifier;
+import com.tom.rv2ide.lsp.java.providers.completion.ts.TSCompletionSuppressionReason;
 import com.tom.rv2ide.lsp.java.utils.ASTFixer;
 import com.tom.rv2ide.lsp.java.utils.CancelChecker;
 import com.tom.rv2ide.lsp.java.visitors.FindCompletionsAt;
@@ -98,28 +98,18 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
   public CompletionResult complete(@NonNull CompletionParams params) {
     final var synchronizedTask = compiler.getSynchronizedTask();
     if (synchronizedTask.isBusy()) {
-      final TSCompletionContext busyContext = classifyCompletionContext(params);
       CompletionResult busyFallback = tryServeBusyFallback(params);
       if (busyFallback != null) {
         return busyFallback;
       }
-      if (busyContext == TSCompletionContext.BROKEN_SYNTAX_NEAR_CURSOR) {
-        if (IdeLogConfig.shouldLogInfo()) {
-          LOG.info("Completion busy near broken syntax; returning empty result file={} cursor={}",
-              params.getFile(),
-              params.getPosition().requireIndex());
-        }
-        return CompletionResult.EMPTY;
-      }
       if (IdeLogConfig.shouldLogWarn()) {
         LOG.warn(
-            "Completion busy and no fallback result is available file={} cursor={} prefix={} version={} revision={} tsContext={} compilerHash={} cachePresent={} providerScoped=true",
+            "Completion busy and no fallback result is available file={} cursor={} prefix={} version={} revision={} compilerHash={} cachePresent={} providerScoped=true",
             params.getFile(),
             params.getPosition().requireIndex(),
             params.getPrefix(),
             params.getDocumentVersion(),
             params.getDocumentRevision(),
-            busyContext,
             System.identityHashCode(compiler),
             cache != null);
         synchronizedTask.logStats();
@@ -190,16 +180,16 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     result.markCached();
     return result;
   }
-  private TSCompletionContext classifyCompletionContext(@NonNull CompletionParams params) {
+private TSCompletionSuppressionReason classifyCompletionSuppression(
+      @NonNull CompletionParams params, @NonNull String contents) {
     try {
       final Path file = params.getFile();
       final int line = params.getPosition().getLine();
       final int column = params.getPosition().getColumn();
       final long cursor = params.getPosition().requireIndex();
-      final String originalContents = requestContents(params);
-      return TSCompletionContextClassifier.classify(file, originalContents, cursor, line, column);
+      return TSCompletionSuppressionClassifier.classify(file, contents, cursor, line, column);
     } catch (Throwable ignored) {
-      return TSCompletionContext.UNKNOWN;
+      return TSCompletionSuppressionReason.NONE;
     }
   }
 
@@ -288,38 +278,19 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     pipelineTiming.astFixerUs = elapsedUs(astFixerStartedNs);
     final String contentString = contents.toString();
     pipelineTiming.prepareUs = elapsedUs(pipelineTiming.startedNs);
-    final long classifyStartedNs = System.nanoTime();
-    TSCompletionContext tsContext;
-    try {
-      tsContext = TSCompletionContextClassifier.classify(file, contentString, cursor, tsLine, tsColumn);
-    } catch (Throwable err) {
-      // Tree-sitter enriches routing decisions, but completion must still work when
-      // native classifier access fails. Fall back to UNKNOWN so javac-based providers
-      // remain on the main path instead of aborting the whole request.
-      if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info("Tree-sitter completion context classification failed; falling back to UNKNOWN file={} cursor={} errorType={} errorMessage={}",
-            file,
-            cursor,
-            err.getClass().getName(),
-            err.getMessage());
-      }
-      tsContext = TSCompletionContext.UNKNOWN;
-    }
+final long classifyStartedNs = System.nanoTime();
+    final TSCompletionSuppressionReason suppressionReason =
+        classifyCompletionSuppression(params, contentString);
     pipelineTiming.classifyUs = elapsedUs(classifyStartedNs);
-    if (tsContext == TSCompletionContext.COMMENT
-        || tsContext == TSCompletionContext.STRING_LITERAL
-        || tsContext == TSCompletionContext.CHARACTER_LITERAL) {
-      pipelineTiming.logContextOutcome(file, cursor, tsContext, "EARLY_EMPTY_LITERAL_OR_COMMENT");
+    if (suppressionReason != TSCompletionSuppressionReason.NONE) {
+      pipelineTiming.logContextOutcome(file, cursor, suppressionReason, "EARLY_EMPTY_LITERAL_OR_COMMENT");
       if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info("Skipping Java completion in comment or literal context file={} cursor={} context={}",
+        LOG.info("Skipping Java completion in comment or literal context file={} cursor={} reason={}",
             file,
             cursor,
-            tsContext);
+            suppressionReason);
       }
       return CompletionResult.EMPTY;
-    }
-    if (IdeLogConfig.shouldLogInfo() && tsContext != TSCompletionContext.UNKNOWN) {
-      LOG.info("Tree-sitter completion context file={} cursor={} context={}", file, cursor, tsContext);
     }
     final boolean astFixerApplied = context != null;
     final boolean astFixerChangedContents = astFixerApplied && !contentString.contentEquals(contentBuilder);
@@ -343,27 +314,25 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     abortIfCancelled();
     abortCompletionIfCancelled();
  
-    CompletionResult result = compileAndComplete(contentString, params, tsContext, pipelineTiming);
+    CompletionResult result = compileAndComplete(contentString, params, pipelineTiming);
     if (result == null) {
       LOG.warn(
-          "Completion provider returned null result file={} cursor={} prefix={} version={} revision={} tsContext={}",
+          "Completion provider returned null result file={} cursor={} prefix={} version={} revision={}",
           file,
           cursor,
           params.getPrefix(),
           params.getDocumentVersion(),
-          params.getDocumentRevision(),
-          tsContext);
+          params.getDocumentRevision());
       result = CompletionResult.EMPTY;
     }
     if (result.getItems().isEmpty()) {
       LOG.warn(
-          "Completion provider produced no items file={} cursor={} prefix={} version={} revision={} tsContext={} contextPresent={}",
+          "Completion provider produced no items file={} cursor={} prefix={} version={} revision={} contextPresent={}",
           file,
           cursor,
           params.getPrefix(),
           params.getDocumentVersion(),
           params.getDocumentRevision(),
-          tsContext,
           compiler.compiler.currentContext != null);
     }
 
@@ -436,7 +405,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
   private CompletionResult compileAndComplete(
       String contents,
       CompletionParams params,
-      TSCompletionContext tsContext,
       CompletionPipelineTiming pipelineTiming) {
     final long cursor = params.getPosition().requireIndex();
     final var file = params.getFile();
@@ -445,8 +413,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     final var source = new SourceFileObject(file, contents, Instant.now());
     final var partial = partialIdentifier(contents, (int) cursor);
     final var endsWithParen = endsWithParen(contents, (int) cursor);
-    final TSCompletionContext tsContextFinal = tsContext;
-
     abortIfCancelled();
     abortCompletionIfCancelled();
 
@@ -519,10 +485,10 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
 
         final long providerStartedNs = System.nanoTime();
         final var result =
-            doComplete(file, contents, cursor, newPartial, endsWithParen, task, path, tsContextFinal);
+            doComplete(file, contents, cursor, newPartial, endsWithParen, task, path);
         pipelineTiming.providerUs = elapsedUs(providerStartedNs);
-        pipelineTiming.logContextOutcome(file, cursor, tsContextFinal, "CONTINUED_TO_JAVAC");
-        pipelineTiming.log(file, cursor, path.getLeaf().getKind(), tsContextFinal, newPartial, result);
+        pipelineTiming.logContextOutcome(file, cursor, TSCompletionSuppressionReason.NONE, "CONTINUED_TO_JAVAC");
+        pipelineTiming.log(file, cursor, path.getLeaf().getKind(), TSCompletionSuppressionReason.NONE, newPartial, result);
 
         return result;
       });
@@ -537,19 +503,13 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
   @NonNull
   private CompletionResult doComplete(final Path file, final String contents, final long cursor,
       final String partial, final boolean endsWithParen,
-      final CompileTask task, final TreePath path,
-      final TSCompletionContext tsContext
+      final CompileTask task, final TreePath path
   ) {
     final Class<? extends IJavaCompletionProvider> klass;
     abortIfCancelled();
     abortCompletionIfCancelled();
     switch (path.getLeaf().getKind()) {
       case IDENTIFIER:
-        if (tsContext == TSCompletionContext.IMPORT_DECLARATION
-            || tsContext == TSCompletionContext.PACKAGE_DECLARATION) {
-          klass = ImportCompletionProvider.class;
-          break;
-        }
         klass = IdentifierCompletionProvider.class;
         break;
       case MEMBER_SELECT:
@@ -574,11 +534,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         klass = ImportCompletionProvider.class;
         break;
       default:
-        if (tsContext == TSCompletionContext.IMPORT_DECLARATION
-            || tsContext == TSCompletionContext.PACKAGE_DECLARATION) {
-          klass = ImportCompletionProvider.class;
-          break;
-        }
         klass = KeywordCompletionProvider.class;
         break;
     }
@@ -591,10 +546,9 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       final String importPath = qualifiedPartialIdentifier(contents, (int) cursor);
       ((ImportCompletionProvider) provider).setImportPath(importPath);
       if (IdeLogConfig.shouldLogInfo()) {
-        LOG.info("Routing completion to ImportCompletionProvider file={} cursor={} tsContext={} leafKind={} importPath={}",
+        LOG.info("Routing completion to ImportCompletionProvider file={} cursor={} leafKind={} importPath={}",
             file,
             cursor,
-            tsContext,
             path.getLeaf().getKind(),
             importPath);
       }
@@ -635,16 +589,16 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     long providerUs;
 
     void logContextOutcome(
-        Path file, long cursor, TSCompletionContext tsContext, String outcome) {
+        Path file, long cursor, TSCompletionSuppressionReason suppressionReason, String outcome) {
       if (!IdeLogConfig.shouldLogIde()) {
         return;
       }
       LOG.debug(
-          "JAVA_TS_CONTEXT_OUTCOME file={} cursor={} tsContext={} outcome={} "
+          "JAVA_TS_SUPPRESSION_OUTCOME file={} cursor={} suppressionReason={} outcome={} "
               + "prepareUs={} classifyUs={} compileUs={} scanUs={} providerUs={} totalUs={}",
           file,
           cursor,
-          tsContext,
+          suppressionReason,
           outcome,
           prepareUs,
           classifyUs,
@@ -658,7 +612,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         Path file,
         long cursor,
         Tree.Kind leafKind,
-        TSCompletionContext tsContext,
+        TSCompletionSuppressionReason suppressionReason,
         String partial,
         CompletionResult result) {
       if (!IdeLogConfig.shouldLogIde()) {
@@ -666,14 +620,14 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       }
       final long totalUs = elapsedUs(startedNs);
       LOG.debug(
-          "JAVA_COMPLETION_PIPELINE file={} cursor={} leafKind={} tsContext={} partialLength={} "
+          "JAVA_COMPLETION_PIPELINE file={} cursor={} leafKind={} suppressionReason={} partialLength={} "
               + "prepareUs={} requestContentsUs={} semicolonUs={} astFixerUs={} classifyUs={} "
               + "compileUs={} scanUs={} providerUs={} totalUs={} "
               + "itemCount={} incomplete={} cached={}",
           file,
           cursor,
           leafKind,
-          tsContext,
+          suppressionReason,
           partial == null ? -1 : partial.length(),
           prepareUs,
           requestContentsUs,
