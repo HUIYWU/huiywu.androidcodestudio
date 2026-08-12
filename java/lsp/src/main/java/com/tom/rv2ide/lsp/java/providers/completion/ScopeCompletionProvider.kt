@@ -71,12 +71,11 @@ class ScopeCompletionProvider(
           trees.getScope(path)
         } catch (error: Throwable) {
           log.error(
-              "Scope completion failed stage=getScope file={} cursor={} partial={} leafKind={} pathKinds={}",
+              "Scope completion failed stage=getScope file={} cursor={} partial={} leafKind={}",
               file,
               cursor,
               partial,
               path.leaf.kind,
-              pathKinds(path),
               error,
           )
           throw error
@@ -102,14 +101,11 @@ class ScopeCompletionProvider(
           ScopeHelper.scopeMembers(task, scope, filter)
         } catch (error: Throwable) {
           log.error(
-              "Scope completion failed stage=scopeMembers file={} cursor={} partial={} leafKind={} pathKinds={} enclosingClass={} enclosingMethod={}",
+              "Scope completion failed stage=scopeMembers file={} cursor={} partial={} leafKind={}",
               file,
               cursor,
               partial,
               path.leaf.kind,
-              pathKinds(path),
-              scope.enclosingClass,
-              scope.enclosingMethod,
               error,
           )
           throw error
@@ -123,18 +119,16 @@ class ScopeCompletionProvider(
             }
             value
           } catch (error: Throwable) {
-            log.error(
-                "Scope completion skipping candidate with unreadable name file={} cursor={} partial={} memberKind={} leafKind={} pathKinds={} errorType={} errorMessage={}",
-                file,
-                cursor,
-                partial,
-                member.kind,
-                path.leaf.kind,
-                pathKinds(path),
-                error.javaClass.name,
-                error.message,
-                error,
-            )
+            if (IdeLogConfig.shouldLogIde()) {
+              log.debug(
+                  "Scope completion skipped candidate with unreadable name file={} cursor={} partial={} memberKind={} errorType={}",
+                  file,
+                  cursor,
+                  partial,
+                  member.kind,
+                  error.javaClass.name,
+              )
+            }
             if (CancelChecker.isCancelled(error)) {
               throw error
             }
@@ -144,19 +138,16 @@ class ScopeCompletionProvider(
           try {
             matchLevel(name, partial)
           } catch (error: Throwable) {
-            log.error(
-                "Scope completion skipping candidate with failed match file={} cursor={} partial={} member={} memberKind={} leafKind={} pathKinds={} errorType={} errorMessage={}",
-                file,
-                cursor,
-                partial,
-                member,
-                member.kind,
-                path.leaf.kind,
-                pathKinds(path),
-                error.javaClass.name,
-                error.message,
-                error,
-            )
+            if (IdeLogConfig.shouldLogIde()) {
+              log.debug(
+                  "Scope completion skipped candidate with failed match file={} cursor={} partial={} memberKind={} errorType={}",
+                  file,
+                  cursor,
+                  partial,
+                  member.kind,
+                  error.javaClass.name,
+              )
+            }
             if (CancelChecker.isCancelled(error)) {
               throw error
             }
@@ -169,35 +160,31 @@ class ScopeCompletionProvider(
           val methodPath = path.parentPath
           val parentPath = methodPath?.parentPath
           if (parentPath == null) {
-            log.warn(
-                "Scope completion override path missing file={} cursor={} partial={} member={} leafKind={} pathKinds={} methodPathPresent={}",
-                file,
-                cursor,
-                partial,
-                method,
-                path.leaf.kind,
-                pathKinds(path),
-                methodPath != null,
-            )
+            if (IdeLogConfig.shouldLogIde()) {
+              log.debug(
+                  "Scope completion override path missing file={} cursor={} partial={} member={}",
+                  file,
+                  cursor,
+                  partial,
+                  method,
+              )
+            }
             list.add(method(task, listOf(method), !endsWithParen, matchLevel, partial))
           } else {
             overrideIfPossible(task, parentPath, method, endsWithParen, matchLevel, partial)
                 ?.let(list::add)
           }
         } catch (error: Throwable) {
-          log.error(
-              "Scope completion skipping failed method candidate file={} cursor={} partial={} member={} memberOwner={} leafKind={} pathKinds={} errorType={} errorMessage={}",
-              file,
-              cursor,
-              partial,
-              method,
-              method.enclosingElement,
-              path.leaf.kind,
-              pathKinds(path),
-              error.javaClass.name,
-              error.message,
-              error,
-          )
+          if (IdeLogConfig.shouldLogIde()) {
+            log.debug(
+                "Scope completion skipped method candidate file={} cursor={} partial={} member={} errorType={}",
+                file,
+                cursor,
+                partial,
+                method,
+                error.javaClass.name,
+            )
+          }
           if (CancelChecker.isCancelled(error)) {
             throw error
           }
@@ -207,19 +194,16 @@ class ScopeCompletionProvider(
         try {
           list.add(item(task, member, matchLevel))
         } catch (error: Throwable) {
-          log.error(
-              "Scope completion skipping failed non-method candidate file={} cursor={} partial={} member={} memberKind={} leafKind={} pathKinds={} errorType={} errorMessage={}",
-              file,
-              cursor,
-              partial,
-              member,
-              member.kind,
-              path.leaf.kind,
-              pathKinds(path),
-              error.javaClass.name,
-              error.message,
-              error,
-          )
+          if (IdeLogConfig.shouldLogIde()) {
+            log.debug(
+                "Scope completion skipped non-method candidate file={} cursor={} partial={} memberKind={} errorType={}",
+                file,
+                cursor,
+                partial,
+                member.kind,
+                error.javaClass.name,
+            )
+          }
           if (CancelChecker.isCancelled(error)) {
             throw error
           }
@@ -310,13 +294,16 @@ class ScopeCompletionProvider(
                 bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
             )
           } catch (error: Throwable) {
-            log.warn(
-                "Scope completion override fallback stage=generateStub member={} parentLeafKind={} errorType={} errorMessage={}",
-                method,
-                parentPath.leaf.kind,
-                error.javaClass.name,
-                error.message,
-            )
+            if (CancelChecker.isCancelled(error)) {
+              throw error
+            }
+            if (IdeLogConfig.shouldLogIde()) {
+              log.debug(
+                  "Scope completion override stub fallback member={} errorType={}",
+                  method,
+                  error.javaClass.name,
+              )
+            }
             return method(task, listOf(method), !endsWithParen, matchLevel, partial)
           }
 
@@ -342,17 +329,14 @@ class ScopeCompletionProvider(
       item.additionalEditHandler = MultipleClassImportEditHandler(imports, fileImports, file)
       return item
     } catch (error: Throwable) {
-      log.error(
-          "Scope completion override failed stage={} member={} memberOwner={} parentLeafKind={} parentPathKinds={} errorType={} errorMessage={}",
-          stage,
-          method,
-          method.enclosingElement,
-          parentPath.leaf.kind,
-          pathKinds(parentPath),
-          error.javaClass.name,
-          error.message,
-          error,
-      )
+      if (IdeLogConfig.shouldLogIde()) {
+        log.debug(
+            "Scope completion override fallback stage={} member={} errorType={}",
+            stage,
+            method,
+            error.javaClass.name,
+        )
+      }
       if (CancelChecker.isCancelled(error)) {
         throw error
       }
@@ -360,13 +344,5 @@ class ScopeCompletionProvider(
     }
   }
 
-  private fun pathKinds(path: TreePath): String {
-    val kinds = ArrayList<String>()
-    var current: TreePath? = path
-    while (current != null) {
-      kinds.add(current.leaf.kind.name)
-      current = current.parentPath
-    }
-    return kinds.joinToString("->")
-  }
+  // Candidate-level failures are isolated above so malformed javac recovery symbols cannot abort completion.
 }
