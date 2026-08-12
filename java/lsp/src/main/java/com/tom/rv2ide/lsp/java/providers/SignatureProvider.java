@@ -23,7 +23,9 @@ import com.tom.rv2ide.lsp.java.compiler.CompileTask;
 import com.tom.rv2ide.lsp.java.compiler.CompilerProvider;
 import com.tom.rv2ide.lsp.java.compiler.SourceFileObject;
 import com.tom.rv2ide.lsp.java.compiler.SynchronizedTask;
+import com.tom.rv2ide.lsp.java.models.CompilationDocumentState;
 import com.tom.rv2ide.lsp.java.models.CompilationRequest;
+import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.lsp.java.utils.FindHelper;
 import com.tom.rv2ide.lsp.java.utils.MarkdownHelper;
 import com.tom.rv2ide.lsp.java.utils.ScopeHelper;
@@ -96,9 +98,32 @@ public class SignatureProvider extends CancelableServiceProvider {
     final SynchronizedTask synchronizedTask;
     if (content != null) {
       final var source = new SourceFileObject(file, content, Instant.now());
+      // Reuse document identity only when the active snapshot is exactly the text supplied by
+      // this request. Otherwise retain the conservative unknown-version behavior.
+      final var activeSnapshot = FileManager.getActiveDocumentSnapshot(file);
+      final CompilationDocumentState documentState;
+      if (activeSnapshot != null
+          && activeSnapshot.getContent().contentEquals(content)
+          && activeSnapshot.getVersion() >= 0
+          && activeSnapshot.getRevision() >= 0) {
+        documentState =
+            new CompilationDocumentState(
+                file,
+                content,
+                activeSnapshot.getVersion(),
+                activeSnapshot.getRevision());
+      } else {
+        documentState = null;
+      }
       // JavaCompilerService consistently adds Kotlin ABI stubs to the stable full-compilation
       // path when recognition is enabled.
-      final CompilationRequest request = new CompilationRequest(Collections.singletonList(source));
+      final CompilationRequest request =
+          new CompilationRequest(
+              Collections.singletonList(source),
+              new com.tom.rv2ide.lsp.java.compiler.DefaultCompilationTaskProcessor(),
+              null,
+              null,
+              documentState);
       synchronizedTask = compiler.compile(request);
     } else {
       synchronizedTask = compiler.compile(file);
