@@ -18,13 +18,13 @@
 package com.tom.rv2ide.lsp.java.utils;
 
 import androidx.annotation.NonNull;
+import com.tom.rv2ide.common.logging.IdeLogConfig;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Ordering;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import openjdk.source.tree.LineMap;
 import openjdk.tools.javac.parser.Scanner;
 import openjdk.tools.javac.parser.ScannerFactory;
 import openjdk.tools.javac.parser.Tokens;
@@ -57,33 +57,53 @@ public class ASTFixer {
   }
 
   public StringBuilder fix(CharSequence content) {
+    final long scanStartedNs = System.nanoTime();
     Scanner scanner = ScannerFactory.instance(context).newScanner(content, true);
     List<Edit> edits = new ArrayList<>();
+    int tokenCount = 0;
+    int memberSelectionCount = 0;
+    int errorTokenCount = 0;
     for (; ; scanner.nextToken()) {
       Tokens.Token token = scanner.token();
+      tokenCount++;
       if (token.kind == TokenKind.EOF) {
         break;
       } else if (token.kind == TokenKind.DOT || token.kind == TokenKind.COLCOL) {
-        fixMemberSelection(scanner, edits);
+        memberSelectionCount++;
+        fixMemberSelection(scanner, content, edits);
       } else if (token.kind == TokenKind.ERROR) {
+        errorTokenCount++;
         int errPos = scanner.errPos();
         if (errPos >= 0 && errPos < content.length()) {
           fixError(scanner, content, edits);
         }
       }
     }
-    return Edit.applyInsertions(content, edits);
+    final long scanUs = (System.nanoTime() - scanStartedNs) / 1_000L;
+    final long applyStartedNs = System.nanoTime();
+    final StringBuilder result = Edit.applyInsertions(content, edits);
+    final long applyUs = (System.nanoTime() - applyStartedNs) / 1_000L;
+    if (IdeLogConfig.shouldLogIde()) {
+      org.slf4j.LoggerFactory.getLogger(ASTFixer.class).debug(
+          "JAVA_AST_FIXER contentLength={} tokenCount={} memberSelectionCount={} errorTokenCount={} editCount={} scanUs={} applyUs={} totalUs={}",
+          content.length(),
+          tokenCount,
+          memberSelectionCount,
+          errorTokenCount,
+          edits.size(),
+          scanUs,
+          applyUs,
+          scanUs + applyUs);
+    }
+    return result;
   }
 
-  private void fixMemberSelection(@NonNull Scanner scanner, List<Edit> edits) {
+  private void fixMemberSelection(
+      @NonNull Scanner scanner, @NonNull CharSequence content, List<Edit> edits) {
     Tokens.Token token = scanner.token();
     Tokens.Token nextToken = scanner.token(1);
 
-    LineMap lineMap = scanner.getLineMap();
-    int tokenLine = (int) lineMap.getLineNumber(token.pos);
-    int nextLine = (int) lineMap.getLineNumber(nextToken.pos);
-
-    if (nextLine > tokenLine) {
+    if (containsLineBreak(content, token.pos, nextToken.pos)) {
       edits.add(Edit.create(token.endPos, IDENT + ";"));
     } else if (nextToken.kind == TokenKind.NEW) {
       final Tokens.Token typeToken = scanner.token(2);
@@ -100,6 +120,19 @@ public class ASTFixer {
       }
       edits.add(Edit.create(token.endPos, toInsert));
     }
+  }
+
+  private static boolean containsLineBreak(
+      @NonNull CharSequence content, int startInclusive, int endExclusive) {
+    final int start = Math.max(0, Math.min(startInclusive, content.length()));
+    final int end = Math.max(start, Math.min(endExclusive, content.length()));
+    for (int index = start; index < end; index++) {
+      final char ch = content.charAt(index);
+      if (ch == '\n' || ch == '\r') {
+        return true;
+      }
+    }
+    return false;
   }
 
   private void fixError(@NonNull Scanner scanner, @NonNull CharSequence content, List<Edit> edits) {
