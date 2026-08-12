@@ -100,7 +100,7 @@ public class SignatureProvider extends CancelableServiceProvider {
       final var source = new SourceFileObject(file, content, Instant.now());
       // Reuse document identity only when the active snapshot is exactly the text supplied by
       // this request. Otherwise retain the conservative unknown-version behavior.
-      final var activeSnapshot = FileManager.getActiveDocumentSnapshot(file);
+      final var activeSnapshot = FileManager.INSTANCE.getActiveDocumentSnapshot(file);
       final CompilationDocumentState documentState;
       if (activeSnapshot != null
           && activeSnapshot.getContent().contentEquals(content)
