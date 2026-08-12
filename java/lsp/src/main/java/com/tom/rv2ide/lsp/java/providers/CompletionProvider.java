@@ -305,9 +305,11 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       }
       tsContext = TSCompletionContext.UNKNOWN;
     }
+    pipelineTiming.classifyUs = elapsedUs(classifyStartedNs);
     if (tsContext == TSCompletionContext.COMMENT
         || tsContext == TSCompletionContext.STRING_LITERAL
         || tsContext == TSCompletionContext.CHARACTER_LITERAL) {
+      pipelineTiming.logContextOutcome(file, cursor, tsContext, "EARLY_EMPTY_LITERAL_OR_COMMENT");
       if (IdeLogConfig.shouldLogInfo()) {
         LOG.info("Skipping Java completion in comment or literal context file={} cursor={} context={}",
             file,
@@ -316,7 +318,6 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
       }
       return CompletionResult.EMPTY;
     }
-    pipelineTiming.classifyUs = elapsedUs(classifyStartedNs);
     if (IdeLogConfig.shouldLogInfo() && tsContext != TSCompletionContext.UNKNOWN) {
       LOG.info("Tree-sitter completion context file={} cursor={} context={}", file, cursor, tsContext);
     }
@@ -520,6 +521,7 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
         final var result =
             doComplete(file, contents, cursor, newPartial, endsWithParen, task, path, tsContextFinal);
         pipelineTiming.providerUs = elapsedUs(providerStartedNs);
+        pipelineTiming.logContextOutcome(file, cursor, tsContextFinal, "CONTINUED_TO_JAVAC");
         pipelineTiming.log(file, cursor, path.getLeaf().getKind(), tsContextFinal, newPartial, result);
 
         return result;
@@ -631,6 +633,26 @@ public class CompletionProvider extends AbstractServiceProvider implements IComp
     long compileUs;
     long scanUs;
     long providerUs;
+
+    void logContextOutcome(
+        Path file, long cursor, TSCompletionContext tsContext, String outcome) {
+      if (!IdeLogConfig.shouldLogIde()) {
+        return;
+      }
+      LOG.debug(
+          "JAVA_TS_CONTEXT_OUTCOME file={} cursor={} tsContext={} outcome={} "
+              + "prepareUs={} classifyUs={} compileUs={} scanUs={} providerUs={} totalUs={}",
+          file,
+          cursor,
+          tsContext,
+          outcome,
+          prepareUs,
+          classifyUs,
+          compileUs,
+          scanUs,
+          providerUs,
+          elapsedUs(startedNs));
+    }
 
     void log(
         Path file,
