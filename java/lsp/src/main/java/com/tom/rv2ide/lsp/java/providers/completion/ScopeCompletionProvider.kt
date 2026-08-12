@@ -115,12 +115,53 @@ class ScopeCompletionProvider(
           throw error
         }
     for (member in scopeMembers) {
-      var name = member.simpleName.toString()
-      if (name.contains('(')) {
-        name = name.substring(0, name.lastIndexOf('('))
-      }
-
-      val matchLevel = matchLevel(name, partial)
+      val name =
+          try {
+            var value = member.simpleName.toString()
+            if (value.contains('(')) {
+              value = value.substring(0, value.lastIndexOf('('))
+            }
+            value
+          } catch (error: Throwable) {
+            log.error(
+                "Scope completion skipping candidate with unreadable name file={} cursor={} partial={} memberKind={} leafKind={} pathKinds={} errorType={} errorMessage={}",
+                file,
+                cursor,
+                partial,
+                member.kind,
+                path.leaf.kind,
+                pathKinds(path),
+                error.javaClass.name,
+                error.message,
+                error,
+            )
+            if (CancelChecker.isCancelled(error)) {
+              throw error
+            }
+            continue
+          }
+      val matchLevel =
+          try {
+            matchLevel(name, partial)
+          } catch (error: Throwable) {
+            log.error(
+                "Scope completion skipping candidate with failed match file={} cursor={} partial={} member={} memberKind={} leafKind={} pathKinds={} errorType={} errorMessage={}",
+                file,
+                cursor,
+                partial,
+                member,
+                member.kind,
+                path.leaf.kind,
+                pathKinds(path),
+                error.javaClass.name,
+                error.message,
+                error,
+            )
+            if (CancelChecker.isCancelled(error)) {
+              throw error
+            }
+            continue
+          }
 
       if (member.kind == METHOD) {
         val method = member as ExecutableElement
@@ -145,7 +186,7 @@ class ScopeCompletionProvider(
           }
         } catch (error: Throwable) {
           log.error(
-              "Scope completion failed stage=override file={} cursor={} partial={} member={} memberOwner={} leafKind={} pathKinds={}",
+              "Scope completion skipping failed method candidate file={} cursor={} partial={} member={} memberOwner={} leafKind={} pathKinds={} errorType={} errorMessage={}",
               file,
               cursor,
               partial,
@@ -153,12 +194,37 @@ class ScopeCompletionProvider(
               method.enclosingElement,
               path.leaf.kind,
               pathKinds(path),
+              error.javaClass.name,
+              error.message,
               error,
           )
-          throw error
+          if (CancelChecker.isCancelled(error)) {
+            throw error
+          }
+          continue
         }
       } else {
-        list.add(item(task, member, matchLevel))
+        try {
+          list.add(item(task, member, matchLevel))
+        } catch (error: Throwable) {
+          log.error(
+              "Scope completion skipping failed non-method candidate file={} cursor={} partial={} member={} memberKind={} leafKind={} pathKinds={} errorType={} errorMessage={}",
+              file,
+              cursor,
+              partial,
+              member,
+              member.kind,
+              path.leaf.kind,
+              pathKinds(path),
+              error.javaClass.name,
+              error.message,
+              error,
+          )
+          if (CancelChecker.isCancelled(error)) {
+            throw error
+          }
+          continue
+        }
       }
     }
 
