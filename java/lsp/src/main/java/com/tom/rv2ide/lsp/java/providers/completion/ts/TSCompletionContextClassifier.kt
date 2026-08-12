@@ -49,9 +49,17 @@ object TSCompletionContextClassifier {
       positions: List<Position>,
   ): List<TSCompletionContext> {
     val uri = file.toUri()
+    val logIde = IdeLogConfig.shouldLogIde()
+    val totalStartedNs = if (logIde) System.nanoTime() else 0L
+    val parserStartedNs = if (logIde) System.nanoTime() else 0L
     TSParser.create().use { parser ->
       parser.language = TSLanguageJava.getInstance()
+      val parserCreateUs =
+          if (logIde) (System.nanoTime() - parserStartedNs) / 1_000L else 0L
+      val parseStartedNs = if (logIde) System.nanoTime() else 0L
       parser.parseString(content).use { tree ->
+        val parseUs = if (logIde) (System.nanoTime() - parseStartedNs) / 1_000L else 0L
+        val rootStartedNs = if (logIde) System.nanoTime() else 0L
         val root = try {
           tree.rootNode
         } catch (err: Throwable) {
@@ -66,7 +74,26 @@ object TSCompletionContextClassifier {
           }
           throw err
         }
-        return positions.map { position -> classifyPosition(file, position, uri, root) }
+        val rootUs = if (logIde) (System.nanoTime() - rootStartedNs) / 1_000L else 0L
+        val positionsStartedNs = if (logIde) System.nanoTime() else 0L
+        val result = positions.map { position -> classifyPosition(file, position, uri, root) }
+        val positionsUs =
+            if (logIde) (System.nanoTime() - positionsStartedNs) / 1_000L else 0L
+        if (logIde) {
+          log.debug(
+              "JAVA_TS_CLASSIFIER file={} contentLength={} positionCount={} parserCreateUs={} parseUs={} rootUs={} positionsUs={} totalUs={} context={}",
+              file,
+              content.length,
+              positions.size,
+              parserCreateUs,
+              parseUs,
+              rootUs,
+              positionsUs,
+              (System.nanoTime() - totalStartedNs) / 1_000L,
+              result.singleOrNull() ?: result,
+          )
+        }
+        return result
       }
     }
   }
