@@ -34,7 +34,6 @@ import com.tom.rv2ide.models.Position;
 import com.tom.rv2ide.models.Range;
 import com.tom.rv2ide.preferences.internal.EditorPreferences;
 import com.tom.rv2ide.preferences.utils.EditorUtilKt;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -55,9 +54,7 @@ import jdkx.tools.JavaFileObject;
 import openjdk.source.tree.ClassTree;
 import openjdk.source.tree.CompilationUnitTree;
 import openjdk.source.tree.ImportTree;
-import openjdk.source.tree.LineMap;
 import openjdk.source.tree.Tree;
-import openjdk.source.util.SourcePositions;
 import openjdk.source.util.Trees;
 import openjdk.tools.javac.util.JCDiagnostic;
 import org.slf4j.Logger;
@@ -134,30 +131,7 @@ public class ImplementAbstractMethods extends Rewrite {
           final Set<String> imports = new TreeSet<>();
           final Set<String> addedMethods = new HashSet<>();
           Position insert = EditHelper.insertAtEndOfClass(task.task, fileRoot, thisTree);
-          final CharSequence source;
-          try {
-            source = fileRoot.getSourceFile().getCharContent(true);
-          } catch (IOException e) {
-            LOG.warn("ImplementAbstractMethods could not read source content for className={} classFile={}", this.className, this.classFile, e);
-            return CANCELLED;
-          }
-          final SourcePositions sourcePositions = Trees.instance(task.task).getSourcePositions();
-          final long treeStartOffset = sourcePositions.getStartPosition(fileRoot, thisTree);
-          final long treeEndOffset = sourcePositions.getEndPosition(fileRoot, thisTree);
-          int openBraceOffset = -1;
-          int closeBraceOffset = -1;
-          for (int i = (int) Math.max(0, treeStartOffset); i < source.length() && i < treeEndOffset; i++) {
-            if (source.charAt(i) == '{') {
-              openBraceOffset = i;
-              break;
-            }
-          }
-          for (int i = (int) Math.min(treeEndOffset - 1, source.length() - 1); i >= 0 && i >= treeStartOffset; i--) {
-            if (source.charAt(i) == '}') {
-              closeBraceOffset = i;
-              break;
-            }
-          }
+          // Insert before the closing brace so existing fields, methods, and initializer blocks remain intact.
           int braceIndent = EditHelper.lineIndent(task.task, fileRoot, thisTree);
           int indent = braceIndent + EditorPreferences.INSTANCE.getTabSize();
           for (Element member : elements.getAllMembers(thisClass)) {
@@ -235,22 +209,7 @@ public class ImplementAbstractMethods extends Rewrite {
           }
 
           final List<TextEdit> edits = new ArrayList<>();
-          if (openBraceOffset >= 0 && closeBraceOffset > openBraceOffset) {
-            // For anonymous classes, replacing only the body keeps the closing brace and semicolon
-            // structurally stable for both compact (`new X() {};`) and multi-line forms.
-            final LineMap lineMap = fileRoot.getLineMap();
-            final Position replaceStart = new Position(
-                (int) lineMap.getLineNumber(openBraceOffset + 1) - 1,
-                (int) lineMap.getColumnNumber(openBraceOffset + 1) - 1,
-                openBraceOffset + 1);
-            final Position replaceEnd = new Position(
-                (int) lineMap.getLineNumber(closeBraceOffset) - 1,
-                (int) lineMap.getColumnNumber(closeBraceOffset) - 1,
-                closeBraceOffset);
-            edits.add(new TextEdit(new Range(replaceStart, replaceEnd), insertText.toString()));
-          } else {
-            edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
-          }
+          edits.add(new TextEdit(new Range(insert, insert), insertText.toString()));
           addImports(compiler, task, file, imports, edits);
 
           return Collections.singletonMap(file, edits.toArray(new TextEdit[0]));
