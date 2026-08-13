@@ -120,8 +120,8 @@ object ExternalMethodParameterNameResolver {
       try {
         method.getName(classFile.constant_pool) == methodName &&
             method.descriptor.getValue(classFile.constant_pool) == descriptor &&
-            !method.access_flags.is(AccessFlags.ACC_SYNTHETIC) &&
-            !method.access_flags.is(AccessFlags.ACC_BRIDGE)
+            !method.access_flags.`is`(AccessFlags.ACC_SYNTHETIC) &&
+            !method.access_flags.`is`(AccessFlags.ACC_BRIDGE)
       } catch (_: Throwable) {
         false
       }
@@ -154,7 +154,7 @@ object ExternalMethodParameterNameResolver {
   ): List<String>? {
     val code = method.attributes.get(Attribute.Code) as? Code_attribute ?: return null
     val table = code.attributes.get(Attribute.LocalVariableTable) as? LocalVariableTable_attribute ?: return null
-    var slot = if (method.access_flags.is(AccessFlags.ACC_STATIC)) 0 else 1
+    var slot = if (method.access_flags.`is`(AccessFlags.ACC_STATIC)) 0 else 1
     val names = ArrayList<String>(parameterDescriptors.size)
     for (descriptor in parameterDescriptors) {
       val entry = table.local_variable_table
