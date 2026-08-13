@@ -193,6 +193,8 @@
   <string name="new_file">新文件</string>
   <string name="create_auto_layout">创建布局文件</string>
   <string name="new_java_class">新 Java 类</string>
+  <string name="choose_language">选择语言</string>
+  <string name="new_kotlin_class">新 Kotlin 类</string>
   <string name="new_xml_resource">新 XML 资源</string>
   <string name="new_folder">新文件夹</string>
   <string name="title_confirm_delete">确认删除</string>
@@ -218,7 +220,7 @@
   <string name="restype_other">其他</string>
   <string name="classtype_class">类</string>
   <string name="classtype_activity">活动</string>
-  <string name="title_interface">界面</string>
+  <string name="title_interface">接口</string>
   <string name="classtype_enum">枚举</string>
   <string name="msg_failed_list_files">无法列出项目文件！</string>
   <!-- Code Editor -->
