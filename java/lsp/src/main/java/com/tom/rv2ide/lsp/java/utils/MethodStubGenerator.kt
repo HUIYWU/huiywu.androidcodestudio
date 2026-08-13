@@ -31,6 +31,7 @@ import com.github.javaparser.ast.stmt.BlockStmt
 import com.github.javaparser.ast.stmt.ReturnStmt
 import com.tom.rv2ide.lsp.java.utils.JavaParserUtils.prettyPrint
 import com.tom.rv2ide.lsp.java.utils.TypeUtils.toType
+import com.tom.rv2ide.projects.ModuleProject
 import jdkx.lang.model.element.ElementKind
 import jdkx.lang.model.element.ExecutableElement
 import jdkx.lang.model.element.TypeElement
@@ -53,11 +54,13 @@ object MethodStubGenerator {
   )
 
   @JvmStatic
+  @JvmOverloads
   fun generate(
       method: ExecutableElement,
       parameterizedType: ExecutableType,
       source: MethodTree?,
       bodyStrategy: BodyStrategy,
+      module: ModuleProject? = null,
   ): GeneratedMethod {
     val declaration =
         if (source != null) {
@@ -65,6 +68,12 @@ object MethodStubGenerator {
         } else {
           JavaParserUtils.toMethodDeclaration(method, parameterizedType)
         }
+
+    if (source == null) {
+      ExternalMethodParameterNameResolver.resolve(module, method)
+          ?.takeIf { it.size == declaration.parameters.size }
+          ?.forEachIndexed { index, name -> declaration.parameters[index].setName(name) }
+    }
 
     normalizeOverrideAnnotation(declaration)
     normalizeVisibility(declaration, method)

@@ -203,7 +203,8 @@ public class ImplementAbstractMethods extends Rewrite {
                     method,
                     executableType,
                     null,
-                    MethodStubGenerator.BodyStrategy.IMPLEMENT_ABSTRACT);
+                    MethodStubGenerator.BodyStrategy.IMPLEMENT_ABSTRACT,
+                    task.module());
             imports.addAll(generated.getImports());
             String memberIndent = EditorUtilKt.indentationString(indent);
             String text = generated.getRenderedText();

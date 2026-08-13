@@ -56,8 +56,12 @@ public class CompileTask implements AutoCloseable {
     this.diagnosticListener = compileBatch.diagnosticListener;
     this.ownsCompileBatch = ownsCompileBatch;
   }
+  public com.tom.rv2ide.projects.ModuleProject module() {
+    return compileBatch.parent.getModule();
+  }
 
   public CompilationUnitTree root(Path file) {
+
     for (CompilationUnitTree root : roots) {
       if (root.getSourceFile().toUri().equals(file.toUri())) {
         return root;

@@ -318,7 +318,8 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
                 parameterizedType = executableType,
                 source = null,
                 bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
-            )
+                module = task.module(),
+             )
         val newImports = generated.imports
         val memberIndent = indentationString(indent)
         // Keep method text assembly explicit so anonymous-class insertions preserve

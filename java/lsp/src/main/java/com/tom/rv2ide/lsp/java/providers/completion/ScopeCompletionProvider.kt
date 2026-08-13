@@ -292,6 +292,7 @@ class ScopeCompletionProvider(
                     types.asMemberOf(type, method) as jdkx.lang.model.type.ExecutableType,
                 source = null,
                 bodyStrategy = MethodStubGenerator.BodyStrategy.OVERRIDE_SUPER,
+                module = task.module(),
             )
           } catch (error: Throwable) {
             if (CancelChecker.isCancelled(error)) {
