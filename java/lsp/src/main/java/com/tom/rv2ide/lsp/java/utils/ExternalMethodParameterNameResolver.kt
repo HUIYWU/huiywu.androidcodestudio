@@ -221,8 +221,9 @@ object ExternalMethodParameterNameResolver {
         TypeKind.DOUBLE -> "D"
         TypeKind.VOID -> "V"
         TypeKind.ARRAY -> typeDescriptor((type as ArrayType).componentType)?.let { "[$it" }
-        TypeKind.DECLARED -> binaryName((type as DeclaredType).asElement() as? TypeElement ?: return null)
-            ?.let { "L" + it.replace('.', '/') + ";" }
+        TypeKind.DECLARED ->
+            ((type as DeclaredType).asElement() as? TypeElement)?.let { binaryName(it) }
+                ?.let { "L" + it.replace('.', '/') + ";" }
         TypeKind.TYPEVAR -> typeDescriptor((type as TypeVariable).upperBound)
         else -> null
       }
