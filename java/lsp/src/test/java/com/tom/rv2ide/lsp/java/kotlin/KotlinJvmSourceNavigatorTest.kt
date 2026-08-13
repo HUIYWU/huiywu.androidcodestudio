@@ -608,6 +608,75 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun facadeNavigation_resolvesWildcardAndSuppressWildcardTypeArguments() {
+    val kotlinSource =
+      """
+      package navigation
+
+      fun plain(values: List<String>): String = values.first()
+      fun declarationOut(values: MutableList<out CharSequence>): String = values.first().toString()
+      fun declarationIn(values: MutableList<in String>): String = values.size.toString()
+      fun star(values: List<*>): String = values.size.toString()
+      fun forced(values: List<@JvmWildcard String>): String = values.first()
+      fun suppressed(values: List<@JvmSuppressWildcards String>): String = values.first()
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      abstract class WildcardNavigationKt {
+        abstract String plain(java.util.List<String> values);
+        abstract String declarationOut(java.util.List<? extends CharSequence> values);
+        abstract String declarationIn(java.util.List<? super String> values);
+        abstract String star(java.util.List<?> values);
+        abstract String forced(java.util.List<? extends String> values);
+        abstract String suppressed(java.util.List<String> values);
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/WildcardNavigation.kt")
+
+    for (name in listOf(
+      "plain", "declarationOut", "declarationIn", "star", "forced", "suppressed",
+    )) {
+      val method = compileMethod(javaSource, "navigation.WildcardNavigationKt", name)
+      val location = KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, method)
+      assertNotNull("Wildcard surface did not navigate: $name (${method.asType()})", location)
+      assertEquals(name, sourceTextAt(kotlinSource, location!!))
+    }
+  }
+
+  @Test
+  fun facadeNavigation_resolvesWildcardAndSuppressWildcardReturnTypes() {
+    val kotlinSource =
+      """
+      package navigation
+
+      fun plain(values: List<String>): List<String> = values
+      fun declarationOut(values: MutableList<out CharSequence>): MutableList<out CharSequence> = values
+      fun forced(values: List<@JvmWildcard String>): List<@JvmWildcard String> = values
+      fun suppressed(values: List<@JvmSuppressWildcards String>): List<@JvmSuppressWildcards String> = values
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      abstract class WildcardReturnNavigationKt {
+        abstract java.util.List<String> plain(java.util.List<String> values);
+        abstract java.util.List<? extends CharSequence> declarationOut(
+            java.util.List<? extends CharSequence> values);
+        abstract java.util.List<? extends String> forced(java.util.List<? extends String> values);
+        abstract java.util.List<String> suppressed(java.util.List<String> values);
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/WildcardReturnNavigation.kt")
+
+    for (name in listOf("plain", "declarationOut", "forced", "suppressed")) {
+      val method = compileMethod(javaSource, "navigation.WildcardReturnNavigationKt", name)
+      val location = KotlinJvmSourceNavigator.findFacadeMemberLocation(file, kotlinSource, method)
+      assertNotNull("Wildcard return surface did not navigate: $name (${method.asType()})", location)
+      assertEquals(name, sourceTextAt(kotlinSource, location!!))
+    }
+  }
+
+  @Test
   fun typeNavigation_resolvesInheritedDefaultInterfaceForwardersToContractDeclaration() {
     val kotlinSource =
       """

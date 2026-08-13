@@ -2308,10 +2308,12 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
       package sample
 
       class WildcardApi {
-        fun plain(values: List<String>) {}
-        fun declarationOut(values: MutableList<out CharSequence>) {}
-        fun forced(values: List<@JvmWildcard String>) {}
-        fun suppressed(values: List<@JvmSuppressWildcards String>) {}
+        fun plain(values: List<String>): List<String> = values
+        fun declarationOut(values: MutableList<out CharSequence>): MutableList<out CharSequence> = values
+        fun declarationIn(values: MutableList<in String>) {}
+        fun star(values: List<*>) {}
+        fun forced(values: List<@JvmWildcard String>): List<@JvmWildcard String> = values
+        fun suppressed(values: List<@JvmSuppressWildcards String>): List<@JvmSuppressWildcards String> = values
       }
       """.trimIndent()
 
@@ -2322,10 +2324,12 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
       val stub = KotlinJvmAbiStubGenerator.generateForTest(
         "sample.WildcardApi", "GenericWildcards.kt", source, emptySet(), mode)
         ?: error("Missing wildcard stub in $mode")
-      assertContains(stub, "void plain(java.util.List<String> values)")
-      assertContains(stub, "void declarationOut(java.util.List<? extends CharSequence> values)")
-      assertContains(stub, "void forced(java.util.List<? extends String> values)")
-      assertContains(stub, "void suppressed(java.util.List<String> values)")
+      assertContains(stub, "java.util.List<String> plain(java.util.List<String> values)")
+      assertContains(stub, "java.util.List<? extends CharSequence> declarationOut(java.util.List<? extends CharSequence> values)")
+      assertContains(stub, "Object declarationIn(java.util.List<? super String> values)")
+      assertContains(stub, "Object star(java.util.List<?> values)")
+      assertContains(stub, "java.util.List<? extends String> forced(java.util.List<? extends String> values)")
+      assertContains(stub, "java.util.List<String> suppressed(java.util.List<String> values)")
       assertTrue("Wildcard surfaces must be attributable in $mode:\n$stub", javacSucceeds(
         mapOf("sample.WildcardApi" to stub),
         "consumer.WildcardUse",
@@ -2336,10 +2340,12 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
         import java.util.List;
         class WildcardUse {
           void use(WildcardApi api, List<String> strings, ArrayList<CharSequence> mutable) {
-            api.plain(strings);
-            api.declarationOut(mutable);
-            api.forced(strings);
-            api.suppressed(strings);
+            List<String> plainResult = api.plain(strings);
+            List<? extends CharSequence> outResult = api.declarationOut(mutable);
+            api.declarationIn(strings);
+            api.star(strings);
+            List<? extends String> forcedResult = api.forced(strings);
+            List<String> suppressedResult = api.suppressed(strings);
           }
         }
         """.trimIndent(),

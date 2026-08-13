@@ -1195,6 +1195,42 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
   }
 
   @Test
+  fun genericVarianceAndWildcardReturnTypes_recordJvmSignatures() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      class WildcardReturnApi {
+        fun plain(): List<String> = emptyList()
+        fun declarationOut(): MutableList<out CharSequence> = mutableListOf()
+        fun forced(): List<@JvmWildcard String> = emptyList()
+        fun suppressed(): List<@JvmSuppressWildcards String> = emptyList()
+      }
+      """.trimIndent(),
+      "GenericWildcardReturns.kt",
+    ).associateBy { it.internalName }
+
+    val api = surfaces.getValue("evidence/WildcardReturnApi")
+    val plain = api.methodsNamed("plain").single()
+    val declarationOut = api.methodsNamed("declarationOut").single()
+    val forced = api.methodsNamed("forced").single()
+    val suppressed = api.methodsNamed("suppressed").single()
+
+    assertTrue("Plain return signature must be recorded: $plain", plain.signature != null)
+    assertTrue("Out return signature must be recorded: $declarationOut", declarationOut.signature != null)
+    assertTrue("@JvmWildcard return signature must be recorded: $forced", forced.signature != null)
+    assertTrue("@JvmSuppressWildcards return signature must be recorded: $suppressed", suppressed.signature != null)
+    assertTrue("Plain List<String> return must be invariant: ${plain.signature}",
+      plain.signature!!.endsWith("Ljava/util/List<Ljava/lang/String;>;"))
+    assertTrue("Out return must retain an extends wildcard: ${declarationOut.signature}",
+      declarationOut.signature!!.endsWith("Ljava/util/List<+Ljava/lang/CharSequence;>;"))
+    assertTrue("@JvmWildcard return must force an extends wildcard: ${forced.signature}",
+      forced.signature!!.endsWith("Ljava/util/List<+Ljava/lang/String;>;"))
+    assertTrue("@JvmSuppressWildcards return must be invariant: ${suppressed.signature}",
+      suppressed.signature!!.endsWith("Ljava/util/List<Ljava/lang/String;>;"))
+  }
+
+  @Test
   fun genericVarianceAndWildcardAnnotations_recordJvmSignatures() {
     val surfaces = KotlinCompilerJvmAbiProbe.compile(
       """
@@ -1203,6 +1239,8 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
       class WildcardApi {
         fun plain(values: List<String>) {}
         fun declarationOut(values: MutableList<out CharSequence>) {}
+        fun declarationIn(values: MutableList<in String>) {}
+        fun star(values: List<*>) {}
         fun forced(values: List<@JvmWildcard String>) {}
         fun suppressed(values: List<@JvmSuppressWildcards String>) {}
       }
@@ -1213,11 +1251,15 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
     val api = surfaces.getValue("evidence/WildcardApi")
     val plain = api.methodsNamed("plain").single()
     val declarationOut = api.methodsNamed("declarationOut").single()
+    val declarationIn = api.methodsNamed("declarationIn").single()
+    val star = api.methodsNamed("star").single()
     val forced = api.methodsNamed("forced").single()
     val suppressed = api.methodsNamed("suppressed").single()
 
     assertTrue("Generic method signature must be recorded: $plain", plain.signature != null)
     assertTrue("Declaration-site out signature must be recorded: $declarationOut", declarationOut.signature != null)
+    assertTrue("Declaration-site in signature must be recorded: $declarationIn", declarationIn.signature != null)
+    assertTrue("Star-projection signature must be recorded: $star", star.signature != null)
     assertTrue("@JvmWildcard signature must be recorded: $forced", forced.signature != null)
     assertTrue("@JvmSuppressWildcards signature must be recorded: $suppressed", suppressed.signature != null)
     assertTrue("Plain List<String> parameter must be invariant in Java signature: ${plain.signature}",
@@ -1225,6 +1267,10 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
         && !plain.signature.contains("<+Ljava/lang/String;>"))
     assertTrue("Explicit out parameter must retain an extends wildcard: ${declarationOut.signature}",
       declarationOut.signature!!.contains("<+Ljava/lang/CharSequence;>"))
+    assertTrue("Explicit in parameter must retain a super wildcard: ${declarationIn.signature}",
+      declarationIn.signature!!.contains("<-Ljava/lang/String;>"))
+    assertTrue("Star projection must retain an unbounded wildcard: ${star.signature}",
+      star.signature!!.contains("<*>"))
     assertTrue("@JvmWildcard must force an extends wildcard: ${forced.signature}",
       forced.signature!!.contains("<+Ljava/lang/String;>"))
     assertTrue("@JvmSuppressWildcards must remove the extends wildcard: ${suppressed.signature}",

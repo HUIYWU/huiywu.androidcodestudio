@@ -878,6 +878,34 @@ public final class KotlinJvmSourceNavigator {
     return expectedSimple.equals(actualSimple);
   }
 
+  private static String navigationJavaTypeArgument(String kotlinArgument) {
+    String argument = kotlinArgument == null ? "" : kotlinArgument.trim();
+    if ("*".equals(argument)) {
+      return "?";
+    }
+    final boolean forceWildcard = argument.startsWith("@JvmWildcard ")
+        || argument.startsWith("@kotlin.jvm.JvmWildcard ");
+    final boolean suppressWildcard = argument.startsWith("@JvmSuppressWildcards ")
+        || argument.startsWith("@kotlin.jvm.JvmSuppressWildcards ");
+    if (forceWildcard || suppressWildcard) {
+      argument = argument.substring(argument.indexOf(' ') + 1).trim();
+    }
+    final boolean out = argument.startsWith("out ");
+    final boolean in = argument.startsWith("in ");
+    if (out || in) {
+      argument = argument.substring(out ? 4 : 3).trim();
+    }
+    final String mapped = navigationJavaType(argument);
+    if (mapped == null) {
+      return null;
+    }
+    final String boxed = boxedNavigationType(mapped);
+    if (in) {
+      return "? super " + boxed;
+    }
+    return (out || forceWildcard) && !suppressWildcard ? "? extends " + boxed : boxed;
+  }
+
   private static String navigationJavaType(String kotlinType) {
     if (kotlinType == null) return null;
     String type = kotlinType.trim();
@@ -912,11 +940,11 @@ public final class KotlinJvmSourceNavigator {
       }
       final List<String> arguments = new ArrayList<>();
       for (String argument : application.arguments) {
-        final String javaArgument = navigationJavaType(argument);
+        final String javaArgument = navigationJavaTypeArgument(argument);
         if (javaArgument == null) {
           return null;
         }
-        arguments.add(boxedNavigationType(javaArgument));
+        arguments.add(javaArgument);
       }
       return rawType + "<" + String.join(",", arguments) + ">";
     }
@@ -930,6 +958,7 @@ public final class KotlinJvmSourceNavigator {
       case "Boolean": case "kotlin.Boolean": return nullable ? "java.lang.Boolean" : "boolean";
       case "Char": case "kotlin.Char": return nullable ? "java.lang.Character" : "char";
       case "String": case "kotlin.String": return "java.lang.String";
+      case "CharSequence": case "kotlin.CharSequence": return "java.lang.CharSequence";
       case "IntArray": case "kotlin.IntArray": return "int[]";
       case "LongArray": case "kotlin.LongArray": return "long[]";
       case "BooleanArray": case "kotlin.BooleanArray": return "boolean[]";
