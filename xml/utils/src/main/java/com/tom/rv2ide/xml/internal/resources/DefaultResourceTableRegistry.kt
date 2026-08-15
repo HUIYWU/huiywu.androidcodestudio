@@ -503,7 +503,10 @@ class DefaultResourceTableRegistry : ResourceTableRegistry {
               AaptResourceType.UNKNOWN
             }
         val resName = ResourceName(pck, type, file.nameWithoutExtension)
-        table.addFileReference(resName, ConfigDescription(), Source(file.path), file.path)
+        // File resources must retain their directory qualifiers so Hover and Definition can expose
+        // and order variants just like values resources do.
+        val config = extractPathData(file).config
+        table.addFileReference(resName, config, Source(file.path), file.path)
       }
     }
   }

@@ -223,6 +223,30 @@ class KotlinJvmSyntaxParserTest {
   }
 
   @Test
+  fun structured_collectsOrderedWhereClauseTypeParameterBounds() {
+    val source =
+        """
+        package sample
+
+        class MultipleBounds<T>(val value: T)
+          where T : CharSequence, T : Comparable<T> {
+          fun <R> multiple(value: R): R
+            where R : CharSequence, R : Comparable<R> = value
+        }
+        """.trimIndent()
+
+    val type = requireTopLevelType(source, "MultipleBounds")
+    val classParameter = type.typeParameters.single { it.name == "T" }
+    assertEquals(listOf("CharSequence", "Comparable<T>"), classParameter.upperBounds)
+    assertEquals("CharSequence", classParameter.upperBound)
+
+    val method = type.members.single { it.name == "multiple" }
+    val methodParameter = method.typeParameters.single { it.name == "R" }
+    assertEquals(listOf("CharSequence", "Comparable<R>"), methodParameter.upperBounds)
+    assertEquals("CharSequence", methodParameter.upperBound)
+  }
+
+  @Test
   fun structured_keepsCompanionMembersSeparateFromHostMembers() {
     val source =
         """

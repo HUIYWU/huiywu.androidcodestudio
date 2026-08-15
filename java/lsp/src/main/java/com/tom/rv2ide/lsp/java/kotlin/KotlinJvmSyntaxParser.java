@@ -213,7 +213,10 @@ final class KotlinJvmSyntaxParser {
         bodyNode == null ? "" : innerBody(text(source, bodyNode)),
         members(source, bodyNode),
         Collections.unmodifiableList(nestedTypes),
-        typeParameters(source, fieldChild(declaration, "type_parameters", "type_parameters")),
+        typeParameters(
+            source,
+            fieldChild(declaration, "type_parameters", "type_parameters"),
+            typeConstraintsBeforeBody(source, declaration, bodyNode)),
         superTypes(source, declaration),
         constructorParameters,
         constructor != null || recoveredConstructorText != null,
@@ -316,7 +319,10 @@ final class KotlinJvmSyntaxParser {
       String modifierText) {
     final TSNode name = fieldChild(declaration, "name", "simple_identifier");
     final List<TypeParameterSyntax> typeParameters =
-        typeParameters(source, fieldChild(declaration, "type_parameters", "type_parameters"));
+        typeParameters(
+            source,
+            fieldChild(declaration, "type_parameters", "type_parameters"),
+            directChild(declaration, "type_constraints"));
     final TSNode parameters =
         fieldChild(declaration, "parameters", "function_value_parameters");
     final TSNode receiver = extensionReceiver(declaration, name);
@@ -499,7 +505,8 @@ final class KotlinJvmSyntaxParser {
     }
   }
 
-  private static List<TypeParameterSyntax> typeParameters(String source, TSNode container) {
+  private static List<TypeParameterSyntax> typeParameters(
+      String source, TSNode container, TSNode constraints) {
     if (container == null) {
       return Collections.emptyList();
     }
@@ -514,8 +521,34 @@ final class KotlinJvmSyntaxParser {
       final TSNode bound =
           declaredBound != null ? declaredBound : typeChildAfter(parameter, name);
       if (name != null) {
-        result.add(new TypeParameterSyntax(
-            text(source, name), bound == null ? null : text(source, bound)));
+        final List<String> bounds = new ArrayList<>();
+        if (bound != null) {
+          bounds.add(text(source, bound));
+        }
+        result.add(new TypeParameterSyntax(text(source, name), bounds));
+      }
+    }
+    if (constraints != null) {
+      for (int index = 0; index < constraints.getNamedChildCount(); index++) {
+        final TSNode constraint = constraints.getNamedChild(index);
+        if (!"type_constraint".equals(constraint.getType())) {
+          continue;
+        }
+        final TSNode name = fieldChild(constraint, "name", "type_identifier");
+        final TSNode bound = typeChildAfter(constraint, name);
+        if (name == null || bound == null) {
+          continue;
+        }
+        final String constrainedName = text(source, name);
+        for (TypeParameterSyntax parameter : result) {
+          if (constrainedName.equals(parameter.name)) {
+            parameter.upperBounds.add(text(source, bound));
+            if (parameter.upperBound == null) {
+              parameter.upperBound = parameter.upperBounds.get(0);
+            }
+            break;
+          }
+        }
       }
     }
     return Collections.unmodifiableList(result);
@@ -722,6 +755,30 @@ final class KotlinJvmSyntaxParser {
       // artifact or its JNI binding cannot resolve a field on this device.
     }
     return fallbackTypes.length == 0 ? null : directChild(parent, fallbackTypes);
+  }
+
+  private static TSNode typeConstraintsBeforeBody(
+      String source, TSNode declaration, TSNode body) {
+    final int bodyStartByte = body == null ? declaration.getEndByte() : body.getStartByte();
+    return firstDescendantBefore(declaration, "type_constraints", bodyStartByte);
+  }
+
+  private static TSNode firstDescendantBefore(
+      TSNode node, String type, int endByte) {
+    if (node == null || node.getStartByte() >= endByte) {
+      return null;
+    }
+    if (type.equals(node.getType())) {
+      return node;
+    }
+    for (int index = 0; index < node.getNamedChildCount(); index++) {
+      final TSNode match = firstDescendantBefore(
+          node.getNamedChild(index), type, endByte);
+      if (match != null) {
+        return match;
+      }
+    }
+    return null;
   }
 
   private static TSNode directChild(TSNode parent, String... types) {
@@ -1175,11 +1232,19 @@ final class KotlinJvmSyntaxParser {
 
   static final class TypeParameterSyntax {
     final String name;
-    final String upperBound;
+    // Kept for existing JVM-erasure callers: Kotlin erases a type variable to its first bound.
+    String upperBound;
+    final List<String> upperBounds;
 
     TypeParameterSyntax(String name, String upperBound) {
+      this(name, upperBound == null
+          ? Collections.emptyList() : Collections.singletonList(upperBound));
+    }
+
+    TypeParameterSyntax(String name, List<String> upperBounds) {
       this.name = name;
-      this.upperBound = upperBound;
+      this.upperBounds = new ArrayList<>(upperBounds);
+      this.upperBound = this.upperBounds.isEmpty() ? null : this.upperBounds.get(0);
     }
   }
 

@@ -17,8 +17,10 @@
 
 package com.tom.rv2ide.xml.internal.resources
 
+import com.android.aaptcompiler.AaptResourceType.DRAWABLE
 import com.android.aaptcompiler.AaptResourceType.STRING
 import com.android.aaptcompiler.AaptResourceType.STYLE
+import com.android.aaptcompiler.extractPathData
 import com.google.common.truth.Truth.assertThat
 import com.tom.rv2ide.xml.resources.ResourceTableFileInput
 import com.tom.rv2ide.xml.resources.ResourceTableInputSnapshot
@@ -64,6 +66,31 @@ class DefaultResourceTableRegistryTest {
     assertThat(table!!.findPackage("com.google.android.material")?.findGroup(STYLE)
       ?.findEntry("TextAppearance.Material3.BodyMedium"))
       .isNotNull()
+  }
+
+  @Test
+  fun buildsFileResourceVariantsWithDirectoryConfigurations() {
+    val resDir = File(root, "res").apply { mkdirs() }
+    val drawable = File(resDir, "drawable").apply { mkdirs() }
+    val drawableNight = File(resDir, "drawable-night").apply { mkdirs() }
+    val drawableV24 = File(resDir, "drawable-v24").apply { mkdirs() }
+    val defaultFile = File(drawable, "logo.xml").apply { writeText("<vector />") }
+    val nightFile = File(drawableNight, "logo.xml").apply { writeText("<vector />") }
+    val v24File = File(drawableV24, "logo.xml").apply { writeText("<vector />") }
+
+    val entry =
+        registry.forPackage(PACKAGE_NAME, resDir)
+            ?.findPackage(PACKAGE_NAME)
+            ?.findGroup(DRAWABLE)
+            ?.findEntry("logo")
+
+    assertThat(entry).isNotNull()
+    assertThat(entry!!.findValue(extractPathData(defaultFile).config)?.value?.source?.path)
+        .isEqualTo(defaultFile.path)
+    assertThat(entry.findValue(extractPathData(nightFile).config)?.value?.source?.path)
+        .isEqualTo(nightFile.path)
+    assertThat(entry.findValue(extractPathData(v24File).config)?.value?.source?.path)
+        .isEqualTo(v24File.path)
   }
 
   @Test

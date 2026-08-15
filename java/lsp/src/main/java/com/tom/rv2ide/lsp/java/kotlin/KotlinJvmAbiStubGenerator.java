@@ -73,13 +73,14 @@ final class KotlinJvmAbiStubGenerator {
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|abstract|final|override|suspend|"
               + "operator|infix|inline|tailrec|external)\\s+)*)fun\\s+(?:<[^>]+>\\s*)?"
-              + "([A-Za-z_][\\w]*)\\s*\\(([^)]*)\\)\\s*(?::\\s*([^=\\{]+))?.*$");
+              + "([A-Za-z_][\\w]*)\\s*\\(([^)]*)\\)"
+              + "(?:\\s*:\\s*([^=\\{]+?))?(?:\\s+where\\b|\\s*[=\\{]|\\s*$).*$");
   private static final Pattern EXTENSION_FUNCTION_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|abstract|final|override|suspend|"
               + "operator|infix|inline|tailrec|external)\\s+)*)fun\\s+(?:<[^>]+>\\s*)?"
               + "([A-Za-z_][\\w]*(?:<[^>]+>)?\\??)\\.([A-Za-z_][\\w]*)\\s*\\(([^)]*)\\)"
-              + "\\s*(?::\\s*([^=\\{]+))?.*$");
+              + "(?:\\s*:\\s*([^=\\{]+?))?(?:\\s+where\\b|\\s*[=\\{]|\\s*$).*$");
 private static final Pattern PROPERTY_PATTERN =
       Pattern.compile(
           "^\\s*((?:(?:public|protected|internal|private|open|override|const|lateinit)\\s+)*)"
@@ -2161,11 +2162,73 @@ private static final Pattern PROPERTY_PATTERN =
         return java.util.Collections.emptyList();
       }
       final int end = matchingDelimiter(source, index, '<', '>');
-      return end < 0
-          ? java.util.Collections.emptyList()
-          : parseTypeParameters(source.substring(index + 1, end));
+      if (end < 0) {
+        return java.util.Collections.emptyList();
+      }
+      final List<KotlinJvmSyntaxParser.TypeParameterSyntax> parameters =
+          parseTypeParameters(source.substring(index + 1, end));
+      appendWhereBoundsFallback(source, end + 1, parameters);
+      return parameters;
     }
     return java.util.Collections.emptyList();
+  }
+
+  private static void appendWhereBoundsFallback(
+      String source, int start, List<KotlinJvmSyntaxParser.TypeParameterSyntax> parameters) {
+    if (parameters == null || parameters.isEmpty()) {
+      return;
+    }
+    int where = -1;
+    int end = source.length();
+    int nesting = 0;
+    int constraintLineStart = -1;
+    for (int index = start; index < source.length(); index++) {
+      final char current = source.charAt(index);
+      if (current == '<' || current == '(' || current == '[') {
+        nesting++;
+      } else if (current == '>' || current == ')' || current == ']') {
+        nesting = Math.max(0, nesting - 1);
+      } else if (nesting == 0 && where < 0 && source.startsWith("where", index)
+          && (index == 0 || !Character.isJavaIdentifierPart(source.charAt(index - 1)))
+          && (index + 5 >= source.length()
+              || !Character.isJavaIdentifierPart(source.charAt(index + 5)))) {
+        where = index + 5;
+        constraintLineStart = where;
+      } else if (nesting == 0 && (current == '{' || current == '=')) {
+        end = index;
+        break;
+      } else if (nesting == 0 && where >= 0 && current == '\n') {
+        final String line = source.substring(constraintLineStart, index).trim();
+        if (!line.endsWith(",")) {
+          end = index;
+          break;
+        }
+        constraintLineStart = index + 1;
+      }
+    }
+    if (where < 0) {
+      return;
+    }
+    for (String constraint : splitParameters(source.substring(where, end))) {
+      final int colon = topLevelIndexOf(constraint, ':');
+      if (colon < 0) {
+        continue;
+      }
+      final String name = constraint.substring(0, colon).trim();
+      final String bound = constraint.substring(colon + 1).trim();
+      if (bound.isEmpty()) {
+        continue;
+      }
+      for (KotlinJvmSyntaxParser.TypeParameterSyntax parameter : parameters) {
+        if (name.equals(parameter.name)) {
+          parameter.upperBounds.add(bound);
+          if (parameter.upperBound == null) {
+            parameter.upperBound = parameter.upperBounds.get(0);
+          }
+          break;
+        }
+      }
+    }
   }
 
   private static List<KotlinJvmSyntaxParser.TypeParameterSyntax> functionTypeParametersFallback(
@@ -2183,9 +2246,13 @@ private static final Pattern PROPERTY_PATTERN =
       return java.util.Collections.emptyList();
     }
     final int end = matchingDelimiter(declarationLine, index, '<', '>');
-    return end < 0
-        ? java.util.Collections.emptyList()
-        : parseTypeParameters(declarationLine.substring(index + 1, end));
+    if (end < 0) {
+      return java.util.Collections.emptyList();
+    }
+    final List<KotlinJvmSyntaxParser.TypeParameterSyntax> parameters =
+        parseTypeParameters(declarationLine.substring(index + 1, end));
+    appendWhereBoundsFallback(declarationLine, end + 1, parameters);
+    return parameters;
   }
 
   private static List<KotlinJvmSyntaxParser.TypeParameterSyntax> parseTypeParameters(String text) {
@@ -2513,6 +2580,20 @@ private static final Pattern PROPERTY_PATTERN =
     }
   }
 
+  private static String javaTypeParameterBound(String parameterName, String kotlinBound) {
+    if (kotlinBound == null) {
+      return "Object";
+    }
+    final String bound = kotlinBound.trim();
+    if (("Comparable<" + parameterName + ">").equals(bound)
+        || ("kotlin.Comparable<" + parameterName + ">").equals(bound)) {
+      // Verified by Kotlin compiler Signature evidence: Comparable<T> in a type-parameter
+      // where-clause is emitted as Comparable<? super T>, not invariant Comparable<T>.
+      return "Comparable<? super " + parameterName + ">";
+    }
+    return javaType(bound);
+  }
+
   private static String javaTypeParameters(
       List<KotlinJvmSyntaxParser.TypeParameterSyntax> parameters) {
     if (parameters == null || parameters.isEmpty()) {
@@ -2523,9 +2604,15 @@ private static final Pattern PROPERTY_PATTERN =
       if (parameter.name == null || !JAVA_TYPE_NAME_PATTERN.matcher(parameter.name).matches()) {
         continue;
       }
-      final String bound = javaType(parameter.upperBound);
+      final List<String> bounds = new ArrayList<>();
+      for (String kotlinBound : parameter.upperBounds) {
+        final String bound = javaTypeParameterBound(parameter.name, kotlinBound);
+        if (!"Object".equals(bound) && !"void".equals(bound)) {
+          bounds.add(bound);
+        }
+      }
       declarations.add(parameter.name
-          + ("Object".equals(bound) || "void".equals(bound) ? "" : " extends " + bound));
+          + (bounds.isEmpty() ? "" : " extends " + String.join(" & ", bounds)));
     }
     return declarations.isEmpty() ? "" : "<" + String.join(", ", declarations) + "> ";
   }

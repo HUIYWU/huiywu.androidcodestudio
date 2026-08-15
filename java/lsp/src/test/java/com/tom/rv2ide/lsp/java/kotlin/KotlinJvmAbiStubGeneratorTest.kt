@@ -2499,6 +2499,58 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generatedMultipleWhereBounds_preserveCompilerProvenIntersectionAndJavacAttribution() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+      """
+      package sample
+
+      class MultipleBounds<T>(val value: T)
+        where T : CharSequence, T : Comparable<T>
+
+      class BoundApi {
+        fun <T> multiple(value: T): T where T : CharSequence, T : Comparable<T> = value
+      }
+      """.trimIndent()
+
+    for (mode in listOf(
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK,
+    )) {
+      val classStub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.MultipleBounds", "MultipleBounds.kt", source, emptySet(), mode)
+        ?: error("Missing multiple-bound class stub in $mode")
+      val apiStub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.BoundApi", "MultipleBounds.kt", source, emptySet(), mode)
+        ?: error("Missing multiple-bound API stub in $mode")
+      val bound = "T extends CharSequence & Comparable<? super T>"
+
+      assertTrue("Multiple-bound class shape missing in $mode:\n$classStub",
+        classStub.contains("public class MultipleBounds<$bound>"))
+      assertContains(classStub, "MultipleBounds(T value)")
+      assertTrue("Multiple-bound method shape missing in $mode:\n$apiStub",
+        apiStub.contains("<$bound> T multiple(T value)"))
+      assertTrue("Multiple where-bound surfaces must be attributable in $mode:\n$classStub\n$apiStub",
+        javacSucceeds(
+          mapOf("sample.MultipleBounds" to classStub, "sample.BoundApi" to apiStub),
+          "consumer.MultipleBoundsUse",
+          """
+          package consumer;
+          import sample.BoundApi;
+          import sample.MultipleBounds;
+          class MultipleBoundsUse {
+            String use(BoundApi api, String value) {
+              MultipleBounds<String> boxed = new MultipleBounds<>(value);
+              return api.multiple(value) + boxed.getValue();
+            }
+          }
+          """.trimIndent(),
+        ))
+    }
+  }
+
+  @Test
   fun generatedGenericOverrideStubs_omitSyntheticBridgesButRemainJavacAttributable() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

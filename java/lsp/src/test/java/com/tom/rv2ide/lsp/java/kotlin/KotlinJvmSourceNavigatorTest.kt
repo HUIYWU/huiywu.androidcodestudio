@@ -767,6 +767,49 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesMultipleWhereBoundGenericClassConstructorAndMethod() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class MultipleBounds<T>(val value: T)
+        where T : CharSequence, T : Comparable<T>
+
+      class BoundApi {
+        fun <T> multiple(value: T): T where T : CharSequence, T : Comparable<T> = value
+      }
+      """.trimIndent()
+    val constructor = compileConstructor(
+      """
+      package navigation;
+      class MultipleBounds<T extends CharSequence & Comparable<? super T>> {
+        MultipleBounds(T value) {}
+        T getValue() { return null; }
+      }
+      """.trimIndent(),
+      "navigation.MultipleBounds",
+      "T",
+    )
+    val method = compileMethod(
+      """
+      package navigation;
+      class BoundApi {
+        <T extends CharSequence & Comparable<? super T>> T multiple(T value) { return value; }
+      }
+      """.trimIndent(),
+      "navigation.BoundApi",
+      "multiple",
+    )
+    val classFile = Paths.get("/navigation/MultipleBounds.kt")
+    val apiFile = Paths.get("/navigation/BoundApi.kt")
+
+    assertEquals("MultipleBounds", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(classFile, kotlinSource, constructor)!!))
+    assertEquals("multiple", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(apiFile, kotlinSource, method)!!))
+  }
+
+  @Test
   fun typeNavigation_resolvesInheritedDefaultInterfaceForwardersToContractDeclaration() {
     val kotlinSource =
       """
