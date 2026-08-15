@@ -1195,6 +1195,45 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
   }
 
   @Test
+  fun genericTypeParameterBounds_recordJvmSignatures() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      class SingleBound<T : CharSequence>(val value: T)
+      class MultipleBounds<T> where T : CharSequence, T : Comparable<T>
+
+      class BoundApi {
+        fun <T : CharSequence> single(value: T): T = value
+        fun <T> multiple(value: T): T where T : CharSequence, T : Comparable<T> = value
+      }
+      """.trimIndent(),
+      "GenericBounds.kt",
+    ).associateBy { it.internalName }
+
+    val singleBound = surfaces.getValue("evidence/SingleBound")
+    val multipleBounds = surfaces.getValue("evidence/MultipleBounds")
+    val api = surfaces.getValue("evidence/BoundApi")
+    val single = api.methodsNamed("single").single()
+    val multiple = api.methodsNamed("multiple").single()
+
+    assertTrue("Single-bound class Signature must be recorded: $singleBound", singleBound.signature != null)
+    assertTrue("Multiple-bound class Signature must be recorded: $multipleBounds", multipleBounds.signature != null)
+    assertTrue("Single-bound method Signature must be recorded: $single", single.signature != null)
+    assertTrue("Multiple-bound method Signature must be recorded: $multiple", multiple.signature != null)
+    assertTrue("Single bound must erase to CharSequence: ${singleBound.constructors()}",
+      singleBound.constructors().single().descriptor.contains("Ljava/lang/CharSequence;"))
+    assertTrue("Single bound Signature must retain CharSequence: ${singleBound.signature}",
+      singleBound.signature!!.contains("<T::Ljava/lang/CharSequence;>"))
+    assertTrue("Multiple bounds must retain CharSequence then Comparable: ${multipleBounds.signature}",
+      multipleBounds.signature!!.contains("<T::Ljava/lang/CharSequence;:Ljava/lang/Comparable<-TT;>;>"))
+    assertTrue("Single-bound method must retain CharSequence: ${single.signature}",
+      single.signature!!.startsWith("<T::Ljava/lang/CharSequence;>"))
+    assertTrue("Multiple-bound method must retain both bounds: ${multiple.signature}",
+      multiple.signature!!.startsWith("<T::Ljava/lang/CharSequence;:Ljava/lang/Comparable<-TT;>;>"))
+  }
+
+  @Test
   fun genericVarianceAndWildcardProperties_recordFieldAndAccessorSignatures() {
     val surfaces = KotlinCompilerJvmAbiProbe.compile(
       """
@@ -1203,6 +1242,8 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
       class WildcardPropertyApi {
         val plain: List<String> = emptyList()
         var declarationOut: MutableList<out CharSequence> = mutableListOf()
+        var declarationIn: MutableList<in String> = mutableListOf()
+        val star: List<*> = emptyList<Any?>()
         val forced: List<@JvmWildcard String> = emptyList()
         val suppressed: List<@JvmSuppressWildcards String> = emptyList()
 
@@ -1219,6 +1260,11 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
     val outField = api.fieldsNamed("declarationOut").single()
     val outGetter = api.methodsNamed("getDeclarationOut").single()
     val outSetter = api.methodsNamed("setDeclarationOut").single()
+    val inField = api.fieldsNamed("declarationIn").single()
+    val inGetter = api.methodsNamed("getDeclarationIn").single()
+    val inSetter = api.methodsNamed("setDeclarationIn").single()
+    val starField = api.fieldsNamed("star").single()
+    val starGetter = api.methodsNamed("getStar").single()
     val forcedField = api.fieldsNamed("forced").single()
     val forcedGetter = api.methodsNamed("getForced").single()
     val suppressedField = api.fieldsNamed("suppressed").single()
@@ -1227,6 +1273,7 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
 
     for (member in listOf(
       plainField, plainGetter, outField, outGetter, outSetter,
+      inField, inGetter, inSetter, starField, starGetter,
       forcedField, forcedGetter, suppressedField, suppressedGetter, publicForcedField,
     )) {
       assertTrue("Property generic signature must be recorded: $member", member.signature != null)
@@ -1238,6 +1285,14 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
     for (member in listOf(outField, outGetter, outSetter)) {
       assertTrue("Out property surface must retain extends wildcard: $member",
         member.signature!!.contains("<+Ljava/lang/CharSequence;>"))
+    }
+    for (member in listOf(inField, inGetter, inSetter)) {
+      assertTrue("In property surface must retain super wildcard: $member",
+        member.signature!!.contains("<-Ljava/lang/String;>"))
+    }
+    for (member in listOf(starField, starGetter)) {
+      assertTrue("Star property surface must retain unbounded wildcard: $member",
+        member.signature!!.contains("<*>"))
     }
     for (member in listOf(forcedField, forcedGetter, publicForcedField)) {
       assertTrue("@JvmWildcard property surface must retain extends wildcard: $member",

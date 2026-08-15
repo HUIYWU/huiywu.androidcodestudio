@@ -568,7 +568,10 @@ public final class KotlinJvmSourceNavigator {
       Map<String, String> valueClassUnderlyingTypes) {
     if (element.getKind() == ElementKind.FIELD && member.receiverType == null
         && javaName.equals(member.name)) {
-      return true;
+      // A public Kotlin @JvmField has no accessor signature to disambiguate it. Preserve the
+      // existing unknown-type fallback, but compare every type we can normalize so an invariant
+      // Java field cannot navigate to a Kotlin wildcard field (or vice versa).
+      return functionParameterTypeCompatible(member.declaredType, false, element.asType().toString());
     }
     if (element.getKind() != ElementKind.METHOD || member.name.isEmpty()
         || !(element instanceof ExecutableElement)) {
@@ -881,6 +884,11 @@ public final class KotlinJvmSourceNavigator {
     if (expected.equals(javaType)
         || (expected.indexOf('.') < 0 && javaType.endsWith("." + expected))) {
       return true;
+    }
+    // Generic structure must already compare exactly. A whole-type simple-name fallback would turn
+    // List<? extends String> and List<String> into the same trailing `String>` token.
+    if (expected.indexOf('<') >= 0 || javaType.indexOf('<') >= 0) {
+      return false;
     }
     // javac/rendering variants may use `String` where the navigator normalized an alias to
     // `java.lang.String` (or vice versa). Compare simple names as a final exact JVM-type check.

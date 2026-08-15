@@ -33,6 +33,7 @@ internal object KotlinCompilerJvmAbiProbe {
   data class ClassSurface(
     val internalName: String,
     val access: Int,
+    val signature: String? = null,
     val members: List<Member>,
     val fields: List<Member>,
   ) {
@@ -92,6 +93,7 @@ internal object KotlinCompilerJvmAbiProbe {
   private fun readClass(path: Path): ClassSurface {
     var internalName = ""
     var access = 0
+    var classSignature: String? = null
     val members = mutableListOf<Member>()
     val fields = mutableListOf<Member>()
     ClassReader(Files.readAllBytes(path)).accept(object : ClassVisitor(Opcodes.ASM9) {
@@ -105,6 +107,7 @@ internal object KotlinCompilerJvmAbiProbe {
       ) {
         internalName = name
         access = classAccess
+        classSignature = signature
       }
 
       override fun visitField(
@@ -129,6 +132,6 @@ internal object KotlinCompilerJvmAbiProbe {
         return null
       }
     }, ClassReader.SKIP_CODE or ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
-    return ClassSurface(internalName, access, members, fields)
+    return ClassSurface(internalName, access, classSignature, members, fields)
   }
 }

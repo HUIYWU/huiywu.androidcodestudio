@@ -2364,6 +2364,8 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
       class WildcardPropertyApi {
         val plain: List<String> = emptyList()
         var declarationOut: MutableList<out CharSequence> = mutableListOf()
+        var declarationIn: MutableList<in String> = mutableListOf()
+        val star: List<*> = emptyList()
         val forced: List<@JvmWildcard String> = emptyList()
         val suppressed: List<@JvmSuppressWildcards String> = emptyList()
       }
@@ -2379,6 +2381,9 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
       assertContains(stub, "java.util.List<String> getPlain()")
       assertContains(stub, "java.util.List<? extends CharSequence> getDeclarationOut()")
       assertContains(stub, "void setDeclarationOut(java.util.List<? extends CharSequence> value)")
+      assertContains(stub, "java.util.List<? super String> getDeclarationIn()")
+      assertContains(stub, "void setDeclarationIn(java.util.List<? super String> value)")
+      assertContains(stub, "java.util.List<?> getStar()")
       assertContains(stub, "java.util.List<? extends String> getForced()")
       assertContains(stub, "java.util.List<String> getSuppressed()")
       assertTrue("Wildcard property accessors must be attributable in $mode:\n$stub", javacSucceeds(
@@ -2393,12 +2398,103 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
             List<String> plain = api.getPlain();
             List<? extends CharSequence> readOut = api.getDeclarationOut();
             api.setDeclarationOut(out);
+            List<? super String> readIn = api.getDeclarationIn();
+            api.setDeclarationIn(readIn);
+            List<?> star = api.getStar();
             List<? extends String> forced = api.getForced();
             List<String> suppressed = api.getSuppressed();
           }
         }
         """.trimIndent(),
       ))
+    }
+  }
+
+  @Test
+  fun generatedJvmFieldWildcardProperty_preservesHostFieldWithoutAccessor() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+      """
+      package sample
+
+      class WildcardFieldApi {
+        @JvmField
+        val forced: List<@JvmWildcard String> = emptyList()
+      }
+      """.trimIndent()
+
+    for (mode in listOf(
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK,
+    )) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.WildcardFieldApi", "GenericWildcardFields.kt", source, emptySet(), mode)
+        ?: error("Missing wildcard field stub in $mode")
+      assertContains(stub, "java.util.List<? extends String> forced;")
+      assertFalse("@JvmField must not expose a getter in $mode:\n$stub", stub.contains("getForced("))
+      assertTrue("Wildcard @JvmField surface must be attributable in $mode:\n$stub", javacSucceeds(
+        mapOf("sample.WildcardFieldApi" to stub),
+        "consumer.WildcardFieldUse",
+        """
+        package consumer;
+        import sample.WildcardFieldApi;
+        import java.util.List;
+        class WildcardFieldUse {
+          List<? extends String> use(WildcardFieldApi api) { return api.forced; }
+        }
+        """.trimIndent(),
+      ))
+    }
+  }
+
+  @Test
+  fun generatedSingleBoundGenericClassAndMethod_preserveJvmErasureAndJavacAttribution() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+      """
+      package sample
+
+      class SingleBound<T : CharSequence>(val value: T)
+
+      class BoundApi {
+        fun <T : CharSequence> single(value: T): T = value
+      }
+      """.trimIndent()
+
+    for (mode in listOf(
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK,
+    )) {
+      val singleBoundStub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.SingleBound", "GenericBounds.kt", source, emptySet(), mode)
+        ?: error("Missing single-bound class stub in $mode")
+      val apiStub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.BoundApi", "GenericBounds.kt", source, emptySet(), mode)
+        ?: error("Missing bound API stub in $mode")
+
+      assertContains(singleBoundStub, "public class SingleBound<T extends CharSequence>")
+      assertContains(singleBoundStub, "SingleBound(T value)")
+      assertContains(singleBoundStub, "T getValue()")
+      assertContains(apiStub, "<T extends CharSequence> T single(T value)")
+      assertTrue("Single-bound generic surfaces must be attributable in $mode:\n$singleBoundStub\n$apiStub",
+        javacSucceeds(
+          mapOf("sample.SingleBound" to singleBoundStub, "sample.BoundApi" to apiStub),
+          "consumer.GenericBoundsUse",
+          """
+          package consumer;
+          import sample.BoundApi;
+          import sample.SingleBound;
+          class GenericBoundsUse {
+            String use(BoundApi api, SingleBound<String> boxed, String value) {
+              SingleBound<String> created = new SingleBound<>(value);
+              CharSequence erased = boxed.getValue();
+              return api.single(value) + created.getValue() + erased;
+            }
+          }
+          """.trimIndent(),
+        ))
     }
   }
 

@@ -685,6 +685,8 @@ class KotlinJvmSourceNavigatorTest {
       class WildcardPropertyNavigation {
         val plain: List<String> = emptyList()
         var declarationOut: MutableList<out CharSequence> = mutableListOf()
+        var declarationIn: MutableList<in String> = mutableListOf()
+        val star: List<*> = emptyList()
         val forced: List<@JvmWildcard String> = emptyList()
         val suppressed: List<@JvmSuppressWildcards String> = emptyList()
       }
@@ -696,6 +698,9 @@ class KotlinJvmSourceNavigatorTest {
         abstract java.util.List<String> getPlain();
         abstract java.util.List<? extends CharSequence> getDeclarationOut();
         abstract void setDeclarationOut(java.util.List<? extends CharSequence> value);
+        abstract java.util.List<? super String> getDeclarationIn();
+        abstract void setDeclarationIn(java.util.List<? super String> value);
+        abstract java.util.List<?> getStar();
         abstract java.util.List<? extends String> getForced();
         abstract java.util.List<String> getSuppressed();
       }
@@ -706,6 +711,9 @@ class KotlinJvmSourceNavigatorTest {
       "getPlain" to "plain",
       "getDeclarationOut" to "declarationOut",
       "setDeclarationOut" to "declarationOut",
+      "getDeclarationIn" to "declarationIn",
+      "setDeclarationIn" to "declarationIn",
+      "getStar" to "star",
       "getForced" to "forced",
       "getSuppressed" to "suppressed",
     )) {
@@ -714,6 +722,48 @@ class KotlinJvmSourceNavigatorTest {
       assertNotNull("Wildcard property accessor did not navigate: $name (${accessor.asType()})", location)
       assertEquals(expected, sourceTextAt(kotlinSource, location!!))
     }
+  }
+
+  @Test
+  fun typeNavigation_resolvesSingleBoundGenericClassConstructorAndMethod() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class SingleBound<T : CharSequence>(val value: T)
+
+      class BoundApi {
+        fun <T : CharSequence> single(value: T): T = value
+      }
+      """.trimIndent()
+    val constructor = compileConstructor(
+      """
+      package navigation;
+      class SingleBound<T extends CharSequence> {
+        SingleBound(T value) {}
+        T getValue() { return null; }
+      }
+      """.trimIndent(),
+      "navigation.SingleBound",
+      "T",
+    )
+    val method = compileMethod(
+      """
+      package navigation;
+      class BoundApi {
+        <T extends CharSequence> T single(T value) { return value; }
+      }
+      """.trimIndent(),
+      "navigation.BoundApi",
+      "single",
+    )
+    val classFile = Paths.get("/navigation/SingleBound.kt")
+    val apiFile = Paths.get("/navigation/BoundApi.kt")
+
+    assertEquals("SingleBound", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(classFile, kotlinSource, constructor)!!))
+    assertEquals("single", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(apiFile, kotlinSource, method)!!))
   }
 
   @Test
@@ -1828,6 +1878,45 @@ class KotlinJvmSourceNavigatorTest {
       assertNotNull(KotlinJvmSourceNavigator.findTypeMemberLocation(
         Paths.get("/navigation/ConstructorPropertyNavigation.kt"), kotlinSource, method))
     }
+  }
+
+  @Test
+  fun typeNavigation_resolvesWildcardJvmFieldAndRejectsInvariantField() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class WildcardFieldNavigation {
+        @JvmField
+        val forced: List<@JvmWildcard String> = emptyList()
+      }
+      """.trimIndent()
+    val wildcardField = compileField(
+      """
+      package navigation;
+      class WildcardFieldNavigation {
+        java.util.List<? extends String> forced;
+      }
+      """.trimIndent(),
+      "navigation.WildcardFieldNavigation",
+      "forced",
+    )
+    val invariantField = compileField(
+      """
+      package navigation;
+      class WildcardFieldNavigation {
+        java.util.List<String> forced;
+      }
+      """.trimIndent(),
+      "navigation.WildcardFieldNavigation",
+      "forced",
+    )
+    val file = Paths.get("/navigation/WildcardFieldNavigation.kt")
+
+    assertEquals("forced", sourceTextAt(
+      kotlinSource, KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, wildcardField)!!))
+    assertNull("Invariant Java field must not navigate to Kotlin @JvmWildcard field",
+      KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, invariantField))
   }
 
   @Test

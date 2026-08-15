@@ -346,6 +346,9 @@
 
 ("fun") @keyword
 
+; `where` is the type-constraint introducer, not a general identifier.
+(type_constraints "where" @keyword)
+
 [
 	"return"
 	"continue"

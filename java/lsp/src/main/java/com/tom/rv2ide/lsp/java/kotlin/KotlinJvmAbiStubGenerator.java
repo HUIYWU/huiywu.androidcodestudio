@@ -1100,6 +1100,8 @@ private static final Pattern PROPERTY_PATTERN =
         if (member.jvmOverloads) {
           appendSyntaxFunctionOverloads(out, member, interfaceType, topLevel);
         }
+      } else if (member.jvmField) {
+        appendSyntaxField(out, member, topLevel);
       } else {
         appendSyntaxProperty(out, member, interfaceType, topLevel);
       }
@@ -1132,7 +1134,7 @@ private static final Pattern PROPERTY_PATTERN =
         }
       } else if (!member.function()) {
         if (member.jvmField) {
-          appendSyntaxField(out, member);
+          appendSyntaxField(out, member, true);
         } else if (member.jvmStatic) {
           appendSyntaxProperty(out, member, false, true);
         }
@@ -1282,9 +1284,13 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static void appendSyntaxField(
-      StringBuilder out, KotlinJvmSyntaxParser.MemberSyntax property) {
+      StringBuilder out, KotlinJvmSyntaxParser.MemberSyntax property, boolean staticField) {
     if (property.name != null && property.receiverType == null) {
-      out.append("  public static ").append(javaType(property.declaredType)).append(' ')
+      out.append("  public ");
+      if (staticField) {
+        out.append("static ");
+      }
+      out.append(javaType(property.declaredType)).append(' ')
           .append(property.name).append(";\n");
     }
   }
@@ -1453,7 +1459,15 @@ private static final Pattern PROPERTY_PATTERN =
   }
 
   private static void appendStaticField(StringBuilder out, Matcher property) {
-    out.append("  public static ").append(javaType(property.group(4))).append(' ')
+    appendField(out, property, true);
+  }
+
+  private static void appendField(StringBuilder out, Matcher property, boolean staticField) {
+    out.append("  public ");
+    if (staticField) {
+      out.append("static ");
+    }
+    out.append(javaType(property.group(4))).append(' ')
         .append(property.group(3)).append(";\n");
   }
 
@@ -1979,6 +1993,7 @@ private static final Pattern PROPERTY_PATTERN =
     int depth = 0;
     boolean jvmOverloads = false;
     boolean pendingJvmSynthetic = false;
+    boolean pendingJvmField = false;
     boolean pendingGetterJvmSynthetic = false;
     boolean pendingSetterJvmSynthetic = false;
     String pendingJvmName = null;
@@ -1989,6 +2004,7 @@ private static final Pattern PROPERTY_PATTERN =
         final boolean hasJvmOverloads = line.contains("@JvmOverloads");
         final boolean hasGetterJvmSynthetic = line.contains("@get:JvmSynthetic");
         final boolean hasSetterJvmSynthetic = line.contains("@set:JvmSynthetic");
+        pendingJvmField |= line.matches(".*@JvmField(?:\\s|\\(|$).*");
         pendingGetterJvmSynthetic |= hasGetterJvmSynthetic;
         pendingSetterJvmSynthetic |= hasSetterJvmSynthetic;
         if (line.matches(".*@JvmSynthetic(?:\\s|\\(|$).*")) {
@@ -2061,12 +2077,17 @@ private static final Pattern PROPERTY_PATTERN =
           if (property.matches() && !isPrivate(property.group(1))) {
             jvmOverloads = false;
             if (!pendingJvmSynthetic) {
-              appendProperty(
-                  out, property, interfaceType, topLevel,
-                  pendingGetterJvmName, pendingSetterJvmName,
-                  pendingGetterJvmSynthetic, pendingSetterJvmSynthetic);
+              if (pendingJvmField) {
+                appendField(out, property, topLevel);
+              } else {
+                appendProperty(
+                    out, property, interfaceType, topLevel,
+                    pendingGetterJvmName, pendingSetterJvmName,
+                    pendingGetterJvmSynthetic, pendingSetterJvmSynthetic);
+              }
             }
             pendingJvmSynthetic = false;
+            pendingJvmField = false;
             pendingGetterJvmSynthetic = false;
             pendingSetterJvmSynthetic = false;
             pendingJvmName = null;
