@@ -3,8 +3,7 @@
  */
 package com.tom.rv2ide.lsp.xml.providers.completion
 
-import com.android.aaptcompiler.AaptResourceType.ATTR
-import com.android.aaptcompiler.AaptResourceType.COLOR
+import com.android.aaptcompiler.AaptResourceType.ID
 import com.android.aaptcompiler.AaptResourceType.STRING
 import com.google.common.truth.Truth.assertThat
 import com.tom.rv2ide.lsp.models.CompletionItem
@@ -16,46 +15,44 @@ import junit.framework.TestCase
 
 class WorkspaceResourceCompletionTest : TestCase() {
 
-  fun testParsesLocalResourceAndThemeQueries() {
-    assertThat(parseWorkspaceResourceCompletionQuery("@string/ti"))
-        .isEqualTo(WorkspaceResourceCompletionQuery('@', STRING, "ti"))
-    assertThat(parseWorkspaceResourceCompletionQuery("?attr/co"))
-        .isEqualTo(WorkspaceResourceCompletionQuery('?', ATTR, "co"))
+  fun testParsesOnlyUnqualifiedIdQueries() {
+    assertThat(parseCreatingIdCompletionQuery("@id/edi"))
+        .isEqualTo(WorkspaceResourceCompletionQuery('@', ID, "edi"))
   }
 
-  fun testRejectsCreatingQualifiedAndInvalidThemeQueries() {
-    assertThat(parseWorkspaceResourceCompletionQuery("@+id/title")).isNull()
-    assertThat(parseWorkspaceResourceCompletionQuery("@android:string/ok")).isNull()
-    assertThat(parseWorkspaceResourceCompletionQuery("@example.lib:string/title")).isNull()
-    assertThat(parseWorkspaceResourceCompletionQuery("?android:attr/colorAccent")).isNull()
-    assertThat(parseWorkspaceResourceCompletionQuery("?string/title")).isNull()
-    assertThat(parseWorkspaceResourceCompletionQuery("@")).isNull()
+  fun testRejectsNonIdCreatingQualifiedAndInvalidQueries() {
+    assertThat(parseCreatingIdCompletionQuery("@+id/title")).isNull()
+    assertThat(parseCreatingIdCompletionQuery("@string/title")).isNull()
+    assertThat(parseCreatingIdCompletionQuery("@android:id/content")).isNull()
+    assertThat(parseCreatingIdCompletionQuery("?attr/colorAccent")).isNull()
+    assertThat(parseCreatingIdCompletionQuery("@")).isNull()
   }
 
-  fun testFiltersByTypeAndPrefixAndDeduplicatesQualifiedDefinitions() {
-    val query = checkNotNull(parseWorkspaceResourceCompletionQuery("@string/ti"))
+  fun testFiltersToCreatingIdDeclarationsAndDeduplicates() {
+    val query = checkNotNull(parseCreatingIdCompletionQuery("@id/too"))
     val definitions =
         listOf(
-            definition(STRING, "title", "values/strings.xml"),
-            definition(STRING, "title", "values-v31/strings.xml"),
-            definition(STRING, "timestamp", "values/strings.xml"),
-            definition(STRING, "other", "values/strings.xml"),
-            definition(COLOR, "title", "values/colors.xml"),
+            definition(ID, "toolbar", "layout/first.xml", ResourceDefinitionKind.CREATING_ID_DECLARATION),
+            definition(ID, "toolbar", "layout/second.xml", ResourceDefinitionKind.CREATING_ID_DECLARATION),
+            definition(ID, "tool_panel", "layout/second.xml", ResourceDefinitionKind.CREATING_ID_DECLARATION),
+            definition(ID, "tool_value", "values/ids.xml", ResourceDefinitionKind.ID_DECLARATION),
+            definition(ID, "tool_values_creating", "values/ids.xml", ResourceDefinitionKind.CREATING_ID_DECLARATION),
+            definition(STRING, "toolbar", "values/strings.xml", ResourceDefinitionKind.VALUE_ELEMENT),
         )
 
-    assertThat(workspaceResourceCompletionCandidates(query, definitions))
+    assertThat(creatingIdCompletionCandidates(query, definitions))
         .containsExactly(
-            WorkspaceResourceCompletionCandidate('@', STRING, "timestamp"),
-            WorkspaceResourceCompletionCandidate('@', STRING, "title"),
+            WorkspaceResourceCompletionCandidate('@', ID, "tool_panel"),
+            WorkspaceResourceCompletionCandidate('@', ID, "toolbar"),
         )
         .inOrder()
   }
 
-  fun testKeepsThemeMarkerForWorkspaceAttrCandidates() {
-    val query = checkNotNull(parseWorkspaceResourceCompletionQuery("?attr/cor"))
+  fun testDoesNotUseCreatingIdsForOtherQueryKinds() {
+    val definitions = listOf(definition(ID, "toolbar", "layout/first.xml", ResourceDefinitionKind.CREATING_ID_DECLARATION))
 
-    assertThat(workspaceResourceCompletionCandidates(query, listOf(definition(ATTR, "corner_radius", "values/attrs.xml"))))
-        .containsExactly(WorkspaceResourceCompletionCandidate('?', ATTR, "corner_radius"))
+    assertThat(creatingIdCompletionCandidates(WorkspaceResourceCompletionQuery('@', STRING, "too"), definitions))
+        .isEmpty()
   }
 
   fun testMergesByInsertTextAndKeepsExistingTableCandidate() {
@@ -80,13 +77,14 @@ class WorkspaceResourceCompletionTest : TestCase() {
       type: com.android.aaptcompiler.AaptResourceType,
       name: String,
       file: String,
+      kind: ResourceDefinitionKind,
   ) =
       ResourceDefinition(
           type = type,
           name = name,
           sourceFile = Paths.get("project/app/src/main/res/$file"),
           nameRange = null,
-          kind = ResourceDefinitionKind.VALUE_ELEMENT,
+          kind = kind,
       )
 
   private fun item(insertText: String, detail: String) =

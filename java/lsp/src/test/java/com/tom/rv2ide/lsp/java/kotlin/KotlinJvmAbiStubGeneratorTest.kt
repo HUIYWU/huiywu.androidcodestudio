@@ -2354,6 +2354,55 @@ fun generate_expandsOnlyDirectSameFileTypeAliases() {
   }
 
   @Test
+  fun generatedWildcardPropertyAccessors_preserveProvenGenericSurfaces() {
+    TreeSitter.loadLibrary()
+    System.loadLibrary("tree-sitter-kotlin")
+    val source =
+      """
+      package sample
+
+      class WildcardPropertyApi {
+        val plain: List<String> = emptyList()
+        var declarationOut: MutableList<out CharSequence> = mutableListOf()
+        val forced: List<@JvmWildcard String> = emptyList()
+        val suppressed: List<@JvmSuppressWildcards String> = emptyList()
+      }
+      """.trimIndent()
+
+    for (mode in listOf(
+      KotlinJvmAbiStubGenerator.GenerationMode.STRUCTURED,
+      KotlinJvmAbiStubGenerator.GenerationMode.FALLBACK,
+    )) {
+      val stub = KotlinJvmAbiStubGenerator.generateForTest(
+        "sample.WildcardPropertyApi", "GenericWildcardProperties.kt", source, emptySet(), mode)
+        ?: error("Missing wildcard property stub in $mode")
+      assertContains(stub, "java.util.List<String> getPlain()")
+      assertContains(stub, "java.util.List<? extends CharSequence> getDeclarationOut()")
+      assertContains(stub, "void setDeclarationOut(java.util.List<? extends CharSequence> value)")
+      assertContains(stub, "java.util.List<? extends String> getForced()")
+      assertContains(stub, "java.util.List<String> getSuppressed()")
+      assertTrue("Wildcard property accessors must be attributable in $mode:\n$stub", javacSucceeds(
+        mapOf("sample.WildcardPropertyApi" to stub),
+        "consumer.WildcardPropertyUse",
+        """
+        package consumer;
+        import sample.WildcardPropertyApi;
+        import java.util.List;
+        class WildcardPropertyUse {
+          void use(WildcardPropertyApi api, List<? extends CharSequence> out) {
+            List<String> plain = api.getPlain();
+            List<? extends CharSequence> readOut = api.getDeclarationOut();
+            api.setDeclarationOut(out);
+            List<? extends String> forced = api.getForced();
+            List<String> suppressed = api.getSuppressed();
+          }
+        }
+        """.trimIndent(),
+      ))
+    }
+  }
+
+  @Test
   fun generatedGenericOverrideStubs_omitSyntheticBridgesButRemainJavacAttributable() {
     TreeSitter.loadLibrary()
     System.loadLibrary("tree-sitter-kotlin")

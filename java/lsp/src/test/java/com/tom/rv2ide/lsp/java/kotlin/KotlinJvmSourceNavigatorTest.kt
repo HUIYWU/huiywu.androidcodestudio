@@ -677,6 +677,46 @@ class KotlinJvmSourceNavigatorTest {
   }
 
   @Test
+  fun typeNavigation_resolvesWildcardPropertyAccessorSurfaces() {
+    val kotlinSource =
+      """
+      package navigation
+
+      class WildcardPropertyNavigation {
+        val plain: List<String> = emptyList()
+        var declarationOut: MutableList<out CharSequence> = mutableListOf()
+        val forced: List<@JvmWildcard String> = emptyList()
+        val suppressed: List<@JvmSuppressWildcards String> = emptyList()
+      }
+      """.trimIndent()
+    val javaSource =
+      """
+      package navigation;
+      abstract class WildcardPropertyNavigation {
+        abstract java.util.List<String> getPlain();
+        abstract java.util.List<? extends CharSequence> getDeclarationOut();
+        abstract void setDeclarationOut(java.util.List<? extends CharSequence> value);
+        abstract java.util.List<? extends String> getForced();
+        abstract java.util.List<String> getSuppressed();
+      }
+      """.trimIndent()
+    val file = Paths.get("/navigation/WildcardPropertyNavigation.kt")
+
+    for ((name, expected) in listOf(
+      "getPlain" to "plain",
+      "getDeclarationOut" to "declarationOut",
+      "setDeclarationOut" to "declarationOut",
+      "getForced" to "forced",
+      "getSuppressed" to "suppressed",
+    )) {
+      val accessor = compileMethod(javaSource, "navigation.WildcardPropertyNavigation", name)
+      val location = KotlinJvmSourceNavigator.findTypeMemberLocation(file, kotlinSource, accessor)
+      assertNotNull("Wildcard property accessor did not navigate: $name (${accessor.asType()})", location)
+      assertEquals(expected, sourceTextAt(kotlinSource, location!!))
+    }
+  }
+
+  @Test
   fun typeNavigation_resolvesInheritedDefaultInterfaceForwardersToContractDeclaration() {
     val kotlinSource =
       """

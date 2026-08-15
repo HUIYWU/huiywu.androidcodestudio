@@ -1195,6 +1195,66 @@ val specializedForwarder = genericConsumer.methodsNamed("echo")
   }
 
   @Test
+  fun genericVarianceAndWildcardProperties_recordFieldAndAccessorSignatures() {
+    val surfaces = KotlinCompilerJvmAbiProbe.compile(
+      """
+      package evidence
+
+      class WildcardPropertyApi {
+        val plain: List<String> = emptyList()
+        var declarationOut: MutableList<out CharSequence> = mutableListOf()
+        val forced: List<@JvmWildcard String> = emptyList()
+        val suppressed: List<@JvmSuppressWildcards String> = emptyList()
+
+        @JvmField
+        val forcedField: List<@JvmWildcard String> = emptyList()
+      }
+      """.trimIndent(),
+      "GenericWildcardProperties.kt",
+    ).associateBy { it.internalName }
+
+    val api = surfaces.getValue("evidence/WildcardPropertyApi")
+    val plainField = api.fieldsNamed("plain").single()
+    val plainGetter = api.methodsNamed("getPlain").single()
+    val outField = api.fieldsNamed("declarationOut").single()
+    val outGetter = api.methodsNamed("getDeclarationOut").single()
+    val outSetter = api.methodsNamed("setDeclarationOut").single()
+    val forcedField = api.fieldsNamed("forced").single()
+    val forcedGetter = api.methodsNamed("getForced").single()
+    val suppressedField = api.fieldsNamed("suppressed").single()
+    val suppressedGetter = api.methodsNamed("getSuppressed").single()
+    val publicForcedField = api.fieldsNamed("forcedField").single()
+
+    for (member in listOf(
+      plainField, plainGetter, outField, outGetter, outSetter,
+      forcedField, forcedGetter, suppressedField, suppressedGetter, publicForcedField,
+    )) {
+      assertTrue("Property generic signature must be recorded: $member", member.signature != null)
+    }
+    assertTrue("Plain backing field must be invariant: ${plainField.signature}",
+      plainField.signature!!.contains("<Ljava/lang/String;>"))
+    assertTrue("Plain getter must be invariant: ${plainGetter.signature}",
+      plainGetter.signature!!.contains("<Ljava/lang/String;>"))
+    for (member in listOf(outField, outGetter, outSetter)) {
+      assertTrue("Out property surface must retain extends wildcard: $member",
+        member.signature!!.contains("<+Ljava/lang/CharSequence;>"))
+    }
+    for (member in listOf(forcedField, forcedGetter, publicForcedField)) {
+      assertTrue("@JvmWildcard property surface must retain extends wildcard: $member",
+        member.signature!!.contains("<+Ljava/lang/String;>"))
+    }
+    for (member in listOf(suppressedField, suppressedGetter)) {
+      assertTrue("@JvmSuppressWildcards property surface must remain invariant: $member",
+        member.signature!!.contains("<Ljava/lang/String;>")
+          && !member.signature.contains("<+Ljava/lang/String;>"))
+    }
+    assertTrue("@JvmField wildcard property must be public: $publicForcedField",
+      publicForcedField.access and Opcodes.ACC_PUBLIC != 0)
+    assertTrue("@JvmField wildcard property must not create an accessor: ${api.members}",
+      api.methodsNamed("getForcedField").isEmpty())
+  }
+
+  @Test
   fun genericVarianceAndWildcardReturnTypes_recordJvmSignatures() {
     val surfaces = KotlinCompilerJvmAbiProbe.compile(
       """

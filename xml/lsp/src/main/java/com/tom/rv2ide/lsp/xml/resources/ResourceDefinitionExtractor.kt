@@ -180,7 +180,7 @@ internal object ResourceDefinitionExtractor {
                           positions?.positionAt(nameStart) ?: offsetToPosition(text, nameStart),
                           positions?.positionAt(nameEnd) ?: offsetToPosition(text, nameEnd),
                       ),
-                  kind = ResourceDefinitionKind.ID_DECLARATION,
+                  kind = ResourceDefinitionKind.CREATING_ID_DECLARATION,
               )
         }
       }
@@ -363,7 +363,10 @@ internal data class ResourceDefinition(
 internal enum class ResourceDefinitionKind {
   VALUE_ELEMENT,
   FILE_RESOURCE,
+  /** An explicit values declaration, for example `<item type="id" name="content" />`. */
   ID_DECLARATION,
+  /** An ID created by an `@+id/name` reference in a resource XML document. */
+  CREATING_ID_DECLARATION,
 }
 
 /** Immutable per-module view consumed later by XML references and restricted rename. */

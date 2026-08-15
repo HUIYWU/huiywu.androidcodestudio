@@ -30,13 +30,13 @@ import com.android.aapt.Resources.Attribute.FormatFlags.STRING
 import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.BOOL
 import com.android.aaptcompiler.AaptResourceType.DIMEN
+import com.android.aaptcompiler.AaptResourceType.ID
 import com.android.aaptcompiler.AaptResourceType.UNKNOWN
 import com.android.aaptcompiler.AttributeResource
 import com.android.aaptcompiler.ConfigDescription
 import com.android.aaptcompiler.ResourcePathData
 import com.tom.rv2ide.lsp.api.ICompletionProvider
 import com.tom.rv2ide.lsp.models.CompletionItem
-import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.lsp.models.CompletionParams
 import com.tom.rv2ide.lsp.models.CompletionResult
 import com.tom.rv2ide.lsp.models.CompletionResult.Companion.EMPTY
@@ -45,6 +45,8 @@ import com.tom.rv2ide.lsp.models.MatchLevel.NO_MATCH
 import com.tom.rv2ide.lsp.xml.edits.QualifiedValueEditHandler
 import com.tom.rv2ide.lsp.xml.resources.ModuleResourceIndex
 import com.tom.rv2ide.lsp.xml.resources.ResourceDefinition
+import com.tom.rv2ide.lsp.xml.resources.ResourceDefinitionKind
+import com.tom.rv2ide.lsp.xml.resources.ResourceDefinitionExtractor
 import com.tom.rv2ide.lsp.xml.resources.ResourceSnapshot
 import com.tom.rv2ide.lsp.xml.utils.XmlUtils.NodeType
 import com.tom.rv2ide.lsp.xml.utils.XmlUtils.NodeType.ATTRIBUTE_VALUE
@@ -56,7 +58,6 @@ import com.tom.rv2ide.xml.utils.attrValue_qualifiedRef
 import com.tom.rv2ide.xml.utils.attrValue_qualifiedRefWithIncompletePckOrType
 import com.tom.rv2ide.xml.utils.attrValue_qualifiedRefWithIncompleteType
 import com.tom.rv2ide.xml.utils.attrValue_unqualifiedRef
-import java.util.concurrent.atomic.AtomicBoolean
 import org.eclipse.lemminx.dom.DOMDocument
 
 /**
@@ -97,15 +98,15 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
             }
 
     val tableResult = completeValue(namespace = namespace, prefix = prefix, attrName = attrName)
-    val value = attrAtCursor.value.orEmpty()
-    val workspaceQuery = parseWorkspaceResourceCompletionQuery(value) ?: return tableResult
+    val workspaceQuery =
+        parseCreatingIdCompletionQuery(attrAtCursor.value.orEmpty()) ?: return tableResult
     params.cancelChecker.abortIfCancelled()
     val snapshot =
         ModuleResourceIndex.snapshot(params.file, document.textDocument.text) as? ResourceSnapshot.Available
             ?: return tableResult
     params.cancelChecker.abortIfCancelled()
-    val workspaceItems =
-        workspaceResourceCompletionCandidates(workspaceQuery, snapshot.definitions)
+    val creatingIdItems =
+        creatingIdCompletionCandidates(workspaceQuery, snapshot.definitions)
             .map { candidate ->
               createAttrValueCompletionItem(
                   type = candidate.type.tagName,
@@ -114,36 +115,7 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
                   referenceMarker = candidate.marker,
               )
             }
-    val tableInsertTexts = tableResult.items.mapTo(mutableSetOf()) { it.insertText }
-    val workspaceOnlyCount = workspaceItems.count { it.insertText !in tableInsertTexts }
-    if (workspaceOnlyCount > 0 && workspaceCompletionTableMismatchWarningLogged.compareAndSet(false, true)) {
-      val workspaceOnlyKeys =
-          workspaceItems
-              .asSequence()
-              .filter { it.insertText !in tableInsertTexts }
-              .map { it.insertText }
-              .toList()
-      val activeDefinitionSources =
-          snapshot.definitions
-              .asSequence()
-              .filter { definition ->
-                "${workspaceQuery.marker}${definition.type.tagName}/${definition.name}" in workspaceOnlyKeys
-              }
-              .mapNotNull { definition ->
-                FileManager.getActiveDocumentSnapshot(definition.sourceFile)?.let { document ->
-                  "${definition.sourceFile} (version=${document.version}, revision=${document.revision}, modified=${document.modified})"
-                }
-              }
-              .distinct()
-              .toList()
-      log.debug(
-          "Workspace XML resource completion added {} candidate(s) absent from resource tables; keys={} activeDefinitionSources={}; AXML003 may report those definitions unresolved until the resource table refreshes",
-          workspaceOnlyCount,
-          workspaceOnlyKeys,
-          activeDefinitionSources,
-      )
-    }
-    return mergeWorkspaceResourceCompletions(tableResult, workspaceItems)
+    return mergeWorkspaceResourceCompletions(tableResult, creatingIdItems)
   }
 
   fun setNamespaces(namespaces: Set<Pair<String, String>>) {
@@ -544,38 +516,41 @@ internal data class WorkspaceResourceCompletionCandidate(
     val name: String,
 )
 
-internal fun parseWorkspaceResourceCompletionQuery(
+/** Parses the only query shape allowed to consult the editable-resource creating-ID fallback. */
+internal fun parseCreatingIdCompletionQuery(
     value: String,
 ): WorkspaceResourceCompletionQuery? {
-  val marker = value.firstOrNull() ?: return null
-  if (marker != '@' && marker != '?') return null
+  if (!value.startsWith('@')) return null
   val body = value.drop(1)
   if (body.startsWith('+') || ':' in body) return null
   val separator = body.indexOf('/')
   if (separator <= 0 || body.indexOf('/', separator + 1) >= 0) return null
   val typeName = body.substring(0, separator)
   val entryPrefix = body.substring(separator + 1)
-  if (!RESOURCE_COMPLETION_TYPE.matches(typeName) ||
-      !RESOURCE_COMPLETION_ENTRY_PREFIX.matches(entryPrefix)) {
+  if (typeName != ID.tagName || !RESOURCE_COMPLETION_ENTRY_PREFIX.matches(entryPrefix)) {
     return null
   }
-  val type =
-      com.android.aaptcompiler.AaptResourceType.values().firstOrNull {
-        it != UNKNOWN && it.tagName == typeName
-      } ?: return null
-  if (marker == '?' && type != ATTR) return null
-  return WorkspaceResourceCompletionQuery(marker, type, entryPrefix)
+  return WorkspaceResourceCompletionQuery('@', ID, entryPrefix)
 }
 
-internal fun workspaceResourceCompletionCandidates(
+/**
+ * The published resource table is the source of completion candidates. This narrow fallback covers
+ * only `@+id` declarations in editable non-values resource XML, which are not represented by the
+ * resource table. This preserves creating-ID completion during unsaved editing without making the
+ * editable-resource index a general completion source.
+ */
+internal fun creatingIdCompletionCandidates(
     query: WorkspaceResourceCompletionQuery,
     definitions: List<ResourceDefinition>,
 ): List<WorkspaceResourceCompletionCandidate> {
+  if (query.marker != '@' || query.type != ID) return emptyList()
   return definitions
       .asSequence()
-      .filter { it.type == query.type && it.name.startsWith(query.entryPrefix) }
+      .filter { it.kind == ResourceDefinitionKind.CREATING_ID_DECLARATION }
+      .filter { ResourceDefinitionExtractor.categoryOf(it.sourceFile) == ResourceDefinitionExtractor.Category.FILE }
+      .filter { it.type == ID && it.name.startsWith(query.entryPrefix) }
       .map { WorkspaceResourceCompletionCandidate(query.marker, it.type, it.name) }
-      .distinctBy { it.type to it.name }
+      .distinctBy { it.name }
       .sortedBy { it.name }
       .take(MAX_ITEMS + 1)
       .toList()
@@ -593,8 +568,6 @@ internal fun mergeWorkspaceResourceCompletions(
   }
 }
 
-private val workspaceCompletionTableMismatchWarningLogged = AtomicBoolean(false)
-private val RESOURCE_COMPLETION_TYPE = Regex("[A-Za-z_][A-Za-z0-9_]*")
 private val RESOURCE_COMPLETION_ENTRY_PREFIX = Regex("[A-Za-z0-9_.-]*")
 
 internal data class ThemeReferenceQuery(

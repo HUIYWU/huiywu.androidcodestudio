@@ -85,7 +85,7 @@ class ResourceDefinitionExtractorTest : TestCase() {
     assertThat(definitions.map { it.type to it.name })
         .containsExactly(LAYOUT to "screen", ID to "content")
         .inOrder()
-    assertThat(definitions[1].kind).isEqualTo(ResourceDefinitionKind.ID_DECLARATION)
+    assertThat(definitions[1].kind).isEqualTo(ResourceDefinitionKind.CREATING_ID_DECLARATION)
     assertNameRange(text, definitions[1], "content")
   }
 
