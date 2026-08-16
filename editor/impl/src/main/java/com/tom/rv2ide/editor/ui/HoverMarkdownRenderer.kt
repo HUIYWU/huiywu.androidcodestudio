@@ -62,6 +62,7 @@ class HoverMarkdownRenderer(private val context: Context) {
     private val ANDROID_ATTRIBUTE = Regex("^(android:)([A-Za-z_][A-Za-z0-9_]*)$")
     private val XML_WIDGET_NAME = Regex("^[A-Za-z_][A-Za-z0-9_.]*$")
     private val NUMERIC_HTML_ENTITY = Regex("&(?:amp;)*#(?:([0-9]+)|[xX]([0-9a-fA-F]+));")
+    private val JAVA_UNICODE_ESCAPE = Regex("\\\\u+([0-9a-fA-F]{4})")
   }
 
   private val backgroundColor = context.resolveAttr(R.attr.colorSurface)
@@ -108,7 +109,7 @@ class HoverMarkdownRenderer(private val context: Context) {
 
   fun render(content: MarkupContent): CharSequence {
     val received = content.value
-    val decoded = decodeNumericHtmlEntities(received)
+    val decoded = decodeJavaUnicodeEscapes(decodeNumericHtmlEntities(received))
     log.warn("[HOVER_RENDER_TRACE] kind={} received={} decoded={}", content.kind, received, decoded)
     val normalized = decoded.replace("\r\n", "\n").trim().take(MAX_HOVER_LENGTH)
     if (normalized.isBlank()) return ""
@@ -118,6 +119,11 @@ class HoverMarkdownRenderer(private val context: Context) {
       MarkupKind.PLAIN -> normalized
     }
   }
+
+  private fun decodeJavaUnicodeEscapes(text: String): String =
+      JAVA_UNICODE_ESCAPE.replace(text) { match ->
+        match.groups[1]?.value?.toInt(16)?.toChar()?.toString() ?: match.value
+      }
 
   private fun decodeNumericHtmlEntities(text: String): String =
       NUMERIC_HTML_ENTITY.replace(text) { match ->

@@ -51,6 +51,8 @@ public class MarkdownHelper {
   private static final Pattern HTML_TAG = Pattern.compile("<(\\w+)[^>]*>");
   private static final Pattern NUMERIC_HTML_ENTITY =
       Pattern.compile("&#(?:([0-9]+)|[xX]([0-9a-fA-F]+));");
+  private static final Pattern JAVA_UNICODE_ESCAPE =
+      Pattern.compile("\\\\u+([0-9a-fA-F]{4})");
   private static final Logger LOG = Logger.getLogger("main");
 
   public static MarkupContent asMarkupContent(DocCommentTree comment) {
@@ -72,7 +74,7 @@ public class MarkdownHelper {
       commentText = htmlToMarkdown(commentText);
     }
     commentText = replaceTags(commentText);
-    return decodeNumericHtmlEntities(commentText);
+    return decodeJavaUnicodeEscapes(decodeNumericHtmlEntities(commentText));
   }
 
   private static String asMarkdown(List<? extends DocTree> lines) {
@@ -80,6 +82,17 @@ public class MarkdownHelper {
     for (DocTree l : lines) join.add(l.toString());
     String html = join.toString();
     return asMarkdown(html);
+  }
+
+  private static String decodeJavaUnicodeEscapes(String text) {
+    final Matcher escapes = JAVA_UNICODE_ESCAPE.matcher(text);
+    final StringBuffer decoded = new StringBuffer();
+    while (escapes.find()) {
+      final char character = (char) Integer.parseInt(escapes.group(1), 16);
+      escapes.appendReplacement(decoded, Matcher.quoteReplacement(String.valueOf(character)));
+    }
+    escapes.appendTail(decoded);
+    return decoded.toString();
   }
 
   private static String decodeNumericHtmlEntities(String text) {

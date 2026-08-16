@@ -73,6 +73,8 @@ class JavaHoverProviderTest {
       MarkdownHelper.asMarkdown("Android&#35774;&#22791;&#24615;&#33021;&#21472;&#21152;&#23618;"),
     )
     assertEquals("Android设备", MarkdownHelper.asMarkdown("Android&#x8BBE;&#x5907;"))
+    assertEquals("Android设备", MarkdownHelper.asMarkdown("Android\\u8bbe\\u5907"))
+    assertEquals("Android设备", MarkdownHelper.asMarkdown("Android\\uuuu8bbe\\uuuu5907"))
     assertEquals("&#1114112;", MarkdownHelper.asMarkdown("&#1114112;"))
   }
 
