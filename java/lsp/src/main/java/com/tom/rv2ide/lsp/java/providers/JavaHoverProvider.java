@@ -23,6 +23,7 @@ import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.progress.ICancelChecker;
 import java.util.List;
 import java.util.StringJoiner;
+import java.util.logging.Logger;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
 import jdkx.lang.model.element.ExecutableElement;
@@ -35,6 +36,7 @@ import openjdk.source.util.DocTrees;
 
 /** Provides conservative, attribution-backed Java and Kotlin ABI signature hover content. */
 public final class JavaHoverProvider extends CancelableServiceProvider {
+  private static final Logger LOG = Logger.getLogger("JavaHoverProvider");
   private final JavaCompilerService compiler;
 
   public JavaHoverProvider(JavaCompilerService compiler, ICancelChecker cancelChecker) {
@@ -64,10 +66,22 @@ public final class JavaHoverProvider extends CancelableServiceProvider {
       return new MarkupContent();
     }
     String documentation = javaDocumentation(task, element);
+    String documentationSource = "java";
     if (documentation.isEmpty()) {
       documentation = kotlinDocumentation(task, element);
+      documentationSource = documentation.isEmpty() ? "none" : "kotlin";
     }
-    return new MarkupContent(formatHoverMarkdown(signature, documentation), MarkupKind.MARKDOWN);
+    final String markdown = formatHoverMarkdown(signature, documentation);
+    LOG.warning(
+        "[JAVA_HOVER_TRACE] element="
+            + element
+            + " documentationSource="
+            + documentationSource
+            + " documentation="
+            + documentation
+            + " markdown="
+            + markdown);
+    return new MarkupContent(markdown, MarkupKind.MARKDOWN);
   }
 
   static String formatHoverMarkdown(String signature, String documentation) {
@@ -77,7 +91,14 @@ public final class JavaHoverProvider extends CancelableServiceProvider {
 
   private static String javaDocumentation(CompileTask task, Element element) {
     final DocCommentTree documentation = DocTrees.instance(task.task).getDocCommentTree(element);
-    return documentation == null ? "" : MarkdownHelper.asMarkdown(documentation).trim();
+    if (documentation == null) {
+      return "";
+    }
+    final String rawDocumentation = documentation.toString();
+    final String markdown = MarkdownHelper.asMarkdown(documentation).trim();
+    LOG.warning(
+        "[JAVA_HOVER_JAVADOC_TRACE] raw=" + rawDocumentation + " markdown=" + markdown);
+    return markdown;
   }
 
   private String kotlinDocumentation(CompileTask task, Element element) {
