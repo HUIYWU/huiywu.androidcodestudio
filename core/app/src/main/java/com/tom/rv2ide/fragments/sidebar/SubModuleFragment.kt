@@ -349,7 +349,7 @@ class SubModuleFragment : Fragment() {
     }
     return NestedScrollView(requireContext()).apply {
       isFillViewport = true
-      addView(content, NestedScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+      addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
   }
 
