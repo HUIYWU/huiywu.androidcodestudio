@@ -23,8 +23,6 @@ import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.progress.ICancelChecker;
 import java.util.List;
 import java.util.StringJoiner;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
 import jdkx.lang.model.element.ExecutableElement;
@@ -37,7 +35,6 @@ import openjdk.source.util.DocTrees;
 
 /** Provides conservative, attribution-backed Java and Kotlin ABI signature hover content. */
 public final class JavaHoverProvider extends CancelableServiceProvider {
-  private static final Logger LOG = LoggerFactory.getLogger(JavaHoverProvider.class);
   private final JavaCompilerService compiler;
 
   public JavaHoverProvider(JavaCompilerService compiler, ICancelChecker cancelChecker) {
@@ -67,19 +64,10 @@ public final class JavaHoverProvider extends CancelableServiceProvider {
       return new MarkupContent();
     }
     String documentation = javaDocumentation(task, element);
-    String documentationSource = "java";
     if (documentation.isEmpty()) {
       documentation = kotlinDocumentation(task, element);
-      documentationSource = documentation.isEmpty() ? "none" : "kotlin";
     }
-    final String markdown = formatHoverMarkdown(signature, documentation);
-    LOG.warn(
-        "[JAVA_HOVER_TRACE] element={} documentationSource={} documentation={} markdown={}",
-        element,
-        documentationSource,
-        documentation,
-        markdown);
-    return new MarkupContent(markdown, MarkupKind.MARKDOWN);
+    return new MarkupContent(formatHoverMarkdown(signature, documentation), MarkupKind.MARKDOWN);
   }
 
   static String formatHoverMarkdown(String signature, String documentation) {
@@ -92,10 +80,7 @@ public final class JavaHoverProvider extends CancelableServiceProvider {
     if (documentation == null) {
       return "";
     }
-    final String rawDocumentation = documentation.toString();
-    final String markdown = MarkdownHelper.asMarkdown(documentation).trim();
-    LOG.warn("[JAVA_HOVER_JAVADOC_TRACE] raw={} markdown={}", rawDocumentation, markdown);
-    return markdown;
+    return MarkdownHelper.asMarkdown(documentation).trim();
   }
 
   private String kotlinDocumentation(CompileTask task, Element element) {

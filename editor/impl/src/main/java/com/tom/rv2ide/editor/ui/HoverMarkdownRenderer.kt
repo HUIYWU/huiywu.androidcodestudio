@@ -44,7 +44,6 @@ import org.commonmark.node.Emphasis
 import org.commonmark.node.FencedCodeBlock
 import org.commonmark.node.ListItem
 import org.commonmark.node.StrongEmphasis
-import org.slf4j.LoggerFactory
 
 /** Renders LSP hover markup using Markwon and editor-theme-aware code highlighting. */
 class HoverMarkdownRenderer(private val context: Context) {
@@ -52,7 +51,6 @@ class HoverMarkdownRenderer(private val context: Context) {
   companion object {
     private const val MAX_HOVER_LENGTH = 8_000
     private const val MIN_TEXT_CONTRAST = 3.2
-    private val log = LoggerFactory.getLogger(HoverMarkdownRenderer::class.java)
     private val ANDROID_RESOURCE_REFERENCE =
         Regex(
             "^([@?])(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?" +
@@ -108,10 +106,11 @@ class HoverMarkdownRenderer(private val context: Context) {
           .build()
 
   fun render(content: MarkupContent): CharSequence {
-    val received = content.value
-    val decoded = decodeJavaUnicodeEscapes(decodeNumericHtmlEntities(received))
-    log.warn("[HOVER_RENDER_TRACE] kind={} received={} decoded={}", content.kind, received, decoded)
-    val normalized = decoded.replace("\r\n", "\n").trim().take(MAX_HOVER_LENGTH)
+    val normalized =
+        decodeJavaUnicodeEscapes(decodeNumericHtmlEntities(content.value))
+            .replace("\r\n", "\n")
+            .trim()
+            .take(MAX_HOVER_LENGTH)
     if (normalized.isBlank()) return ""
 
     return when (content.kind) {
