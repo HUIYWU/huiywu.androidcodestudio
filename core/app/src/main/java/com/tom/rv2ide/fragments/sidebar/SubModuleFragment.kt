@@ -8,6 +8,7 @@
  */
 package com.tom.rv2ide.fragments.sidebar
 
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -118,12 +119,13 @@ class SubModuleFragment : Fragment() {
     val row = LinearLayout(requireContext()).apply {
       gravity = Gravity.CENTER_VERTICAL
       orientation = LinearLayout.HORIZONTAL
-      setPadding(dp(16))
+      setPadding(dp(12))
     }
     val icon = ImageView(requireContext()).apply {
       setImageResource(iconFor(module))
+      imageTintList = ColorStateList.valueOf(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
       contentDescription = null
-      layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+      layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
     }
     val labels = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
@@ -145,8 +147,8 @@ class SubModuleFragment : Fragment() {
     binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
+    content.addView(backButton { screen = Screen.LIST; render() })
     val header = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
-    header.addView(button("<", false) { screen = Screen.LIST; render() }, LinearLayout.LayoutParams(dp(48), dp(48)))
     header.addView(text("New module", 20f), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
     header.addView(text("$wizardStep / 3", 14f, secondary = true))
     content.addView(header)
@@ -213,8 +215,8 @@ class SubModuleFragment : Fragment() {
     binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
+    content.addView(backButton { screen = Screen.LIST; render() })
     val header = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
-    header.addView(button("<", false) { screen = Screen.LIST; render() }, LinearLayout.LayoutParams(dp(48), dp(48)))
     val titleGroup = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
     titleGroup.addView(text(module.path, 20f))
     titleGroup.addView(text(moduleSubtitle(module), 13f, secondary = true))
@@ -367,8 +369,16 @@ class SubModuleFragment : Fragment() {
 
   private fun bottomActions(back: String?, next: String, action: () -> Unit): View =
       LinearLayout(requireContext()).apply {
-        gravity = Gravity.END; setPadding(0, dp(24), 0, 0)
-        back?.let { addView(button(it) { showWizard(wizardStep - 1) }) }
+        gravity = Gravity.END
+        setPadding(0, dp(24), 0, 0)
+        back?.let {
+          addView(
+              outlinedButton(it) { showWizard(wizardStep - 1) },
+              LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = dp(12)
+              },
+          )
+        }
         addView(button(next) { action() })
       }
 
@@ -383,19 +393,39 @@ class SubModuleFragment : Fragment() {
   }
 
   private fun chip(label: String, checked: Boolean, onClick: () -> Unit) = Chip(requireContext()).apply {
-    text = label; isCheckable = true; isChecked = checked; setOnClickListener { onClick() }
+    text = label
+    isCheckable = true
+    isChecked = checked
+    setOnClickListener { onClick() }
   }
 
   private fun button(label: String, secondary: Boolean = false, action: () -> Unit) = MaterialButton(requireContext()).apply {
-    text = label; isAllCaps = false; setOnClickListener { action() }
+    text = label
+    isAllCaps = false
+    setOnClickListener { action() }
+  }
+
+  private fun outlinedButton(label: String, action: () -> Unit) =
+      MaterialButton(requireContext(), null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        text = label
+        isAllCaps = false
+        setOnClickListener { action() }
+      }
+
+  private fun backButton(action: () -> Unit) = MaterialButton(requireContext()).apply {
+    icon = requireContext().getDrawable(R.drawable.ic_arrow_back)
+    iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+    contentDescription = "Back to modules"
+    tooltipText = "Back to modules"
+    setOnClickListener { action() }
+    layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { bottomMargin = dp(4) }
   }
 
   private fun text(value: String, size: Float, secondary: Boolean = false) = TextView(requireContext()).apply {
     text = value
     textSize = size
     setTextColor(
-        MaterialColors.getColor(
-            this,
+        themeColor(
             if (secondary) {
               com.google.android.material.R.attr.colorOnSurfaceVariant
             } else {
@@ -404,6 +434,8 @@ class SubModuleFragment : Fragment() {
         ),
     )
   }
+
+  private fun themeColor(attribute: Int): Int = MaterialColors.getColor(this, attribute, 0)
 
   private fun sectionTitle(value: String) = text(value, 18f).apply { setPadding(0, dp(16), 0, dp(8)) }
 
