@@ -9,6 +9,7 @@
 package com.tom.rv2ide.fragments.sidebar
 
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -23,6 +24,7 @@ import android.widget.Toast
 import androidx.core.view.setPadding
 import androidx.core.widget.NestedScrollView
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
@@ -40,6 +42,7 @@ import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.projects.java.JavaModule
 import com.tom.rv2ide.utils.ModuleCreator
+import com.tom.rv2ide.viewmodel.EditorViewModel
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,6 +54,8 @@ class SubModuleFragment : Fragment() {
   private var _binding: FragmentSubModuleBinding? = null
   private val binding get() = checkNotNull(_binding)
   private val moduleCreator = ModuleCreator()
+  private val editorViewModel by viewModels<EditorViewModel>(ownerProducer = { requireActivity() })
+  private var refreshAfterSync = false
   private var screen = Screen.LIST
   private var selectedModule: GradleProject? = null
   private var wizardStep = 1
@@ -75,6 +80,15 @@ class SubModuleFragment : Fragment() {
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
     binding.addModule.setOnClickListener { showWizard(1) }
+    editorViewModel._isInitializing.observe(viewLifecycleOwner) { initializing ->
+      binding.addModule.isEnabled = !initializing
+      if (refreshAfterSync && !initializing) {
+        refreshAfterSync = false
+        selectedModule = null
+        screen = Screen.LIST
+        render()
+      }
+    }
     render()
   }
 
@@ -316,7 +330,10 @@ class SubModuleFragment : Fragment() {
   }
 
   private fun syncProject() {
-    (activity as? ProjectHandlerActivity)?.initializeProject()
+    val activity = activity as? ProjectHandlerActivity ?: return
+    if (editorViewModel.isInitializing) return
+    refreshAfterSync = true
+    activity.initializeProject()
   }
 
   private fun showWizard(step: Int) {
@@ -415,6 +432,8 @@ class SubModuleFragment : Fragment() {
   private fun backButton(action: () -> Unit) = MaterialButton(requireContext()).apply {
     icon = requireContext().getDrawable(R.drawable.ic_arrow_back)
     iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+    backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+    rippleColor = ColorStateList.valueOf(themeColor(com.google.android.material.R.attr.colorOnSurface))
     contentDescription = "Back to modules"
     tooltipText = "Back to modules"
     setOnClickListener { action() }
