@@ -435,7 +435,7 @@ class SubModuleFragment : Fragment() {
     )
   }
 
-  private fun themeColor(attribute: Int): Int = MaterialColors.getColor(this, attribute, 0)
+  private fun themeColor(attribute: Int): Int = MaterialColors.getColor(requireContext(), attribute, 0)
 
   private fun sectionTitle(value: String) = text(value, 18f).apply { setPadding(0, dp(16), 0, dp(8)) }
 
