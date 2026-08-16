@@ -42,6 +42,7 @@ import com.tom.rv2ide.lsp.java.providers.CodeFormatProvider
 import com.tom.rv2ide.lsp.java.providers.CompletionProvider
 import com.tom.rv2ide.lsp.java.providers.DefinitionProvider
 import com.tom.rv2ide.lsp.java.providers.JavaDiagnosticProvider
+import com.tom.rv2ide.lsp.java.providers.JavaHoverProvider
 import com.tom.rv2ide.lsp.java.providers.JavaSelectionProvider
 import com.tom.rv2ide.lsp.java.providers.ReferenceProvider
 import com.tom.rv2ide.lsp.java.providers.SignatureProvider
@@ -595,8 +596,14 @@ class JavaLanguageServer : ILanguageServer {
   }
 
   override suspend fun hover(params: DefinitionParams): com.tom.rv2ide.lsp.models.MarkupContent {
-    // Java LSP does not currently implement hover; return empty
-    return com.tom.rv2ide.lsp.models.MarkupContent()
+    val semanticSession = getSemanticSession(params.file)
+    val foregroundLease = semanticSession?.beginUserActionRequest()
+    try {
+      val compiler = semanticSession?.compiler() ?: JavaCompilerService.NO_MODULE_COMPILER
+      return JavaHoverProvider(compiler, params.cancelChecker).hover(params)
+    } finally {
+      foregroundLease?.close()
+    }
   }
 
   override suspend fun analyze(file: Path): DiagnosticResult {
