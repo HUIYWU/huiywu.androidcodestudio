@@ -59,6 +59,7 @@ class HoverMarkdownRenderer(private val context: Context) {
     private val FIRST_XML_CODE_BLOCK = Regex("```xml\\s*\\n(.*?)\\n```", RegexOption.DOT_MATCHES_ALL)
     private val ANDROID_ATTRIBUTE = Regex("^(android:)([A-Za-z_][A-Za-z0-9_]*)$")
     private val XML_WIDGET_NAME = Regex("^[A-Za-z_][A-Za-z0-9_.]*$")
+    private val NUMERIC_HTML_ENTITY = Regex("&(?:amp;)*#(?:([0-9]+)|[xX]([0-9a-fA-F]+));")
   }
 
   private val backgroundColor = context.resolveAttr(R.attr.colorSurface)
@@ -104,7 +105,8 @@ class HoverMarkdownRenderer(private val context: Context) {
           .build()
 
   fun render(content: MarkupContent): CharSequence {
-    val normalized = content.value.replace("\r\n", "\n").trim().take(MAX_HOVER_LENGTH)
+    val normalized =
+        decodeNumericHtmlEntities(content.value).replace("\r\n", "\n").trim().take(MAX_HOVER_LENGTH)
     if (normalized.isBlank()) return ""
 
     return when (content.kind) {
@@ -112,6 +114,14 @@ class HoverMarkdownRenderer(private val context: Context) {
       MarkupKind.PLAIN -> normalized
     }
   }
+
+  private fun decodeNumericHtmlEntities(text: String): String =
+      NUMERIC_HTML_ENTITY.replace(text) { match ->
+        val radix = if (match.groups[1] == null) 16 else 10
+        val digits = match.groups[1]?.value ?: match.groups[2]?.value ?: return@replace match.value
+        val codePoint = digits.toIntOrNull(radix) ?: return@replace match.value
+        if (Character.isValidCodePoint(codePoint)) String(Character.toChars(codePoint)) else match.value
+      }
 
   private fun highlightXmlHoverSymbol(rendered: CharSequence, markdown: String): CharSequence {
     val symbol =
