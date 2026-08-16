@@ -23,7 +23,8 @@ import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.progress.ICancelChecker;
 import java.util.List;
 import java.util.StringJoiner;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import jdkx.lang.model.element.Element;
 import jdkx.lang.model.element.ElementKind;
 import jdkx.lang.model.element.ExecutableElement;
@@ -36,7 +37,7 @@ import openjdk.source.util.DocTrees;
 
 /** Provides conservative, attribution-backed Java and Kotlin ABI signature hover content. */
 public final class JavaHoverProvider extends CancelableServiceProvider {
-  private static final Logger LOG = Logger.getLogger("JavaHoverProvider");
+  private static final Logger LOG = LoggerFactory.getLogger(JavaHoverProvider.class);
   private final JavaCompilerService compiler;
 
   public JavaHoverProvider(JavaCompilerService compiler, ICancelChecker cancelChecker) {
@@ -72,15 +73,12 @@ public final class JavaHoverProvider extends CancelableServiceProvider {
       documentationSource = documentation.isEmpty() ? "none" : "kotlin";
     }
     final String markdown = formatHoverMarkdown(signature, documentation);
-    LOG.warning(
-        "[JAVA_HOVER_TRACE] element="
-            + element
-            + " documentationSource="
-            + documentationSource
-            + " documentation="
-            + documentation
-            + " markdown="
-            + markdown);
+    LOG.warn(
+        "[JAVA_HOVER_TRACE] element={} documentationSource={} documentation={} markdown={}",
+        element,
+        documentationSource,
+        documentation,
+        markdown);
     return new MarkupContent(markdown, MarkupKind.MARKDOWN);
   }
 
@@ -96,8 +94,7 @@ public final class JavaHoverProvider extends CancelableServiceProvider {
     }
     final String rawDocumentation = documentation.toString();
     final String markdown = MarkdownHelper.asMarkdown(documentation).trim();
-    LOG.warning(
-        "[JAVA_HOVER_JAVADOC_TRACE] raw=" + rawDocumentation + " markdown=" + markdown);
+    LOG.warn("[JAVA_HOVER_JAVADOC_TRACE] raw={} markdown={}", rawDocumentation, markdown);
     return markdown;
   }
 

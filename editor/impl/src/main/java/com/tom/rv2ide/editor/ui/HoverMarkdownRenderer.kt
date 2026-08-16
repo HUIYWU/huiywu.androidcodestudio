@@ -21,7 +21,6 @@ import android.content.Context
 import android.graphics.Color
 import android.text.Spannable
 import android.text.SpannableStringBuilder
-import android.util.Log
 import android.text.style.BackgroundColorSpan
 import android.text.style.BulletSpan
 import android.text.style.ForegroundColorSpan
@@ -45,6 +44,7 @@ import org.commonmark.node.Emphasis
 import org.commonmark.node.FencedCodeBlock
 import org.commonmark.node.ListItem
 import org.commonmark.node.StrongEmphasis
+import org.slf4j.LoggerFactory
 
 /** Renders LSP hover markup using Markwon and editor-theme-aware code highlighting. */
 class HoverMarkdownRenderer(private val context: Context) {
@@ -52,7 +52,7 @@ class HoverMarkdownRenderer(private val context: Context) {
   companion object {
     private const val MAX_HOVER_LENGTH = 8_000
     private const val MIN_TEXT_CONTRAST = 3.2
-    private const val HOVER_TRACE_TAG = "HoverMarkdownRenderer"
+    private val log = LoggerFactory.getLogger(HoverMarkdownRenderer::class.java)
     private val ANDROID_RESOURCE_REFERENCE =
         Regex(
             "^([@?])(?:(android|[A-Za-z_][A-Za-z0-9_.]*):)?" +
@@ -109,10 +109,7 @@ class HoverMarkdownRenderer(private val context: Context) {
   fun render(content: MarkupContent): CharSequence {
     val received = content.value
     val decoded = decodeNumericHtmlEntities(received)
-    Log.w(
-        HOVER_TRACE_TAG,
-        "[HOVER_RENDER_TRACE] kind=${content.kind} received=$received decoded=$decoded",
-    )
+    log.warn("[HOVER_RENDER_TRACE] kind={} received={} decoded={}", content.kind, received, decoded)
     val normalized = decoded.replace("\r\n", "\n").trim().take(MAX_HOVER_LENGTH)
     if (normalized.isBlank()) return ""
 
