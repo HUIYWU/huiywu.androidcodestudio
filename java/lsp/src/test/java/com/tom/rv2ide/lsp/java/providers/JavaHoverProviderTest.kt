@@ -1,5 +1,6 @@
 package com.tom.rv2ide.lsp.java.providers
 
+import com.tom.rv2ide.lsp.java.utils.MarkdownHelper
 import java.net.URI
 import jdkx.lang.model.element.ExecutableElement
 import jdkx.lang.model.element.TypeElement
@@ -48,6 +49,69 @@ class JavaHoverProviderTest {
     assertEquals("List<? extends String> forced", JavaHoverProvider.formatSignature(field))
     assertEquals("T extends CharSequence & Comparable<? super T>",
       JavaHoverProvider.formatSignature(owner.typeParameters.single()))
+  }
+
+  @Test
+  fun formatsJavaHoverMarkdownLikeKotlinHover() {
+    assertEquals(
+      "```java\npublic class AndroidDeviceOverlay\n```\n---\nAndroid device overlay.",
+      JavaHoverProvider.formatHoverMarkdown(
+        "public class AndroidDeviceOverlay",
+        "Android device overlay.",
+      ),
+    )
+    assertEquals(
+      "```java\npublic class AndroidDeviceOverlay\n```",
+      JavaHoverProvider.formatHoverMarkdown("public class AndroidDeviceOverlay", ""),
+    )
+  }
+
+  @Test
+  fun decodesNumericHtmlEntitiesInJavaDocumentation() {
+    assertEquals(
+      "Android设备性能叠加层",
+      MarkdownHelper.asMarkdown("Android&#35774;&#22791;&#24615;&#33021;&#21472;&#21152;&#23618;"),
+    )
+    assertEquals("Android设备", MarkdownHelper.asMarkdown("Android&#x8BBE;&#x5907;"))
+    assertEquals("&#1114112;", MarkdownHelper.asMarkdown("&#1114112;"))
+  }
+
+  @Test
+  fun extractsOnlyKDocAdjacentToTheResolvedDeclaration() {
+    val documented =
+      """
+      /**
+       * Kotlin documentation.
+       *
+       * @param value input value
+       * @return projected result
+       */
+      fun documented(value: String): String = value
+      """.trimIndent()
+    val declaration = documented.indexOf("fun documented")
+
+    assertEquals(
+      "Kotlin documentation.\n\n@param value input value\n@return projected result",
+      JavaHoverProvider.extractAdjacentKDoc(documented, declaration),
+    )
+
+    val annotated =
+      """
+      /** KDoc belongs to the annotation boundary. */
+      @Deprecated("test")
+      fun annotated() = Unit
+      """.trimIndent()
+    assertEquals("", JavaHoverProvider.extractAdjacentKDoc(annotated, annotated.indexOf("fun annotated")))
+
+    val previousDeclaration =
+      """
+      /** First declaration docs. */
+      fun first() = Unit
+
+      fun second() = Unit
+      """.trimIndent()
+    assertEquals("", JavaHoverProvider.extractAdjacentKDoc(
+      previousDeclaration, previousDeclaration.indexOf("fun second")))
   }
 
   private fun compileType(source: String, qualifiedName: String): TypeElement {

@@ -18,6 +18,8 @@ import com.tom.rv2ide.lsp.java.utils.ShortTypePrinter;
 import com.tom.rv2ide.lsp.models.DefinitionParams;
 import com.tom.rv2ide.lsp.models.MarkupContent;
 import com.tom.rv2ide.lsp.models.MarkupKind;
+import com.tom.rv2ide.models.Location;
+import com.tom.rv2ide.projects.FileManager;
 import com.tom.rv2ide.progress.ICancelChecker;
 import java.util.List;
 import java.util.StringJoiner;
@@ -61,15 +63,64 @@ public final class JavaHoverProvider extends CancelableServiceProvider {
     if (signature.isEmpty()) {
       return new MarkupContent();
     }
-    String value = "```java\n" + signature + "\n```";
-    final DocCommentTree documentation = DocTrees.instance(task.task).getDocCommentTree(element);
-    if (documentation != null) {
-      final String markdown = MarkdownHelper.asMarkdown(documentation).trim();
-      if (!markdown.isEmpty()) {
-        value += "\n\n" + markdown;
-      }
+    String documentation = javaDocumentation(task, element);
+    if (documentation.isEmpty()) {
+      documentation = kotlinDocumentation(task, element);
     }
-    return new MarkupContent(value, MarkupKind.MARKDOWN);
+    return new MarkupContent(formatHoverMarkdown(signature, documentation), MarkupKind.MARKDOWN);
+  }
+
+  static String formatHoverMarkdown(String signature, String documentation) {
+    final String codeBlock = "```java\n" + signature + "\n```";
+    return documentation.isEmpty() ? codeBlock : codeBlock + "\n---\n" + documentation;
+  }
+
+  private static String javaDocumentation(CompileTask task, Element element) {
+    final DocCommentTree documentation = DocTrees.instance(task.task).getDocCommentTree(element);
+    return documentation == null ? "" : MarkdownHelper.asMarkdown(documentation).trim();
+  }
+
+  private String kotlinDocumentation(CompileTask task, Element element) {
+    final Location location = KotlinJvmSourceNavigator.find(task.module(), element);
+    if (location == null) {
+      return "";
+    }
+    final String source = FileManager.INSTANCE.getDocumentContents(location.getFile()).toString();
+    final int declarationOffset = offsetAt(
+        source, location.getRange().getStart().getLine(), location.getRange().getStart().getColumn());
+    return extractAdjacentKDoc(source, declarationOffset);
+  }
+
+  private static int offsetAt(String source, int line, int column) {
+    int offset = 0;
+    for (int currentLine = 0; currentLine < line && offset < source.length(); currentLine++) {
+      final int lineEnd = source.indexOf('\n', offset);
+      offset = lineEnd < 0 ? source.length() : lineEnd + 1;
+    }
+    return Math.min(source.length(), offset + Math.max(0, column));
+  }
+
+  static String extractAdjacentKDoc(String source, int declarationOffset) {
+    if (source == null || declarationOffset < 0 || declarationOffset > source.length()) {
+      return "";
+    }
+    int end = declarationOffset;
+    while (end > 0 && Character.isWhitespace(source.charAt(end - 1))) {
+      end--;
+    }
+    if (end < 2 || source.charAt(end - 1) != '/' || source.charAt(end - 2) != '*') {
+      return "";
+    }
+    final int start = source.lastIndexOf("/**", end - 2);
+    if (start < 0 || source.indexOf("*/", start) != end - 2) {
+      return "";
+    }
+    final String body = source.substring(start + 3, end - 2);
+    final StringJoiner lines = new StringJoiner("\n");
+    for (String line : body.split("\\r?\\n", -1)) {
+      lines.add(line.replaceFirst("^\\s*\\* ?", ""));
+    }
+    return lines.toString().trim();
   }
 
   static String formatSignature(Element element) {

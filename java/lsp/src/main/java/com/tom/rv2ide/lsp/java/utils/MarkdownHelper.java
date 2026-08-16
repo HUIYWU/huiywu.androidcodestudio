@@ -49,6 +49,8 @@ import org.xml.sax.SAXException;
 public class MarkdownHelper {
 
   private static final Pattern HTML_TAG = Pattern.compile("<(\\w+)[^>]*>");
+  private static final Pattern NUMERIC_HTML_ENTITY =
+      Pattern.compile("&#(?:([0-9]+)|[xX]([0-9a-fA-F]+));");
   private static final Logger LOG = Logger.getLogger("main");
 
   public static MarkupContent asMarkupContent(DocCommentTree comment) {
@@ -70,7 +72,7 @@ public class MarkdownHelper {
       commentText = htmlToMarkdown(commentText);
     }
     commentText = replaceTags(commentText);
-    return commentText;
+    return decodeNumericHtmlEntities(commentText);
   }
 
   private static String asMarkdown(List<? extends DocTree> lines) {
@@ -78,6 +80,29 @@ public class MarkdownHelper {
     for (DocTree l : lines) join.add(l.toString());
     String html = join.toString();
     return asMarkdown(html);
+  }
+
+  private static String decodeNumericHtmlEntities(String text) {
+    final Matcher entities = NUMERIC_HTML_ENTITY.matcher(text);
+    final StringBuffer decoded = new StringBuffer();
+    while (entities.find()) {
+      try {
+        final int radix = entities.group(1) == null ? 16 : 10;
+        final String digits = entities.group(1) == null ? entities.group(2) : entities.group(1);
+        final int codePoint = Integer.parseInt(digits, radix);
+        if (!Character.isValidCodePoint(codePoint)) {
+          entities.appendReplacement(decoded, Matcher.quoteReplacement(entities.group()));
+          continue;
+        }
+        entities.appendReplacement(
+            decoded, Matcher.quoteReplacement(new String(Character.toChars(codePoint))));
+      } catch (IllegalArgumentException ignored) {
+        // Leave malformed entities intact rather than making hover rendering fail.
+        entities.appendReplacement(decoded, Matcher.quoteReplacement(entities.group()));
+      }
+    }
+    entities.appendTail(decoded);
+    return decoded.toString();
   }
 
   private static Document parse(String html) {

@@ -173,7 +173,9 @@ class HoverMarkdownRenderer(private val context: Context) {
     // full-range background makes most hover text look shadowed. Inline code remains shaded.
 
     val normalizedLanguage = language?.trim()?.lowercase().orEmpty()
-    if (normalizedLanguage !in setOf("", "kotlin", "kt", "kts")) {
+    val isKotlin = normalizedLanguage in setOf("", "kotlin", "kt", "kts")
+    val isJava = normalizedLanguage in setOf("java", "jav")
+    if (!isKotlin && !isJava) {
       return builder
     }
 
@@ -208,10 +210,17 @@ class HoverMarkdownRenderer(private val context: Context) {
     applyColor(Regex("""//.*?$|/\*.*?\*/""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.MULTILINE)), commentColor)
     applyColor(Regex("""\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"""), stringColor)
     applyColor(Regex("""@[A-Za-z_][A-Za-z0-9_]*"""), annotationColor)
-    applyColor(
-        Regex("""\b(fun|val|var|class|interface|object|return|if|else|for|while|when|in|is|as|private|protected|public|internal|override|suspend|inline|data|sealed|enum|companion|constructor|init|by|where|null|true|false)\b"""),
-        keywordColor,
-    )
+    val keywordPattern =
+        if (isJava) {
+          Regex(
+              """\b(class|interface|enum|public|private|protected|static|final|abstract|extends|implements|new|return|if|else|for|while|switch|case|try|catch|finally|throw|throws|void|boolean|byte|short|int|long|float|double|char|null|true|false)\b""",
+          )
+        } else {
+          Regex(
+              """\b(fun|val|var|class|interface|object|return|if|else|for|while|when|in|is|as|private|protected|public|internal|override|suspend|inline|data|sealed|enum|companion|constructor|init|by|where|null|true|false)\b""",
+          )
+        }
+    applyColor(keywordPattern, keywordColor)
     applyColor(Regex("""\b\d+(?:_\d+)*(?:\.\d+)?(?:[eE][+-]?\d+)?[fFdDlL]?\b"""), numberColor)
     applyColor(Regex("""\b([A-Z][A-Za-z0-9_]*)\b"""), typeColor)
     applyColor(Regex("""\b([a-zA-Z_][A-Za-z0-9_]*)\s*(?=\()"""), functionColor)
