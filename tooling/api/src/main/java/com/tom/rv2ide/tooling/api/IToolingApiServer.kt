@@ -22,6 +22,9 @@ import com.tom.rv2ide.tooling.api.messages.TaskExecutionMessage
 import com.tom.rv2ide.tooling.api.messages.result.BuildCancellationRequestResult
 import com.tom.rv2ide.tooling.api.messages.result.InitializeResult
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidation
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
+import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.ToolingServerMetadata
 import java.util.concurrent.CompletableFuture
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
@@ -46,6 +49,15 @@ interface IToolingApiServer {
 
   /** Get the root project. */
   @JsonRequest fun getRootProject(): CompletableFuture<IProject>
+
+  /** Inspect module creation capabilities from the configured Gradle runtime. */
+  @JsonRequest fun getProjectCreationCapabilities(): CompletableFuture<ProjectCreationCapabilities>
+
+  /** Configure a temporary module in the live Gradle build without writing user project files. */
+  @JsonRequest
+  fun validateModuleCreation(
+      request: ModuleCreationValidationRequest
+  ): CompletableFuture<ModuleCreationValidation>
 
   /** Execute the tasks specified in the message. */
   @JsonRequest

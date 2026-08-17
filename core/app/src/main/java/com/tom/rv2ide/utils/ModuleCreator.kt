@@ -17,6 +17,14 @@
 
 package com.tom.rv2ide.utils
 
+import com.tom.rv2ide.lookup.Lookup
+import com.tom.rv2ide.projects.builder.BuildService
+import com.tom.rv2ide.tooling.api.models.GradleDsl
+import com.tom.rv2ide.tooling.api.models.ModuleCreationKind
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidation
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
+import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
+import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import java.io.File
 import java.io.IOException
 
@@ -31,6 +39,36 @@ class ModuleCreator {
   data class CreationResult(val success: Boolean, val errorMessage: String? = null)
 
   data class AppModuleConfig(val compileSdk: Int, val minSdk: Int)
+
+  fun getProjectCreationCapabilities(): ProjectCreationCapabilities? {
+    val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return null
+    if (!buildService.isToolingServerStarted() || buildService.isBuildInProgress) return null
+    return runCatching { buildService.getProjectCreationCapabilities().get() }.getOrNull()
+  }
+
+  private fun validateModuleCreation(
+      moduleName: String,
+      language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
+      projectRoot: File,
+      useKotlinDsl: Boolean,
+  ): ModuleCreationValidation? {
+    val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return null
+    if (!buildService.isToolingServerStarted() || buildService.isBuildInProgress) return null
+    val request =
+        ModuleCreationValidationRequest(
+            modulePath = ":$moduleName",
+            kind = ModuleCreationKind.ANDROID_LIBRARY,
+            sourceLanguage =
+                if (language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN) {
+                  ModuleSourceLanguage.KOTLIN
+                } else {
+                  ModuleSourceLanguage.JAVA
+                },
+            buildDsl = if (useKotlinDsl) GradleDsl.KOTLIN else GradleDsl.GROOVY,
+            compileSdk = detectAppModuleConfig(projectRoot).compileSdk,
+        )
+    return runCatching { buildService.validateModuleCreation(request).get() }.getOrNull()
+  }
 
   /**
    * Creates a new module with the specified configuration.
@@ -55,19 +93,21 @@ class ModuleCreator {
         return CreationResult(false, "Project root directory does not exist")
       }
 
-      if (
-          language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN &&
-              !supportsKotlinAndroid(projectRoot)
-      ) {
-        return CreationResult(
-            false,
-            "This project does not configure the Kotlin Android Gradle plugin. Create a Java module or add the Kotlin plugin first.",
-        )
-      }
-
       val moduleDir = File(projectRoot, moduleName)
       if (moduleDir.exists()) {
         return CreationResult(false, "Module '$moduleName' already exists")
+      }
+
+      val validation = validateModuleCreation(moduleName, language, projectRoot, useKotlinDsl)
+          ?: return CreationResult(
+              false,
+              "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.",
+          )
+      if (!validation.isValid) {
+        return CreationResult(
+            false,
+            validation.message ?: "This module configuration cannot be applied to the current Gradle project.",
+        )
       }
 
       val appUsesKotlinDsl = detectBuildScriptDsl(projectRoot)
@@ -91,17 +131,6 @@ class ModuleCreator {
       CreationResult(false, e.message ?: "Unknown error occurred")
     }
   }
-
-  private fun supportsKotlinAndroid(projectRoot: File): Boolean =
-      listOf("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle")
-          .map { File(projectRoot, it) }
-          .filter(File::isFile)
-          .any { file ->
-            val content = file.readText()
-            content.contains("org.jetbrains.kotlin.android") ||
-                content.contains("kotlin-android") ||
-                content.contains("kotlin(\"android\")")
-          }
 
   private fun detectBuildScriptDsl(projectRoot: File): Boolean {
     val appBuildFileKts = File(projectRoot, "app/build.gradle.kts")

@@ -56,6 +56,9 @@ import com.tom.rv2ide.tooling.api.messages.result.BuildResult
 import com.tom.rv2ide.tooling.api.messages.result.GradleWrapperCheckResult
 import com.tom.rv2ide.tooling.api.messages.result.InitializeResult
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidation
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
+import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.ToolingServerMetadata
 import com.tom.rv2ide.tooling.events.ProgressEvent
 import com.tom.rv2ide.utils.Environment
@@ -474,6 +477,18 @@ class GradleBuildService :
   override fun metadata(): CompletableFuture<ToolingServerMetadata> {
     checkServerStarted()
     return server!!.metadata()
+  }
+
+  override fun getProjectCreationCapabilities(): CompletableFuture<ProjectCreationCapabilities> {
+    checkServerStarted()
+    return server!!.getProjectCreationCapabilities()
+  }
+
+  override fun validateModuleCreation(
+      request: ModuleCreationValidationRequest
+  ): CompletableFuture<ModuleCreationValidation> {
+    checkServerStarted()
+    return server!!.validateModuleCreation(request)
   }
 
   override fun initializeProject(

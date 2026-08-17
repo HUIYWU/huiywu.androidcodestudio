@@ -24,6 +24,9 @@ import com.tom.rv2ide.tooling.api.messages.InitializeProjectParams
 import com.tom.rv2ide.tooling.api.messages.result.BuildCancellationRequestResult
 import com.tom.rv2ide.tooling.api.messages.result.InitializeResult
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidation
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
+import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.ToolingServerMetadata
 import java.util.concurrent.CompletableFuture
 
@@ -55,6 +58,14 @@ interface BuildService {
 
   /** Returns the [ToolingServerMetadata] of the tooling API server. */
   fun metadata(): CompletableFuture<ToolingServerMetadata>
+
+  /** Returns module creation capabilities from the configured Gradle runtime. */
+  fun getProjectCreationCapabilities(): CompletableFuture<ProjectCreationCapabilities>
+
+  /** Validates a module candidate in the live Gradle configuration before any project write. */
+  fun validateModuleCreation(
+      request: ModuleCreationValidationRequest
+  ): CompletableFuture<ModuleCreationValidation>
 
   /**
    * Initialize the project.

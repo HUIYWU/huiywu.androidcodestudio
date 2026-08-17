@@ -43,7 +43,13 @@ import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UN
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_BUILD_ARGUMENT
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_CONFIGURATION
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_GRADLE_VERSION
+import com.tom.rv2ide.tooling.api.models.GradleDsl
 import com.tom.rv2ide.tooling.api.models.GradleTask
+import com.tom.rv2ide.tooling.api.models.ModuleCreationKind
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidation
+import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
+import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
+import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.ToolingServerMetadata
 
 import com.tom.rv2ide.tooling.impl.internal.AndroidProjectImpl
@@ -307,6 +313,104 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       assertProjectInitialized()
       return@supplyAsync this.project
     }
+  }
+
+  override fun getProjectCreationCapabilities(): CompletableFuture<ProjectCreationCapabilities> {
+    return runBuild {
+      assertProjectInitialized()
+      val connection =
+          checkNotNull(this.connection) {
+            "ProjectConnection has not been initialized. Cannot inspect module creation capabilities."
+          }
+      val executor = connection.action { controller -> controller.getModel(ProjectCreationCapabilities::class.java) }
+      Main.finalizeLauncher(executor)
+      this.buildCancellationToken = GradleConnector.newCancellationTokenSource()
+      executor.withCancellationToken(this.buildCancellationToken!!.token())
+      try {
+        executor.run()
+      } finally {
+        this.buildCancellationToken = null
+      }
+    }
+  }
+
+  override fun validateModuleCreation(
+      request: ModuleCreationValidationRequest
+  ): CompletableFuture<ModuleCreationValidation> {
+    return runBuild {
+      assertProjectInitialized()
+      val connection = checkNotNull(this.connection) { "ProjectConnection has not been initialized." }
+      val probePath = request.modulePath.normalizedProbePath()
+      val probeDirectory = createModuleCreationProbe(request)
+      try {
+        val executor =
+            connection.action { controller ->
+              controller.getModel(ProjectCreationCapabilities::class.java)
+            }
+        Main.finalizeLauncher(executor)
+        executor.addArguments(
+            "-Pandroidide.moduleCreationProbePath=$probePath",
+            "-Pandroidide.moduleCreationProbeDirectory=${probeDirectory.absolutePath}",
+        )
+        this.buildCancellationToken = GradleConnector.newCancellationTokenSource()
+        executor.withCancellationToken(this.buildCancellationToken!!.token())
+        executor.run()
+        ModuleCreationValidation(isValid = true)
+      } catch (error: Throwable) {
+        ModuleCreationValidation(isValid = false, message = error.rootCauseMessage())
+      } finally {
+        this.buildCancellationToken = null
+        // Probe files are owned by tooling and must not survive cancellation or a Gradle failure.
+        if (!probeDirectory.deleteRecursively()) {
+          log.warn("Unable to delete module creation probe directory: {}", probeDirectory)
+        }
+      }
+    }
+  }
+
+  private fun String.normalizedProbePath(): String {
+    val segments = trim().trim(':').split(':').filter(String::isNotBlank)
+    require(segments.isNotEmpty() && segments.all { it.matches(Regex("[A-Za-z][A-Za-z0-9_-]*")) }) {
+      "Module path must contain Gradle-safe path segments."
+    }
+    return ":${segments.joinToString(":")}"
+  }
+
+  private fun createModuleCreationProbe(request: ModuleCreationValidationRequest): File {
+    val probeDirectory =
+        File(System.getProperty("java.io.tmpdir"), "androidide-module-probes/${System.nanoTime()}")
+    check(probeDirectory.mkdirs()) { "Unable to create module creation probe directory." }
+    val buildFile = File(probeDirectory, if (request.buildDsl == GradleDsl.KOTLIN) "build.gradle.kts" else "build.gradle")
+    buildFile.writeText(buildProbeBuildScript(request))
+    return probeDirectory
+  }
+
+  private fun buildProbeBuildScript(request: ModuleCreationValidationRequest): String {
+    val androidPlugin = request.kind == ModuleCreationKind.ANDROID_LIBRARY
+    val kotlinPlugin = request.sourceLanguage == ModuleSourceLanguage.KOTLIN
+    return if (request.buildDsl == GradleDsl.KOTLIN) {
+      buildString {
+        appendLine("plugins {")
+        if (androidPlugin) appendLine("  id(\"com.android.library\")") else appendLine("  id(\"java-library\")")
+        if (kotlinPlugin) appendLine("  id(\"${if (androidPlugin) "kotlin-android" else "org.jetbrains.kotlin.jvm"}\")")
+        appendLine("}")
+        if (androidPlugin) appendLine("android { namespace = \"com.androidide.probe\"; compileSdk = ${request.compileSdk} }")
+      }
+    } else {
+      buildString {
+        appendLine("plugins {")
+        if (androidPlugin) appendLine("  id 'com.android.library'") else appendLine("  id 'java-library'")
+        if (kotlinPlugin) appendLine("  id '${if (androidPlugin) "kotlin-android" else "org.jetbrains.kotlin.jvm"}'")
+        appendLine("}")
+        if (androidPlugin) appendLine("android { namespace 'com.androidide.probe'; compileSdk ${request.compileSdk} }")
+      }
+    }
+  }
+
+  private fun Throwable.rootCauseMessage(): String {
+    var cause = this
+    while (cause.cause != null && cause.cause !== cause) cause = cause.cause!!
+    return cause.message ?: cause.javaClass.simpleName
   }
 
   override fun executeTasks(message: TaskExecutionMessage): CompletableFuture<TaskExecutionResult> {
