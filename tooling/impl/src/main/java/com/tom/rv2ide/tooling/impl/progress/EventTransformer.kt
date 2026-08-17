@@ -238,7 +238,7 @@ class EventTransformer {
             result.startTime,
             result.endTime,
             result.isIncremental,
-            result.executionReasons,
+            result.executionReasons.orEmpty(),
         )
       }
 
@@ -254,7 +254,7 @@ class EventTransformer {
             result.startTime,
             result.endTime,
             result.isIncremental,
-            result.executionReasons,
+            result.executionReasons.orEmpty(),
         )
       }
 

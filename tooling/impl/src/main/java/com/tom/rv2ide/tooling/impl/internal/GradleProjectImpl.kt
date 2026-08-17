@@ -21,6 +21,7 @@ import com.tom.rv2ide.tooling.api.IGradleProject
 import com.tom.rv2ide.tooling.api.ProjectType
 import com.tom.rv2ide.tooling.api.models.GradleTask
 import com.tom.rv2ide.tooling.api.models.ProjectMetadata
+import java.io.File
 import java.io.Serializable
 import java.util.concurrent.CompletableFuture
 import org.gradle.tooling.model.GradleProject
@@ -39,7 +40,8 @@ internal open class GradleProjectImpl(protected val gradleProject: GradleProject
           gradleProject.projectDirectory,
           gradleProject.buildDirectory,
           gradleProject.description,
-          gradleProject.buildScript.sourceFile,
+          gradleProject.buildScript.sourceFile
+              ?: File(gradleProject.projectDirectory, "build.gradle"),
           ProjectType.Gradle,
       )
     }
