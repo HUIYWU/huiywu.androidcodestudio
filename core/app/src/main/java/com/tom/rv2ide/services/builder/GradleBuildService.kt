@@ -426,15 +426,6 @@ class GradleBuildService :
       extraArgs.add("--offline")
     }
 
-    val initScriptIndex = extraArgs.indexOfFirst { it == "--init-script" || it == "-I" }
-    log.warn(
-        "Tooling client build arguments; args={}, loggerEnabled={}, releaseVariant={}, initScriptPresent={}, initScript={}",
-        extraArgs,
-        DevOpsPreferences.logsenderEnabled,
-        isReleaseVariant,
-        initScriptIndex >= 0 && extraArgs.getOrNull(initScriptIndex + 1) != null,
-        extraArgs.getOrNull(initScriptIndex + 1),
-    )
     return CompletableFuture.completedFuture(extraArgs)
   }
 

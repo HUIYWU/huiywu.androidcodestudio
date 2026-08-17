@@ -190,14 +190,6 @@ object Main {
         val args = c.getBuildArguments().get()
         // Filter out null and blank items.
         val filteredArgs = args.filter { it != null && it.isNotBlank() }
-        val initScriptIndex = filteredArgs.indexOfFirst { it == "--init-script" || it == "-I" }
-        val initScript = filteredArgs.getOrNull(initScriptIndex + 1)
-        LOG.warn(
-            "Tooling launcher client arguments; args={}, initScriptPresent={}, initScript={}",
-            filteredArgs,
-            initScriptIndex >= 0 && !initScript.isNullOrBlank(),
-            initScript,
-        )
         launcher.addArguments(filteredArgs)
       } catch (e: Throwable) {
         LOG.error("Unable to get build arguments from tooling client", e)

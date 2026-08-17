@@ -22,7 +22,6 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.initialization.Settings
 import org.gradle.api.invocation.Gradle
-import org.gradle.api.logging.Logging
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry
 
 /** Registers the module-creation model and adds the server-owned probe only in memory. */
@@ -30,14 +29,11 @@ class ModuleCreationInitScriptPlugin : Plugin<Gradle> {
   companion object {
     private const val PROBE_PATH = "androidide.moduleCreationProbePath"
     private const val PROBE_DIRECTORY = "androidide.moduleCreationProbeDirectory"
-    private val logger = Logging.getLogger(ModuleCreationInitScriptPlugin::class.java)
   }
 
   override fun apply(target: Gradle) {
-    logger.warn("Module creation capability init plugin applied; gradle={}", target.gradleVersion)
     target.settingsEvaluated { settings -> settings.includeModuleCreationProbe() }
     target.rootProject { rootProject ->
-      logger.warn("Registering module creation capability plugin; root={}", rootProject.path)
       rootProject.pluginManager.apply(ModuleCreationCapabilitiesPlugin::class.java)
     }
   }
@@ -54,12 +50,8 @@ class ModuleCreationInitScriptPlugin : Plugin<Gradle> {
 class ModuleCreationCapabilitiesPlugin @Inject constructor(
     private val modelBuilderRegistry: ToolingModelBuilderRegistry,
 ) : Plugin<Project> {
-  private val logger = Logging.getLogger(ModuleCreationCapabilitiesPlugin::class.java)
-
   override fun apply(target: Project) {
     if (target != target.rootProject) return
-    logger.warn("Registering module creation capability builder; root={}", target.path)
     modelBuilderRegistry.register(ProjectCreationCapabilitiesModelBuilder())
-    logger.warn("Registered module creation capability builder; root={}", target.path)
   }
 }

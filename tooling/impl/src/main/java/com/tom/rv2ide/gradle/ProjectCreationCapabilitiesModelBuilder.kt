@@ -27,7 +27,6 @@ import com.tom.rv2ide.tooling.api.models.PluginApplicationStyle
 import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import java.io.File
 import org.gradle.api.Project
-import org.gradle.api.logging.Logging
 import org.gradle.tooling.provider.model.ToolingModelBuilder
 
 private const val APP_PLUGIN = "com.android.application"
@@ -35,22 +34,11 @@ private const val LIBRARY_PLUGIN = "com.android.library"
 
 /** Exposes configured Gradle module creation capabilities to the Tooling API. */
 class ProjectCreationCapabilitiesModelBuilder : ToolingModelBuilder {
-  private val logger = Logging.getLogger(ProjectCreationCapabilitiesModelBuilder::class.java)
-
   override fun canBuild(modelName: String): Boolean {
-    val supported = modelName == ProjectCreationCapabilities::class.java.name
-    logger.warn(
-        "Module creation capability builder queried; requestedModel={}, supported={}, builderLoader={}",
-        modelName, supported, javaClass.classLoader,
-    )
-    return supported
+    return modelName == ProjectCreationCapabilities::class.java.name
   }
 
   override fun buildAll(modelName: String, project: Project): Any {
-    logger.warn(
-        "Module creation capability builder invoked; requestedModel={}, project={}, root={}",
-        modelName, project.path, project.rootProject.path,
-    )
     val rootProject = project.rootProject
     val candidates = rootProject.allprojects.flatMap(::candidatesFor)
     val diagnostics = mutableListOf<CreationCapabilityDiagnostic>()

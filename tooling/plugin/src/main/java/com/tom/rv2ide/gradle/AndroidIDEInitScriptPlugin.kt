@@ -38,26 +38,18 @@ import org.gradle.api.logging.Logging
 class AndroidIDEInitScriptPlugin : Plugin<Gradle> {
 
   companion object {
-    private const val MODULE_CREATION_PROBE_PATH = "androidide.moduleCreationProbePath"
-    private const val MODULE_CREATION_PROBE_DIRECTORY = "androidide.moduleCreationProbeDirectory"
     private val logger = Logging.getLogger(AndroidIDEInitScriptPlugin::class.java)
   }
 
   override fun apply(target: Gradle) {
-    logger.warn("Module creation capability init plugin applied; gradle={}", target.gradleVersion)
-
     // Fix platform encoding early
     initializeEncoding()
 
     target.settingsEvaluated { settings ->
       settings.addDependencyRepositories()
-      settings.includeModuleCreationProbe()
     }
 
     target.rootProject { rootProject ->
-      logger.warn("Registering module creation capability plugin; root={}", rootProject.path)
-      rootProject.pluginManager.apply(ProjectCreationCapabilitiesPlugin::class.java)
-
       rootProject.buildscript.apply {
         dependencies.apply {
           val gradlePluginDep = rootProject.ideDependency(LIB_GROUP_TOOLING, "plugin")
@@ -96,17 +88,6 @@ class AndroidIDEInitScriptPlugin : Plugin<Gradle> {
     } catch (e: Exception) {
       logger.warn("Could not set encoding properties: ${e.message}")
     }
-  }
-
-  private fun Settings.includeModuleCreationProbe() {
-    val probePath = startParameter.projectProperties[MODULE_CREATION_PROBE_PATH]?.toString()
-    val probeDirectory = startParameter.projectProperties[MODULE_CREATION_PROBE_DIRECTORY]?.toString()
-    if (probePath.isNullOrBlank() || probeDirectory.isNullOrBlank()) return
-
-    // The server owns this directory and removes it after configuration. Settings is changed only
-    // in Gradle memory, so a failed probe cannot leave an include or build script in user files.
-    include(probePath)
-    project(probePath).projectDir = File(probeDirectory)
   }
 
   private fun Settings.addDependencyRepositories() {
