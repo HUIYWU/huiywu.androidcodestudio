@@ -9,7 +9,7 @@
 package com.tom.rv2ide.fragments.sidebar
 
 import android.content.res.ColorStateList
-import android.graphics.Color
+import android.view.ContextThemeWrapper
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -56,6 +56,7 @@ class SubModuleFragment : Fragment() {
   private val moduleCreator = ModuleCreator()
   private val editorViewModel by viewModels<EditorViewModel>(ownerProducer = { requireActivity() })
   private var refreshAfterSync = false
+  private var creatingModule = false
   private var screen = Screen.LIST
   private var selectedModule: GradleProject? = null
   private var wizardStep = 1
@@ -298,18 +299,23 @@ class SubModuleFragment : Fragment() {
   }
 
   private fun createModule(moduleName: String, gradlePath: String) {
+    if (creatingModule || editorViewModel.isInitializing) return
+    creatingModule = true
+    render()
     val safeName = moduleName.ifBlank { gradlePath.substringAfterLast(':') }
     lifecycleScope.launch {
       val result = withContext(Dispatchers.IO) {
         moduleCreator.createModule(safeName, moduleLanguage, projectRoot())
       }
       if (!isAdded) return@launch
+      creatingModule = false
       if (result.success) {
         Toast.makeText(requireContext(), "Module created. Syncing project...", Toast.LENGTH_SHORT).show()
         screen = Screen.LIST
         render()
         syncProject()
       } else {
+        render()
         Toast.makeText(requireContext(), result.errorMessage ?: "Unable to create module", Toast.LENGTH_LONG).show()
       }
     }
@@ -419,6 +425,7 @@ class SubModuleFragment : Fragment() {
   private fun button(label: String, secondary: Boolean = false, action: () -> Unit) = MaterialButton(requireContext()).apply {
     text = label
     isAllCaps = false
+    isEnabled = !creatingModule && !editorViewModel.isInitializing
     setOnClickListener { action() }
   }
 
@@ -426,19 +433,25 @@ class SubModuleFragment : Fragment() {
       MaterialButton(requireContext(), null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
         text = label
         isAllCaps = false
+        isEnabled = !creatingModule && !editorViewModel.isInitializing
         setOnClickListener { action() }
       }
 
-  private fun backButton(action: () -> Unit) = MaterialButton(requireContext()).apply {
-    icon = requireContext().getDrawable(R.drawable.ic_arrow_back)
-    iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
-    backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
-    rippleColor = ColorStateList.valueOf(themeColor(com.google.android.material.R.attr.colorOnSurface))
-    contentDescription = "Back to modules"
-    tooltipText = "Back to modules"
-    setOnClickListener { action() }
-    layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { bottomMargin = dp(4) }
-  }
+  private fun backButton(action: () -> Unit) =
+      MaterialButton(
+              ContextThemeWrapper(requireContext(), com.google.android.material.R.style.Widget_Material3_Button_IconButton),
+              null,
+              0,
+          )
+          .apply {
+            icon = requireContext().getDrawable(R.drawable.ic_arrow_back)
+            iconTint = ColorStateList.valueOf(themeColor(com.google.android.material.R.attr.colorOnSurface))
+            contentDescription = "Back to modules"
+            tooltipText = "Back to modules"
+            isEnabled = !creatingModule && !editorViewModel.isInitializing
+            setOnClickListener { action() }
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { bottomMargin = dp(4) }
+          }
 
   private fun text(value: String, size: Float, secondary: Boolean = false) = TextView(requireContext()).apply {
     text = value
