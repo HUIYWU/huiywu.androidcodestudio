@@ -85,6 +85,7 @@ class ModuleManagerFragment : Fragment() {
 
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
+    useKotlinDsl = usesKotlinSettings(projectRoot())
     binding.addModule.setOnClickListener { showWizard(1) }
     binding.moduleEmptyState.message = "Project modules will appear after initialization finishes."
     editorViewModel._isInitializing.observe(viewLifecycleOwner) { initializing ->
@@ -252,7 +253,7 @@ class ModuleManagerFragment : Fragment() {
     val name = draftModuleName
     val path = draftGradlePath
     val moduleDirectory = path.removePrefix(":").replace(':', '/')
-    val settingsScript = if (useKotlinDsl) "settings.gradle.kts" else "settings.gradle"
+    val settingsScript = if (usesKotlinSettings(projectRoot())) "settings.gradle.kts" else "settings.gradle"
     val moduleBuildScript = if (useKotlinDsl) "build.gradle.kts" else "build.gradle"
     val appBuildScript = if (File(projectRoot(), "app/build.gradle.kts").isFile) "app/build.gradle.kts" else "app/build.gradle"
     content.addView(text("Android library · ${moduleLanguage.name.lowercase().replaceFirstChar { it.uppercase() }} · ${if (useKotlinDsl) "Kotlin DSL" else "Groovy DSL"}", 14f, secondary = true))
@@ -480,6 +481,7 @@ class ModuleManagerFragment : Fragment() {
           .apply {
             text = label
             isCheckable = true
+            setCheckedIconVisible(true)
             isChecked = checked
             setOnClickListener { onClick() }
           }
@@ -537,6 +539,10 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun projectRoot(): File = IProjectManager.getInstance().projectDir
+
+  private fun usesKotlinSettings(projectRoot: File): Boolean =
+      File(projectRoot, "settings.gradle.kts").isFile || !File(projectRoot, "settings.gradle").isFile
+
   private fun defaultNamespace(): String = workspaceModules().filterIsInstance<AndroidModule>().firstOrNull()?.namespace ?: "com.example"
   private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))
   private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()

@@ -73,7 +73,7 @@ class ModuleCreator {
           appConfig,
       )
 
-      updateSettingsGradle(projectRoot, moduleName, useKotlinDsl)
+      updateSettingsGradle(projectRoot, moduleName)
       addDependencyToAppModule(projectRoot, moduleName, appUsesKotlinDsl)
 
       CreationResult(true)
@@ -412,10 +412,13 @@ public class SampleClass {
     sampleFile.writeText(content)
   }
 
-  private fun updateSettingsGradle(projectRoot: File, moduleName: String, useKotlinDsl: Boolean) {
-    val settingsFile = File(projectRoot, if (useKotlinDsl) "settings.gradle.kts" else "settings.gradle")
-    if (!settingsFile.exists()) {
-      throw IOException("${settingsFile.name} not found in project root")
+  private fun updateSettingsGradle(projectRoot: File, moduleName: String) {
+    val kotlinSettings = File(projectRoot, "settings.gradle.kts")
+    val groovySettings = File(projectRoot, "settings.gradle")
+    val settingsFile = when {
+      kotlinSettings.isFile -> kotlinSettings
+      groovySettings.isFile -> groovySettings
+      else -> throw IOException("settings.gradle(.kts) not found in project root")
     }
 
     val content = settingsFile.readText()
