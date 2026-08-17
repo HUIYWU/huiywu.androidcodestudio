@@ -505,7 +505,7 @@ class ModuleManagerFragment : Fragment() {
     }
     backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
     navigationIcon = requireContext().getDrawable(R.drawable.ic_arrow_back)
-    navigationIconTint = themeColor(com.google.android.material.R.attr.colorOnSurface)
+    setNavigationIconTint(themeColor(com.google.android.material.R.attr.colorOnSurface))
     contentDescription = "Back to modules"
     isEnabled = !creatingModule && !editorViewModel.isInitializing
     setNavigationOnClickListener {
