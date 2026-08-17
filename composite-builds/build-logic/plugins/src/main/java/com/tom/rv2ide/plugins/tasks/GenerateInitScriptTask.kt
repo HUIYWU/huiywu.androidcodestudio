@@ -45,7 +45,7 @@ abstract class GenerateInitScriptTask : DefaultTask() {
 
             initscript {
                 dependencies {
-                    classpath(files(capabilityInitJar))
+                    classpath(new java.io.File(capabilityInitJar))
                 }
             }
 
