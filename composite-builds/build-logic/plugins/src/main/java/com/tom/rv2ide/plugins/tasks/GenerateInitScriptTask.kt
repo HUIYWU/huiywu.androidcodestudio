@@ -45,7 +45,7 @@ abstract class GenerateInitScriptTask : DefaultTask() {
                 }
 
                 dependencies {
-                    classpath(new java.io.File(System.getProperty('androidide.tooling.api.jar')))
+                    classpath(files(System.getProperty('androidide.tooling.api.jar')))
                 }
             }
 
