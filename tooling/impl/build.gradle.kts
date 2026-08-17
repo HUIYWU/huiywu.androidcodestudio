@@ -63,7 +63,8 @@ project.tasks.getByName("shadowJar") {
 dependencies {
 
   implementation("io.hotmoka:toml4j:0.7.3")
-  
+  compileOnly("javax.inject:javax.inject:1")
+   
   kapt(libs.google.auto.service)
 
   api(projects.tooling.api)
