@@ -51,10 +51,12 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 
 /** Project module list, creation wizard, and module detail surface for the editor sidebar. */
 class ModuleManagerFragment : Fragment() {
 
+  private val log = LoggerFactory.getLogger(ModuleManagerFragment::class.java)
   private var _binding: FragmentModuleManagerBinding? = null
   private val binding get() = checkNotNull(_binding)
   private val moduleCreator = ModuleCreator()
@@ -347,10 +349,25 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun createModule(moduleName: String, gradlePath: String) {
-    if (creatingModule || editorViewModel.isInitializing) return
+    if (creatingModule || editorViewModel.isInitializing) {
+      log.warn(
+          "Create and sync ignored; creating={}, initializing={}, requestedPath={}",
+          creatingModule,
+          editorViewModel.isInitializing,
+          gradlePath,
+      )
+      return
+    }
     creatingModule = true
     render()
     val safeName = moduleName.ifBlank { gradlePath.substringAfterLast(':') }
+    log.warn(
+        "Create and sync clicked; name={}, path={}, language={}, dsl={}",
+        safeName,
+        gradlePath,
+        moduleLanguage,
+        if (useKotlinDsl) "kotlin" else "groovy",
+    )
     lifecycleScope.launch {
       val result = withContext(Dispatchers.IO) {
         moduleCreator.createModule(safeName, moduleLanguage, projectRoot(), useKotlinDsl)
@@ -358,11 +375,13 @@ class ModuleManagerFragment : Fragment() {
       if (!isAdded) return@launch
       creatingModule = false
       if (result.success) {
+        log.warn("Module files created; starting project synchronization; path={}", gradlePath)
         Toast.makeText(requireContext(), "Module created. Syncing project...", Toast.LENGTH_SHORT).show()
         screen = Screen.LIST
         render()
         syncProject()
       } else {
+        log.warn("Module creation stopped before synchronization; path={}, reason={}", gradlePath, result.errorMessage)
         render()
         Toast.makeText(requireContext(), result.errorMessage ?: "Unable to create module", Toast.LENGTH_LONG).show()
       }
@@ -384,10 +403,18 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun syncProject() {
-    val activity = activity as? ProjectHandlerActivity ?: return
-    if (editorViewModel.isInitializing) return
+    val activity = activity as? ProjectHandlerActivity
+    if (activity == null) {
+      log.warn("Module synchronization skipped; editor activity is unavailable")
+      return
+    }
+    if (editorViewModel.isInitializing) {
+      log.warn("Module synchronization skipped; project initialization is already running")
+      return
+    }
     refreshAfterSync = true
     render()
+    log.warn("Invoking ProjectHandlerActivity.initializeProject after module creation")
     activity.initializeProject()
   }
 

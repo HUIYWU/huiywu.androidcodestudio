@@ -317,6 +317,7 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
 
   override fun getProjectCreationCapabilities(): CompletableFuture<ProjectCreationCapabilities> {
     return runBuild {
+      log.warn("Requesting module creation capabilities from Gradle custom model")
       assertProjectInitialized()
       val connection =
           checkNotNull(this.connection) {
@@ -342,6 +343,13 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       val connection = checkNotNull(this.connection) { "ProjectConnection has not been initialized." }
       val probePath = request.modulePath.normalizedProbePath()
       val probeDirectory = createModuleCreationProbe(request)
+      log.warn(
+          "Validating module creation through Gradle custom model; path={}, kind={}, language={}, dsl={}",
+          probePath,
+          request.kind,
+          request.sourceLanguage,
+          request.buildDsl,
+      )
       try {
         val executor =
             connection.action { controller ->

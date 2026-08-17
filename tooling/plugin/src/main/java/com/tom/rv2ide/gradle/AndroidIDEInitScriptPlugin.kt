@@ -44,6 +44,8 @@ class AndroidIDEInitScriptPlugin : Plugin<Gradle> {
   }
 
   override fun apply(target: Gradle) {
+    logger.warn("Module creation capability init plugin applied; gradle={}", target.gradleVersion)
+
     // Fix platform encoding early
     initializeEncoding()
 
@@ -53,6 +55,7 @@ class AndroidIDEInitScriptPlugin : Plugin<Gradle> {
     }
 
     target.rootProject { rootProject ->
+      logger.warn("Registering module creation capability plugin; root={}", rootProject.path)
       rootProject.pluginManager.apply(ProjectCreationCapabilitiesPlugin::class.java)
 
       rootProject.buildscript.apply {

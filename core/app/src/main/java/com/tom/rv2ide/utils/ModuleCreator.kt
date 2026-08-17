@@ -27,6 +27,7 @@ import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
 import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import java.io.File
 import java.io.IOException
+import org.slf4j.LoggerFactory
 
 /**
  * Utility class for creating new modules in Android projects. Handles module structure
@@ -35,6 +36,8 @@ import java.io.IOException
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
 class ModuleCreator {
+
+  private val log = LoggerFactory.getLogger(ModuleCreator::class.java)
 
   data class CreationResult(val success: Boolean, val errorMessage: String? = null)
 
@@ -67,7 +70,17 @@ class ModuleCreator {
             buildDsl = if (useKotlinDsl) GradleDsl.KOTLIN else GradleDsl.GROOVY,
             compileSdk = detectAppModuleConfig(projectRoot).compileSdk,
         )
-    return runCatching { buildService.validateModuleCreation(request).get() }.getOrNull()
+    log.warn(
+        "Requesting module creation probe; path={}, kind={}, language={}, dsl={}, compileSdk={}",
+        request.modulePath,
+        request.kind,
+        request.sourceLanguage,
+        request.buildDsl,
+        request.compileSdk,
+    )
+    return runCatching { buildService.validateModuleCreation(request).get() }
+        .onFailure { error -> log.warn("Module creation probe request failed; path={}", request.modulePath, error) }
+        .getOrNull()
   }
 
   /**
@@ -85,6 +98,13 @@ class ModuleCreator {
       useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
   ): CreationResult {
     return try {
+      log.warn(
+          "Starting module creation preflight; name={}, root={}, language={}, dsl={}",
+          moduleName,
+          projectRoot,
+          language,
+          if (useKotlinDsl) "kotlin" else "groovy",
+      )
       if (moduleName.isBlank()) {
         return CreationResult(false, "Module name cannot be empty")
       }
@@ -104,12 +124,14 @@ class ModuleCreator {
               "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.",
           )
       if (!validation.isValid) {
+        log.warn("Module creation probe rejected request; name={}, reason={}", moduleName, validation.message)
         return CreationResult(
             false,
             validation.message ?: "This module configuration cannot be applied to the current Gradle project.",
         )
       }
 
+      log.warn("Module creation probe accepted request; name={}; writing project files", moduleName)
       val appUsesKotlinDsl = detectBuildScriptDsl(projectRoot)
       val basePackageName = detectBasePackageName(projectRoot)
       val appConfig = detectAppModuleConfig(projectRoot)
@@ -126,8 +148,10 @@ class ModuleCreator {
       updateSettingsGradle(projectRoot, moduleName)
       addDependencyToAppModule(projectRoot, moduleName, appUsesKotlinDsl)
 
+      log.warn("Module creation files written successfully; name={}, directory={}", moduleName, moduleDir)
       CreationResult(true)
     } catch (e: Exception) {
+      log.warn("Module creation failed while preparing project files; name={}", moduleName, e)
       CreationResult(false, e.message ?: "Unknown error occurred")
     }
   }
