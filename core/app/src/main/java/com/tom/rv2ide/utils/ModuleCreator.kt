@@ -21,8 +21,8 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Utility class for creating new sub-modules in Android projects. Handles module structure
- * creation, build.gradle generation, and settings.gradle.kts updates.
+ * Utility class for creating new modules in Android projects. Handles module structure
+ * creation, build script generation, and settings file updates.
  *
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
@@ -33,7 +33,7 @@ class ModuleCreator {
   data class AppModuleConfig(val compileSdk: Int, val minSdk: Int)
 
   /**
-   * Creates a new sub-module with the specified configuration.
+   * Creates a new module with the specified configuration.
    *
    * @param moduleName The name of the module to create
    * @param language The programming language (Kotlin or Java)
@@ -42,8 +42,9 @@ class ModuleCreator {
    */
   fun createModule(
       moduleName: String,
-      language: com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage,
+      language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
       projectRoot: File,
+      useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
   ): CreationResult {
     return try {
       if (moduleName.isBlank()) {
@@ -59,7 +60,7 @@ class ModuleCreator {
         return CreationResult(false, "Module '$moduleName' already exists")
       }
 
-      val useKotlinDsl = detectBuildScriptDsl(projectRoot)
+      val appUsesKotlinDsl = detectBuildScriptDsl(projectRoot)
       val basePackageName = detectBasePackageName(projectRoot)
       val appConfig = detectAppModuleConfig(projectRoot)
 
@@ -72,8 +73,8 @@ class ModuleCreator {
           appConfig,
       )
 
-      updateSettingsGradle(projectRoot, moduleName)
-      addDependencyToAppModule(projectRoot, moduleName, useKotlinDsl)
+      updateSettingsGradle(projectRoot, moduleName, useKotlinDsl)
+      addDependencyToAppModule(projectRoot, moduleName, appUsesKotlinDsl)
 
       CreationResult(true)
     } catch (e: Exception) {
@@ -146,7 +147,7 @@ class ModuleCreator {
   private fun createModuleStructure(
       moduleDir: File,
       moduleName: String,
-      language: com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage,
+      language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
       useKotlinDsl: Boolean,
       basePackageName: String,
       appConfig: AppModuleConfig,
@@ -156,7 +157,7 @@ class ModuleCreator {
         File(
             srcMainDir,
             if (
-                language == com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage.KOTLIN
+                language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN
             )
                 "kotlin"
             else "java",
@@ -177,7 +178,7 @@ class ModuleCreator {
   private fun createBuildGradle(
       moduleDir: File,
       moduleName: String,
-      language: com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage,
+      language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
       useKotlinDsl: Boolean,
       basePackageName: String,
       appConfig: AppModuleConfig,
@@ -196,19 +197,19 @@ class ModuleCreator {
 
   private fun generateKotlinDslBuildScript(
       moduleName: String,
-      language: com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage,
+      language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
       basePackageName: String,
       appConfig: AppModuleConfig,
   ): String {
     val kotlinPlugin =
-        if (language == com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage.KOTLIN) {
+        if (language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN) {
           "id(\"kotlin-android\")"
         } else {
           "// Java module - no additional plugin needed"
         }
 
     val kotlinOptions =
-        if (language == com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage.KOTLIN) {
+        if (language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN) {
           """
   kotlinOptions {
     jvmTarget = "1.8"
@@ -253,19 +254,19 @@ dependencies {
 
   private fun generateGroovyBuildScript(
       moduleName: String,
-      language: com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage,
+      language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
       basePackageName: String,
       appConfig: AppModuleConfig,
   ): String {
     val kotlinPlugin =
-        if (language == com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage.KOTLIN) {
+        if (language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN) {
           "id 'kotlin-android'"
         } else {
           "// Java module - no additional plugin needed"
         }
 
     val kotlinOptions =
-        if (language == com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage.KOTLIN) {
+        if (language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN) {
           """
   kotlinOptions {
     jvmTarget = '1.8'
@@ -354,14 +355,14 @@ dependencies {
   private fun createSampleSourceFile(
       sourceDir: File,
       moduleName: String,
-      language: com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage,
+      language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
       basePackageName: String,
   ) {
     val packageDir = File(sourceDir, basePackageName.replace(".", "/") + "/$moduleName")
     packageDir.mkdirs()
 
     val fileName =
-        if (language == com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage.KOTLIN) {
+        if (language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN) {
           "SampleClass.kt"
         } else {
           "SampleClass.java"
@@ -370,7 +371,7 @@ dependencies {
     val sampleFile = File(packageDir, fileName)
 
     val content =
-        if (language == com.tom.rv2ide.fragments.sidebar.SubModuleFragment.ModuleLanguage.KOTLIN) {
+        if (language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN) {
           """
 package $basePackageName.$moduleName
 
@@ -411,10 +412,10 @@ public class SampleClass {
     sampleFile.writeText(content)
   }
 
-  private fun updateSettingsGradle(projectRoot: File, moduleName: String) {
-    val settingsFile = File(projectRoot, "settings.gradle.kts")
+  private fun updateSettingsGradle(projectRoot: File, moduleName: String, useKotlinDsl: Boolean) {
+    val settingsFile = File(projectRoot, if (useKotlinDsl) "settings.gradle.kts" else "settings.gradle")
     if (!settingsFile.exists()) {
-      throw IOException("settings.gradle.kts not found in project root")
+      throw IOException("${settingsFile.name} not found in project root")
     }
 
     val content = settingsFile.readText()

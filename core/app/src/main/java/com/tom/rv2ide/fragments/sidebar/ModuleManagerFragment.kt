@@ -9,8 +9,9 @@
 package com.tom.rv2ide.fragments.sidebar
 
 import android.content.res.ColorStateList
-import android.view.ContextThemeWrapper
+import android.graphics.Color
 import android.os.Bundle
+import android.view.ContextThemeWrapper
 import android.text.InputType
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -26,6 +27,9 @@ import androidx.core.widget.NestedScrollView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.transition.TransitionManager
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.transition.MaterialSharedAxis
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
@@ -35,7 +39,7 @@ import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.editor.ProjectHandlerActivity
-import com.tom.rv2ide.databinding.FragmentSubModuleBinding
+import com.tom.rv2ide.databinding.FragmentModuleManagerBinding
 import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.ModuleProject
@@ -49,9 +53,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Project module list, creation wizard, and module detail surface for the editor sidebar. */
-class SubModuleFragment : Fragment() {
+class ModuleManagerFragment : Fragment() {
 
-  private var _binding: FragmentSubModuleBinding? = null
+  private var _binding: FragmentModuleManagerBinding? = null
   private val binding get() = checkNotNull(_binding)
   private val moduleCreator = ModuleCreator()
   private val editorViewModel by viewModels<EditorViewModel>(ownerProducer = { requireActivity() })
@@ -64,6 +68,7 @@ class SubModuleFragment : Fragment() {
   private var moduleLanguage = ModuleLanguage.KOTLIN
   private var draftModuleName = "profile"
   private var draftGradlePath = ":profile"
+  private var useKotlinDsl = true
 
   enum class ModuleLanguage { KOTLIN, JAVA }
   private enum class NewModuleType { ANDROID_LIBRARY }
@@ -74,26 +79,40 @@ class SubModuleFragment : Fragment() {
       container: ViewGroup?,
       savedInstanceState: Bundle?,
   ): View {
-    _binding = FragmentSubModuleBinding.inflate(inflater, container, false)
+    _binding = FragmentModuleManagerBinding.inflate(inflater, container, false)
     return binding.root
   }
 
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
     binding.addModule.setOnClickListener { showWizard(1) }
+    binding.moduleEmptyState.message = "Project modules will appear after initialization finishes."
     editorViewModel._isInitializing.observe(viewLifecycleOwner) { initializing ->
       binding.addModule.isEnabled = !initializing
       if (refreshAfterSync && !initializing) {
         refreshAfterSync = false
         selectedModule = null
         screen = Screen.LIST
+      }
+      if (!initializing || IProjectManager.getInstance().getWorkspace() == null) {
         render()
       }
     }
     render()
   }
 
-  private fun render() {
+  private fun render(animated: Boolean = false, forward: Boolean = true) {
+    if (IProjectManager.getInstance().getWorkspace() == null) {
+      binding.moduleFlipper.displayedChild = 0
+      return
+    }
+    binding.moduleFlipper.displayedChild = 1
+    if (animated) {
+      TransitionManager.beginDelayedTransition(
+          binding.moduleContent,
+          MaterialSharedAxis(MaterialSharedAxis.X, forward),
+      )
+    }
     when (screen) {
       Screen.LIST -> renderModuleList()
       Screen.WIZARD -> renderWizard()
@@ -128,7 +147,7 @@ class SubModuleFragment : Fragment() {
       setOnClickListener {
         selectedModule = module
         screen = Screen.DETAIL
-        render()
+        render(animated = true, forward = true)
       }
     }
     val row = LinearLayout(requireContext()).apply {
@@ -162,7 +181,7 @@ class SubModuleFragment : Fragment() {
     binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
-    content.addView(backButton { screen = Screen.LIST; render() })
+    content.addView(backToolbar { showModuleList() })
     val header = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
     header.addView(text("New module", 20f), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
     header.addView(text("$wizardStep / 3", 14f, secondary = true))
@@ -178,8 +197,10 @@ class SubModuleFragment : Fragment() {
   private fun renderWizardType(content: LinearLayout) {
     content.addView(sectionTitle("Module type"))
     content.addView(choiceCard("Android library", "Android resources, manifest, and Android Gradle plugin", moduleType == NewModuleType.ANDROID_LIBRARY) {
-      moduleType = NewModuleType.ANDROID_LIBRARY
-      render()
+      if (moduleType != NewModuleType.ANDROID_LIBRARY) {
+        moduleType = NewModuleType.ANDROID_LIBRARY
+        render()
+      }
     })
     content.addView(choiceCard("Java/Kotlin library", "Planned. This module type is not created until its Gradle template is supported.", false) {
       Toast.makeText(requireContext(), "Java/Kotlin library creation is not available yet", Toast.LENGTH_SHORT).show()
@@ -195,9 +216,24 @@ class SubModuleFragment : Fragment() {
     content.addView(pathInput.first)
     content.addView(text("Language", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
     val languages = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
-    languages.addView(chip("Kotlin", moduleLanguage == ModuleLanguage.KOTLIN) { moduleLanguage = ModuleLanguage.KOTLIN })
-    languages.addView(chip("Java", moduleLanguage == ModuleLanguage.JAVA) { moduleLanguage = ModuleLanguage.JAVA })
+    languages.addView(chip("Kotlin", moduleLanguage == ModuleLanguage.KOTLIN) {
+      if (moduleLanguage != ModuleLanguage.KOTLIN) {
+        moduleLanguage = ModuleLanguage.KOTLIN
+        render()
+      }
+    })
+    languages.addView(chip("Java", moduleLanguage == ModuleLanguage.JAVA) {
+      if (moduleLanguage != ModuleLanguage.JAVA) {
+        moduleLanguage = ModuleLanguage.JAVA
+        render()
+      }
+    })
     content.addView(languages)
+    content.addView(text("Gradle DSL", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
+    val dsl = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
+    dsl.addView(chip("Kotlin", useKotlinDsl) { if (!useKotlinDsl) { useKotlinDsl = true; render() } })
+    dsl.addView(chip("Groovy", !useKotlinDsl) { if (useKotlinDsl) { useKotlinDsl = false; render() } })
+    content.addView(dsl)
     content.addView(bottomActions("Back", "Next") {
       val path = pathInput.second.text.toString().trim()
       val name = nameInput.second.text.toString().trim().ifBlank { path.substringAfterLast(':') }
@@ -215,22 +251,33 @@ class SubModuleFragment : Fragment() {
     content.addView(sectionTitle("Configuration"))
     val name = draftModuleName
     val path = draftGradlePath
-    content.addView(text("Android library · ${moduleLanguage.name.lowercase().replaceFirstChar { it.uppercase() }}", 14f, secondary = true))
-    content.addView(text("Module directory: ${path.removePrefix(":").replace(':', '/')}", 14f, secondary = true).apply { setPadding(0, dp(12), 0, 0) })
+    val moduleDirectory = path.removePrefix(":").replace(':', '/')
+    val settingsScript = if (useKotlinDsl) "settings.gradle.kts" else "settings.gradle"
+    val moduleBuildScript = if (useKotlinDsl) "build.gradle.kts" else "build.gradle"
+    val appBuildScript = if (File(projectRoot(), "app/build.gradle.kts").isFile) "app/build.gradle.kts" else "app/build.gradle"
+    content.addView(text("Android library · ${moduleLanguage.name.lowercase().replaceFirstChar { it.uppercase() }} · ${if (useKotlinDsl) "Kotlin DSL" else "Groovy DSL"}", 14f, secondary = true))
+    content.addView(text("Module directory: $moduleDirectory", 14f, secondary = true).apply { setPadding(0, dp(12), 0, 0) })
     content.addView(sectionTitle("Changes"))
-    content.addView(text("+ settings.gradle(.kts) include($path)", 14f, secondary = true))
-    content.addView(text("+ ${path.removePrefix(":")}/build.gradle(.kts)", 14f, secondary = true))
-    content.addView(text("+ ${path.removePrefix(":")}/src/main/...", 14f, secondary = true))
+    content.addView(text("+ $settingsScript include($path)", 14f, secondary = true))
+    content.addView(text("+ $moduleDirectory/$moduleBuildScript", 14f, secondary = true))
+    if (File(projectRoot(), appBuildScript).isFile) {
+      content.addView(text("+ $appBuildScript implementation(project($path))", 14f, secondary = true))
+    }
+    content.addView(text("+ $moduleDirectory/proguard-rules.pro", 14f, secondary = true))
+    content.addView(text("+ $moduleDirectory/consumer-rules.pro", 14f, secondary = true))
+    val sourceDirectory = if (moduleLanguage == ModuleLanguage.KOTLIN) "kotlin" else "java"
+    val sampleFile = if (moduleLanguage == ModuleLanguage.KOTLIN) "SampleClass.kt" else "SampleClass.java"
+    content.addView(text("+ $moduleDirectory/src/main/$sourceDirectory/.../$sampleFile", 14f, secondary = true))
     content.addView(bottomActions("Back", "Create and sync") { createModule(name, path) })
   }
 
   private fun renderModuleDetail() {
-    val module = selectedModule ?: run { screen = Screen.LIST; render(); return }
+    val module = selectedModule ?: run { showModuleList(animated = false); return }
     binding.moduleToolbar.visibility = View.GONE
     binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
-    content.addView(backButton { screen = Screen.LIST; render() })
+    content.addView(backToolbar { showModuleList() })
     val header = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
     val titleGroup = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
     titleGroup.addView(text(module.path, 20f))
@@ -305,7 +352,7 @@ class SubModuleFragment : Fragment() {
     val safeName = moduleName.ifBlank { gradlePath.substringAfterLast(':') }
     lifecycleScope.launch {
       val result = withContext(Dispatchers.IO) {
-        moduleCreator.createModule(safeName, moduleLanguage, projectRoot())
+        moduleCreator.createModule(safeName, moduleLanguage, projectRoot(), useKotlinDsl)
       }
       if (!isAdded) return@launch
       creatingModule = false
@@ -339,13 +386,21 @@ class SubModuleFragment : Fragment() {
     val activity = activity as? ProjectHandlerActivity ?: return
     if (editorViewModel.isInitializing) return
     refreshAfterSync = true
+    render()
     activity.initializeProject()
   }
 
   private fun showWizard(step: Int) {
+    val forward = screen != Screen.WIZARD || step >= wizardStep
     wizardStep = step
     screen = Screen.WIZARD
-    render()
+    render(animated = true, forward = forward)
+  }
+
+  private fun showModuleList(animated: Boolean = true) {
+    selectedModule = null
+    screen = Screen.LIST
+    render(animated = animated, forward = false)
   }
 
   private fun workspaceModules(): List<GradleProject> =
@@ -415,12 +470,19 @@ class SubModuleFragment : Fragment() {
     return layout to edit
   }
 
-  private fun chip(label: String, checked: Boolean, onClick: () -> Unit) = Chip(requireContext()).apply {
-    text = label
-    isCheckable = true
-    isChecked = checked
-    setOnClickListener { onClick() }
-  }
+  private fun chip(label: String, checked: Boolean, onClick: () -> Unit) =
+      Chip(
+              ContextThemeWrapper(
+                  requireContext(),
+                  com.google.android.material.R.style.Widget_Material3_Chip_Filter,
+              ),
+          )
+          .apply {
+            text = label
+            isCheckable = true
+            isChecked = checked
+            setOnClickListener { onClick() }
+          }
 
   private fun button(label: String, secondary: Boolean = false, action: () -> Unit) = MaterialButton(requireContext()).apply {
     text = label
@@ -437,21 +499,19 @@ class SubModuleFragment : Fragment() {
         setOnClickListener { action() }
       }
 
-  private fun backButton(action: () -> Unit) =
-      MaterialButton(
-              ContextThemeWrapper(requireContext(), com.google.android.material.R.style.Widget_Material3_Button_IconButton),
-              null,
-              0,
-          )
-          .apply {
-            icon = requireContext().getDrawable(R.drawable.ic_arrow_back)
-            iconTint = ColorStateList.valueOf(themeColor(com.google.android.material.R.attr.colorOnSurface))
-            contentDescription = "Back to modules"
-            tooltipText = "Back to modules"
-            isEnabled = !creatingModule && !editorViewModel.isInitializing
-            setOnClickListener { action() }
-            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { bottomMargin = dp(4) }
-          }
+  private fun backToolbar(action: () -> Unit) = MaterialToolbar(requireContext()).apply {
+    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
+      bottomMargin = dp(4)
+    }
+    backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+    navigationIcon = requireContext().getDrawable(R.drawable.ic_arrow_back)
+    navigationIconTint = themeColor(com.google.android.material.R.attr.colorOnSurface)
+    contentDescription = "Back to modules"
+    isEnabled = !creatingModule && !editorViewModel.isInitializing
+    setNavigationOnClickListener {
+      if (!creatingModule && !editorViewModel.isInitializing) action()
+    }
+  }
 
   private fun text(value: String, size: Float, secondary: Boolean = false) = TextView(requireContext()).apply {
     text = value
@@ -485,7 +545,7 @@ class SubModuleFragment : Fragment() {
   override fun onDestroyView() { super.onDestroyView(); _binding = null }
   override fun onDestroy() {
     super.onDestroy()
-    com.tom.rv2ide.utils.EditorSidebarActions.removeFragmentFromCache("ide.editor.sidebar.subModule")
+    com.tom.rv2ide.utils.EditorSidebarActions.removeFragmentFromCache("ide.editor.sidebar.moduleManager")
   }
 
 }

@@ -39,7 +39,7 @@ import com.tom.rv2ide.actions.sidebar.BuildVariantsSidebarAction
 import com.tom.rv2ide.actions.sidebar.CloseProjectSidebarAction
 import com.tom.rv2ide.actions.sidebar.FileTreeSidebarAction
 import com.tom.rv2ide.actions.sidebar.PreferencesSidebarAction
-import com.tom.rv2ide.actions.sidebar.SubModuleSidebarAction
+import com.tom.rv2ide.actions.sidebar.ModuleManagerSidebarAction
 import com.tom.rv2ide.actions.sidebar.GitClientAction
 import com.tom.rv2ide.actions.sidebar.TerminalSidebarAction
 import com.tom.rv2ide.fragments.sidebar.EditorSidebarFragment
@@ -61,7 +61,7 @@ internal object EditorSidebarActions {
     registry.registerAction(GitClientAction(context, ++order))
     registry.registerAction(AIAgentSidebarAction(context, ++order))
     registry.registerAction(AssetStudioSidebarAction(context, ++order))
-    registry.registerAction(SubModuleSidebarAction(context, ++order))
+    registry.registerAction(ModuleManagerSidebarAction(context, ++order))
     registry.registerAction(PreferencesSidebarAction(context, ++order))
     registry.registerAction(CloseProjectSidebarAction(context, ++order))
   }
