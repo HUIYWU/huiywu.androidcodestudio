@@ -72,6 +72,7 @@ tasks.named<Jar>("jar") {
 
 tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
     archiveBaseName.set("androidide-capability-init")
+    archiveVersion.set("")
     archiveClassifier.set("")
     configurations = listOf(capabilityInitRuntime)
     // Gradle supplies its API and implementation classes to init scripts. Keep AGP out of this
