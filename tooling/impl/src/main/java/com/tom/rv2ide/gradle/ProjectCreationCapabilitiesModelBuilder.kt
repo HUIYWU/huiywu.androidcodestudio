@@ -18,6 +18,7 @@ package com.tom.rv2ide.gradle
 
 import com.tom.rv2ide.tooling.api.models.CreationCapabilityDiagnostic
 import com.tom.rv2ide.tooling.api.models.CreationCapabilityDiagnosticSeverity
+import com.tom.rv2ide.tooling.api.models.DefaultProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.GradleDsl
 import com.tom.rv2ide.tooling.api.models.ModuleCreationCandidate
 import com.tom.rv2ide.tooling.api.models.ModuleCreationKind
@@ -65,7 +66,7 @@ class ProjectCreationCapabilitiesModelBuilder : ToolingModelBuilder {
           "No configured Kotlin module was found.",
       ))
     }
-    return ProjectCreationCapabilities(
+    return DefaultProjectCreationCapabilities(
         projectRoot = rootProject.rootDir.absolutePath,
         settingsDsl = detectSettingsDsl(rootProject.rootDir),
         applicationProjects = rootProject.allprojects.filter { it.pluginManager.hasPlugin(APP_PLUGIN) }

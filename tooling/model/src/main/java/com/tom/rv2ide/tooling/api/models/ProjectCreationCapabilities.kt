@@ -19,13 +19,22 @@ package com.tom.rv2ide.tooling.api.models
 import java.io.Serializable
 
 /** Runtime Gradle capabilities used to plan module creation. */
-data class ProjectCreationCapabilities(
-    val projectRoot: String,
-    val settingsDsl: GradleDsl,
-    val applicationProjects: List<String>,
-    val candidates: List<ModuleCreationCandidate>,
-    val diagnostics: List<CreationCapabilityDiagnostic>,
-) : Serializable {
+interface ProjectCreationCapabilities : Serializable {
+  val projectRoot: String
+  val settingsDsl: GradleDsl
+  val applicationProjects: List<String>
+  val candidates: List<ModuleCreationCandidate>
+  val diagnostics: List<CreationCapabilityDiagnostic>
+}
+
+/** Builder-side implementation of the Tooling API model contract. */
+data class DefaultProjectCreationCapabilities(
+    override val projectRoot: String,
+    override val settingsDsl: GradleDsl,
+    override val applicationProjects: List<String>,
+    override val candidates: List<ModuleCreationCandidate>,
+    override val diagnostics: List<CreationCapabilityDiagnostic>,
+) : ProjectCreationCapabilities {
   companion object {
     private const val serialVersionUID = 1L
   }
