@@ -71,7 +71,7 @@ class AndroidIDEAssetsPlugin : Plugin<Project> {
             tasks.register(
                 "generate${variantNameCapitalized}InitScript",
                 GenerateInitScriptTask::class.java,
-            }
+            )
 
         variant.sources.assets?.addGeneratedSourceDirectory(
             generateInitScript,
