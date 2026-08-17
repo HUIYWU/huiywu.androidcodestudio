@@ -546,6 +546,9 @@ private fun defaultNamespace(): String = workspaceModules().filterIsInstance<And
   private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))
   private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
+  // Build scripts can be absent or temporarily unreadable while Gradle refreshes the workspace.
+  private fun File.readTextSafe(): String = runCatching { readText() }.getOrDefault("")
+
   override fun onDestroyView() { super.onDestroyView(); _binding = null }
   override fun onDestroy() {
     super.onDestroy()
