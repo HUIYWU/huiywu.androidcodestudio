@@ -86,6 +86,9 @@ class ModuleManagerFragment : Fragment() {
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
     useKotlinDsl = usesKotlinSettings(projectRoot())
+    if (!supportsKotlinAndroid(projectRoot())) {
+      moduleLanguage = ModuleLanguage.JAVA
+    }
     binding.addModule.setOnClickListener { showWizard(1) }
     binding.moduleEmptyState.message = "Project modules will appear after initialization finishes."
     editorViewModel._isInitializing.observe(viewLifecycleOwner) { initializing ->
@@ -542,6 +545,16 @@ class ModuleManagerFragment : Fragment() {
 
   private fun usesKotlinSettings(projectRoot: File): Boolean =
       File(projectRoot, "settings.gradle.kts").isFile || !File(projectRoot, "settings.gradle").isFile
+
+  private fun supportsKotlinAndroid(projectRoot: File): Boolean =
+      listOf("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle")
+          .map { File(projectRoot, it) }
+          .filter(File::isFile)
+          .any { file ->
+            file.readTextSafe().contains("org.jetbrains.kotlin.android") ||
+                file.readTextSafe().contains("kotlin-android") ||
+                file.readTextSafe().contains("kotlin(\"android\")")
+          }
 
   private fun defaultNamespace(): String = workspaceModules().filterIsInstance<AndroidModule>().firstOrNull()?.namespace ?: "com.example"
   private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))

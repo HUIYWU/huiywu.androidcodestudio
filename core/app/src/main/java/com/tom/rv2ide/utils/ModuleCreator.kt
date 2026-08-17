@@ -55,6 +55,16 @@ class ModuleCreator {
         return CreationResult(false, "Project root directory does not exist")
       }
 
+      if (
+          language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN &&
+              !supportsKotlinAndroid(projectRoot)
+      ) {
+        return CreationResult(
+            false,
+            "This project does not configure the Kotlin Android Gradle plugin. Create a Java module or add the Kotlin plugin first.",
+        )
+      }
+
       val moduleDir = File(projectRoot, moduleName)
       if (moduleDir.exists()) {
         return CreationResult(false, "Module '$moduleName' already exists")
@@ -81,6 +91,17 @@ class ModuleCreator {
       CreationResult(false, e.message ?: "Unknown error occurred")
     }
   }
+
+  private fun supportsKotlinAndroid(projectRoot: File): Boolean =
+      listOf("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle")
+          .map { File(projectRoot, it) }
+          .filter(File::isFile)
+          .any { file ->
+            val content = file.readText()
+            content.contains("org.jetbrains.kotlin.android") ||
+                content.contains("kotlin-android") ||
+                content.contains("kotlin(\"android\")")
+          }
 
   private fun detectBuildScriptDsl(projectRoot: File): Boolean {
     val appBuildFileKts = File(projectRoot, "app/build.gradle.kts")
