@@ -19,8 +19,6 @@ package com.tom.rv2ide.plugins
 
 // import com.tom.rv2ide.plugins.tasks.SetupAapt2Task
 import com.android.build.api.variant.ApplicationAndroidComponentsExtension
-import com.tom.rv2ide.build.config.BuildConfig
-import com.tom.rv2ide.build.config.downloadVersion
 import com.tom.rv2ide.plugins.tasks.AddAndroidJarToAssetsTask
 import com.tom.rv2ide.plugins.tasks.AddFileToAssetsTask
 import com.tom.rv2ide.plugins.tasks.GenerateInitScriptTask
@@ -73,14 +71,32 @@ class AndroidIDEAssetsPlugin : Plugin<Project> {
             tasks.register(
                 "generate${variantNameCapitalized}InitScript",
                 GenerateInitScriptTask::class.java,
-            ) {
-              mavenGroupId.set(BuildConfig.packageName)
-              downloadVersion.set(this@run.downloadVersion)
             }
 
         variant.sources.assets?.addGeneratedSourceDirectory(
             generateInitScript,
             GenerateInitScriptTask::outputDir,
+        )
+
+        val copyCapabilityInitJar =
+            tasks.register(
+                "copy${variantNameCapitalized}CapabilityInitJar",
+                AddFileToAssetsTask::class.java,
+            ) {
+              val pluginProject =
+                  checkNotNull(rootProject.findProject(":tooling:plugin")) {
+                    "Cannot find the Tooling Plugin project"
+                  }
+              dependsOn(pluginProject.tasks.getByName("shadowJar"))
+              inputFile.set(
+                  pluginProject.layout.buildDirectory.file("libs/androidide-capability-init.jar"),
+              )
+              baseAssetsPath.set("data/common")
+            }
+
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            copyCapabilityInitJar,
+            AddFileToAssetsTask::outputDirectory,
         )
 
         // Tooling API JAR copier

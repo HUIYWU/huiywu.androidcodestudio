@@ -378,7 +378,9 @@ class GradleBuildService :
     val extraArgs = ArrayList<String>()
     val initScript = Environment.INIT_SCRIPT
 
-    if (initScript.isFile && initScript.canRead()) {
+    if (initScript.isFile && initScript.canRead() &&
+        Environment.CAPABILITY_INIT_JAR.isFile && Environment.CAPABILITY_INIT_JAR.canRead()) {
+      extraArgs.add("-Dandroidide.capability.init.jar=${Environment.CAPABILITY_INIT_JAR.absolutePath}")
       extraArgs.add("--init-script")
       extraArgs.add(initScript.absolutePath)
     } else {

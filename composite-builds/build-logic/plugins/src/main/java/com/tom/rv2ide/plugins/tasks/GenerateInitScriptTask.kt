@@ -19,17 +19,11 @@ package com.tom.rv2ide.plugins.tasks
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.provider.Property
-import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 
 /** Generates the Gradle init script for AndroidIDE. */
 abstract class GenerateInitScriptTask : DefaultTask() {
-
-  @get:Input abstract val downloadVersion: Property<String>
-
-  @get:Input abstract val mavenGroupId: Property<String>
 
   @get:OutputDirectory abstract val outputDir: DirectoryProperty
 
@@ -44,20 +38,18 @@ abstract class GenerateInitScriptTask : DefaultTask() {
     outFile.get().asFile.bufferedWriter().use {
       it.write(
           """
-            initscript {
-                repositories {
-                    mavenCentral()
-                    google()
-                }
+            def capabilityInitJar = System.getProperty('androidide.capability.init.jar')
+            if (capabilityInitJar == null || capabilityInitJar.trim().isEmpty()) {
+                throw new GradleException('AndroidIDE capability init JAR path is unavailable')
+            }
 
+            initscript {
                 dependencies {
-                    classpath('io.github.mohammed-baqer-null:rv2ide-gradle-plugin:1.0.0') {
-                        setChanging(false)
-                    }
+                    classpath(files(capabilityInitJar))
                 }
             }
-            
-            apply plugin: com.tom.rv2ide.gradle.AndroidIDEInitScriptPlugin
+
+            apply plugin: com.tom.rv2ide.gradle.ModuleCreationInitScriptPlugin
           """
               .trimIndent()
       )

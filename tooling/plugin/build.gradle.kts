@@ -20,6 +20,7 @@ import com.tom.rv2ide.build.config.BuildConfig
 import com.tom.rv2ide.build.config.ProjectConfig
 
 plugins {
+    id("com.github.johnrengelman.shadow") version "8.1.1"
     id("java-gradle-plugin")
     id("org.jetbrains.kotlin.jvm")
     id("maven-publish")
@@ -56,7 +57,17 @@ gradlePlugin {
     
 }
 
-// Ensure normal JAR task runs
 tasks.named<Jar>("jar") {
     archiveBaseName.set("androidide-plugin")
+}
+
+tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
+    archiveBaseName.set("androidide-capability-init")
+    archiveClassifier.set("")
+    configurations = listOf(project.configurations.runtimeClasspath.get())
+    // Gradle supplies its own API and implementation classes to init scripts.
+    dependencies {
+        exclude(dependency("org.gradle:.*"))
+        exclude(dependency("com.android.tools.build:gradle:.*"))
+    }
 }

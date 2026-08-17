@@ -63,6 +63,7 @@ public class ToolsManager {
       writeNoMediaFile();
       extractAapt2();
       extractToolingApi();
+      extractCapabilityInitJar();
       extractAndroidJar();
       extractColorScheme(app);
       writeInitScript();
@@ -200,9 +201,18 @@ public class ToolsManager {
     if (Environment.TOOLING_API_JAR.exists()) {
       FileUtils.delete(Environment.TOOLING_API_JAR);
     }
-
+ 
     ResourceUtils.copyFileFromAssets(getCommonAsset("tooling-api-all.jar"),
         Environment.TOOLING_API_JAR.getAbsolutePath());
+  }
+
+  private static void extractCapabilityInitJar() {
+    if (Environment.CAPABILITY_INIT_JAR.exists()) {
+      FileUtils.delete(Environment.CAPABILITY_INIT_JAR);
+    }
+
+    ResourceUtils.copyFileFromAssets(getCommonAsset("androidide-capability-init.jar"),
+        Environment.CAPABILITY_INIT_JAR.getAbsolutePath());
   }
 
   private static void writeInitScript() {
@@ -211,9 +221,7 @@ public class ToolsManager {
     final var contents = readInitScript();
 
     FilesKt.writeText(initScriptBak, contents, StandardCharsets.UTF_8);
-    if (!initScript.exists()) {
-      FilesKt.writeText(initScript, contents, StandardCharsets.UTF_8);
-    }
+    FilesKt.writeText(initScript, contents, StandardCharsets.UTF_8);
   }
 
   @NonNull
