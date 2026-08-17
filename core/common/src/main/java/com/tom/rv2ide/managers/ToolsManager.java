@@ -63,7 +63,6 @@ public class ToolsManager {
       writeNoMediaFile();
       extractAapt2();
       extractToolingApi();
-      extractCapabilityInitJar();
       extractAndroidJar();
       extractColorScheme(app);
       writeInitScript();
@@ -204,15 +203,6 @@ public class ToolsManager {
  
     ResourceUtils.copyFileFromAssets(getCommonAsset("tooling-api-all.jar"),
         Environment.TOOLING_API_JAR.getAbsolutePath());
-  }
-
-  private static void extractCapabilityInitJar() {
-    if (Environment.CAPABILITY_INIT_JAR.exists()) {
-      FileUtils.delete(Environment.CAPABILITY_INIT_JAR);
-    }
-
-    ResourceUtils.copyFileFromAssets(getCommonAsset("androidide-capability-init.jar"),
-        Environment.CAPABILITY_INIT_JAR.getAbsolutePath());
   }
 
   private static void writeInitScript() {

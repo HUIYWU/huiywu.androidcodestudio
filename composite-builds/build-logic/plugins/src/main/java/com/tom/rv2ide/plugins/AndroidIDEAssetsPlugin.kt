@@ -78,27 +78,6 @@ class AndroidIDEAssetsPlugin : Plugin<Project> {
             GenerateInitScriptTask::outputDir,
         )
 
-        val copyCapabilityInitJar =
-            tasks.register(
-                "copy${variantNameCapitalized}CapabilityInitJar",
-                AddFileToAssetsTask::class.java,
-            ) {
-              val pluginProject =
-                  checkNotNull(rootProject.findProject(":tooling:plugin")) {
-                    "Cannot find the Tooling Plugin project"
-                  }
-              dependsOn(pluginProject.tasks.getByName("shadowJar"))
-              inputFile.set(
-                  pluginProject.layout.buildDirectory.file("libs/androidide-capability-init.jar"),
-              )
-              baseAssetsPath.set("data/common")
-            }
-
-        variant.sources.assets?.addGeneratedSourceDirectory(
-            copyCapabilityInitJar,
-            AddFileToAssetsTask::outputDirectory,
-        )
-
         // Tooling API JAR copier
         val copyToolingApiJar =
             tasks.register(

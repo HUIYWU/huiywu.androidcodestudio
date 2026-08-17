@@ -20,7 +20,6 @@ import com.tom.rv2ide.build.config.BuildConfig
 import com.tom.rv2ide.build.config.ProjectConfig
 
 plugins {
-    id("com.github.johnrengelman.shadow") version "8.1.1"
     id("java-gradle-plugin")
     id("org.jetbrains.kotlin.jvm")
     id("maven-publish")
@@ -28,19 +27,10 @@ plugins {
 
 description = "Gradle Plugin for projects that are built with AndroidCS"
 
-val capabilityInitRuntime by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
-
 dependencies {
     implementation(projects.tooling.model)
     implementation(projects.tooling.pluginConfig)
     implementation(projects.utilities.buildInfo)
-
-    capabilityInitRuntime(projects.tooling.model)
-    capabilityInitRuntime(projects.tooling.pluginConfig)
-    capabilityInitRuntime(projects.utilities.buildInfo)
 
     // AGP included in output JAR
     implementation("com.android.tools.build:gradle:${AGP_VERSION_MINIMUM}")
@@ -70,11 +60,4 @@ tasks.named<Jar>("jar") {
     archiveBaseName.set("androidide-plugin")
 }
 
-tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
-    archiveBaseName.set("androidide-capability-init")
-    archiveVersion.set("")
-    archiveClassifier.set("")
-    configurations = listOf(capabilityInitRuntime)
-    // Gradle supplies its API and implementation classes to init scripts. Keep AGP out of this
-    // capability-only artifact; the builder only checks plugin ids and does not link AGP APIs.
-}
+// Module-creation init support is packaged with tooling-api-all.jar.

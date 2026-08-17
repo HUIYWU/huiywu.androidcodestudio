@@ -38,14 +38,14 @@ abstract class GenerateInitScriptTask : DefaultTask() {
     outFile.get().asFile.bufferedWriter().use {
       it.write(
           """
-            def capabilityInitJar = System.getProperty('androidide.capability.init.jar')
-            if (capabilityInitJar == null || capabilityInitJar.trim().isEmpty()) {
-                throw new GradleException('AndroidIDE capability init JAR path is unavailable')
-            }
-
             initscript {
+                def toolingApiJar = System.getProperty('androidide.tooling.api.jar')
+                if (toolingApiJar == null || toolingApiJar.trim().isEmpty()) {
+                    throw new GradleException('AndroidIDE Tooling API JAR path is unavailable')
+                }
+
                 dependencies {
-                    classpath(new java.io.File(capabilityInitJar))
+                    classpath(new java.io.File(System.getProperty('androidide.tooling.api.jar')))
                 }
             }
 
