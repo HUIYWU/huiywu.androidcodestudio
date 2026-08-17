@@ -376,7 +376,15 @@ class GradleBuildService :
 
   override fun getBuildArguments(): CompletableFuture<List<String>> {
     val extraArgs = ArrayList<String>()
-    
+    val initScript = Environment.INIT_SCRIPT
+
+    if (initScript.isFile && initScript.canRead()) {
+      extraArgs.add("--init-script")
+      extraArgs.add(initScript.absolutePath)
+    } else {
+      log.warn("AndroidIDE init script is unavailable; path={}", initScript.absolutePath)
+    }
+
     if (DevOpsPreferences.logsenderEnabled) {
       injectLoggerForCurrentBuild()
       if (!isReleaseVariant) {
