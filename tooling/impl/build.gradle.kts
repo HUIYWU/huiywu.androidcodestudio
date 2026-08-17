@@ -63,6 +63,8 @@ project.tasks.getByName("shadowJar") {
 dependencies {
 
   implementation("io.hotmoka:toml4j:0.7.3")
+  // The init-script plugin compiles against Gradle's provider-side API, supplied by Gradle at runtime.
+  compileOnly(gradleApi())
   compileOnly("javax.inject:javax.inject:1")
    
   kapt(libs.google.auto.service)
