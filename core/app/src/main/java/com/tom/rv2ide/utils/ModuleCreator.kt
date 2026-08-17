@@ -83,13 +83,41 @@ class ModuleCreator {
         .getOrNull()
   }
 
+  /** Runs the fail-closed Gradle configuration check before any project file is written. */
+  fun preflightModuleCreation(
+      moduleName: String,
+      language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
+      projectRoot: File,
+      useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
+  ): CreationResult {
+    if (moduleName.isBlank()) {
+      return CreationResult(false, "Module name cannot be empty")
+    }
+    if (!projectRoot.isDirectory) {
+      return CreationResult(false, "Project root directory does not exist")
+    }
+    if (File(projectRoot, moduleName).exists()) {
+      return CreationResult(false, "Module '$moduleName' already exists")
+    }
+
+    val validation = validateModuleCreation(moduleName, language, projectRoot, useKotlinDsl)
+        ?: return CreationResult(
+            false,
+            "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.",
+        )
+    if (!validation.isValid) {
+      return CreationResult(
+          false,
+          validation.message ?: "This module configuration cannot be applied to the current Gradle project.",
+      )
+    }
+    return CreationResult(true)
+  }
+
   /**
-   * Creates a new module with the specified configuration.
+   * Creates a new module after a successful preflight check.
    *
-   * @param moduleName The name of the module to create
-   * @param language The programming language (Kotlin or Java)
-   * @param projectRoot The root directory of the project
-   * @return CreationResult indicating success or failure
+   * This repeats the preflight to keep direct callers fail-closed.
    */
   fun createModule(
       moduleName: String,
@@ -97,58 +125,29 @@ class ModuleCreator {
       projectRoot: File,
       useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
   ): CreationResult {
+    val preflight = preflightModuleCreation(moduleName, language, projectRoot, useKotlinDsl)
+    if (!preflight.success) return preflight
+    return createPreflightValidatedModule(moduleName, language, projectRoot, useKotlinDsl)
+  }
+
+  /** Writes module files after [preflightModuleCreation] has succeeded for the same request. */
+  fun createPreflightValidatedModule(
+      moduleName: String,
+      language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
+      projectRoot: File,
+      useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
+  ): CreationResult {
     return try {
-      log.warn(
-          "Starting module creation preflight; name={}, root={}, language={}, dsl={}",
-          moduleName,
-          projectRoot,
-          language,
-          if (useKotlinDsl) "kotlin" else "groovy",
-      )
-      if (moduleName.isBlank()) {
-        return CreationResult(false, "Module name cannot be empty")
-      }
-
-      if (!projectRoot.exists() || !projectRoot.isDirectory) {
-        return CreationResult(false, "Project root directory does not exist")
-      }
-
       val moduleDir = File(projectRoot, moduleName)
       if (moduleDir.exists()) {
         return CreationResult(false, "Module '$moduleName' already exists")
       }
-
-      val validation = validateModuleCreation(moduleName, language, projectRoot, useKotlinDsl)
-          ?: return CreationResult(
-              false,
-              "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.",
-          )
-      if (!validation.isValid) {
-        log.warn("Module creation probe rejected request; name={}, reason={}", moduleName, validation.message)
-        return CreationResult(
-            false,
-            validation.message ?: "This module configuration cannot be applied to the current Gradle project.",
-        )
-      }
-
-      log.warn("Module creation probe accepted request; name={}; writing project files", moduleName)
       val appUsesKotlinDsl = detectBuildScriptDsl(projectRoot)
       val basePackageName = detectBasePackageName(projectRoot)
       val appConfig = detectAppModuleConfig(projectRoot)
-
-      createModuleStructure(
-          moduleDir,
-          moduleName,
-          language,
-          useKotlinDsl,
-          basePackageName,
-          appConfig,
-      )
-
+      createModuleStructure(moduleDir, moduleName, language, useKotlinDsl, basePackageName, appConfig)
       updateSettingsGradle(projectRoot, moduleName)
       addDependencyToAppModule(projectRoot, moduleName, appUsesKotlinDsl)
-
-      log.warn("Module creation files written successfully; name={}, directory={}", moduleName, moduleDir)
       CreationResult(true)
     } catch (e: Exception) {
       log.warn("Module creation failed while preparing project files; name={}", moduleName, e)
@@ -305,7 +304,7 @@ android {
   defaultConfig {
     minSdk = ${appConfig.minSdk}
   }
-  
+
   buildTypes {
     release {
       isMinifyEnabled = false
@@ -453,7 +452,7 @@ package $basePackageName.$moduleName
  * Sample class for the $moduleName module.
  */
 class SampleClass {
-    
+
     /**
      * Sample method that returns a greeting message.
      */
@@ -471,7 +470,7 @@ package $basePackageName.$moduleName;
  * Sample class for the $moduleName module.
  */
 public class SampleClass {
-    
+
     /**
      * Sample method that returns a greeting message.
      */

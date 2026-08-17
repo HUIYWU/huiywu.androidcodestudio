@@ -22,6 +22,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.setPadding
 import androidx.core.widget.NestedScrollView
 import androidx.fragment.app.Fragment
@@ -35,6 +36,8 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
@@ -71,6 +74,9 @@ class ModuleManagerFragment : Fragment() {
   private var draftModuleName = "profile"
   private var draftGradlePath = ":profile"
   private var useKotlinDsl = true
+  private var creationStatusDialog: AlertDialog? = null
+  private var creationStatusMessage: TextView? = null
+  private var creationStatusProgress: CircularProgressIndicator? = null
 
   enum class ModuleLanguage { KOTLIN, JAVA }
   private enum class NewModuleType { ANDROID_LIBRARY }
@@ -349,43 +355,102 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun createModule(moduleName: String, gradlePath: String) {
-    if (creatingModule || editorViewModel.isInitializing) {
-      log.warn(
-          "Create and sync ignored; creating={}, initializing={}, requestedPath={}",
-          creatingModule,
-          editorViewModel.isInitializing,
-          gradlePath,
-      )
-      return
-    }
+    if (creatingModule || editorViewModel.isInitializing) return
+
     creatingModule = true
     render()
     val safeName = moduleName.ifBlank { gradlePath.substringAfterLast(':') }
-    log.warn(
-        "Create and sync clicked; name={}, path={}, language={}, dsl={}",
-        safeName,
-        gradlePath,
-        moduleLanguage,
-        if (useKotlinDsl) "kotlin" else "groovy",
-    )
+    showCheckingDialog()
     lifecycleScope.launch {
+      val preflight = withContext(Dispatchers.IO) {
+        moduleCreator.preflightModuleCreation(safeName, moduleLanguage, projectRoot(), useKotlinDsl)
+      }
+      if (!isAdded) return@launch
+      if (!preflight.success) {
+        creatingModule = false
+        render()
+        showCreationError(preflight.errorMessage ?: "The module configuration could not be checked.")
+        return@launch
+      }
+
+      dismissCreationStatusDialog()
+      screen = Screen.LIST
+      render()
       val result = withContext(Dispatchers.IO) {
-        moduleCreator.createModule(safeName, moduleLanguage, projectRoot(), useKotlinDsl)
+        moduleCreator.createPreflightValidatedModule(safeName, moduleLanguage, projectRoot(), useKotlinDsl)
       }
       if (!isAdded) return@launch
       creatingModule = false
       if (result.success) {
-        log.warn("Module files created; starting project synchronization; path={}", gradlePath)
         Toast.makeText(requireContext(), "Module created. Syncing project...", Toast.LENGTH_SHORT).show()
-        screen = Screen.LIST
-        render()
         syncProject()
       } else {
-        log.warn("Module creation stopped before synchronization; path={}, reason={}", gradlePath, result.errorMessage)
         render()
-        Toast.makeText(requireContext(), result.errorMessage ?: "Unable to create module", Toast.LENGTH_LONG).show()
+        showCreationError(result.errorMessage ?: "Unable to create module files.")
       }
     }
+  }
+
+  private fun showCheckingDialog() {
+    dismissCreationStatusDialog()
+    val content = LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(24))
+    }
+    val progress = CircularProgressIndicator(requireContext()).apply {
+      isIndeterminate = true
+      layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+    }
+    val message = text("Checking Gradle configuration...", 16f).apply {
+      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+        marginStart = dp(16)
+      }
+    }
+    content.addView(progress)
+    content.addView(message)
+    creationStatusMessage = message
+    creationStatusProgress = progress
+    creationStatusDialog =
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Preparing module")
+            .setView(content)
+            .setPositiveButton("Close", null)
+            .setCancelable(false)
+            .create()
+            .also { dialog ->
+              dialog.setCanceledOnTouchOutside(false)
+              dialog.show()
+              dialog.getButton(AlertDialog.BUTTON_POSITIVE).visibility = View.GONE
+            }
+  }
+
+  private fun showCreationError(message: String) {
+    val dialog = creationStatusDialog
+    if (dialog == null || !dialog.isShowing) {
+      MaterialAlertDialogBuilder(requireContext())
+          .setTitle("Module creation failed")
+          .setMessage(message)
+          .setPositiveButton("Close", null)
+          .show()
+      return
+    }
+    creationStatusProgress?.visibility = View.GONE
+    creationStatusMessage?.text = message
+    dialog.setTitle("Module creation failed")
+    dialog.setCancelable(true)
+    dialog.setCanceledOnTouchOutside(true)
+    dialog.getButton(AlertDialog.BUTTON_POSITIVE).apply {
+      visibility = View.VISIBLE
+      setOnClickListener { dismissCreationStatusDialog() }
+    }
+  }
+
+  private fun dismissCreationStatusDialog() {
+    creationStatusDialog?.dismiss()
+    creationStatusDialog = null
+    creationStatusMessage = null
+    creationStatusProgress = null
   }
 
   private fun openBuildScript(module: GradleProject) {
@@ -576,7 +641,11 @@ private fun defaultNamespace(): String = workspaceModules().filterIsInstance<And
   // Build scripts can be absent or temporarily unreadable while Gradle refreshes the workspace.
   private fun File.readTextSafe(): String = runCatching { readText() }.getOrDefault("")
 
-  override fun onDestroyView() { super.onDestroyView(); _binding = null }
+  override fun onDestroyView() {
+    dismissCreationStatusDialog()
+    super.onDestroyView()
+    _binding = null
+  }
   override fun onDestroy() {
     super.onDestroy()
     com.tom.rv2ide.utils.EditorSidebarActions.removeFragmentFromCache("ide.editor.sidebar.moduleManager")
