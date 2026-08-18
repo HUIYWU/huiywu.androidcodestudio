@@ -45,6 +45,8 @@ class ModuleCreator {
 
   private data class ModulePath(val gradlePath: String, val directoryPath: String, val name: String)
 
+  private data class FileSnapshot(val file: File, val contents: ByteArray)
+
   fun getProjectCreationCapabilities(): ProjectCreationCapabilities? {
     val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return null
     if (!buildService.isToolingServerStarted() || buildService.isBuildInProgress) return null
@@ -138,14 +140,21 @@ class ModuleCreator {
       projectRoot: File,
       useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
   ): CreationResult {
+    val modulePath = parseModulePath(moduleName)
+        ?: return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
+    val moduleDir = File(projectRoot, modulePath.directoryPath)
+    if (moduleDir.exists()) {
+      return CreationResult(false, "Module '${modulePath.gradlePath}' already exists")
+    }
+
+    val appUsesKotlinDsl = detectBuildScriptDsl(projectRoot)
+    val snapshots =
+        runCatching { captureGradleFileSnapshots(projectRoot, appUsesKotlinDsl) }
+            .getOrElse { error ->
+              return CreationResult(false, error.message ?: "Could not read Gradle files before creation")
+            }
+    val createdParentDirectories = missingParentDirectories(projectRoot, moduleDir)
     return try {
-      val modulePath = parseModulePath(moduleName)
-          ?: return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
-      val moduleDir = File(projectRoot, modulePath.directoryPath)
-      if (moduleDir.exists()) {
-        return CreationResult(false, "Module '${modulePath.gradlePath}' already exists")
-      }
-      val appUsesKotlinDsl = detectBuildScriptDsl(projectRoot)
       val basePackageName = detectBasePackageName(projectRoot)
       val appConfig = detectAppModuleConfig(projectRoot)
       createModuleStructure(
@@ -160,8 +169,52 @@ class ModuleCreator {
       addDependencyToAppModule(projectRoot, modulePath.gradlePath, appUsesKotlinDsl)
       CreationResult(true)
     } catch (e: Exception) {
+      // Creation changes several user-owned files. Restore them before removing only directories this call made.
+      rollbackModuleCreation(moduleDir, createdParentDirectories, snapshots)
       log.warn("Module creation failed while preparing project files; name={}", moduleName, e)
       CreationResult(false, e.message ?: "Unknown error occurred")
+    }
+  }
+
+  private fun captureGradleFileSnapshots(projectRoot: File, useKotlinDsl: Boolean): List<FileSnapshot> {
+    val settingsFile =
+        listOf(File(projectRoot, "settings.gradle.kts"), File(projectRoot, "settings.gradle")).firstOrNull {
+          it.isFile
+        }
+            ?: throw IOException("settings.gradle(.kts) not found in project root")
+    val appBuildFile = File(projectRoot, if (useKotlinDsl) "app/build.gradle.kts" else "app/build.gradle")
+    return buildList {
+      add(FileSnapshot(settingsFile, settingsFile.readBytes()))
+      if (appBuildFile.isFile) add(FileSnapshot(appBuildFile, appBuildFile.readBytes()))
+    }
+  }
+
+  private fun missingParentDirectories(projectRoot: File, moduleDir: File): List<File> {
+    val directories = mutableListOf<File>()
+    var directory = moduleDir.parentFile
+    while (directory != null && directory != projectRoot && !directory.exists()) {
+      directories += directory
+      directory = directory.parentFile
+    }
+    return directories
+  }
+
+  private fun rollbackModuleCreation(
+      moduleDir: File,
+      createdParentDirectories: List<File>,
+      snapshots: List<FileSnapshot>,
+  ) {
+    snapshots.forEach { snapshot ->
+      runCatching { snapshot.file.writeBytes(snapshot.contents) }
+          .onFailure { error -> log.warn("Could not restore ${snapshot.file.path}", error) }
+    }
+    if (moduleDir.exists() && !moduleDir.deleteRecursively()) {
+      log.warn("Could not remove incomplete module directory: {}", moduleDir.path)
+    }
+    createdParentDirectories.forEach { directory ->
+      if (directory.isDirectory && directory.list().isNullOrEmpty() && !directory.delete()) {
+        log.warn("Could not remove empty module parent directory: {}", directory.path)
+      }
     }
   }
 
