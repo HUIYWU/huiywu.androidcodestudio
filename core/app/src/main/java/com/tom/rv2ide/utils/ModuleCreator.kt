@@ -43,6 +43,8 @@ class ModuleCreator {
 
   data class AppModuleConfig(val compileSdk: Int, val minSdk: Int)
 
+  private data class ModulePath(val gradlePath: String, val directoryPath: String, val name: String)
+
   fun getProjectCreationCapabilities(): ProjectCreationCapabilities? {
     val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return null
     if (!buildService.isToolingServerStarted() || buildService.isBuildInProgress) return null
@@ -59,7 +61,7 @@ class ModuleCreator {
     if (!buildService.isToolingServerStarted() || buildService.isBuildInProgress) return null
     val request =
         ModuleCreationValidationRequest(
-            modulePath = ":$moduleName",
+            modulePath = moduleName.trim().let { if (it.startsWith(":")) it else ":$it" },
             kind = ModuleCreationKind.ANDROID_LIBRARY,
             sourceLanguage =
                 if (language == com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage.KOTLIN) {
@@ -90,17 +92,16 @@ class ModuleCreator {
       projectRoot: File,
       useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
   ): CreationResult {
-    if (moduleName.isBlank()) {
-      return CreationResult(false, "Module name cannot be empty")
-    }
+    val modulePath = parseModulePath(moduleName)
+        ?: return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
     if (!projectRoot.isDirectory) {
       return CreationResult(false, "Project root directory does not exist")
     }
-    if (File(projectRoot, moduleName).exists()) {
-      return CreationResult(false, "Module '$moduleName' already exists")
+    if (File(projectRoot, modulePath.directoryPath).exists()) {
+      return CreationResult(false, "Module '${modulePath.gradlePath}' already exists")
     }
 
-    val validation = validateModuleCreation(moduleName, language, projectRoot, useKotlinDsl)
+    val validation = validateModuleCreation(modulePath.gradlePath, language, projectRoot, useKotlinDsl)
         ?: return CreationResult(
             false,
             "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.",
@@ -138,16 +139,25 @@ class ModuleCreator {
       useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
   ): CreationResult {
     return try {
-      val moduleDir = File(projectRoot, moduleName)
+      val modulePath = parseModulePath(moduleName)
+          ?: return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
+      val moduleDir = File(projectRoot, modulePath.directoryPath)
       if (moduleDir.exists()) {
-        return CreationResult(false, "Module '$moduleName' already exists")
+        return CreationResult(false, "Module '${modulePath.gradlePath}' already exists")
       }
       val appUsesKotlinDsl = detectBuildScriptDsl(projectRoot)
       val basePackageName = detectBasePackageName(projectRoot)
       val appConfig = detectAppModuleConfig(projectRoot)
-      createModuleStructure(moduleDir, moduleName, language, useKotlinDsl, basePackageName, appConfig)
-      updateSettingsGradle(projectRoot, moduleName)
-      addDependencyToAppModule(projectRoot, moduleName, appUsesKotlinDsl)
+      createModuleStructure(
+          moduleDir,
+          modulePath.name.replace('-', '_'),
+          language,
+          useKotlinDsl,
+          basePackageName,
+          appConfig,
+      )
+      updateSettingsGradle(projectRoot, modulePath.gradlePath)
+      addDependencyToAppModule(projectRoot, modulePath.gradlePath, appUsesKotlinDsl)
       CreationResult(true)
     } catch (e: Exception) {
       log.warn("Module creation failed while preparing project files; name={}", moduleName, e)
@@ -484,8 +494,18 @@ public class SampleClass {
 
     sampleFile.writeText(content)
   }
+private fun parseModulePath(value: String): ModulePath? {
+    val segments = value.trim().trim(':').split(':')
+    if (segments.isEmpty() || segments.any { !it.matches(Regex("[A-Za-z][A-Za-z0-9_-]*")) }) return null
+    return ModulePath(
+        gradlePath = ":${segments.joinToString(":")}",
+        directoryPath = segments.joinToString(File.separator),
+        name = segments.last(),
+    )
+  }
 
-  private fun updateSettingsGradle(projectRoot: File, moduleName: String) {
+  private fun updateSettingsGradle(projectRoot: File, modulePath: String) {
+
     val kotlinSettings = File(projectRoot, "settings.gradle.kts")
     val groovySettings = File(projectRoot, "settings.gradle")
     val settingsFile = when {
@@ -497,7 +517,7 @@ public class SampleClass {
     val content = settingsFile.readText()
 
     // Check if module is already included
-    if (content.contains(":$moduleName")) {
+    if (content.contains("\"$modulePath\"") || content.contains("'$modulePath'")) {
       return // Module already included
     }
 
@@ -506,7 +526,7 @@ public class SampleClass {
 
     if (match != null) {
       val existingModules = match.groupValues[1].trim()
-      val newModuleEntry = ":$moduleName"
+      val newModuleEntry = modulePath
 
       if (existingModules.isNotEmpty()) {
         val newContent =
@@ -520,14 +540,14 @@ public class SampleClass {
         settingsFile.writeText(newContent)
       }
     } else {
-      val newContent = content + "\n\ninclude(\":$moduleName\")\n"
+      val newContent = content + "\n\ninclude(\"$modulePath\")\n"
       settingsFile.writeText(newContent)
     }
   }
 
   private fun addDependencyToAppModule(
       projectRoot: File,
-      moduleName: String,
+      modulePath: String,
       useKotlinDsl: Boolean,
   ) {
     val appBuildFile =
@@ -540,7 +560,7 @@ public class SampleClass {
 
     // Check if dependency is already added
     if (
-        content.contains("project(\":$moduleName\")") || content.contains("project(':$moduleName')")
+        content.contains("project(\"$modulePath\")") || content.contains("project('$modulePath')")
     ) {
       return // Dependency already exists
     }
@@ -553,9 +573,9 @@ public class SampleClass {
       val insertPosition = match.range.last + 1
       val dependencyLine =
           if (useKotlinDsl) {
-            "\n    implementation(project(\":$moduleName\"))\n"
+            "\n    implementation(project(\"$modulePath\"))\n"
           } else {
-            "\n    implementation project(':$moduleName')\n"
+            "\n    implementation project('$modulePath')\n"
           }
 
       val newContent =

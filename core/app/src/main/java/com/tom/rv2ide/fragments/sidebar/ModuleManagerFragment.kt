@@ -246,8 +246,8 @@ class ModuleManagerFragment : Fragment() {
     content.addView(bottomActions("Back", "Next") {
       val path = pathInput.second.text.toString().trim()
       val name = nameInput.second.text.toString().trim().ifBlank { path.substringAfterLast(':') }
-      if (!isValidPath(path) || path.count { it == ':' } != 1 || path.substringAfterLast(':') != name) {
-        pathInput.first.error = "Use a single path matching the module name, such as :profile"
+      if (!isValidPath(path) || path.substringAfterLast(':') != name) {
+         pathInput.first.error = "Use a Gradle path whose final segment matches the module name, such as :feature:profile"
       } else {
         draftModuleName = name
         draftGradlePath = path
@@ -277,7 +277,7 @@ class ModuleManagerFragment : Fragment() {
     val sourceDirectory = if (moduleLanguage == ModuleLanguage.KOTLIN) "kotlin" else "java"
     val sampleFile = if (moduleLanguage == ModuleLanguage.KOTLIN) "SampleClass.kt" else "SampleClass.java"
     content.addView(text("+ $moduleDirectory/src/main/$sourceDirectory/.../$sampleFile", 14f, secondary = true))
-    content.addView(bottomActions("Back", "Create and sync") { createModule(name, path) })
+    content.addView(bottomActions("Back", "Create and sync") { createModule(path) })
   }
 
   private fun renderModuleDetail() {
@@ -354,16 +354,15 @@ class ModuleManagerFragment : Fragment() {
     else dependencies.sorted().forEach { content.addView(text(it, 15f)) }
   }
 
-  private fun createModule(moduleName: String, gradlePath: String) {
+  private fun createModule(gradlePath: String) {
     if (creatingModule || editorViewModel.isInitializing) return
 
     creatingModule = true
     render()
-    val safeName = moduleName.ifBlank { gradlePath.substringAfterLast(':') }
     showCheckingDialog()
     lifecycleScope.launch {
       val preflight = withContext(Dispatchers.IO) {
-        moduleCreator.preflightModuleCreation(safeName, moduleLanguage, projectRoot(), useKotlinDsl)
+        moduleCreator.preflightModuleCreation(gradlePath, moduleLanguage, projectRoot(), useKotlinDsl)
       }
       if (!isAdded) return@launch
       if (!preflight.success) {
@@ -377,7 +376,7 @@ class ModuleManagerFragment : Fragment() {
       screen = Screen.LIST
       render()
       val result = withContext(Dispatchers.IO) {
-        moduleCreator.createPreflightValidatedModule(safeName, moduleLanguage, projectRoot(), useKotlinDsl)
+        moduleCreator.createPreflightValidatedModule(gradlePath, moduleLanguage, projectRoot(), useKotlinDsl)
       }
       if (!isAdded) return@launch
       creatingModule = false
