@@ -494,7 +494,7 @@ public class SampleClass {
 
     sampleFile.writeText(content)
   }
-private fun parseModulePath(value: String): ModulePath? {
+  private fun parseModulePath(value: String): ModulePath? {
     val segments = value.trim().trim(':').split(':')
     if (segments.isEmpty() || segments.any { !it.matches(Regex("[A-Za-z][A-Za-z0-9_-]*")) }) return null
     return ModulePath(

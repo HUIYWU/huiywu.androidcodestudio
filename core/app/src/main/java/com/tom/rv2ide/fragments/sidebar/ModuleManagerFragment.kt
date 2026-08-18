@@ -258,7 +258,6 @@ class ModuleManagerFragment : Fragment() {
 
   private fun renderWizardPreview(content: LinearLayout) {
     content.addView(sectionTitle("Configuration"))
-    val name = draftModuleName
     val path = draftGradlePath
     val moduleDirectory = path.removePrefix(":").replace(':', '/')
     val settingsScript = if (usesKotlinSettings(projectRoot())) "settings.gradle.kts" else "settings.gradle"
@@ -496,7 +495,17 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun workspaceModules(): List<GradleProject> =
-      IProjectManager.getInstance().getWorkspace()?.getSubProjects()?.filter { it.path != ":" }?.sortedBy { it.path } ?: emptyList()
+      IProjectManager.getInstance().getWorkspace()?.getSubProjects()
+          ?.filter { it.path != ":" && isConcreteModule(it) }
+          ?.sortedBy { it.path }
+          ?: emptyList()
+
+  private fun isConcreteModule(module: GradleProject): Boolean {
+    // Gradle creates implicit parent projects for nested paths such as :feature:profile.
+    // They have no build script of their own and should not appear as user modules.
+    return File(module.projectDir, "build.gradle.kts").isFile ||
+        File(module.projectDir, "build.gradle").isFile
+  }
 
   private fun moduleSubtitle(module: GradleProject): String = when (module) {
     is AndroidModule -> when {

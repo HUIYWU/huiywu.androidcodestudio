@@ -341,7 +341,7 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       assertProjectInitialized()
       val connection = checkNotNull(this.connection) { "ProjectConnection has not been initialized." }
       val probePath = request.modulePath.normalizedProbePath()
-      val probeDirectory = createModuleCreationProbe(request)
+      val probe = createModuleCreationProbe(request)
       try {
         val executor =
             connection.action { controller ->
@@ -350,7 +350,7 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
         Main.finalizeLauncher(executor)
         executor.addArguments(
             "-Pandroidide.moduleCreationProbePath=$probePath",
-            "-Pandroidide.moduleCreationProbeDirectory=${probeDirectory.absolutePath}",
+            "-Pandroidide.moduleCreationProbeDirectory=${probe.rootDirectory.absolutePath}",
         )
         this.buildCancellationToken = GradleConnector.newCancellationTokenSource()
         executor.withCancellationToken(this.buildCancellationToken!!.token())
@@ -361,8 +361,8 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       } finally {
         this.buildCancellationToken = null
         // Probe files are owned by tooling and must not survive cancellation or a Gradle failure.
-        if (!probeDirectory.deleteRecursively()) {
-          log.warn("Unable to delete module creation probe directory: {}", probeDirectory)
+        if (!probe.rootDirectory.deleteRecursively()) {
+          log.warn("Unable to delete module creation probe directory: {}", probe.rootDirectory)
         }
       }
     }
@@ -376,13 +376,24 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     return ":${segments.joinToString(":")}"
   }
 
-  private fun createModuleCreationProbe(request: ModuleCreationValidationRequest): File {
-    val probeDirectory =
+  private data class ModuleCreationProbe(
+      val rootDirectory: File,
+      val moduleDirectory: File,
+  )
+
+  private fun createModuleCreationProbe(request: ModuleCreationValidationRequest): ModuleCreationProbe {
+    val rootDirectory =
         File(System.getProperty("java.io.tmpdir"), "androidide-module-probes/${System.nanoTime()}")
-    check(probeDirectory.mkdirs()) { "Unable to create module creation probe directory." }
-    val buildFile = File(probeDirectory, if (request.buildDsl == GradleDsl.KOTLIN) "build.gradle.kts" else "build.gradle")
+    check(rootDirectory.mkdirs()) { "Unable to create module creation probe directory." }
+    val segments = request.modulePath.trim().trim(':').split(':').filter(String::isNotBlank)
+    require(segments.isNotEmpty() && segments.all { it.matches(Regex("[A-Za-z][A-Za-z0-9_-]*")) }) {
+      "Module path must contain Gradle-safe path segments."
+    }
+    val moduleDirectory = segments.fold(rootDirectory) { directory, segment -> File(directory, segment) }
+    check(moduleDirectory.mkdirs()) { "Unable to create module creation probe module directory." }
+    val buildFile = File(moduleDirectory, if (request.buildDsl == GradleDsl.KOTLIN) "build.gradle.kts" else "build.gradle")
     buildFile.writeText(buildProbeBuildScript(request))
-    return probeDirectory
+    return ModuleCreationProbe(rootDirectory, moduleDirectory)
   }
 
   private fun buildProbeBuildScript(request: ModuleCreationValidationRequest): String {
