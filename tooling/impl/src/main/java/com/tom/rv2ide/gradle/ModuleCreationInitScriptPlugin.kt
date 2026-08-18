@@ -18,6 +18,7 @@ package com.tom.rv2ide.gradle
 
 import java.io.File
 import javax.inject.Inject
+import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.initialization.Settings
@@ -42,8 +43,21 @@ class ModuleCreationInitScriptPlugin : Plugin<Gradle> {
     val path = startParameter.projectProperties[PROBE_PATH]?.toString()
     val directory = startParameter.projectProperties[PROBE_DIRECTORY]?.toString()
     if (path.isNullOrBlank() || directory.isNullOrBlank()) return
+
+    val segments = path.trim().trim(':').split(':').filter(String::isNotBlank)
+    if (segments.isEmpty() || segments.any { !it.matches(Regex("[A-Za-z][A-Za-z0-9_-]*")) }) {
+      throw GradleException("Module creation probe path is invalid: $path")
+    }
+
+    // Gradle creates implicit parent projects for nested paths. Map every prefix into the
+    // server-owned probe tree so configuration never touches the user's project directory.
     include(path)
-    project(path).projectDir = File(directory)
+    var relativeDirectory = File(directory)
+    segments.forEachIndexed { index, segment ->
+      relativeDirectory = File(relativeDirectory, segment)
+      val projectPath = ":${segments.take(index + 1).joinToString(":")}"
+      project(projectPath).projectDir = relativeDirectory
+    }
   }
 }
 

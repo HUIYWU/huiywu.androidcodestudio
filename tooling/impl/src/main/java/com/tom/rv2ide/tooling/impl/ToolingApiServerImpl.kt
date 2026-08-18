@@ -378,7 +378,6 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
 
   private data class ModuleCreationProbe(
       val rootDirectory: File,
-      val moduleDirectory: File,
   )
 
   private fun createModuleCreationProbe(request: ModuleCreationValidationRequest): ModuleCreationProbe {
@@ -393,7 +392,7 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     check(moduleDirectory.mkdirs()) { "Unable to create module creation probe module directory." }
     val buildFile = File(moduleDirectory, if (request.buildDsl == GradleDsl.KOTLIN) "build.gradle.kts" else "build.gradle")
     buildFile.writeText(buildProbeBuildScript(request))
-    return ModuleCreationProbe(rootDirectory, moduleDirectory)
+    return ModuleCreationProbe(rootDirectory)
   }
 
   private fun buildProbeBuildScript(request: ModuleCreationValidationRequest): String {
