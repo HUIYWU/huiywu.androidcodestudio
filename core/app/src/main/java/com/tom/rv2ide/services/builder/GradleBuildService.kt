@@ -496,7 +496,11 @@ class GradleBuildService :
     checkServerStarted()
     val requestId = capabilityRequestSequence.incrementAndGet()
     log.info("Capability request #{}: forwarding request to tooling server", requestId)
-    val future = server!!.getProjectCreationCapabilities()
+    val serverFuture = server!!.getProjectCreationCapabilities()
+    val future: CompletableFuture<ProjectCreationCapabilities> = serverFuture.thenApply { snapshot ->
+      log.info("Capability request #{}: RPC snapshot received; applicationProjects={}", requestId, snapshot.applicationProjects)
+      snapshot
+    }
     log.info("Capability request #{}: tooling Future created; done={}, cancelled={}", requestId, future.isDone, future.isCancelled)
     future.whenComplete { result, error ->
       if (error != null) {

@@ -320,7 +320,7 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     }
   }
 
-  override fun getProjectCreationCapabilities(): CompletableFuture<ProjectCreationCapabilities> {
+  override fun getProjectCreationCapabilities(): CompletableFuture<DefaultProjectCreationCapabilities> {
     val requestId = capabilityRequestSequence.incrementAndGet()
     log.info("Capability request #{}: server request accepted; buildInProgress={}", requestId, isBuildInProgress)
     return runBuild {

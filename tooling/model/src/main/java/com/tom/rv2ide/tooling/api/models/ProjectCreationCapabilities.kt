@@ -32,8 +32,8 @@ data class DefaultProjectCreationCapabilities(
     override val projectRoot: String,
     override val settingsDsl: GradleDsl,
     override val applicationProjects: List<String>,
-    override val candidates: List<ModuleCreationCandidate>,
-    override val diagnostics: List<CreationCapabilityDiagnostic>,
+    override val candidates: List<DefaultModuleCreationCandidate>,
+    override val diagnostics: List<DefaultCreationCapabilityDiagnostic>,
 ) : ProjectCreationCapabilities {
   companion object {
     private const val serialVersionUID = 1L
