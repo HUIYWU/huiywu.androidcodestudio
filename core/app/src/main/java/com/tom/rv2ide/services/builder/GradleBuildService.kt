@@ -69,6 +69,8 @@ import java.util.Objects
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -100,6 +102,7 @@ class GradleBuildService :
   private var outputReaderJob: Job? = null
   private var notificationManager: NotificationManager? = null
   private var server: IToolingApiServer? = null
+  private val capabilityRequestSequence = AtomicLong(0L)
   private var eventListener: EventListener? = null
   private var isReleaseVariant = false
 
@@ -491,7 +494,18 @@ class GradleBuildService :
 
   override fun getProjectCreationCapabilities(): CompletableFuture<ProjectCreationCapabilities> {
     checkServerStarted()
-    return server!!.getProjectCreationCapabilities()
+    val requestId = capabilityRequestSequence.incrementAndGet()
+    log.info("Capability request #{}: forwarding request to tooling server", requestId)
+    val future = server!!.getProjectCreationCapabilities()
+    log.info("Capability request #{}: tooling Future created; done={}, cancelled={}", requestId, future.isDone, future.isCancelled)
+    future.whenComplete { result, error ->
+      if (error != null) {
+        log.warn("Capability request #{}: tooling Future completed with error type={} message={}", requestId, error.javaClass.name, error.message, error)
+      } else {
+        log.info("Capability request #{}: tooling Future completed successfully; resultType={}", requestId, result?.javaClass?.name)
+      }
+    }
+    return future
   }
 
   override fun validateModuleCreation(
@@ -695,8 +709,15 @@ class GradleBuildService :
 
   override fun cancelCurrentBuild(): CompletableFuture<BuildCancellationRequestResult> {
     checkServerStarted()
-    
+    log.info("Capability/build cancellation: forwarding cancellation request to tooling server")
     val cancellationFuture = server!!.cancelCurrentBuild()
+    cancellationFuture.whenComplete { result, error ->
+      if (error != null) {
+        log.warn("Capability/build cancellation: request completed with error type={} message={}", error.javaClass.name, error.message, error)
+      } else {
+        log.info("Capability/build cancellation: request completed; enqueued={}, reason={}", result?.wasEnqueued, result?.failureReason)
+      }
+    }
     
     buildServiceScope.launch {
       try {
