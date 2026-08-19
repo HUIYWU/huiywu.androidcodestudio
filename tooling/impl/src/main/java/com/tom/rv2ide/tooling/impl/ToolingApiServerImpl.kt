@@ -325,14 +325,16 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
           checkNotNull(this.connection) {
             "ProjectConnection has not been initialized. Cannot inspect module creation capabilities."
           }
+      log.info("Reading project creation capabilities from Gradle")
       val executor = connection.action { controller -> controller.getModel(ProjectCreationCapabilities::class.java) }
       Main.finalizeLauncher(executor)
       this.buildCancellationToken = GradleConnector.newCancellationTokenSource()
       executor.withCancellationToken(this.buildCancellationToken!!.token())
       try {
         val capabilities = executor.run()
-        // Gradle returns custom models as dynamic proxies. This RPC only needs application paths;
-        // accessing nested candidate DTOs would make Gradle proxy their non-interface element types.
+        log.info("Read project creation capabilities from Gradle")
+        // Gradle returns custom models as dynamic proxies. Copy every interface model into RPC DTOs
+        // so Gson never receives a Gradle-owned proxy.
         DefaultProjectCreationCapabilities(
             projectRoot = capabilities.projectRoot,
             settingsDsl = capabilities.settingsDsl,
@@ -354,6 +356,9 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
               )
             },
         )
+      } catch (error: Throwable) {
+        log.warn("Failed to read project creation capabilities from Gradle", error)
+        throw error
       } finally {
         this.buildCancellationToken = null
       }

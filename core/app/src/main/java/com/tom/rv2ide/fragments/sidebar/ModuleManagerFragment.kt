@@ -43,15 +43,18 @@ import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.editor.ProjectHandlerActivity
 import com.tom.rv2ide.databinding.FragmentModuleManagerBinding
+import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
+import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.java.JavaModule
 import com.tom.rv2ide.utils.ModuleCreator
 import com.tom.rv2ide.viewmodel.EditorViewModel
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -76,6 +79,7 @@ class ModuleManagerFragment : Fragment() {
   private var useKotlinDsl = true
   private var applicationProjects: List<String>? = null
   private var selectedApplicationPath: String? = null
+  private var applicationProjectsJob: Job? = null
   private var creationStatusDialog: AlertDialog? = null
   private var creationStatusMessage: TextView? = null
   private var creationStatusProgress: CircularProgressIndicator? = null
@@ -435,7 +439,7 @@ class ModuleManagerFragment : Fragment() {
     }
   }
 
-  private fun showCheckingDialog() {
+  private fun showCheckingDialog(onCancel: (() -> Unit)? = null) {
     dismissCreationStatusDialog()
     val content = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.HORIZONTAL
@@ -459,13 +463,22 @@ class ModuleManagerFragment : Fragment() {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Preparing module")
             .setView(content)
+            .setNegativeButton(if (onCancel == null) null else "Cancel", null)
             .setPositiveButton("Close", null)
-            .setCancelable(false)
+            .setCancelable(onCancel != null)
             .create()
             .also { dialog ->
-              dialog.setCanceledOnTouchOutside(false)
+              dialog.setCanceledOnTouchOutside(onCancel != null)
+              dialog.setOnCancelListener { onCancel?.invoke() }
               dialog.show()
               dialog.getButton(AlertDialog.BUTTON_POSITIVE).visibility = View.GONE
+              dialog.getButton(AlertDialog.BUTTON_NEGATIVE).apply {
+                visibility = if (onCancel == null) View.GONE else View.VISIBLE
+                setOnClickListener {
+                  dismissCreationStatusDialog()
+                  onCancel?.invoke()
+                }
+              }
             }
   }
 
@@ -529,21 +542,35 @@ class ModuleManagerFragment : Fragment() {
 
   private fun loadApplicationProjectsAndShowWizard() {
     if (creatingModule || editorViewModel.isInitializing) return
-    showCheckingDialog()
+    applicationProjectsJob?.cancel()
+    showCheckingDialog {
+      applicationProjectsJob?.cancel()
+      applicationProjectsJob = null
+      cancelCurrentToolingBuild()
+    }
     creationStatusMessage?.text = "Reading application modules..."
-    lifecycleScope.launch {
-      val applications = withContext(Dispatchers.IO) {
-        moduleCreator.getProjectCreationCapabilities()?.applicationProjects
-      }
-      if (!isAdded) return@launch
-      if (applications == null) {
-        showCreationError("Application modules are unavailable. Wait for Gradle synchronization to finish and try again.")
-        return@launch
-      }
-      dismissCreationStatusDialog()
-      applicationProjects = applications
-      if (selectedApplicationPath !in applications) selectedApplicationPath = applications.firstOrNull()
-      showWizard(1)
+    applicationProjectsJob =
+        lifecycleScope.launch {
+          val applications =
+              withContext(Dispatchers.IO) {
+                moduleCreator.getProjectCreationCapabilities()?.applicationProjects
+              }
+          if (!isAdded) return@launch
+          if (applications == null) {
+            showCreationError("Application modules could not be read. Check the IDE logs and try again.")
+            return@launch
+          }
+          dismissCreationStatusDialog()
+          applicationProjects = applications
+          if (selectedApplicationPath !in applications) selectedApplicationPath = applications.firstOrNull()
+          showWizard(1)
+        }
+  }
+
+  private fun cancelCurrentToolingBuild() {
+    val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return
+    if (buildService.isToolingServerStarted()) {
+      buildService.cancelCurrentBuild()
     }
   }
 
@@ -716,6 +743,8 @@ private fun defaultNamespace(): String = workspaceModules().filterIsInstance<And
   private fun File.readTextSafe(): String = runCatching { readText() }.getOrDefault("")
 
   override fun onDestroyView() {
+    applicationProjectsJob?.cancel()
+    applicationProjectsJob = null
     dismissCreationStatusDialog()
     super.onDestroyView()
     _binding = null

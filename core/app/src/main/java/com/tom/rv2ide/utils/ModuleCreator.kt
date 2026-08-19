@@ -27,6 +27,7 @@ import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
 import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import org.slf4j.LoggerFactory
 
 /**
@@ -49,10 +50,17 @@ class ModuleCreator {
 
   private data class FileSnapshot(val file: File, val contents: ByteArray)
 
-  fun getProjectCreationCapabilities(): ProjectCreationCapabilities? {
+  fun getProjectCreationCapabilities(timeoutSeconds: Long = 30): ProjectCreationCapabilities? {
     val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return null
     if (!buildService.isToolingServerStarted() || buildService.isBuildInProgress) return null
-    return runCatching { buildService.getProjectCreationCapabilities().get() }.getOrNull()
+    return runCatching {
+          buildService.getProjectCreationCapabilities().get(timeoutSeconds, TimeUnit.SECONDS)
+        }
+        .onFailure { error ->
+          log.warn("Timed out or failed while reading project creation capabilities", error)
+          buildService.cancelCurrentBuild()
+        }
+        .getOrNull()
   }
 
   private fun validateModuleCreation(
