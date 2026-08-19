@@ -62,23 +62,39 @@ enum class PluginApplicationStyle : Serializable {
   UNKNOWN,
 }
 
-data class ModuleCreationCandidate(
-    val id: String,
-    val kind: ModuleCreationKind,
-    val sourceLanguage: ModuleSourceLanguage,
-    val buildDsl: GradleDsl,
-    val pluginStyle: PluginApplicationStyle,
-    val sourceProjectPath: String?,
-) : Serializable {
+/** A supported module template inferred from an existing configured Gradle project. */
+interface ModuleCreationCandidate : Serializable {
+  val id: String
+  val kind: ModuleCreationKind
+  val sourceLanguage: ModuleSourceLanguage
+  val buildDsl: GradleDsl
+  val pluginStyle: PluginApplicationStyle
+  val sourceProjectPath: String?
+}
+
+data class DefaultModuleCreationCandidate(
+    override val id: String,
+    override val kind: ModuleCreationKind,
+    override val sourceLanguage: ModuleSourceLanguage,
+    override val buildDsl: GradleDsl,
+    override val pluginStyle: PluginApplicationStyle,
+    override val sourceProjectPath: String?,
+) : ModuleCreationCandidate {
   companion object {
     private const val serialVersionUID = 1L
   }
 }
 
-data class CreationCapabilityDiagnostic(
-    val severity: CreationCapabilityDiagnosticSeverity,
-    val message: String,
-) : Serializable {
+/** A capability warning or informational message emitted by the configured Gradle build. */
+interface CreationCapabilityDiagnostic : Serializable {
+  val severity: CreationCapabilityDiagnosticSeverity
+  val message: String
+}
+
+data class DefaultCreationCapabilityDiagnostic(
+    override val severity: CreationCapabilityDiagnosticSeverity,
+    override val message: String,
+) : CreationCapabilityDiagnostic {
   companion object {
     private const val serialVersionUID = 1L
   }

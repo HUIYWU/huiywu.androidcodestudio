@@ -18,6 +18,8 @@ package com.tom.rv2ide.gradle
 
 import com.tom.rv2ide.tooling.api.models.CreationCapabilityDiagnostic
 import com.tom.rv2ide.tooling.api.models.CreationCapabilityDiagnosticSeverity
+import com.tom.rv2ide.tooling.api.models.DefaultCreationCapabilityDiagnostic
+import com.tom.rv2ide.tooling.api.models.DefaultModuleCreationCandidate
 import com.tom.rv2ide.tooling.api.models.DefaultProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.GradleDsl
 import com.tom.rv2ide.tooling.api.models.ModuleCreationCandidate
@@ -43,13 +45,13 @@ class ProjectCreationCapabilitiesModelBuilder : ToolingModelBuilder {
     val candidates = rootProject.allprojects.flatMap(::candidatesFor)
     val diagnostics = mutableListOf<CreationCapabilityDiagnostic>()
     if (candidates.none { it.kind == ModuleCreationKind.ANDROID_LIBRARY }) {
-      diagnostics.add(CreationCapabilityDiagnostic(
+      diagnostics.add(DefaultCreationCapabilityDiagnostic(
           CreationCapabilityDiagnosticSeverity.WARNING,
           "No configured Android library project was found.",
       ))
     }
     if (candidates.none { it.sourceLanguage == ModuleSourceLanguage.KOTLIN }) {
-      diagnostics.add(CreationCapabilityDiagnostic(
+      diagnostics.add(DefaultCreationCapabilityDiagnostic(
           CreationCapabilityDiagnosticSeverity.INFO,
           "No configured Kotlin module was found.",
       ))
@@ -87,7 +89,7 @@ class ProjectCreationCapabilitiesModelBuilder : ToolingModelBuilder {
   private fun candidate(project: Project, kind: ModuleCreationKind, language: ModuleSourceLanguage,
       dsl: GradleDsl, style: PluginApplicationStyle): ModuleCreationCandidate {
     val id = "${project.path}|${kind.name}|${language.name}|${dsl.name}|${style.name}"
-    return ModuleCreationCandidate(id, kind, language, dsl, style, project.path)
+    return DefaultModuleCreationCandidate(id, kind, language, dsl, style, project.path)
   }
 
   private fun detectSettingsDsl(rootDir: File) = when {

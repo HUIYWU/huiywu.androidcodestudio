@@ -43,6 +43,8 @@ import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UN
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_BUILD_ARGUMENT
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_CONFIGURATION
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_GRADLE_VERSION
+import com.tom.rv2ide.tooling.api.models.DefaultCreationCapabilityDiagnostic
+import com.tom.rv2ide.tooling.api.models.DefaultModuleCreationCandidate
 import com.tom.rv2ide.tooling.api.models.DefaultProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.GradleDsl
 import com.tom.rv2ide.tooling.api.models.GradleTask
@@ -329,13 +331,28 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       executor.withCancellationToken(this.buildCancellationToken!!.token())
       try {
         val capabilities = executor.run()
-        // Gradle returns custom models as dynamic proxies. The RPC layer must receive a concrete DTO.
+        // Gradle returns custom models as dynamic proxies. This RPC only needs application paths;
+        // accessing nested candidate DTOs would make Gradle proxy their non-interface element types.
         DefaultProjectCreationCapabilities(
             projectRoot = capabilities.projectRoot,
             settingsDsl = capabilities.settingsDsl,
-            applicationProjects = capabilities.applicationProjects,
-            candidates = capabilities.candidates,
-            diagnostics = capabilities.diagnostics,
+            applicationProjects = capabilities.applicationProjects.toList(),
+            candidates = capabilities.candidates.map { candidate ->
+              DefaultModuleCreationCandidate(
+                  id = candidate.id,
+                  kind = candidate.kind,
+                  sourceLanguage = candidate.sourceLanguage,
+                  buildDsl = candidate.buildDsl,
+                  pluginStyle = candidate.pluginStyle,
+                  sourceProjectPath = candidate.sourceProjectPath,
+              )
+            },
+            diagnostics = capabilities.diagnostics.map { diagnostic ->
+              DefaultCreationCapabilityDiagnostic(
+                  severity = diagnostic.severity,
+                  message = diagnostic.message,
+              )
+            },
         )
       } finally {
         this.buildCancellationToken = null
