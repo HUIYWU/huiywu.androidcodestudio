@@ -17,6 +17,7 @@
 package com.tom.rv2ide.gradle
 
 import com.tom.rv2ide.tooling.api.models.CreationCapabilityDiagnosticSeverity
+import com.tom.rv2ide.tooling.api.models.DefaultApplicationProjectInfo
 import com.tom.rv2ide.tooling.api.models.DefaultCreationCapabilityDiagnostic
 import com.tom.rv2ide.tooling.api.models.DefaultModuleCreationCandidate
 import com.tom.rv2ide.tooling.api.models.DefaultProjectCreationCapabilities
@@ -57,10 +58,26 @@ class ProjectCreationCapabilitiesModelBuilder : ToolingModelBuilder {
     return DefaultProjectCreationCapabilities(
         projectRoot = rootProject.rootDir.absolutePath,
         settingsDsl = detectSettingsDsl(rootProject.rootDir),
-        applicationProjects = rootProject.allprojects.filter { it.pluginManager.hasPlugin(APP_PLUGIN) }
-            .map(Project::getPath).sorted(),
+        applicationProjects = rootProject.allprojects
+            .filter { it.pluginManager.hasPlugin(APP_PLUGIN) }
+            .map(Project::getPath)
+            .sorted(),
+        applicationProjectDetails = rootProject.allprojects
+            .filter { it.pluginManager.hasPlugin(APP_PLUGIN) }
+            .mapNotNull { applicationProjectInfo(it) }
+            .sortedBy(DefaultApplicationProjectInfo::gradlePath),
         candidates = candidates.distinctBy(DefaultModuleCreationCandidate::id).sortedBy(DefaultModuleCreationCandidate::id),
         diagnostics = diagnostics,
+    )
+  }
+
+  private fun applicationProjectInfo(project: Project): DefaultApplicationProjectInfo? {
+    val buildFile = project.buildFile
+    if (!buildFile.isFile) return null
+    return DefaultApplicationProjectInfo(
+        gradlePath = project.path,
+        projectDirectory = project.projectDir.absolutePath,
+        buildFile = buildFile.absolutePath,
     )
   }
 

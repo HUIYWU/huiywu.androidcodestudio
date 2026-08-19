@@ -23,15 +23,30 @@ interface ProjectCreationCapabilities : Serializable {
   val projectRoot: String
   val settingsDsl: GradleDsl
   val applicationProjects: List<String>
+  val applicationProjectDetails: List<ApplicationProjectInfo>
   val candidates: List<ModuleCreationCandidate>
   val diagnostics: List<CreationCapabilityDiagnostic>
 }
+
+/** A configured Android application project with its actual Gradle file locations. */
+interface ApplicationProjectInfo : Serializable {
+  val gradlePath: String
+  val projectDirectory: String
+  val buildFile: String
+}
+
+data class DefaultApplicationProjectInfo(
+    override val gradlePath: String,
+    override val projectDirectory: String,
+    override val buildFile: String,
+) : ApplicationProjectInfo
 
 /** Builder-side implementation of the Tooling API model contract. */
 data class DefaultProjectCreationCapabilities(
     override val projectRoot: String,
     override val settingsDsl: GradleDsl,
     override val applicationProjects: List<String>,
+    override val applicationProjectDetails: List<DefaultApplicationProjectInfo>,
     override val candidates: List<DefaultModuleCreationCandidate>,
     override val diagnostics: List<DefaultCreationCapabilityDiagnostic>,
 ) : ProjectCreationCapabilities {

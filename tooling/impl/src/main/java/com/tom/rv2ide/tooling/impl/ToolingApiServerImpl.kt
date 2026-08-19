@@ -43,6 +43,7 @@ import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UN
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_BUILD_ARGUMENT
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_CONFIGURATION
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_GRADLE_VERSION
+import com.tom.rv2ide.tooling.api.models.DefaultApplicationProjectInfo
 import com.tom.rv2ide.tooling.api.models.DefaultCreationCapabilityDiagnostic
 import com.tom.rv2ide.tooling.api.models.DefaultModuleCreationCandidate
 import com.tom.rv2ide.tooling.api.models.DefaultProjectCreationCapabilities
@@ -337,6 +338,13 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
             projectRoot = capabilities.projectRoot,
             settingsDsl = capabilities.settingsDsl,
             applicationProjects = capabilities.applicationProjects.toList(),
+            applicationProjectDetails = capabilities.applicationProjectDetails.map { application ->
+              DefaultApplicationProjectInfo(
+                  gradlePath = application.gradlePath,
+                  projectDirectory = application.projectDirectory,
+                  buildFile = application.buildFile,
+              )
+            },
             candidates = capabilities.candidates.map { candidate ->
               DefaultModuleCreationCandidate(
                   id = candidate.id,

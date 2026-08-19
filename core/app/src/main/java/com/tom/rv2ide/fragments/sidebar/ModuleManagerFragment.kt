@@ -50,6 +50,7 @@ import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.java.JavaModule
+import com.tom.rv2ide.tooling.api.models.ApplicationProjectInfo
 import com.tom.rv2ide.utils.ModuleCreator
 import com.tom.rv2ide.viewmodel.EditorViewModel
 import java.io.File
@@ -78,6 +79,7 @@ class ModuleManagerFragment : Fragment() {
   private var draftGradlePath = ":profile"
   private var useKotlinDsl = true
   private var applicationProjects: List<String>? = null
+  private var applicationProjectDetails: List<ApplicationProjectInfo> = emptyList()
   private var selectedApplicationPath: String? = null
   private var applicationProjectsJob: Job? = null
   private var creationStatusDialog: AlertDialog? = null
@@ -292,15 +294,19 @@ class ModuleManagerFragment : Fragment() {
     val settingsScript = if (usesKotlinSettings(projectRoot())) "settings.gradle.kts" else "settings.gradle"
     val moduleBuildScript = if (useKotlinDsl) "build.gradle.kts" else "build.gradle"
     val applicationPath = checkNotNull(selectedApplicationPath)
+    val applicationInfo = applicationProjectDetails.firstOrNull { it.gradlePath == applicationPath }
     val applicationDirectory = applicationPath.removePrefix(":").replace(':', '/')
-    val appBuildScript =
-        if (applicationPath == ":") {
-          if (File(projectRoot(), "build.gradle.kts").isFile) "build.gradle.kts" else "build.gradle"
-        } else if (File(projectRoot(), "$applicationDirectory/build.gradle.kts").isFile) {
-          "$applicationDirectory/build.gradle.kts"
-        } else {
-          "$applicationDirectory/build.gradle"
-        }
+    val rootDirectory = projectRoot()
+    val appBuildScript = applicationInfo?.buildFile?.let { buildFilePath ->
+      val buildFile = File(buildFilePath)
+      buildFile.relativeToOrNull(rootDirectory)?.path ?: buildFile.absolutePath
+    } ?: if (applicationPath == ":") {
+      if (File(projectRoot(), "build.gradle.kts").isFile) "build.gradle.kts" else "build.gradle"
+    } else if (File(projectRoot(), "$applicationDirectory/build.gradle.kts").isFile) {
+      "$applicationDirectory/build.gradle.kts"
+    } else {
+      "$applicationDirectory/build.gradle"
+    }
     content.addView(text("Android library · ${moduleLanguage.name.lowercase().replaceFirstChar { it.uppercase() }} · ${if (useKotlinDsl) "Kotlin DSL" else "Groovy DSL"}", 14f, secondary = true))
     content.addView(text("Module directory: $moduleDirectory", 14f, secondary = true).apply { setPadding(0, dp(12), 0, 0) })
     content.addView(sectionTitle("Changes"))
@@ -392,6 +398,7 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun createModule(gradlePath: String, applicationPath: String) {
+    val applicationInfo = applicationProjectDetails.firstOrNull { it.gradlePath == applicationPath }
     if (creatingModule || editorViewModel.isInitializing) return
 
     creatingModule = true
@@ -405,6 +412,7 @@ class ModuleManagerFragment : Fragment() {
             projectRoot(),
             applicationPath,
             useKotlinDsl,
+            applicationInfo,
         )
       }
       if (!isAdded) return@launch
@@ -425,6 +433,7 @@ class ModuleManagerFragment : Fragment() {
             projectRoot(),
             applicationPath,
             useKotlinDsl,
+            applicationInfo,
         )
       }
       if (!isAdded) return@launch
@@ -551,11 +560,13 @@ class ModuleManagerFragment : Fragment() {
     creationStatusMessage?.text = "Reading application modules..."
     applicationProjectsJob =
         lifecycleScope.launch {
-          val applications =
+          val capabilities =
               withContext(Dispatchers.IO) {
-                moduleCreator.getProjectCreationCapabilities()?.applicationProjects
+                moduleCreator.getProjectCreationCapabilities()
               }
           if (!isAdded) return@launch
+          val applications = capabilities?.applicationProjects
+          applicationProjectDetails = capabilities?.applicationProjectDetails.orEmpty()
           if (applications == null) {
             showCreationError("Application modules could not be read. Check the IDE logs and try again.")
             return@launch

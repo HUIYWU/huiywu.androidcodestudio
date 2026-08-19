@@ -20,6 +20,7 @@ package com.tom.rv2ide.utils
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.tooling.api.models.GradleDsl
+import com.tom.rv2ide.tooling.api.models.ApplicationProjectInfo
 import com.tom.rv2ide.tooling.api.models.ModuleCreationKind
 import com.tom.rv2ide.tooling.api.models.ModuleCreationValidation
 import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
@@ -112,13 +113,14 @@ class ModuleCreator {
       projectRoot: File,
       applicationPath: String,
       useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot, applicationPath),
+      applicationInfo: ApplicationProjectInfo? = null,
   ): CreationResult {
     val modulePath = parseModulePath(moduleName)
         ?: return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
     if (!projectRoot.isDirectory) {
       return CreationResult(false, "Project root directory does not exist")
     }
-    val applicationModule = resolveApplicationModule(projectRoot, applicationPath)
+    val applicationModule = resolveApplicationModule(projectRoot, applicationPath, applicationInfo)
         ?: return CreationResult(false, "Selected application module '$applicationPath' is unavailable")
     if (File(projectRoot, modulePath.directoryPath).exists()) {
       return CreationResult(false, "Module '${modulePath.gradlePath}' already exists")
@@ -149,10 +151,25 @@ class ModuleCreator {
       projectRoot: File,
       applicationPath: String,
       useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot, applicationPath),
+      applicationInfo: ApplicationProjectInfo? = null,
   ): CreationResult {
-    val preflight = preflightModuleCreation(moduleName, language, projectRoot, applicationPath, useKotlinDsl)
+    val preflight = preflightModuleCreation(
+        moduleName,
+        language,
+        projectRoot,
+        applicationPath,
+        useKotlinDsl,
+        applicationInfo,
+    )
     if (!preflight.success) return preflight
-    return createPreflightValidatedModule(moduleName, language, projectRoot, applicationPath, useKotlinDsl)
+    return createPreflightValidatedModule(
+        moduleName,
+        language,
+        projectRoot,
+        applicationPath,
+        useKotlinDsl,
+        applicationInfo,
+    )
   }
 
   /** Writes module files after [preflightModuleCreation] has succeeded for the same request. */
@@ -162,10 +179,11 @@ class ModuleCreator {
       projectRoot: File,
       applicationPath: String,
       useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot, applicationPath),
+      applicationInfo: ApplicationProjectInfo? = null,
   ): CreationResult {
     val modulePath = parseModulePath(moduleName)
         ?: return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
-    val applicationModule = resolveApplicationModule(projectRoot, applicationPath)
+    val applicationModule = resolveApplicationModule(projectRoot, applicationPath, applicationInfo)
         ?: return CreationResult(false, "Selected application module '$applicationPath' is unavailable")
     val moduleDir = File(projectRoot, modulePath.directoryPath)
     if (moduleDir.exists()) {
@@ -244,7 +262,16 @@ class ModuleCreator {
     }
   }
 
-  private fun resolveApplicationModule(projectRoot: File, applicationPath: String): ApplicationModule? {
+  private fun resolveApplicationModule(
+      projectRoot: File,
+      applicationPath: String,
+      applicationInfo: ApplicationProjectInfo? = null,
+  ): ApplicationModule? {
+    if (applicationInfo != null && applicationInfo.gradlePath == applicationPath.trim()) {
+      val directory = File(applicationInfo.projectDirectory)
+      val buildFile = File(applicationInfo.buildFile)
+      if (directory.isDirectory && buildFile.isFile) return ApplicationModule(buildFile)
+    }
     val normalizedPath = applicationPath.trim()
     val projectDirectory =
         if (normalizedPath == ":") {
