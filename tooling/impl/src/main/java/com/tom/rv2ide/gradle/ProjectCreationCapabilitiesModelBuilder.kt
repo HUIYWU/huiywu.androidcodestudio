@@ -16,13 +16,11 @@
  */
 package com.tom.rv2ide.gradle
 
-import com.tom.rv2ide.tooling.api.models.CreationCapabilityDiagnostic
 import com.tom.rv2ide.tooling.api.models.CreationCapabilityDiagnosticSeverity
 import com.tom.rv2ide.tooling.api.models.DefaultCreationCapabilityDiagnostic
 import com.tom.rv2ide.tooling.api.models.DefaultModuleCreationCandidate
 import com.tom.rv2ide.tooling.api.models.DefaultProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.GradleDsl
-import com.tom.rv2ide.tooling.api.models.ModuleCreationCandidate
 import com.tom.rv2ide.tooling.api.models.ModuleCreationKind
 import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
 import com.tom.rv2ide.tooling.api.models.PluginApplicationStyle
@@ -43,7 +41,7 @@ class ProjectCreationCapabilitiesModelBuilder : ToolingModelBuilder {
   override fun buildAll(modelName: String, project: Project): Any {
     val rootProject = project.rootProject
     val candidates = rootProject.allprojects.flatMap(::candidatesFor)
-    val diagnostics = mutableListOf<CreationCapabilityDiagnostic>()
+    val diagnostics = mutableListOf<DefaultCreationCapabilityDiagnostic>()
     if (candidates.none { it.kind == ModuleCreationKind.ANDROID_LIBRARY }) {
       diagnostics.add(DefaultCreationCapabilityDiagnostic(
           CreationCapabilityDiagnosticSeverity.WARNING,
@@ -61,12 +59,12 @@ class ProjectCreationCapabilitiesModelBuilder : ToolingModelBuilder {
         settingsDsl = detectSettingsDsl(rootProject.rootDir),
         applicationProjects = rootProject.allprojects.filter { it.pluginManager.hasPlugin(APP_PLUGIN) }
             .map(Project::getPath).sorted(),
-        candidates = candidates.distinctBy(ModuleCreationCandidate::id).sortedBy(ModuleCreationCandidate::id),
+        candidates = candidates.distinctBy(DefaultModuleCreationCandidate::id).sortedBy(DefaultModuleCreationCandidate::id),
         diagnostics = diagnostics,
     )
   }
 
-  private fun candidatesFor(project: Project): List<ModuleCreationCandidate> {
+  private fun candidatesFor(project: Project): List<DefaultModuleCreationCandidate> {
     val dsl = if (project.buildFile.name.endsWith(".kts")) GradleDsl.KOTLIN else GradleDsl.GROOVY
     val style = detectPluginStyle(project.buildFile)
     return buildList {
@@ -87,7 +85,7 @@ class ProjectCreationCapabilitiesModelBuilder : ToolingModelBuilder {
   }
 
   private fun candidate(project: Project, kind: ModuleCreationKind, language: ModuleSourceLanguage,
-      dsl: GradleDsl, style: PluginApplicationStyle): ModuleCreationCandidate {
+      dsl: GradleDsl, style: PluginApplicationStyle): DefaultModuleCreationCandidate {
     val id = "${project.path}|${kind.name}|${language.name}|${dsl.name}|${style.name}"
     return DefaultModuleCreationCandidate(id, kind, language, dsl, style, project.path)
   }
