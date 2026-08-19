@@ -43,6 +43,8 @@ class ModuleCreator {
 
   data class AppModuleConfig(val compileSdk: Int, val minSdk: Int)
 
+  private data class ApplicationModule(val buildFile: File)
+
   private data class ModulePath(val gradlePath: String, val directoryPath: String, val name: String)
 
   private data class FileSnapshot(val file: File, val contents: ByteArray)
@@ -56,7 +58,7 @@ class ModuleCreator {
   private fun validateModuleCreation(
       moduleName: String,
       language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
-      projectRoot: File,
+      applicationModule: ApplicationModule,
       useKotlinDsl: Boolean,
   ): ModuleCreationValidation? {
     val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return null
@@ -72,7 +74,7 @@ class ModuleCreator {
                   ModuleSourceLanguage.JAVA
                 },
             buildDsl = if (useKotlinDsl) GradleDsl.KOTLIN else GradleDsl.GROOVY,
-            compileSdk = detectAppModuleConfig(projectRoot).compileSdk,
+            compileSdk = detectAppModuleConfig(applicationModule.buildFile).compileSdk,
         )
     log.warn(
         "Requesting module creation probe; path={}, kind={}, language={}, dsl={}, compileSdk={}",
@@ -92,18 +94,21 @@ class ModuleCreator {
       moduleName: String,
       language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
       projectRoot: File,
-      useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
+      applicationPath: String,
+      useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot, applicationPath),
   ): CreationResult {
     val modulePath = parseModulePath(moduleName)
         ?: return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
     if (!projectRoot.isDirectory) {
       return CreationResult(false, "Project root directory does not exist")
     }
+    val applicationModule = resolveApplicationModule(projectRoot, applicationPath)
+        ?: return CreationResult(false, "Selected application module '$applicationPath' is unavailable")
     if (File(projectRoot, modulePath.directoryPath).exists()) {
       return CreationResult(false, "Module '${modulePath.gradlePath}' already exists")
     }
 
-    val validation = validateModuleCreation(modulePath.gradlePath, language, projectRoot, useKotlinDsl)
+    val validation = validateModuleCreation(modulePath.gradlePath, language, applicationModule, useKotlinDsl)
         ?: return CreationResult(
             false,
             "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.",
@@ -126,11 +131,12 @@ class ModuleCreator {
       moduleName: String,
       language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
       projectRoot: File,
-      useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
+      applicationPath: String,
+      useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot, applicationPath),
   ): CreationResult {
-    val preflight = preflightModuleCreation(moduleName, language, projectRoot, useKotlinDsl)
+    val preflight = preflightModuleCreation(moduleName, language, projectRoot, applicationPath, useKotlinDsl)
     if (!preflight.success) return preflight
-    return createPreflightValidatedModule(moduleName, language, projectRoot, useKotlinDsl)
+    return createPreflightValidatedModule(moduleName, language, projectRoot, applicationPath, useKotlinDsl)
   }
 
   /** Writes module files after [preflightModuleCreation] has succeeded for the same request. */
@@ -138,25 +144,27 @@ class ModuleCreator {
       moduleName: String,
       language: com.tom.rv2ide.fragments.sidebar.ModuleManagerFragment.ModuleLanguage,
       projectRoot: File,
-      useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot),
+      applicationPath: String,
+      useKotlinDsl: Boolean = detectBuildScriptDsl(projectRoot, applicationPath),
   ): CreationResult {
     val modulePath = parseModulePath(moduleName)
         ?: return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
+    val applicationModule = resolveApplicationModule(projectRoot, applicationPath)
+        ?: return CreationResult(false, "Selected application module '$applicationPath' is unavailable")
     val moduleDir = File(projectRoot, modulePath.directoryPath)
     if (moduleDir.exists()) {
       return CreationResult(false, "Module '${modulePath.gradlePath}' already exists")
     }
 
-    val appUsesKotlinDsl = detectBuildScriptDsl(projectRoot)
     val snapshots =
-        runCatching { captureGradleFileSnapshots(projectRoot, appUsesKotlinDsl) }
+        runCatching { captureGradleFileSnapshots(projectRoot, applicationModule.buildFile) }
             .getOrElse { error ->
               return CreationResult(false, error.message ?: "Could not read Gradle files before creation")
             }
     val createdParentDirectories = missingParentDirectories(projectRoot, moduleDir)
     return try {
-      val basePackageName = detectBasePackageName(projectRoot)
-      val appConfig = detectAppModuleConfig(projectRoot)
+      val basePackageName = detectBasePackageName(applicationModule.buildFile)
+      val appConfig = detectAppModuleConfig(applicationModule.buildFile)
       createModuleStructure(
           moduleDir,
           modulePath.name.replace('-', '_'),
@@ -166,7 +174,7 @@ class ModuleCreator {
           appConfig,
       )
       updateSettingsGradle(projectRoot, modulePath.gradlePath)
-      addDependencyToAppModule(projectRoot, modulePath.gradlePath, appUsesKotlinDsl)
+      addDependencyToApplicationModule(applicationModule, modulePath.gradlePath)
       CreationResult(true)
     } catch (e: Exception) {
       // Creation changes several user-owned files. Restore them before removing only directories this call made.
@@ -176,17 +184,19 @@ class ModuleCreator {
     }
   }
 
-  private fun captureGradleFileSnapshots(projectRoot: File, useKotlinDsl: Boolean): List<FileSnapshot> {
+  private fun captureGradleFileSnapshots(
+      projectRoot: File,
+      applicationBuildFile: File,
+  ): List<FileSnapshot> {
     val settingsFile =
         listOf(File(projectRoot, "settings.gradle.kts"), File(projectRoot, "settings.gradle")).firstOrNull {
           it.isFile
         }
             ?: throw IOException("settings.gradle(.kts) not found in project root")
-    val appBuildFile = File(projectRoot, if (useKotlinDsl) "app/build.gradle.kts" else "app/build.gradle")
-    return buildList {
-      add(FileSnapshot(settingsFile, settingsFile.readBytes()))
-      if (appBuildFile.isFile) add(FileSnapshot(appBuildFile, appBuildFile.readBytes()))
-    }
+    return listOf(
+        FileSnapshot(settingsFile, settingsFile.readBytes()),
+        FileSnapshot(applicationBuildFile, applicationBuildFile.readBytes()),
+    )
   }
 
   private fun missingParentDirectories(projectRoot: File, moduleDir: File): List<File> {
@@ -218,25 +228,27 @@ class ModuleCreator {
     }
   }
 
-  private fun detectBuildScriptDsl(projectRoot: File): Boolean {
-    val appBuildFileKts = File(projectRoot, "app/build.gradle.kts")
-    val appBuildFileGroovy = File(projectRoot, "app/build.gradle")
-    if (appBuildFileKts.exists()) {
-      return true
-    }
-    if (appBuildFileGroovy.exists()) {
-      return false
-    }
-    return true
+  private fun resolveApplicationModule(projectRoot: File, applicationPath: String): ApplicationModule? {
+    val normalizedPath = applicationPath.trim()
+    val projectDirectory =
+        if (normalizedPath == ":") {
+          projectRoot
+        } else {
+          val segments = normalizedPath.trim(':').split(':')
+          if (segments.isEmpty() || segments.any { !it.matches(Regex("[A-Za-z][A-Za-z0-9_-]*")) }) return null
+          File(projectRoot, segments.joinToString(File.separator))
+        }
+    val buildFile =
+        listOf(File(projectDirectory, "build.gradle.kts"), File(projectDirectory, "build.gradle"))
+            .firstOrNull { it.isFile } ?: return null
+    return ApplicationModule(buildFile)
   }
 
-  private fun detectBasePackageName(projectRoot: File): String {
-    val appBuildFileKts = File(projectRoot, "app/build.gradle.kts")
-    val appBuildFileGroovy = File(projectRoot, "app/build.gradle")
+  private fun detectBuildScriptDsl(projectRoot: File, applicationPath: String): Boolean =
+      resolveApplicationModule(projectRoot, applicationPath)?.buildFile?.name?.endsWith(".kts") ?: true
 
-    val buildFile = if (appBuildFileKts.exists()) appBuildFileKts else appBuildFileGroovy
-
-    if (buildFile.exists()) {
+  private fun detectBasePackageName(buildFile: File): String {
+    if (buildFile.isFile) {
       val content = buildFile.readText()
       val namespacePattern = Regex("namespace\\s*[=:]\\s*[\"']([^\"']+)[\"']")
       val applicationIdPattern = Regex("applicationId\\s*[=:]\\s*[\"']([^\"']+)[\"']")
@@ -254,16 +266,11 @@ class ModuleCreator {
     return "com.example"
   }
 
-  private fun detectAppModuleConfig(projectRoot: File): AppModuleConfig {
-    val appBuildFileKts = File(projectRoot, "app/build.gradle.kts")
-    val appBuildFileGroovy = File(projectRoot, "app/build.gradle")
-
-    val buildFile = if (appBuildFileKts.exists()) appBuildFileKts else appBuildFileGroovy
-
+  private fun detectAppModuleConfig(buildFile: File): AppModuleConfig {
     var compileSdk = 34 // Default fallback
     var minSdk = 21 // Default fallback
 
-    if (buildFile.exists()) {
+    if (buildFile.isFile) {
       val content = buildFile.readText()
       val compileSdkPattern = Regex("compileSdk\\s*[=:]\\s*(\\d+)")
       val compileSdkMatch = compileSdkPattern.find(content)
@@ -598,17 +605,12 @@ public class SampleClass {
     }
   }
 
-  private fun addDependencyToAppModule(
-      projectRoot: File,
+  private fun addDependencyToApplicationModule(
+      applicationModule: ApplicationModule,
       modulePath: String,
-      useKotlinDsl: Boolean,
   ) {
-    val appBuildFile =
-        File(projectRoot, if (useKotlinDsl) "app/build.gradle.kts" else "app/build.gradle")
-    if (!appBuildFile.exists()) {
-      return // App module doesn't exist, skip
-    }
-
+    val appBuildFile = applicationModule.buildFile
+    val useKotlinDsl = appBuildFile.name.endsWith(".kts")
     val content = appBuildFile.readText()
 
     // Check if dependency is already added

@@ -74,6 +74,8 @@ class ModuleManagerFragment : Fragment() {
   private var draftModuleName = "profile"
   private var draftGradlePath = ":profile"
   private var useKotlinDsl = true
+  private var applicationProjects: List<String>? = null
+  private var selectedApplicationPath: String? = null
   private var creationStatusDialog: AlertDialog? = null
   private var creationStatusMessage: TextView? = null
   private var creationStatusProgress: CircularProgressIndicator? = null
@@ -94,7 +96,7 @@ class ModuleManagerFragment : Fragment() {
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
     useKotlinDsl = usesKotlinSettings(projectRoot())
-    binding.addModule.setOnClickListener { showWizard(1) }
+    binding.addModule.setOnClickListener { loadApplicationProjectsAndShowWizard() }
     binding.moduleEmptyState.message = "Project modules will appear after initialization finishes."
     editorViewModel._isInitializing.observe(viewLifecycleOwner) { initializing ->
       binding.addModule.isEnabled = !initializing
@@ -257,12 +259,44 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun renderWizardPreview(content: LinearLayout) {
+    val applications = applicationProjects.orEmpty()
+    if (applications.isEmpty()) {
+      content.addView(sectionTitle("Application module"))
+      content.addView(text("No Android application module is available after Gradle synchronization.", 14f, secondary = true))
+      content.addView(bottomActions("Back", "Close") { showModuleList() })
+      return
+    }
+    if (selectedApplicationPath !in applications) selectedApplicationPath = applications.first()
+    content.addView(sectionTitle("Application module"))
+    content.addView(text("Add the new library as a dependency of:", 14f, secondary = true))
+    val applicationChoices = ChipGroup(requireContext()).apply {
+      isSingleSelection = true
+      isSelectionRequired = true
+    }
+    applications.forEach { applicationPath ->
+      applicationChoices.addView(chip(applicationPath, applicationPath == selectedApplicationPath) {
+        if (selectedApplicationPath != applicationPath) {
+          selectedApplicationPath = applicationPath
+          render()
+        }
+      })
+    }
+    content.addView(applicationChoices)
     content.addView(sectionTitle("Configuration"))
     val path = draftGradlePath
     val moduleDirectory = path.removePrefix(":").replace(':', '/')
     val settingsScript = if (usesKotlinSettings(projectRoot())) "settings.gradle.kts" else "settings.gradle"
     val moduleBuildScript = if (useKotlinDsl) "build.gradle.kts" else "build.gradle"
-    val appBuildScript = if (File(projectRoot(), "app/build.gradle.kts").isFile) "app/build.gradle.kts" else "app/build.gradle"
+    val applicationPath = checkNotNull(selectedApplicationPath)
+    val applicationDirectory = applicationPath.removePrefix(":").replace(':', '/')
+    val appBuildScript =
+        if (applicationPath == ":") {
+          if (File(projectRoot(), "build.gradle.kts").isFile) "build.gradle.kts" else "build.gradle"
+        } else if (File(projectRoot(), "$applicationDirectory/build.gradle.kts").isFile) {
+          "$applicationDirectory/build.gradle.kts"
+        } else {
+          "$applicationDirectory/build.gradle"
+        }
     content.addView(text("Android library · ${moduleLanguage.name.lowercase().replaceFirstChar { it.uppercase() }} · ${if (useKotlinDsl) "Kotlin DSL" else "Groovy DSL"}", 14f, secondary = true))
     content.addView(text("Module directory: $moduleDirectory", 14f, secondary = true).apply { setPadding(0, dp(12), 0, 0) })
     content.addView(sectionTitle("Changes"))
@@ -276,7 +310,7 @@ class ModuleManagerFragment : Fragment() {
     val sourceDirectory = if (moduleLanguage == ModuleLanguage.KOTLIN) "kotlin" else "java"
     val sampleFile = if (moduleLanguage == ModuleLanguage.KOTLIN) "SampleClass.kt" else "SampleClass.java"
     content.addView(text("+ $moduleDirectory/src/main/$sourceDirectory/.../$sampleFile", 14f, secondary = true))
-    content.addView(bottomActions("Back", "Create and sync") { createModule(path) })
+    content.addView(bottomActions("Back", "Create and sync") { createModule(path, applicationPath) })
   }
 
   private fun renderModuleDetail() {
@@ -353,7 +387,7 @@ class ModuleManagerFragment : Fragment() {
     else dependencies.sorted().forEach { content.addView(text(it, 15f)) }
   }
 
-  private fun createModule(gradlePath: String) {
+  private fun createModule(gradlePath: String, applicationPath: String) {
     if (creatingModule || editorViewModel.isInitializing) return
 
     creatingModule = true
@@ -361,7 +395,13 @@ class ModuleManagerFragment : Fragment() {
     showCheckingDialog()
     lifecycleScope.launch {
       val preflight = withContext(Dispatchers.IO) {
-        moduleCreator.preflightModuleCreation(gradlePath, moduleLanguage, projectRoot(), useKotlinDsl)
+        moduleCreator.preflightModuleCreation(
+            gradlePath,
+            moduleLanguage,
+            projectRoot(),
+            applicationPath,
+            useKotlinDsl,
+        )
       }
       if (!isAdded) return@launch
       if (!preflight.success) {
@@ -375,7 +415,13 @@ class ModuleManagerFragment : Fragment() {
       screen = Screen.LIST
       render()
       val result = withContext(Dispatchers.IO) {
-        moduleCreator.createPreflightValidatedModule(gradlePath, moduleLanguage, projectRoot(), useKotlinDsl)
+        moduleCreator.createPreflightValidatedModule(
+            gradlePath,
+            moduleLanguage,
+            projectRoot(),
+            applicationPath,
+            useKotlinDsl,
+        )
       }
       if (!isAdded) return@launch
       creatingModule = false
@@ -479,6 +525,26 @@ class ModuleManagerFragment : Fragment() {
     render()
     log.warn("Invoking ProjectHandlerActivity.initializeProject after module creation")
     activity.initializeProject()
+  }
+
+  private fun loadApplicationProjectsAndShowWizard() {
+    if (creatingModule || editorViewModel.isInitializing) return
+    showCheckingDialog()
+    creationStatusMessage?.text = "Reading application modules..."
+    lifecycleScope.launch {
+      val applications = withContext(Dispatchers.IO) {
+        moduleCreator.getProjectCreationCapabilities()?.applicationProjects
+      }
+      if (!isAdded) return@launch
+      if (applications == null) {
+        showCreationError("Application modules are unavailable. Wait for Gradle synchronization to finish and try again.")
+        return@launch
+      }
+      dismissCreationStatusDialog()
+      applicationProjects = applications
+      if (selectedApplicationPath !in applications) selectedApplicationPath = applications.firstOrNull()
+      showWizard(1)
+    }
   }
 
   private fun showWizard(step: Int) {
