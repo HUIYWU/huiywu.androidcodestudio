@@ -536,7 +536,7 @@ class ModuleManagerFragment : Fragment() {
     }
     refreshAfterSync = true
     render()
-    log.warn("Invoking ProjectHandlerActivity.initializeProject after module creation")
+    log.info("Synchronizing project after module creation")
     activity.initializeProject()
   }
 
@@ -735,8 +735,7 @@ class ModuleManagerFragment : Fragment() {
 
   private fun usesKotlinSettings(projectRoot: File): Boolean =
       File(projectRoot, "settings.gradle.kts").isFile || !File(projectRoot, "settings.gradle").isFile
-private fun defaultNamespace(): String = workspaceModules().filterIsInstance<AndroidModule>().firstOrNull()?.namespace ?: "com.example"
-  private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))
+private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))
   private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
   // Build scripts can be absent or temporarily unreadable while Gradle refreshes the workspace.

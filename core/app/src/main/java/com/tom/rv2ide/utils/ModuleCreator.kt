@@ -58,27 +58,15 @@ class ModuleCreator {
           log.warn("Failed to start project creation capabilities request", error)
         }
         .getOrNull() ?: return null
-    log.info("Waiting up to {} seconds for project creation capabilities Future; done={}, cancelled={}", timeoutSeconds, future.isDone, future.isCancelled)
     return runCatching {
           future.get(timeoutSeconds, TimeUnit.SECONDS)
         }
-        .onSuccess { capabilities ->
-          log.info("Project creation capabilities Future returned successfully; applicationProjects={}", capabilities.applicationProjects)
-        }
         .onFailure { error ->
-          log.warn("Timed out or failed while reading project creation capabilities; futureDone={}, futureCancelled={}", future.isDone, future.isCancelled, error)
-          val cancellation = runCatching { buildService.cancelCurrentBuild() }.getOrNull()
-          if (cancellation == null) {
-            log.warn("Capability cancellation request could not be started")
-          } else {
-            cancellation.whenComplete { result, cancelError ->
-              if (cancelError != null) {
-                log.warn("Capability cancellation Future failed; type={} message={}", cancelError.javaClass.name, cancelError.message, cancelError)
-              } else {
-                log.info("Capability cancellation Future completed; enqueued={}, reason={}", result?.wasEnqueued, result?.failureReason)
-              }
+          log.warn("Timed out or failed while reading project creation capabilities", error)
+          runCatching { buildService.cancelCurrentBuild() }
+            .onFailure { cancellationError ->
+              log.warn("Failed to request cancellation after capability lookup failure", cancellationError)
             }
-          }
         }
         .getOrNull()
   }

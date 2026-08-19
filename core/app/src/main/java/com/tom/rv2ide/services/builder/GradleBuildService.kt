@@ -69,7 +69,6 @@ import java.util.Objects
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -102,7 +101,6 @@ class GradleBuildService :
   private var outputReaderJob: Job? = null
   private var notificationManager: NotificationManager? = null
   private var server: IToolingApiServer? = null
-  private val capabilityRequestSequence = AtomicLong(0L)
   private var eventListener: EventListener? = null
   private var isReleaseVariant = false
 
@@ -242,15 +240,15 @@ class GradleBuildService :
         """
           allprojects {
               afterEvaluate {
-                  if (plugins.hasPlugin('com.android.application') || 
+                  if (plugins.hasPlugin('com.android.application') ||
                       plugins.hasPlugin('com.android.library')) {
-                      
+
                       android {
                           compileOptions {
                               coreLibraryDesugaringEnabled = true
                           }
                       }
-                      
+
                       dependencies {
                           implementation files('${getLoggerRuntimeAar().absolutePath}')
                           coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
@@ -494,22 +492,7 @@ class GradleBuildService :
 
   override fun getProjectCreationCapabilities(): CompletableFuture<ProjectCreationCapabilities> {
     checkServerStarted()
-    val requestId = capabilityRequestSequence.incrementAndGet()
-    log.info("Capability request #{}: forwarding request to tooling server", requestId)
-    val serverFuture = server!!.getProjectCreationCapabilities()
-    val future: CompletableFuture<ProjectCreationCapabilities> = serverFuture.thenApply { snapshot ->
-      log.info("Capability request #{}: RPC snapshot received; applicationProjects={}", requestId, snapshot.applicationProjects)
-      snapshot
-    }
-    log.info("Capability request #{}: tooling Future created; done={}, cancelled={}", requestId, future.isDone, future.isCancelled)
-    future.whenComplete { result, error ->
-      if (error != null) {
-        log.warn("Capability request #{}: tooling Future completed with error type={} message={}", requestId, error.javaClass.name, error.message, error)
-      } else {
-        log.info("Capability request #{}: tooling Future completed successfully; resultType={}", requestId, result?.javaClass?.name)
-      }
-    }
-    return future
+    return server!!.getProjectCreationCapabilities().thenApply { it }
   }
 
   override fun validateModuleCreation(
@@ -548,13 +531,13 @@ class GradleBuildService :
       try {
         val projectDir = ProjectManagerImpl.getInstance().projectDir
         val gradlewPath = File(projectDir, "gradlew").absolutePath
-        
+
         log.info("Stopping Gradle daemons...")
-        
+
         val command = listOf("sh", gradlewPath, "--stop")
         val processBuilder = ProcessBuilder(command)
         processBuilder.directory(projectDir)
-        
+
         configureGradleEnvironment(processBuilder)
 
         val process = processBuilder.start()
@@ -683,7 +666,7 @@ class GradleBuildService :
           }
         }
     )
-    
+
   }
 
   /**
@@ -692,14 +675,14 @@ class GradleBuildService :
   private fun killGradlewProcesses() {
     try {
       log.info("Attempting to kill running gradlew processes...")
-      
+
       // Use pkill to kill gradlew processes
       val command = listOf("pkill", "-f", "gradlew")
       val processBuilder = ProcessBuilder(command)
-      
+
       val process = processBuilder.start()
       val exitCode = process.waitFor()
-      
+
       if (exitCode == 0) {
         log.info("Gradlew processes killed successfully")
         eventListener?.onOutput("All Gradle build processes terminated")
@@ -713,16 +696,8 @@ class GradleBuildService :
 
   override fun cancelCurrentBuild(): CompletableFuture<BuildCancellationRequestResult> {
     checkServerStarted()
-    log.info("Capability/build cancellation: forwarding cancellation request to tooling server")
     val cancellationFuture = server!!.cancelCurrentBuild()
-    cancellationFuture.whenComplete { result, error ->
-      if (error != null) {
-        log.warn("Capability/build cancellation: request completed with error type={} message={}", error.javaClass.name, error.message, error)
-      } else {
-        log.info("Capability/build cancellation: request completed; enqueued={}, reason={}", result?.wasEnqueued, result?.failureReason)
-      }
-    }
-    
+
     buildServiceScope.launch {
       try {
         kotlinx.coroutines.delay(1000) // Wait 1 second for graceful cancellation

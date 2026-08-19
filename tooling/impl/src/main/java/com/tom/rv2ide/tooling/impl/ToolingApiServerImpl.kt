@@ -65,7 +65,6 @@ import com.tom.rv2ide.utils.StopWatch
 import java.io.File
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import org.gradle.tooling.BuildCancelledException
@@ -94,7 +93,6 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
   private var lastInitParams: InitializeProjectParams? = null
   private var _buildCancellationToken: CancellationTokenSource? = null
   private var httpProxy: SimpleHttpProxy? = null
-  private val capabilityRequestSequence = AtomicLong(0L)
 
   private val cancellationTokenAccessLock = ReentrantLock(/* fair= */ true)
   private var buildCancellationToken: CancellationTokenSource?
@@ -321,25 +319,18 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
   }
 
   override fun getProjectCreationCapabilities(): CompletableFuture<DefaultProjectCreationCapabilities> {
-    val requestId = capabilityRequestSequence.incrementAndGet()
-    log.info("Capability request #{}: server request accepted; buildInProgress={}", requestId, isBuildInProgress)
     return runBuild {
-      log.info("Capability request #{}: server action started", requestId)
       assertProjectInitialized()
       val connection =
           checkNotNull(this.connection) {
             "ProjectConnection has not been initialized. Cannot inspect module creation capabilities."
           }
-      log.info("Reading project creation capabilities from Gradle")
       val executor = connection.action { controller -> controller.getModel(ProjectCreationCapabilities::class.java) }
       Main.finalizeLauncher(executor)
       this.buildCancellationToken = GradleConnector.newCancellationTokenSource()
       executor.withCancellationToken(this.buildCancellationToken!!.token())
       try {
-        log.info("Capability request #{}: executor.run() starting", requestId)
         val capabilities = executor.run()
-        log.info("Capability request #{}: executor.run() returned; proxyType={}", requestId, capabilities?.javaClass?.name)
-        log.info("Read project creation capabilities from Gradle")
         // Gradle returns custom models as dynamic proxies. Copy every interface model into RPC DTOs
         // so Gson never receives a Gradle-owned proxy.
         DefaultProjectCreationCapabilities(
@@ -363,15 +354,11 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
               )
             },
         )
-        .also { snapshot ->
-          log.info("Capability request #{}: snapshot created; applicationProjects={}, candidates={}, diagnostics={}", requestId, snapshot.applicationProjects.size, snapshot.candidates.size, snapshot.diagnostics.size)
-        }
       } catch (error: Throwable) {
-        log.warn("Capability request #{}: failed to read project creation capabilities from Gradle; type={} message={}", requestId, error.javaClass.name, error.message, error)
+        log.warn("Failed to read project creation capabilities from Gradle", error)
         throw error
       } finally {
         this.buildCancellationToken = null
-        log.info("Capability request #{}: server action cleanup complete; runBuild state reset follows", requestId)
       }
     }
   }
@@ -1045,10 +1032,8 @@ artifact = variant.mainArtifact,
   }
 
   override fun cancelCurrentBuild(): CompletableFuture<BuildCancellationRequestResult> {
-    log.info("Cancellation request received; buildInProgress={}, tokenPresent={}", isBuildInProgress, this.buildCancellationToken != null)
     return CompletableFuture.supplyAsync {
       if (this.buildCancellationToken == null) {
-        log.info("Cancellation request rejected: no running build token")
         return@supplyAsync BuildCancellationRequestResult(
             false,
             BuildCancellationRequestResult.Reason.NO_RUNNING_BUILD,
@@ -1058,7 +1043,6 @@ artifact = variant.mainArtifact,
       try {
         this.buildCancellationToken!!.cancel()
         this.buildCancellationToken = null
-        log.info("Cancellation request accepted: token cancelled")
       } catch (e: Exception) {
         val failureReason = CANCELLATION_ERROR
         failureReason.message = "${failureReason.message}: ${e.message}"
@@ -1122,23 +1106,16 @@ artifact = variant.mainArtifact,
 
   private inline fun <T : Any?> runBuild(crossinline action: () -> T): CompletableFuture<T> =
       supplyAsync {
-        log.debug("runBuild: request worker started; buildInProgress={}", isBuildInProgress)
         if (isBuildInProgress) {
-          log.error("Cannot run build, build is already in prorgess!")
+          log.error("Cannot run build, build is already in progress")
           throw IllegalStateException("Build is already in progress")
         }
 
         isBuildInProgress = true
         try {
-          action().also { result ->
-            log.debug("runBuild: action returned; resultType={}", result?.javaClass?.name)
-          }
-        } catch (error: Throwable) {
-          log.warn("runBuild: action failed; type={} message={}", error.javaClass.name, error.message, error)
-          throw error
+          action()
         } finally {
           isBuildInProgress = false
-          log.debug("runBuild: request worker finished; buildInProgress={}", isBuildInProgress)
         }
       }
 
