@@ -43,6 +43,7 @@ import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UN
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_BUILD_ARGUMENT
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_CONFIGURATION
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_GRADLE_VERSION
+import com.tom.rv2ide.tooling.api.models.DefaultProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.GradleDsl
 import com.tom.rv2ide.tooling.api.models.GradleTask
 import com.tom.rv2ide.tooling.api.models.ModuleCreationKind
@@ -327,7 +328,15 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       this.buildCancellationToken = GradleConnector.newCancellationTokenSource()
       executor.withCancellationToken(this.buildCancellationToken!!.token())
       try {
-        executor.run()
+        val capabilities = executor.run()
+        // Gradle returns custom models as dynamic proxies. The RPC layer must receive a concrete DTO.
+        DefaultProjectCreationCapabilities(
+            projectRoot = capabilities.projectRoot,
+            settingsDsl = capabilities.settingsDsl,
+            applicationProjects = capabilities.applicationProjects,
+            candidates = capabilities.candidates,
+            diagnostics = capabilities.diagnostics,
+        )
       } finally {
         this.buildCancellationToken = null
       }
