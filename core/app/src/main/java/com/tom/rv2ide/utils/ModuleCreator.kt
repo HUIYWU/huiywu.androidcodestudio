@@ -26,6 +26,10 @@ import com.tom.rv2ide.tooling.api.models.ModuleCreationValidation
 import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
 import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
 import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
+import com.tom.rv2ide.projectdata.gradleedit.BuildScriptDependenciesEditor
+import com.tom.rv2ide.projectdata.gradleedit.GradleEditResult
+import com.tom.rv2ide.projectdata.gradleedit.ProjectSettingsEditor
+import com.tom.rv2ide.projectdata.gradleedit.TextEditApplier
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -608,44 +612,17 @@ public class SampleClass {
   }
 
   private fun updateSettingsGradle(projectRoot: File, modulePath: String) {
-
-    val kotlinSettings = File(projectRoot, "settings.gradle.kts")
-    val groovySettings = File(projectRoot, "settings.gradle")
-    val settingsFile = when {
-      kotlinSettings.isFile -> kotlinSettings
-      groovySettings.isFile -> groovySettings
-      else -> throw IOException("settings.gradle(.kts) not found in project root")
-    }
-
-    val content = settingsFile.readText()
-
-    // Check if module is already included
-    if (content.contains("\"$modulePath\"") || content.contains("'$modulePath'")) {
-      return // Module already included
-    }
-
-    val includePattern = Regex("include\\s*\\(\\s*([^)]*)\\s*\\)")
-    val match = includePattern.find(content)
-
-    if (match != null) {
-      val existingModules = match.groupValues[1].trim()
-      val newModuleEntry = modulePath
-
-      if (existingModules.isNotEmpty()) {
-        val newContent =
-            content.replace(
-                match.groupValues[0],
-                "include(\n  $existingModules,\n  \"$newModuleEntry\"\n)",
-            )
-        settingsFile.writeText(newContent)
-      } else {
-        val newContent = content.replace(match.groupValues[0], "include(\"$newModuleEntry\")")
-        settingsFile.writeText(newContent)
-      }
-    } else {
-      val newContent = content + "\n\ninclude(\"$modulePath\")\n"
-      settingsFile.writeText(newContent)
-    }
+    val settingsFile = listOf(
+        File(projectRoot, "settings.gradle.kts"),
+        File(projectRoot, "settings.gradle"),
+    ).firstOrNull { it.isFile } ?: throw IOException("settings.gradle(.kts) not found in project root")
+    val source = settingsFile.readText()
+    val result = ProjectSettingsEditor.addInclude(
+        source,
+        modulePath,
+        settingsFile.name.endsWith(".kts"),
+    )
+    applyGradleEdit(settingsFile, source, result, "settings file")
   }
 
   private fun addDependencyToApplicationModule(
@@ -653,33 +630,28 @@ public class SampleClass {
       modulePath: String,
   ) {
     val appBuildFile = applicationModule.buildFile
-    val useKotlinDsl = appBuildFile.name.endsWith(".kts")
-    val content = appBuildFile.readText()
+    val source = appBuildFile.readText()
+    val result = BuildScriptDependenciesEditor.addProjectDependency(
+        source = source,
+        configuration = "implementation",
+        gradlePath = modulePath,
+        kotlinDsl = appBuildFile.name.endsWith(".kts"),
+    )
+    applyGradleEdit(appBuildFile, source, result, "application build script")
+  }
 
-    // Check if dependency is already added
-    if (
-        content.contains("project(\"$modulePath\")") || content.contains("project('$modulePath')")
-    ) {
-      return // Dependency already exists
-    }
-
-    // Find the dependencies block and add the new module dependency
-    val dependenciesPattern = Regex("dependencies\\s*\\{")
-    val match = dependenciesPattern.find(content)
-
-    if (match != null) {
-      val insertPosition = match.range.last + 1
-      val dependencyLine =
-          if (useKotlinDsl) {
-            "\n    implementation(project(\"$modulePath\"))\n"
-          } else {
-            "\n    implementation project('$modulePath')\n"
-          }
-
-      val newContent =
-          content.substring(0, insertPosition) + dependencyLine + content.substring(insertPosition)
-
-      appBuildFile.writeText(newContent)
+  private fun applyGradleEdit(
+      file: File,
+      source: String,
+      result: GradleEditResult,
+      description: String,
+  ) {
+    when (result) {
+      is GradleEditResult.Applied -> file.writeText(TextEditApplier.apply(source, result.edits))
+      GradleEditResult.NoChange -> Unit
+      is GradleEditResult.Unsupported -> throw IOException("Cannot edit $description: ${result.reason}")
+      is GradleEditResult.Ambiguous -> throw IOException("Cannot edit $description: ${result.reason}")
+      is GradleEditResult.Invalid -> throw IOException("Cannot edit $description: ${result.reason}")
     }
   }
 }
