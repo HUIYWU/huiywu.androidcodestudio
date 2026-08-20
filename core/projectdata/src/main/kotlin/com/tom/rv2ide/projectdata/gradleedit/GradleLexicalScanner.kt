@@ -9,10 +9,6 @@ object GradleLexicalScanner {
 
   fun matchingParenthesis(source: String, openOffset: Int): Int? =
       matching(source, openOffset, '(', ')')
-
-  fun findTokenOffsets(source: String, name: String): List<Int> =
-      findCall(source, name).map { it.first - name.length }
-
   fun findCall(source: String, name: String): List<Pair<Int, Int>> {
     val result = mutableListOf<Pair<Int, Int>>()
     var index = 0
