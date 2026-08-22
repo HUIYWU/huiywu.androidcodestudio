@@ -26,10 +26,10 @@ import com.tom.rv2ide.tooling.api.models.ModuleCreationValidation
 import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
 import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
 import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
-import com.tom.rv2ide.projectdata.gradleedit.BuildScriptDependenciesEditor
-import com.tom.rv2ide.projectdata.gradleedit.GradleEditResult
-import com.tom.rv2ide.projectdata.gradleedit.ProjectSettingsEditor
-import com.tom.rv2ide.projectdata.gradleedit.TextEditApplier
+import com.tom.rv2ide.projects.gradleedit.BuildScriptDependenciesEditor
+import com.tom.rv2ide.projects.gradleedit.GradleEditResult
+import com.tom.rv2ide.projects.gradleedit.ProjectSettingsEditor
+import com.tom.rv2ide.projects.gradleedit.TextEditApplier
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit

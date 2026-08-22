@@ -1,4 +1,4 @@
-package com.tom.rv2ide.projectdata.gradleedit
+package com.tom.rv2ide.projects.gradleedit
 
 sealed interface GradleEditResult {
   data class Applied(val edits: List<TextEdit>) : GradleEditResult

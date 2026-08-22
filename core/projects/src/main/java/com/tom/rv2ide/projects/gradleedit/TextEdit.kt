@@ -1,4 +1,4 @@
-package com.tom.rv2ide.projectdata.gradleedit
+package com.tom.rv2ide.projects.gradleedit
 
 /** A range-preserving edit applied to a source file. */
 data class TextEdit(
@@ -23,9 +23,7 @@ object TextEditApplier {
       previousStart = edit.startOffset
     }
     var result = source
-    ordered.forEach { edit ->
-      result = result.replaceRange(edit.startOffset, edit.endOffset, edit.replacement)
-    }
+    ordered.forEach { edit -> result = result.replaceRange(edit.startOffset, edit.endOffset, edit.replacement) }
     return result
   }
 }

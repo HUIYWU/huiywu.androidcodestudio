@@ -1,14 +1,11 @@
-package com.tom.rv2ide.projectdata.gradleedit
+package com.tom.rv2ide.projects.gradleedit
 
 /** Lightweight source scanner used to find real Gradle blocks without parsing the DSL. */
 object GradleLexicalScanner {
   data class Block(val openOffset: Int, val closeOffset: Int, val kind: Char)
 
-  fun matchingBrace(source: String, openOffset: Int): Int? =
-      matching(source, openOffset, '{', '}')
-
-  fun matchingParenthesis(source: String, openOffset: Int): Int? =
-      matching(source, openOffset, '(', ')')
+  fun matchingBrace(source: String, openOffset: Int): Int? = matching(source, openOffset, '{', '}')
+  fun matchingParenthesis(source: String, openOffset: Int): Int? = matching(source, openOffset, '(', ')')
   fun indexAfterWhitespace(source: String, start: Int): Int = skipWhitespace(source, start)
 
   fun findCall(source: String, name: String): List<Pair<Int, Int>> {
@@ -18,7 +15,7 @@ object GradleLexicalScanner {
       val token = nextCodeToken(source, index) ?: break
       index = token.second
       if (token.first != name) continue
-      var cursor = skipWhitespace(source, index)
+      val cursor = skipWhitespace(source, index)
       if (cursor >= source.length || source[cursor] != '(') continue
       val close = matchingParenthesis(source, cursor) ?: continue
       result += cursor to close
@@ -54,10 +51,7 @@ object GradleLexicalScanner {
       }
       when (source[index]) {
         open -> depth++
-        close -> {
-          depth--
-          if (depth == 0) return index
-        }
+        close -> if (--depth == 0) return index
       }
       index++
     }

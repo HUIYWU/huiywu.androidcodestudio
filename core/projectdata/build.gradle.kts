@@ -31,7 +31,4 @@ android {
 
 dependencies {
     implementation(libs.common.kotlin.coroutines.android)
-
-    testImplementation(libs.tests.junit)
-    testImplementation(libs.tests.google.truth)
 }
