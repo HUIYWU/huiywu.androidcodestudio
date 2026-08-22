@@ -13,9 +13,18 @@ object ProjectSettingsEditor {
           .find(projectBody)?.groupValues?.get(1) ?: return@forEach
       val lineEnd = source.indexOf('\n', close).let { if (it < 0) source.length else it }
       val tail = source.substring(close + 1, lineEnd)
-      val mapping = Regex("\\.projectDir\\s*=\\s*file\\s*\\(([^)]*)\\)").find(tail)
+      val directMapping = Regex("\\.projectDir\\s*=\\s*file\\s*\\(([^)]*)\\)").find(tail)
+      if (directMapping != null) {
+        result += ProjectDirectoryMapping(path, directMapping.groupValues[1].trim())
+        return@forEach
+      }
+      val brace = GradleLexicalScanner.indexAfterWhitespace(source, close)
+      if (brace >= source.length || source[brace] != '{') return@forEach
+      val blockClose = GradleLexicalScanner.matchingBrace(source, brace) ?: return@forEach
+      val body = source.substring(brace + 1, blockClose)
+      val nestedMapping = Regex("projectDir\\s*=\\s*file\\s*\\(([^)]*)\\)").find(body)
           ?: return@forEach
-      result += ProjectDirectoryMapping(path, mapping.groupValues[1].trim())
+      result += ProjectDirectoryMapping(path, nestedMapping.groupValues[1].trim())
     }
     return result
   }

@@ -9,6 +9,8 @@ object GradleLexicalScanner {
 
   fun matchingParenthesis(source: String, openOffset: Int): Int? =
       matching(source, openOffset, '(', ')')
+  fun indexAfterWhitespace(source: String, start: Int): Int = skipWhitespace(source, start)
+
   fun findCall(source: String, name: String): List<Pair<Int, Int>> {
     val result = mutableListOf<Pair<Int, Int>>()
     var index = 0

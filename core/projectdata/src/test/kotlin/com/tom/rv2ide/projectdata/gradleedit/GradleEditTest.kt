@@ -32,6 +32,10 @@ class GradleEditTest {
     )
     assertThat(ProjectSettingsEditor.addProjectDirMapping(source, ":app", "../other", true))
         .isEqualTo(GradleEditResult.NoChange)
+    val nested = "project(\":demo\") {\n  projectDir = file(\"../demo\")\n}\n"
+    assertThat(ProjectSettingsEditor.findProjectDirectoryMappings(nested)).containsExactly(
+        ProjectSettingsEditor.ProjectDirectoryMapping(":demo", "\"../demo\""),
+    )
     val added = ProjectSettingsEditor.addProjectDirMapping(source, ":feature", "../feature", true)
     assertThat(added).isInstanceOf(GradleEditResult.Applied::class.java)
   }
