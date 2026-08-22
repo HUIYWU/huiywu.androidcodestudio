@@ -40,12 +40,43 @@ class GradleEditTest {
     assertThat(output).contains("val text = \"dependencies { fake }\"")
   }
 
+  @Test fun supportedAndUnsupportedDependencyFormsAreDistinguished() {
+    val supported = "dependencies { implementation(project(\":feature\")) }"
+    val unsupported = "dependencies { implementation(project(path = \":feature\")) }"
+    val commented = "// implementation(project(path = \":feature\"))\ndependencies { }"
+    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(supported)).containsExactly(
+        BuildScriptDependenciesEditor.ProjectDependency("implementation", ":feature"),
+    )
+    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(supported, ":feature")).isFalse()
+    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(unsupported, ":feature")).isTrue()
+    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(commented, ":feature")).isFalse()
+  }
+
   @Test fun projectDependencyCanBeRenamedAndRemoved() {
     val source = "dependencies {\n  implementation(project(\":old\"))\n  api project(':api-old')\n}\n"
     val renamed = apply(source, BuildScriptDependenciesEditor.renameProjectDependency(source, "implementation", ":old", ":new"))
     assertThat(renamed).contains("project(\":new\")")
     val removed = apply(renamed, BuildScriptDependenciesEditor.removeProjectDependency(renamed, "api", ":api-old"))
     assertThat(removed).doesNotContain(":api-old")
+  }
+
+  @Test fun transactionRestoresFilesAndOnlyDeletesTrackedDirectories() {
+    val root = createTempDir(prefix = "project-edit-")
+    try {
+      val settings = root.resolve("settings.gradle.kts").apply { writeText("include(\":app\")\n") }
+      val newModule = root.resolve("feature")
+      val transaction = ProjectEditTransaction.begin(root)
+      transaction.capture(settings)
+      transaction.trackCreatedDirectory(newModule)
+      settings.writeText("changed")
+      newModule.mkdirs()
+      newModule.resolve("build.gradle.kts").writeText("plugins {}")
+      assertThat(transaction.rollback()).isEmpty()
+      assertThat(settings.readText()).isEqualTo("include(\":app\")\n")
+      assertThat(newModule.exists()).isFalse()
+    } finally {
+      root.deleteRecursively()
+    }
   }
 
   @Test fun multipleDependencyBlocksFailClosed() {

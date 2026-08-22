@@ -24,6 +24,23 @@ object GradleLexicalScanner {
     return result
   }
 
+  /** Whether [offset] points to code rather than whitespace, a comment, or a quoted literal. */
+  fun isCodeOffset(source: String, offset: Int): Boolean {
+    if (offset !in source.indices) return false
+    var index = 0
+    while (index < source.length) {
+      val next = skipIgnored(source, index)
+      if (next != index) {
+        if (offset in index until next) return false
+        index = next
+        continue
+      }
+      if (index == offset) return true
+      index++
+    }
+    return false
+  }
+
   fun findNamedBlocks(source: String, name: String): List<Block> {
     val result = mutableListOf<Block>()
     var index = 0

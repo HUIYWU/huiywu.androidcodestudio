@@ -48,6 +48,7 @@ import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
+import com.tom.rv2ide.projects.gradleedit.ModuleOperations
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.java.JavaModule
 import com.tom.rv2ide.tooling.api.models.ApplicationProjectInfo
@@ -62,6 +63,12 @@ import org.slf4j.LoggerFactory
 
 /** Project module list, creation wizard, and module detail surface for the editor sidebar. */
 class ModuleManagerFragment : Fragment() {
+
+  companion object {
+    private const val MENU_RENAME_MODULE = 1
+    private const val MENU_MOVE_MODULE = 2
+    private const val MENU_DELETE_MODULE = 3
+  }
 
   private val log = LoggerFactory.getLogger(ModuleManagerFragment::class.java)
   private var _binding: FragmentModuleManagerBinding? = null
@@ -329,7 +336,7 @@ class ModuleManagerFragment : Fragment() {
     binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
-    content.addView(backToolbar { showModuleList() })
+    content.addView(backToolbar({ showModuleList() }, module))
     val header = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
     val titleGroup = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
     titleGroup.addView(text(module.path, 20f))
@@ -705,18 +712,75 @@ class ModuleManagerFragment : Fragment() {
         setOnClickListener { action() }
       }
 
-  private fun backToolbar(action: () -> Unit) = MaterialToolbar(requireContext()).apply {
+  private fun backToolbar(
+      action: () -> Unit,
+      module: GradleProject? = null,
+  ) = MaterialToolbar(requireContext()).apply {
     layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
       bottomMargin = dp(4)
     }
+    // The parent content is padded 16dp; align the navigation icon's visual start to that edge.
+    contentInsetStartWithNavigation = dp(4)
     backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
     navigationIcon = requireContext().getDrawable(R.drawable.ic_arrow_back)
     setNavigationIconTint(themeColor(com.google.android.material.R.attr.colorOnSurface))
-    contentDescription = "Back to modules"
+    navigationContentDescription = "Back to modules"
     isEnabled = !creatingModule && !editorViewModel.isInitializing
     setNavigationOnClickListener {
       if (!creatingModule && !editorViewModel.isInitializing) action()
     }
+    if (module != null) {
+      menu.add(0, MENU_RENAME_MODULE, 0, "Rename module").apply {
+        setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_NEVER)
+      }
+      menu.add(0, MENU_MOVE_MODULE, 1, "Move module").apply {
+        setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_NEVER)
+      }
+      menu.add(0, MENU_DELETE_MODULE, 2, "Delete module").apply {
+        setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_NEVER)
+      }
+      setOnMenuItemClickListener { item ->
+        when (item.itemId) {
+          MENU_RENAME_MODULE -> showModuleOperationUnavailable("Renaming module is not implemented yet.")
+          MENU_MOVE_MODULE -> showModuleOperationUnavailable("Moving module is not implemented yet.")
+          MENU_DELETE_MODULE -> previewModuleDeletion(module)
+          else -> return@setOnMenuItemClickListener false
+        }
+        true
+      }
+    }
+  }
+
+  private fun previewModuleDeletion(module: GradleProject) {
+    val workspace = IProjectManager.getInstance().getWorkspace()
+        ?: return showModuleOperationUnavailable("Project workspace is unavailable.")
+    val result = ModuleOperations.planDeletion(workspace, module.path)
+    val message = when (result) {
+      is ModuleOperations.DeletionPlanResult.Ready -> buildString {
+        append("Module files were not changed.\n\n")
+        append("Deletion can remove ").append(result.plan.target.path).append(" after confirmation.")
+        if (result.plan.dependencyRemovals.isNotEmpty()) {
+          append("\n\nProject dependencies to remove:\n")
+          result.plan.dependencyRemovals.forEach { removal ->
+            append("• ").append(removal.dependentProjectPath).append(": ")
+                .append(removal.configuration).append(" → ").append(removal.targetProjectPath).append('\n')
+          }
+        }
+      }
+      is ModuleOperations.DeletionPlanResult.Blocked -> buildString {
+        append("Module files were not changed. Deletion is blocked:\n\n")
+        result.reasons.forEach { append("• ").append(it).append('\n') }
+      }
+    }
+    MaterialAlertDialogBuilder(requireContext())
+        .setTitle("Delete ${module.path}")
+        .setMessage(message)
+        .setPositiveButton("Close", null)
+        .show()
+  }
+
+  private fun showModuleOperationUnavailable(message: String) {
+    Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
   }
 
   private fun text(value: String, size: Float, secondary: Boolean = false) = TextView(requireContext()).apply {

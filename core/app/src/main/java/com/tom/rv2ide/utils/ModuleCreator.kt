@@ -28,8 +28,8 @@ import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
 import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import com.tom.rv2ide.projects.gradleedit.BuildScriptDependenciesEditor
 import com.tom.rv2ide.projects.gradleedit.GradleEditResult
+import com.tom.rv2ide.projects.gradleedit.ProjectEditTransaction
 import com.tom.rv2ide.projects.gradleedit.ProjectSettingsEditor
-import com.tom.rv2ide.projects.gradleedit.TextEditApplier
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -52,8 +52,6 @@ class ModuleCreator {
   private data class ApplicationModule(val buildFile: File)
 
   private data class ModulePath(val gradlePath: String, val directoryPath: String, val name: String)
-
-  private data class FileSnapshot(val file: File, val contents: ByteArray)
 
   fun getProjectCreationCapabilities(timeoutSeconds: Long = 30): ProjectCreationCapabilities? {
     val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return null
@@ -194,12 +192,17 @@ class ModuleCreator {
       return CreationResult(false, "Module '${modulePath.gradlePath}' already exists")
     }
 
-    val snapshots =
-        runCatching { captureGradleFileSnapshots(projectRoot, applicationModule.buildFile) }
-            .getOrElse { error ->
-              return CreationResult(false, error.message ?: "Could not read Gradle files before creation")
-            }
-    val createdParentDirectories = missingParentDirectories(projectRoot, moduleDir)
+    val transaction =
+        runCatching {
+          ProjectEditTransaction.begin(projectRoot, listOf(applicationModule.buildFile.parentFile)).also { edit ->
+            edit.capture(findSettingsFile(projectRoot))
+            edit.capture(applicationModule.buildFile)
+            missingParentDirectories(projectRoot, moduleDir).forEach(edit::trackCreatedParentDirectory)
+            edit.trackCreatedDirectory(moduleDir)
+          }
+        }.getOrElse { error ->
+          return CreationResult(false, error.message ?: "Could not prepare project edit transaction")
+        }
     return try {
       val basePackageName = detectBasePackageName(applicationModule.buildFile)
       val appConfig = detectAppModuleConfig(applicationModule.buildFile)
@@ -211,31 +214,24 @@ class ModuleCreator {
           basePackageName,
           appConfig,
       )
-      updateSettingsGradle(projectRoot, modulePath.gradlePath)
-      addDependencyToApplicationModule(applicationModule, modulePath.gradlePath)
+      updateSettingsGradle(projectRoot, modulePath.gradlePath, transaction)
+      addDependencyToApplicationModule(applicationModule, modulePath.gradlePath, transaction)
+      transaction.commit()
       CreationResult(true)
     } catch (e: Exception) {
       // Creation changes several user-owned files. Restore them before removing only directories this call made.
-      rollbackModuleCreation(moduleDir, createdParentDirectories, snapshots)
+      transaction.rollback().forEach { rollbackError ->
+        log.warn("Could not fully roll back module creation; name={}", moduleName, rollbackError)
+      }
       log.warn("Module creation failed while preparing project files; name={}", moduleName, e)
       CreationResult(false, e.message ?: "Unknown error occurred")
     }
   }
 
-  private fun captureGradleFileSnapshots(
-      projectRoot: File,
-      applicationBuildFile: File,
-  ): List<FileSnapshot> {
-    val settingsFile =
-        listOf(File(projectRoot, "settings.gradle.kts"), File(projectRoot, "settings.gradle")).firstOrNull {
-          it.isFile
-        }
-            ?: throw IOException("settings.gradle(.kts) not found in project root")
-    return listOf(
-        FileSnapshot(settingsFile, settingsFile.readBytes()),
-        FileSnapshot(applicationBuildFile, applicationBuildFile.readBytes()),
-    )
-  }
+  private fun findSettingsFile(projectRoot: File): File =
+      listOf(File(projectRoot, "settings.gradle.kts"), File(projectRoot, "settings.gradle"))
+          .firstOrNull { it.isFile }
+          ?: throw IOException("settings.gradle(.kts) not found in project root")
 
   private fun missingParentDirectories(projectRoot: File, moduleDir: File): List<File> {
     val directories = mutableListOf<File>()
@@ -245,25 +241,6 @@ class ModuleCreator {
       directory = directory.parentFile
     }
     return directories
-  }
-
-  private fun rollbackModuleCreation(
-      moduleDir: File,
-      createdParentDirectories: List<File>,
-      snapshots: List<FileSnapshot>,
-  ) {
-    snapshots.forEach { snapshot ->
-      runCatching { snapshot.file.writeBytes(snapshot.contents) }
-          .onFailure { error -> log.warn("Could not restore ${snapshot.file.path}", error) }
-    }
-    if (moduleDir.exists() && !moduleDir.deleteRecursively()) {
-      log.warn("Could not remove incomplete module directory: {}", moduleDir.path)
-    }
-    createdParentDirectories.forEach { directory ->
-      if (directory.isDirectory && directory.list().isNullOrEmpty() && !directory.delete()) {
-        log.warn("Could not remove empty module parent directory: {}", directory.path)
-      }
-    }
   }
 
   private fun resolveApplicationModule(
@@ -611,23 +588,25 @@ public class SampleClass {
     )
   }
 
-  private fun updateSettingsGradle(projectRoot: File, modulePath: String) {
-    val settingsFile = listOf(
-        File(projectRoot, "settings.gradle.kts"),
-        File(projectRoot, "settings.gradle"),
-    ).firstOrNull { it.isFile } ?: throw IOException("settings.gradle(.kts) not found in project root")
+  private fun updateSettingsGradle(
+      projectRoot: File,
+      modulePath: String,
+      transaction: ProjectEditTransaction,
+  ) {
+    val settingsFile = findSettingsFile(projectRoot)
     val source = settingsFile.readText()
     val result = ProjectSettingsEditor.addInclude(
         source,
         modulePath,
         settingsFile.name.endsWith(".kts"),
     )
-    applyGradleEdit(settingsFile, source, result, "settings file")
+    applyGradleEdit(settingsFile, source, result, "settings file", transaction)
   }
 
   private fun addDependencyToApplicationModule(
       applicationModule: ApplicationModule,
       modulePath: String,
+      transaction: ProjectEditTransaction,
   ) {
     val appBuildFile = applicationModule.buildFile
     val source = appBuildFile.readText()
@@ -637,7 +616,7 @@ public class SampleClass {
         gradlePath = modulePath,
         kotlinDsl = appBuildFile.name.endsWith(".kts"),
     )
-    applyGradleEdit(appBuildFile, source, result, "application build script")
+    applyGradleEdit(appBuildFile, source, result, "application build script", transaction)
   }
 
   private fun applyGradleEdit(
@@ -645,13 +624,6 @@ public class SampleClass {
       source: String,
       result: GradleEditResult,
       description: String,
-  ) {
-    when (result) {
-      is GradleEditResult.Applied -> file.writeText(TextEditApplier.apply(source, result.edits))
-      GradleEditResult.NoChange -> Unit
-      is GradleEditResult.Unsupported -> throw IOException("Cannot edit $description: ${result.reason}")
-      is GradleEditResult.Ambiguous -> throw IOException("Cannot edit $description: ${result.reason}")
-      is GradleEditResult.Invalid -> throw IOException("Cannot edit $description: ${result.reason}")
-    }
-  }
+      transaction: ProjectEditTransaction,
+  ) = transaction.applyTextEdit(file, source, result, description)
 }

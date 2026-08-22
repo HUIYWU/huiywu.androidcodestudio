@@ -42,6 +42,21 @@ object BuildScriptDependenciesEditor {
     return GradleEditResult.Applied(listOf(TextEdit(match.pathStart, match.pathEnd, newGradlePath)))
   }
 
+  data class ProjectDependency(val configuration: String, val gradlePath: String)
+
+  fun findProjectDependencies(source: String): List<ProjectDependency> =
+      dependencyStatements(source).map { ProjectDependency(it.configuration, it.gradlePath) }
+
+  /** Detects a project reference to [gradlePath] that is not one of the editor's removable forms. */
+  fun hasUnsupportedProjectDependencyReference(source: String, gradlePath: String): Boolean {
+    if (!isGradlePath(gradlePath)) return false
+    val supportedRanges = dependencyStatements(source).filter { it.gradlePath == gradlePath }.map { it.start until it.end }
+    val candidate = Regex("project\\s*\\([^\\r\\n)]*[\\\"']${Regex.escape(gradlePath)}[\\\"'][^\\r\\n)]*\\)")
+    return candidate.findAll(source).any { match ->
+      GradleLexicalScanner.isCodeOffset(source, match.range.first) && supportedRanges.none { match.range.first in it }
+    }
+  }
+
   fun containsProjectDependency(source: String, configuration: String, gradlePath: String): Boolean =
       dependencyStatements(source).any { it.configuration == configuration && it.gradlePath == gradlePath }
 
