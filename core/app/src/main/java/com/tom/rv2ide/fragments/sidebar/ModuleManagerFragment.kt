@@ -205,7 +205,7 @@ class ModuleManagerFragment : Fragment() {
     binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
-    content.addView(backToolbar { showModuleList() })
+    content.addView(backToolbar(action = { showModuleList() }))
     val header = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
     header.addView(text("New module", 20f), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
     header.addView(text("$wizardStep / 3", 14f, secondary = true))
@@ -336,7 +336,7 @@ class ModuleManagerFragment : Fragment() {
     binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
-    content.addView(backToolbar({ showModuleList() }, module))
+    content.addView(backToolbar(action = { showModuleList() }, module = module))
     val header = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
     val titleGroup = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
     titleGroup.addView(text(module.path, 20f))
