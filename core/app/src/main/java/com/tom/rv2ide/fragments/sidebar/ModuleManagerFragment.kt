@@ -772,11 +772,59 @@ class ModuleManagerFragment : Fragment() {
         result.reasons.forEach { append("• ").append(it).append('\n') }
       }
     }
-    MaterialAlertDialogBuilder(requireContext())
+    val dialog = MaterialAlertDialogBuilder(requireContext())
         .setTitle("Delete ${module.path}")
         .setMessage(message)
-        .setPositiveButton("Close", null)
-        .show()
+        .setNegativeButton("Cancel", null)
+    if (result is ModuleOperations.DeletionPlanResult.Ready) {
+      dialog.setPositiveButton("Delete") { _, _ -> executeModuleDeletion(module.path) }
+    } else {
+      dialog.setPositiveButton("Close", null)
+    }
+    dialog.show()
+  }
+
+  private fun executeModuleDeletion(modulePath: String) {
+    if (creatingModule || editorViewModel.isInitializing) return
+    val workspace = IProjectManager.getInstance().getWorkspace()
+        ?: return showModuleOperationUnavailable("Project workspace is unavailable.")
+    val plan = when (val result = ModuleOperations.planDeletion(workspace, modulePath)) {
+      is ModuleOperations.DeletionPlanResult.Ready -> result.plan
+      is ModuleOperations.DeletionPlanResult.Blocked -> {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Delete $modulePath")
+            .setMessage(result.reasons.joinToString("\n") { "• $it" })
+            .setPositiveButton("Close", null)
+            .show()
+        return
+      }
+    }
+    creatingModule = true
+    render()
+    lifecycleScope.launch {
+      val result = withContext(Dispatchers.IO) { ModuleOperations.executeDeletion(plan) }
+      if (!isAdded) return@launch
+      creatingModule = false
+      when (result) {
+        is ModuleOperations.DeletionExecutionResult.Deleted -> {
+          IProjectManager.getInstance().notifyFileDeleted(plan.target.projectDir)
+          Toast.makeText(requireContext(), "Module deleted. Syncing project...", Toast.LENGTH_SHORT).show()
+          showModuleList(animated = false)
+          syncProject()
+        }
+        is ModuleOperations.DeletionExecutionResult.Failed -> {
+          render()
+          val rollback = result.rollbackFailures.takeIf { it.isNotEmpty() }
+              ?.joinToString("\n") { "• $it" }
+              ?.let { "\n\nRollback issues:\n$it" }.orEmpty()
+          MaterialAlertDialogBuilder(requireContext())
+              .setTitle("Module deletion failed")
+              .setMessage(result.reason + rollback)
+              .setPositiveButton("Close", null)
+              .show()
+        }
+      }
+    }
   }
 
   private fun showModuleOperationUnavailable(message: String) {

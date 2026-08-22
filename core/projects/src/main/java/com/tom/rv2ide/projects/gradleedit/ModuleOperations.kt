@@ -3,6 +3,10 @@ package com.tom.rv2ide.projects.gradleedit
 import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.IWorkspace
 import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.UUID
 
 /**
  * Shared, fail-closed planning entry points for module-management operations.
@@ -24,10 +28,14 @@ object ModuleOperations {
       val removeProjectDirectoryMapping: Boolean,
       val dependencyRemovals: List<DependencyRemoval>,
   )
-
-  sealed interface DeletionPlanResult {
+sealed interface DeletionPlanResult {
     data class Ready(val plan: DeletionPlan) : DeletionPlanResult
     data class Blocked(val reasons: List<String>) : DeletionPlanResult
+  }
+
+  sealed interface DeletionExecutionResult {
+    data class Deleted(val targetProjectPath: String) : DeletionExecutionResult
+    data class Failed(val reason: String, val rollbackFailures: List<String> = emptyList()) : DeletionExecutionResult
   }
 
   fun planDeletion(workspace: IWorkspace, targetProjectPath: String): DeletionPlanResult {
@@ -85,6 +93,79 @@ object ModuleOperations {
             removals.distinctBy { Triple(it.buildScript.canonicalPath, it.configuration, it.targetProjectPath) },
         ),
     )
+  }
+
+  /** Executes a previously approved plan. Call [planDeletion] again immediately before confirmation. */
+  fun executeDeletion(plan: DeletionPlan): DeletionExecutionResult {
+    val root = plan.settingsFile.parentFile.canonicalFile
+    val targetDirectory = plan.target.projectDir.canonicalFile
+    if (!targetDirectory.exists() || !targetDirectory.isDirectory) {
+      return DeletionExecutionResult.Failed("Module directory no longer exists: ${targetDirectory.path}")
+    }
+    val stagedDirectory = File(
+        targetDirectory.parentFile,
+        ".${targetDirectory.name}.androidide-delete-${UUID.randomUUID()}",
+    )
+    val transaction = runCatching {
+      ProjectEditTransaction.begin(root, plan.dependencyRemovals.map { it.buildScript.parentFile })
+    }.getOrElse {
+      return DeletionExecutionResult.Failed(it.message ?: "Could not start project edit transaction")
+    }
+    var staged = false
+    return try {
+      // Move first so the directory can be restored if any following Gradle edit fails.
+      moveDirectory(targetDirectory, stagedDirectory)
+      staged = true
+
+      if (plan.removeProjectDirectoryMapping) {
+        editSettings(plan, transaction) { source ->
+          ProjectSettingsEditor.removeProjectDirMapping(source, plan.target.path)
+        }
+      }
+      if (plan.removeSettingsInclude) {
+        editSettings(plan, transaction) { source ->
+          ProjectSettingsEditor.removeInclude(source, plan.target.path)
+        }
+      }
+      plan.dependencyRemovals.groupBy { it.buildScript.canonicalFile }.forEach { (buildScript, removals) ->
+        removals.forEach { removal ->
+          val source = buildScript.readText()
+          transaction.applyTextEdit(
+              buildScript,
+              source,
+              BuildScriptDependenciesEditor.removeProjectDependency(source, removal.configuration, removal.targetProjectPath),
+              "dependency in ${removal.dependentProjectPath}",
+          )
+        }
+      }
+      if (!stagedDirectory.deleteRecursively()) throw IOException("Could not permanently remove module directory: ${targetDirectory.path}")
+      transaction.commit()
+      DeletionExecutionResult.Deleted(plan.target.path)
+    } catch (error: Throwable) {
+      val rollbackFailures = transaction.rollback().mapNotNull { it.message }.toMutableList()
+      if (staged && stagedDirectory.exists()) {
+        runCatching { moveDirectory(stagedDirectory, targetDirectory) }
+            .exceptionOrNull()?.message?.let(rollbackFailures::add)
+      }
+      DeletionExecutionResult.Failed(error.message ?: "Module deletion failed", rollbackFailures)
+    }
+  }
+
+  private fun moveDirectory(from: File, to: File) {
+    try {
+      Files.move(from.toPath(), to.toPath(), StandardCopyOption.ATOMIC_MOVE)
+    } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+      Files.move(from.toPath(), to.toPath())
+    }
+  }
+
+  private fun editSettings(
+      plan: DeletionPlan,
+      transaction: ProjectEditTransaction,
+      operation: (String) -> GradleEditResult,
+  ) {
+    val source = plan.settingsFile.readText()
+    transaction.applyTextEdit(plan.settingsFile, source, operation(source), "settings file")
   }
 
   private fun workspaceProjects(workspace: IWorkspace): List<GradleProject> =
