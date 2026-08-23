@@ -12,11 +12,40 @@ class GradleEditTest {
     assertThat(output).contains("// include(\":fake\")")
   }
 
-  @Test fun standaloneIncludeIsRemovedAndCompoundIncludeFailsClosed() {
+  @Test fun standaloneIncludeIsRemovedAndCompoundIncludeEntryCanBeRemoved() {
     val source = "include(\":app\")\ninclude(\":feature\", \":shared\")\n"
     val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":app"))
     assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":feature", ":shared")
-    assertThat(ProjectSettingsEditor.removeInclude(source, ":feature")).isInstanceOf(GradleEditResult.Unsupported::class.java)
+    val compoundOutput = apply(source, ProjectSettingsEditor.removeInclude(source, ":feature"))
+    assertThat(compoundOutput).contains("include(\":shared\")")
+    assertThat(compoundOutput).doesNotContain(":feature")
+  }
+
+  @Test fun multilineKotlinIncludeRemovesOneEntryAndPreservesOthers() {
+    val source = """include(
+    ":app",
+    ":tewo",
+    ":sec",
+    ":profile1",
+    ":profile2"
+)
+"""
+    val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":profile2"))
+    assertThat(output).doesNotContain(":profile2")
+    assertThat(output).isEqualTo("include(\n    \":app\",\n    \":tewo\",\n    \":sec\",\n    \":profile1\"\n)\n")
+    assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":app", ":tewo", ":sec", ":profile1")
+  }
+
+  @Test fun includeWithDynamicArgumentFailsClosed() {
+    val source = "include(\":app\", modules.first(), \":profile2\")\n"
+    assertThat(ProjectSettingsEditor.removeInclude(source, ":profile2"))
+        .isInstanceOf(GradleEditResult.Unsupported::class.java)
+  }
+
+  @Test fun repeatedIncludeCallsFailClosed() {
+    val source = "include(\":profile2\")\ninclude(\":app\", \":profile2\")\n"
+    assertThat(ProjectSettingsEditor.removeInclude(source, ":profile2"))
+        .isInstanceOf(GradleEditResult.Ambiguous::class.java)
   }
 
   @Test fun projectDirectoryMappingCanBeUpdatedAndRemoved() {
