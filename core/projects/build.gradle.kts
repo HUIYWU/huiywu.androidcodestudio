@@ -53,6 +53,9 @@ dependencies {
   implementation(projects.utilities.shared)
   implementation(projects.xml.utils)
 
+  implementation(libs.androidide.ts)
+  implementation(libs.androidide.ts.kotlin)
+  implementation(libs.androidide.ts.groovy)
   implementation(libs.common.io)
   implementation(libs.common.kotlin.coroutines.android)
   implementation(libs.google.auto.service.annotations)

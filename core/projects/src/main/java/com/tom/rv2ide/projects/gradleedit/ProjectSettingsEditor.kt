@@ -58,22 +58,25 @@ object ProjectSettingsEditor {
    */
   fun removeInclude(source: String, gradlePath: String): GradleEditResult {
     if (!isGradlePath(gradlePath)) return GradleEditResult.Invalid("Gradle path must start with ':'")
-    val calls = GradleLexicalScanner.findCall(source, "include")
-    val matchingCalls = calls.filter { (open, close) ->
-      literalRanges(source.substring(open + 1, close), gradlePath).isNotEmpty()
-    }
+    val calls = includeCalls(source)
+    val matchingCalls = calls.filter { call -> call.arguments.orEmpty().any { it.value == gradlePath } }
     if (matchingCalls.isEmpty()) return if (findIncludedPaths(source).contains(gradlePath)) {
       GradleEditResult.Unsupported("Include uses an unsupported or dynamic form")
     } else GradleEditResult.NoChange
     if (matchingCalls.size > 1 || calls.size > 1) return GradleEditResult.Ambiguous("Multiple include calls found for $gradlePath")
 
-    val (open, close) = matchingCalls.single()
+    val call = matchingCalls.single()
+    val open = source.indexOf('(', call.start).takeIf { it >= 0 && it < call.end }
+        ?: return GradleEditResult.Unsupported("Include call has no argument list")
+    val close = source.lastIndexOf(')', call.end - 1).takeIf { it > open }
+        ?: return GradleEditResult.Unsupported("Include call has no complete argument list")
     val body = source.substring(open + 1, close)
-    val literal = literalRanges(body, gradlePath)
-    if (literal.size != 1) return GradleEditResult.Ambiguous("Multiple include entries found for $gradlePath")
-    val target = literal.single()
-    val before = body.substring(0, target.first)
-    val after = body.substring(target.second)
+    val targetNode = call.arguments.orEmpty().filter { it.value == gradlePath }
+    if (targetNode.size != 1) return GradleEditResult.Ambiguous("Multiple include entries found for $gradlePath")
+    val target = targetNode.single().start to targetNode.single().end
+    val targetInBody = target.first - (open + 1) to target.second - (open + 1)
+    val before = body.substring(0, targetInBody.first)
+    val after = body.substring(targetInBody.second)
     if (containsDynamicIncludeArgument(before) || containsDynamicIncludeArgument(after)) {
       return GradleEditResult.Unsupported("Include contains a dynamic argument")
     }
@@ -117,18 +120,17 @@ object ProjectSettingsEditor {
   }
   //
 
+  fun findIncludedPaths(source: String): Set<String> =
+    includeCalls(source).flatMap { call -> call.arguments.orEmpty().map { it.value } }.toCollection(linkedSetOf())
 
-  fun findIncludedPaths(source: String): Set<String> {
-    val result = linkedSetOf<String>()
-    GradleLexicalScanner.findCall(source, "include").forEach { (open, close) ->
-      Regex("[\\\"'](:[A-Za-z0-9_:-]+)[\\\"']").findAll(source.substring(open + 1, close)).forEach { result += it.groupValues[1] }
-    }
-    source.lineSequence().forEach { line ->
-      val code = line.substringBefore("//").trim()
-      if (code.startsWith("include ")) Regex("[\\\"'](:[A-Za-z0-9_:-]+)[\\\"']").findAll(code).forEach { result += it.groupValues[1] }
-    }
-    return result
+  private fun includeCalls(source: String): List<GradleParser.Call> {
+    val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN).filter { it.name == "include" }
+    val groovy = GradleParser.parse(source, GradleDsl.GROOVY).filter { it.name == "include" }
+    return (kotlin + groovy)
+      .distinctBy { it.start to it.end }
+      .sortedBy { it.start }
   }
+
 
   private data class MappingStatement(
       val gradlePath: String,
