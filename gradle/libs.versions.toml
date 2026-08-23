@@ -8,7 +8,7 @@ junit-jupiter = "5.10.2"
 kotlin = "2.1.0"
 kotlin-coroutines = "1.10.2"
 # Auditable Android Tree-sitter wrapper/grammars published from HUIYWU/android-tree-sitter.
-tree-sitter = "0.1.6"
+tree-sitter = "0.2.0"
 editor = "0.23.7"
 glide = "5.0.4"
 androidx-vectordrawable = "1.2.0"
@@ -52,10 +52,11 @@ composite-layoutlibApi = { module = "com.tom.rv2ide.build:layoutlib-api" }
 
 # Auditable Tree-sitter fork published through GitHub Packages.
 androidide-ts = { module = "com.huiywu.androidcs.treesitter:android-tree-sitter", version.ref = "tree-sitter" }
+androidide-ts-cpp = { module = "com.huiywu.androidcs.treesitter:tree-sitter-cpp", version.ref = "tree-sitter" }
+androidide-ts-groovy = { module = "com.huiywu.androidcs.treesitter:tree-sitter-groovy", version.ref = "tree-sitter" }
 androidide-ts-java = { module = "com.huiywu.androidcs.treesitter:tree-sitter-java", version.ref = "tree-sitter" }
 androidide-ts-json = { module = "com.huiywu.androidcs.treesitter:tree-sitter-json", version.ref = "tree-sitter" }
 androidide-ts-kotlin = { module = "com.huiywu.androidcs.treesitter:tree-sitter-kotlin", version.ref = "tree-sitter" }
-androidide-ts-cpp = { module = "com.huiywu.androidcs.treesitter:tree-sitter-cpp", version.ref = "tree-sitter" }
 androidide-ts-log = { module = "com.huiywu.androidcs.treesitter:tree-sitter-log", version.ref = "tree-sitter" }
 androidide-ts-xml = { module = "com.huiywu.androidcs.treesitter:tree-sitter-xml", version.ref = "tree-sitter" }
 jcodings = { module = "org.jruby.jcodings:jcodings", version = "1.0.63" }
