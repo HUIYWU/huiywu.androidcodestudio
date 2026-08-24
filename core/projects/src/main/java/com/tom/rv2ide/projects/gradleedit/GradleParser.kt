@@ -27,6 +27,7 @@ internal object GradleParser {
   }
 
   private fun visit(node: TSNode, source: String, result: MutableList<Call>) {
+    if (!node.canAccess()) return
     val type = node.type
     if (type == "call_expression" || type == "method_invocation") {
       val name = callName(node, source)
@@ -37,27 +38,28 @@ internal object GradleParser {
     }
     for (index in 0 until node.namedChildCount) {
       val child = node.getNamedChild(index)
-      if (!child.isNull()) visit(child, source, result)
+      if (child.canAccess()) visit(child, source, result)
     }
   }
 
   private fun callName(node: TSNode, source: String): String? {
     if (node.type == "call_expression") {
       val function = node.getChildByFieldName("function")
-      if (!function.isNull() && function.type == "simple_identifier") return text(function, source)
+      if (function.canAccess() && function.type == "simple_identifier") return text(function, source)
+      if (node.namedChildCount == 0) return null
       val callee = node.getNamedChild(0)
-      return if (!callee.isNull() && callee.type == "simple_identifier") text(callee, source) else null
+      return if (callee.canAccess() && callee.type == "simple_identifier") text(callee, source) else null
     }
     if (node.type == "method_invocation") {
       val function = node.getChildByFieldName("function")
-      if (!function.isNull() && (function.type == "identifier" || function.type == "simple_identifier")) return text(function, source)
+      if (function.canAccess() && (function.type == "identifier" || function.type == "simple_identifier")) return text(function, source)
     }
     return null
   }
 
   private fun argumentNode(node: TSNode): TSNode? {
     val field = node.getChildByFieldName("arguments")
-    if (!field.isNull()) return field
+    if (field.canAccess()) return field
     return findDescendant(node) { it.type == "value_arguments" || it.type == "argument_list" }
   }
 
@@ -66,7 +68,10 @@ internal object GradleParser {
     var dynamic = false
     for (index in 0 until node.namedChildCount) {
       val argument = node.getNamedChild(index)
-      if (argument.isNull()) continue
+      if (!argument.canAccess()) {
+        dynamic = true
+        continue
+      }
       val string = when (argument.type) {
         "string_literal", "string" -> argument
         else -> findDescendant(argument) { it.type == "string_literal" || it.type == "string" }
@@ -88,12 +93,12 @@ internal object GradleParser {
   }
 
   private fun findDescendant(node: TSNode, predicate: (TSNode) -> Boolean): TSNode? {
+    if (!node.canAccess()) return null
     for (index in 0 until node.namedChildCount) {
       val child = node.getNamedChild(index)
-      if (!child.isNull()) {
-        if (predicate(child)) return child
-        findDescendant(child, predicate)?.let { return it }
-      }
+      if (!child.canAccess()) continue
+      if (predicate(child)) return child
+      findDescendant(child, predicate)?.let { return it }
     }
     return null
   }
