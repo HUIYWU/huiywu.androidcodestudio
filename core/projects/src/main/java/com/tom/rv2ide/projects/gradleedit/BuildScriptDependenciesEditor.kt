@@ -9,7 +9,7 @@ object BuildScriptDependenciesEditor {
     if (!isGradlePath(gradlePath)) return GradleEditResult.Invalid("Gradle path must start with ':'")
     val dependencies = dependencyStatements(source)
     if (dependencies.any { it.configuration == configuration && it.gradlePath == gradlePath }) return GradleEditResult.NoChange
-    val blocks = GradleLexicalScanner.findNamedBlocks(source, "dependencies")
+    val blocks = dependencyBlocks(source)
     if (blocks.size > 1) return GradleEditResult.Ambiguous("Multiple dependencies blocks found")
     if (blocks.isEmpty()) return GradleEditResult.Unsupported("No dependencies block found")
     val block = blocks.single()
@@ -51,9 +51,9 @@ object BuildScriptDependenciesEditor {
   fun hasUnsupportedProjectDependencyReference(source: String, gradlePath: String): Boolean {
     if (!isGradlePath(gradlePath)) return false
     val supportedRanges = dependencyStatements(source).filter { it.gradlePath == gradlePath }.map { it.start until it.end }
-    val candidate = Regex("project\\s*\\([^\\r\\n)]*[\\\"']${Regex.escape(gradlePath)}[\\\"'][^\\r\\n)]*\\)")
-    return candidate.findAll(source).any { match ->
-      GradleLexicalScanner.isCodeOffset(source, match.range.first) && supportedRanges.none { match.range.first in it }
+    return parsedCalls(source).filter { it.name == "project" }.any { call ->
+      val path = call.arguments.orEmpty().singleOrNull()?.value
+      path == gradlePath && supportedRanges.none { call.start in it }
     }
   }
 
@@ -63,20 +63,45 @@ object BuildScriptDependenciesEditor {
   private data class DependencyStatement(val configuration: String, val gradlePath: String, val start: Int, val end: Int, val pathStart: Int, val pathEnd: Int)
 
   private fun dependencyStatements(source: String): List<DependencyStatement> {
-    val blocks = GradleLexicalScanner.findNamedBlocks(source, "dependencies")
-    val result = mutableListOf<DependencyStatement>()
-    val expression = Regex("\\b(${supportedConfigurations.joinToString("|")})\\s*(?:\\(\\s*)?project\\s*\\(\\s*([\\\"'])(:[A-Za-z0-9_:-]+)\\2\\s*\\)\\s*\\)?")
-    blocks.forEach { block ->
-      val bodyStart = block.openOffset + 1
-      val body = source.substring(bodyStart, block.closeOffset)
-      expression.findAll(body).forEach { found ->
-        val path = found.groupValues[3]
-        val fullStart = bodyStart + found.range.first
-        val pathStart = bodyStart + found.range.first + found.groupValues[0].indexOf(path)
-        result += DependencyStatement(found.groupValues[1], path, fullStart, bodyStart + found.range.last + 1, pathStart, pathStart + path.length)
-      }
+    val blocks = dependencyBlocks(source)
+    if (blocks.size != 1) return emptyList()
+    val block = blocks.single()
+    val calls = parsedCalls(source).filter { it.start >= block.openOffset && it.end <= block.closeOffset }
+    val configurations = calls.filter { it.name in supportedConfigurations }
+    val projects = calls.filter { it.name == "project" }
+    return configurations.mapNotNull { configuration ->
+      val nested = projects.filter { it.start > configuration.start && it.end <= configuration.end }
+      if (nested.size != 1) return@mapNotNull null
+      val project = nested.single()
+      if (project.dynamic || project.arguments?.size != 1) return@mapNotNull null
+      val path = project.arguments!!.single()
+      DependencyStatement(
+          configuration.name,
+          path.value,
+          configuration.start,
+          configuration.end,
+          path.start,
+          path.end,
+      )
     }
-    return result
+  }
+
+  private fun parsedCalls(source: String): List<GradleParser.Call> {
+    val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN)
+    val groovy = GradleParser.parse(source, GradleDsl.GROOVY)
+    return (kotlin + groovy).distinctBy { it.start to it.end }
+  }
+
+  private fun dependencyBlocks(source: String): List<GradleLexicalScanner.Block> {
+    val calls = parsedCalls(source).filter { it.name == "dependencies" }
+    return calls.mapNotNull { call ->
+      val open = GradleLexicalScanner.indexAfterWhitespace(source, call.end)
+        .takeIf { it < source.length && source[it] == '{' }
+        ?: return@mapNotNull null
+      val close = GradleLexicalScanner.matchingBrace(source, open)
+        ?: return@mapNotNull null
+      GradleLexicalScanner.Block(open, close, '{')
+    }
   }
 
   private fun isGradlePath(path: String) = path.matches(Regex(":[A-Za-z0-9_:-]+"))

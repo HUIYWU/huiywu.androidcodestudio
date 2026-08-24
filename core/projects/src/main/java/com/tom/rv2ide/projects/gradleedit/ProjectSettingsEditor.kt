@@ -66,59 +66,43 @@ object ProjectSettingsEditor {
     if (matchingCalls.size > 1 || calls.size > 1) return GradleEditResult.Ambiguous("Multiple include calls found for $gradlePath")
 
     val call = matchingCalls.single()
-    val open = source.indexOf('(', call.start).takeIf { it >= 0 && it < call.end }
-        ?: return GradleEditResult.Unsupported("Include call has no argument list")
-    val close = source.lastIndexOf(')', call.end - 1).takeIf { it > open }
-        ?: return GradleEditResult.Unsupported("Include call has no complete argument list")
-    val body = source.substring(open + 1, close)
     val targetNode = call.arguments.orEmpty().filter { it.value == gradlePath }
     if (targetNode.size != 1) return GradleEditResult.Ambiguous("Multiple include entries found for $gradlePath")
     val target = targetNode.single().start to targetNode.single().end
-    val targetInBody = target.first - (open + 1) to target.second - (open + 1)
-    val before = body.substring(0, targetInBody.first)
-    val after = body.substring(targetInBody.second)
+    val open = source.indexOf('(', call.start).takeIf { it >= 0 && it < call.end }
+    val bodyStart: Int
+    val bodyEnd: Int
+    val before: String
+    val after: String
+    if (open != null) {
+      val close = source.lastIndexOf(')', call.end - 1).takeIf { it > open }
+          ?: return GradleEditResult.Unsupported("Include call has no complete argument list")
+      bodyStart = open + 1
+      bodyEnd = close
+      before = source.substring(bodyStart, target.first)
+      after = source.substring(target.second, bodyEnd)
+    } else {
+      bodyStart = call.start + call.name.length
+      bodyEnd = call.end
+      before = source.substring(bodyStart, target.first)
+      after = source.substring(target.second, bodyEnd)
+    }
     if (containsDynamicIncludeArgument(before) || containsDynamicIncludeArgument(after)) {
       return GradleEditResult.Unsupported("Include contains a dynamic argument")
     }
 
-    val editRange = includeEntryRemovalRange(source, open + 1, close, target.first, target.second)
+    val editRange = includeEntryRemovalRange(
+        source,
+        bodyStart,
+        bodyEnd,
+        target.first - bodyStart,
+        target.second - bodyStart,
+    )
     return GradleEditResult.Applied(listOf(TextEdit(editRange.first, editRange.second, "")))
   }
 
-  private fun literalRanges(source: String, gradlePath: String): List<Pair<Int, Int>> {
-    val result = mutableListOf<Pair<Int, Int>>()
-    var index = 0
-    while (index < source.length) {
-      when {
-        source.startsWith("//", index) -> {
-          val end = source.indexOf('\n', index + 2)
-          index = if (end < 0) source.length else end + 1
-        }
-        source.startsWith("/*", index) -> {
-          val end = source.indexOf("*/", index + 2)
-          index = if (end < 0) source.length else end + 2
-        }
-        source[index] == '\'' || source[index] == '"' -> {
-          val quote = source[index]
-          val triple = index + 2 < source.length && source[index + 1] == quote && source[index + 2] == quote
-          val start = index
-          val marker = if (triple) quote.toString().repeat(3) else quote.toString()
-          var cursor = index + marker.length
-          while (cursor < source.length && !source.startsWith(marker, cursor)) {
-            cursor += if (!triple && source[cursor] == '\\') 2 else 1
-          }
-          if (source.startsWith(marker, cursor)) {
-            val end = cursor + marker.length
-            if (!triple && source.substring(start + 1, cursor) == gradlePath) result += start to end
-            index = end
-          } else index = source.length
-        }
-        else -> index++
-      }
-    }
-    return result
-  }
-  //
+  // Legacy literal scanning removed; Tree-sitter supplies literal ranges.
+
 
   fun findIncludedPaths(source: String): Set<String> =
     includeCalls(source).flatMap { call -> call.arguments.orEmpty().map { it.value } }.toCollection(linkedSetOf())
@@ -216,25 +200,36 @@ object ProjectSettingsEditor {
   }
 
   private fun mappingStatements(source: String): List<MappingStatement> {
-    val result = mutableListOf<MappingStatement>()
-    GradleLexicalScanner.findCall(source, "project").forEach { (open, close) ->
-      val path = Regex("^[\\s]*[\\\"'](:[A-Za-z0-9_:-]+)[\\\"']\\s*$").find(source.substring(open + 1, close))?.groupValues?.get(1) ?: return@forEach
-      val lineEnd = source.indexOf('\n', close).let { if (it < 0) source.length else it }
-      val direct = Regex("\\.projectDir\\s*=\\s*file\\s*\\(\\s*([\\\"'][^\\r\\n)]*[\\\"'])\\s*\\)").find(source.substring(close + 1, lineEnd))
-      if (direct != null) {
-        val expressionStart = close + 1 + direct.range.first + direct.groupValues[0].indexOf(direct.groupValues[1])
-        val statementStart = source.lastIndexOf('\n', open).let { if (it < 0) 0 else it + 1 }
-        result += mapping(path, expressionStart, expressionStart + direct.groupValues[1].length, source, statementStart, lineEnd)
-        return@forEach
-      }
-      val brace = GradleLexicalScanner.indexAfterWhitespace(source, close)
-      if (brace >= source.length || source[brace] != '{') return@forEach
-      val blockClose = GradleLexicalScanner.matchingBrace(source, brace) ?: return@forEach
-      val nested = Regex("projectDir\\s*=\\s*file\\s*\\(\\s*([\\\"'][^\\r\\n)]*[\\\"'])\\s*\\)").find(source.substring(brace + 1, blockClose)) ?: return@forEach
-      val expressionStart = brace + 1 + nested.range.first + nested.groupValues[0].indexOf(nested.groupValues[1])
-      result += mapping(path, expressionStart, expressionStart + nested.groupValues[1].length, source, brace + 1 + nested.range.first, brace + 1 + nested.range.last + 1)
+    val calls = parsedCalls(source)
+    val projects = calls.filter { it.name == "project" && it.arguments?.size == 1 && !it.dynamic }
+    val files = calls.filter { it.name == "file" && it.arguments?.size == 1 && !it.dynamic }
+    return projects.mapNotNull { project ->
+      val path = project.arguments!!.single()
+      val searchEnd = mappingSearchEnd(source, project.end)
+      val file = files.firstOrNull { it.start > project.end && it.end <= searchEnd }
+        ?: return@mapNotNull null
+      val directory = file.arguments!!.single()
+      val between = source.substring(project.end, file.start)
+      if (!between.contains("projectDir") || !between.contains('=')) return@mapNotNull null
+      val statementStart = source.lastIndexOf('\n', project.start).let { if (it < 0) 0 else it + 1 }
+      val statementEnd = if (searchEnd == source.length) file.end else searchEnd
+      mapping(path.value, directory.start, directory.end, source, statementStart, statementEnd)
     }
-    return result
+  }
+
+  private fun parsedCalls(source: String): List<GradleParser.Call> {
+    val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN)
+    val groovy = GradleParser.parse(source, GradleDsl.GROOVY)
+    return (kotlin + groovy).distinctBy { it.start to it.end }
+  }
+
+  private fun mappingSearchEnd(source: String, start: Int): Int {
+    val lineEnd = source.indexOf('\n', start).let { if (it < 0) source.length else it }
+    val brace = GradleLexicalScanner.indexAfterWhitespace(source, start)
+    if (brace < source.length && source[brace] == '{') {
+      return GradleLexicalScanner.matchingBrace(source, brace) ?: lineEnd
+    }
+    return lineEnd
   }
 
   private fun mapping(path: String, expressionStart: Int, expressionEnd: Int, source: String, statementStart: Int, statementEnd: Int): MappingStatement =

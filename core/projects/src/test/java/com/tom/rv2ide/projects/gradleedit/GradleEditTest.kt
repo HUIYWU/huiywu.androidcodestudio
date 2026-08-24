@@ -48,6 +48,37 @@ class GradleEditTest {
         .isInstanceOf(GradleEditResult.Ambiguous::class.java)
   }
 
+  @Test fun groovySettingsIncludeIsRemovedWithOtherEntriesPreserved() {
+    val source = "include ':app', ':feature', ':shared'\n"
+    val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":feature"))
+    assertThat(output).contains("include ':app', ':shared'")
+    assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":app", ":shared")
+  }
+
+  @Test fun groovyProjectDirectoryMappingCanBeUpdated() {
+    val source = "project(':demo').projectDir = file('../demo')\n"
+    val output = apply(source, ProjectSettingsEditor.updateProjectDirMapping(source, ":demo", "../new-demo", false))
+    assertThat(output).contains("file('../new-demo')")
+    assertThat(ProjectSettingsEditor.findProjectDirectoryMappings(output)).containsExactly(
+        ProjectSettingsEditor.ProjectDirectoryMapping(":demo", "'../new-demo'"),
+    )
+  }
+
+  @Test fun groovyDependencyCanBeFoundAndRenamed() {
+    val source = "dependencies {\n  implementation project(':old')\n}\n"
+    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(source)).containsExactly(
+        BuildScriptDependenciesEditor.ProjectDependency("implementation", ":old"),
+    )
+    val output = apply(source, BuildScriptDependenciesEditor.renameProjectDependency(source, "implementation", ":old", ":new"))
+    assertThat(output).contains("project(':new')")
+  }
+
+  @Test fun groovyNamedProjectDependencyIsUnsupported() {
+    val source = "dependencies { implementation project(path: ':feature') }"
+    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(source)).isEmpty()
+    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(source, ":feature")).isTrue()
+  }
+
   @Test fun projectDirectoryMappingCanBeUpdatedAndRemoved() {
     val source = "project(\":app\").projectDir = file(\"../app\")\n"
     val updated = apply(source, ProjectSettingsEditor.updateProjectDirMapping(source, ":app", "../custom-app", true))
@@ -60,6 +91,18 @@ class GradleEditTest {
     val source = "project(\":demo\") {\n  projectDir = file(\"../demo\")\n}\n"
     val output = apply(source, ProjectSettingsEditor.updateProjectDirMapping(source, ":demo", "../new-demo", true))
     assertThat(output).contains("file(\"../new-demo\")")
+  }
+
+  @Test fun fakeDependenciesBlockInsideStringIsIgnored() {
+    val source = "val text = \"dependencies { fake }\"\n"
+    assertThat(BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", true))
+        .isInstanceOf(GradleEditResult.Unsupported::class.java)
+  }
+
+  @Test fun groovyDependencyIsInsertedIntoAstLocatedBlock() {
+    val source = "dependencies {\n}\n"
+    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", false))
+    assertThat(output).contains("implementation project(':feature')")
   }
 
   @Test fun kotlinDependencyIsInsertedIntoRealBlock() {
@@ -109,8 +152,9 @@ class GradleEditTest {
   }
 
   @Test fun multipleDependencyBlocksFailClosed() {
-    val source = "dependencies { }\ndependencies { }\n"
+    val source = "dependencies { implementation(project(\":one\")) }\ndependencies { implementation(project(\":two\")) }\n"
     assertThat(BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", true)).isInstanceOf(GradleEditResult.Ambiguous::class.java)
+    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(source)).isEmpty()
   }
 
   @Test fun crlfIsPreserved() {

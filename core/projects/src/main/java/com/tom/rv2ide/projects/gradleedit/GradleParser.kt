@@ -2,7 +2,6 @@ package com.tom.rv2ide.projects.gradleedit
 
 import com.itsaky.androidide.treesitter.TSNode
 import com.itsaky.androidide.treesitter.TSParser
-import com.itsaky.androidide.treesitter.TSTree
 import com.itsaky.androidide.treesitter.groovy.TSLanguageGroovy
 import com.itsaky.androidide.treesitter.kotlin.TSLanguageKotlin
 
@@ -72,14 +71,18 @@ internal object GradleParser {
         "string_literal", "string" -> argument
         else -> findDescendant(argument) { it.type == "string_literal" || it.type == "string" }
       }
-      if (string == null || string.startByte != argument.startByte || string.endByte != argument.endByte) {
+      if (string == null) {
         dynamic = true
         continue
       }
       val raw = text(string, source)
       val value = raw.substringAfter("\"").substringBeforeLast("\"")
         .takeIf { raw.startsWith("\"") } ?: raw.substringAfter("'").substringBeforeLast("'")
-      if (value.contains("\$")) dynamic = true else literals += Literal(value, offset(string.startByte), offset(string.endByte))
+      val literal = Literal(value, offset(string.startByte), offset(string.endByte))
+      literals += literal
+      if (string.startByte != argument.startByte || string.endByte != argument.endByte || value.contains("\$")) {
+        dynamic = true
+      }
     }
     return literals to dynamic
   }
