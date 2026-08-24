@@ -43,7 +43,10 @@ object BuildScriptDependenciesEditor {
     if (matches.isEmpty()) return GradleEditResult.NoChange
     if (matches.size > 1) return GradleEditResult.Ambiguous("Multiple $configuration dependencies found for $oldGradlePath")
     val match = matches.single()
-    return GradleEditResult.Applied(listOf(TextEdit(match.pathStart, match.pathEnd, newGradlePath)))
+    val quote = source.getOrNull(match.pathStart)
+    val replacementStart = if (quote == '\'' || quote == '"') match.pathStart + 1 else match.pathStart
+    val replacementEnd = if (quote == '\'' || quote == '"') match.pathEnd - 1 else match.pathEnd
+    return GradleEditResult.Applied(listOf(TextEdit(replacementStart, replacementEnd, newGradlePath)))
   }
 
   data class ProjectDependency(val configuration: String, val gradlePath: String)
@@ -91,15 +94,15 @@ object BuildScriptDependenciesEditor {
   }
 
   private fun parsedCalls(source: String): List<GradleParser.Call> {
-    val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN)
     val groovy = GradleParser.parse(source, GradleDsl.GROOVY)
-    return (kotlin + groovy).distinctBy { it.start to it.end }
+    val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN)
+    return distinctCalls(source, groovy + kotlin)
   }
 
   private fun dependencyBlocks(source: String): List<GradleLexicalScanner.Block> {
     val kotlinCalls = GradleParser.parse(source, GradleDsl.KOTLIN).filter { it.name == "dependencies" }
     val groovyCalls = GradleParser.parse(source, GradleDsl.GROOVY).filter { it.name == "dependencies" }
-    val calls = (kotlinCalls + groovyCalls).distinctBy { it.start to it.end }
+    val calls = distinctCalls(source, kotlinCalls + groovyCalls)
     val blocks = calls.mapNotNull { call ->
       // Kotlin call_expression and Groovy command_chain ranges include the closure.
       // Locate the opening brace after the call name, not after call.end.
@@ -111,29 +114,24 @@ object BuildScriptDependenciesEditor {
         ?: return@mapNotNull null
       GradleLexicalScanner.Block(open, close, '{')
     }
-    if (blocks.isEmpty()) {
-      org.slf4j.LoggerFactory.getLogger(BuildScriptDependenciesEditor::class.java).warn(
-          "No dependencies block recognized; sourceLength={}, kotlinCalls={}, groovyCalls={}, kotlinDependencies={}, groovyDependencies={}",
-          source.length,
-          GradleParser.parse(source, GradleDsl.KOTLIN).size,
-          GradleParser.parse(source, GradleDsl.GROOVY).size,
-          kotlinCalls.size,
-          groovyCalls.size,
-      )
-    }
     return blocks
   }
+  private fun distinctCalls(source: String, calls: List<GradleParser.Call>): List<GradleParser.Call> =
+      calls.distinctBy { call ->
+        "${call.name}:${call.start}"
+      }
 
   private fun isGradlePath(path: String) = path.matches(Regex(":[A-Za-z0-9_:-]+"))
+
   private fun indentationForBlock(source: String, openOffset: Int): String = source.substring(source.lastIndexOf('\n', openOffset).let { if (it < 0) 0 else it + 1 }, openOffset).takeWhile { it == ' ' || it == '\t' }
   private fun dependencyEntryIndent(source: String, block: GradleLexicalScanner.Block): String {
     val blockIndent = indentationForBlock(source, block.openOffset)
-    var lineStart = source.lastIndexOf('\n', block.closeOffset - 1).let { if (it < 0) block.openOffset + 1 else it + 1 }
-    while (lineStart > block.openOffset) {
+    var lineStart = block.openOffset + 1
+    while (lineStart < block.closeOffset) {
       val lineEnd = source.indexOf('\n', lineStart).let { if (it < 0 || it > block.closeOffset) block.closeOffset else it }
       val line = source.substring(lineStart, lineEnd)
       if (line.trim().isNotEmpty()) return line.takeWhile { it == ' ' || it == '\t' }
-      lineStart = source.lastIndexOf('\n', lineStart - 2).let { if (it < 0) block.openOffset + 1 else it + 1 }
+      lineStart = lineEnd + 1
     }
     return "$blockIndent  "
   }

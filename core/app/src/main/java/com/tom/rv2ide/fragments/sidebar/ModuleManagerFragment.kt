@@ -25,6 +25,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.setPadding
 import androidx.core.widget.NestedScrollView
+import androidx.core.widget.addTextChangedListener
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -236,6 +237,8 @@ class ModuleManagerFragment : Fragment() {
     content.addView(sectionTitle("Name and location"))
     val nameInput = input("Module name", draftModuleName)
     val pathInput = input("Gradle path", draftGradlePath)
+    nameInput.second.addTextChangedListener { draftModuleName = it?.toString().orEmpty() }
+    pathInput.second.addTextChangedListener { draftGradlePath = it?.toString().orEmpty() }
     content.addView(nameInput.first)
     content.addView(pathInput.first)
     content.addView(text("Language", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
@@ -406,27 +409,7 @@ class ModuleManagerFragment : Fragment() {
 
   private fun createModule(gradlePath: String, applicationPath: String) {
     val applicationInfo = applicationProjectDetails.firstOrNull { it.gradlePath == applicationPath }
-    log.warn(
-        "Create and sync clicked; modulePath={}, applicationPath={}, dsl={}, projectRoot={}, applicationInfoProjectDir={}, applicationInfoBuildFile={}, initializing={}, creating={}",
-        gradlePath,
-        applicationPath,
-        if (useKotlinDsl) "kotlin" else "groovy",
-        projectRoot().absolutePath,
-        applicationInfo?.projectDirectory,
-        applicationInfo?.buildFile,
-        editorViewModel.isInitializing,
-        creatingModule,
-    )
-    if (creatingModule || editorViewModel.isInitializing) {
-      log.warn(
-          "Create and sync ignored because an operation is already active; modulePath={}, applicationPath={}, initializing={}, creating={}",
-          gradlePath,
-          applicationPath,
-          editorViewModel.isInitializing,
-          creatingModule,
-      )
-      return
-    }
+    if (creatingModule || editorViewModel.isInitializing) return
 
     creatingModule = true
     render()
@@ -443,13 +426,6 @@ class ModuleManagerFragment : Fragment() {
         )
       }
       if (!isAdded) return@launch
-      log.warn(
-          "Create module preflight finished; modulePath={}, applicationPath={}, success={}, error={}",
-          gradlePath,
-          applicationPath,
-          preflight.success,
-          preflight.errorMessage,
-      )
       if (!preflight.success) {
         creatingModule = false
         render()
@@ -472,20 +448,8 @@ class ModuleManagerFragment : Fragment() {
       }
       if (!isAdded) return@launch
       creatingModule = false
-      log.warn(
-          "Create module file edit finished; modulePath={}, applicationPath={}, success={}, error={}",
-          gradlePath,
-          applicationPath,
-          result.success,
-          result.errorMessage,
-      )
       if (result.success) {
         Toast.makeText(requireContext(), "Module created. Syncing project...", Toast.LENGTH_SHORT).show()
-        log.warn(
-            "Create module succeeded; entering project sync; modulePath={}, applicationPath={}",
-            gradlePath,
-            applicationPath,
-        )
         syncProject()
       } else {
         render()
@@ -591,11 +555,6 @@ class ModuleManagerFragment : Fragment() {
     }
     refreshAfterSync = true
     render()
-    log.warn(
-        "Project synchronization started from module manager; selectedApplicationPath={}, refreshAfterSync={}",
-        selectedApplicationPath,
-        refreshAfterSync,
-    )
     activity.initializeProject()
   }
 

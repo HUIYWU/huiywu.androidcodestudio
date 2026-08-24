@@ -79,7 +79,8 @@ object ProjectSettingsEditor {
     val call = matchingCalls.single()
     val targetNode = call.arguments.orEmpty().filter { it.value == gradlePath }
     if (targetNode.size != 1) return GradleEditResult.Ambiguous("Multiple include entries found for $gradlePath")
-    val target = targetNode.single().start to targetNode.single().end
+    val literal = targetNode.single()
+    val target = literalRange(source, literal.start, literal.end)
     val open = source.indexOf('(', call.start).takeIf { it >= 0 && it < call.end }
     val bodyStart: Int
     val bodyEnd: Int
@@ -121,9 +122,7 @@ object ProjectSettingsEditor {
   private fun includeCalls(source: String): List<GradleParser.Call> {
     val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN).filter { it.name == "include" }
     val groovy = GradleParser.parse(source, GradleDsl.GROOVY).filter { it.name == "include" }
-    return (kotlin + groovy)
-      .distinctBy { it.start to it.end }
-      .sortedBy { it.start }
+    return distinctCalls(source, kotlin + groovy).sortedBy { it.start }
   }
 
 
@@ -195,7 +194,7 @@ object ProjectSettingsEditor {
       if (after < bodyEnd && source[after] == ',') {
         var end = after + 1
         while (end < bodyEnd && source[end].isWhitespace()) end++
-        return before to end
+        return targetStart to end
       }
       return before to targetEnd
     }
@@ -229,10 +228,15 @@ object ProjectSettingsEditor {
   }
 
   private fun parsedCalls(source: String): List<GradleParser.Call> {
-    val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN)
     val groovy = GradleParser.parse(source, GradleDsl.GROOVY)
-    return (kotlin + groovy).distinctBy { it.start to it.end }
+    val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN)
+    return distinctCalls(source, groovy + kotlin)
   }
+
+  private fun distinctCalls(source: String, calls: List<GradleParser.Call>): List<GradleParser.Call> =
+      calls.distinctBy { call ->
+        "${call.name}:${call.start}"
+      }
 
   private fun mappingSearchEnd(source: String, start: Int): Int {
     val lineEnd = source.indexOf('\n', start).let { if (it < 0) source.length else it }
@@ -241,6 +245,14 @@ object ProjectSettingsEditor {
       return GradleLexicalScanner.matchingBrace(source, brace) ?: lineEnd
     }
     return lineEnd
+  }
+
+  private fun literalRange(source: String, start: Int, end: Int): Pair<Int, Int> {
+    var actualStart = start
+    var actualEnd = end
+    if (actualStart > 0 && (source[actualStart - 1] == '\'' || source[actualStart - 1] == '"')) actualStart--
+    if (actualEnd < source.length && (source[actualEnd] == '\'' || source[actualEnd] == '"')) actualEnd++
+    return actualStart to actualEnd
   }
 
   private fun mapping(path: String, expressionStart: Int, expressionEnd: Int, source: String, statementStart: Int, statementEnd: Int): MappingStatement =

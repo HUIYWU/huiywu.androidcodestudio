@@ -1,10 +1,20 @@
 package com.tom.rv2ide.projects.gradleedit
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.itsaky.androidide.treesitter.TreeSitter
+import java.util.concurrent.TimeUnit
 import org.junit.BeforeClass
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.Timeout
 
 class GradleEditTest {
+  @get:Rule
+  val testTimeout: Timeout = Timeout.builder()
+      .withTimeout(30, TimeUnit.SECONDS)
+      .withLookingForStuckThread(true)
+      .build()
+
   companion object {
     @JvmStatic
     @BeforeClass
@@ -19,18 +29,18 @@ class GradleEditTest {
     val source = "// include(\":fake\")\ninclude(\":app\")\n"
     val output = apply(source, ProjectSettingsEditor.addInclude(source, ":feature", true))
     assertThat(output).contains("include(\":app\", \":feature\")")
-    assertThat(output).contains("include(\":feature\")")
     assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":app", ":feature")
     assertThat(output).contains("// include(\":fake\")")
   }
 
   @Test fun standaloneIncludeIsRemovedAndCompoundIncludeEntryCanBeRemoved() {
-    val source = "include(\":app\")\ninclude(\":feature\", \":shared\")\n"
-    val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":app"))
-    assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":feature", ":shared")
-    val compoundOutput = apply(source, ProjectSettingsEditor.removeInclude(source, ":feature"))
-    assertThat(compoundOutput).contains("include(\":shared\")")
-    assertThat(compoundOutput).doesNotContain(":feature")
+    val standalone = "include(\":app\")\n"
+    val output = apply(standalone, ProjectSettingsEditor.removeInclude(standalone, ":app"))
+    assertThat(output).isEmpty()
+
+    val compound = "include(\":feature\", \":shared\")\n"
+    val compoundOutput = apply(compound, ProjectSettingsEditor.removeInclude(compound, ":feature"))
+    assertThat(compoundOutput).isEqualTo("include(\":shared\")\n")
   }
 
   @Test fun multilineKotlinIncludeRemovesOneEntryAndPreservesOthers() {
@@ -75,19 +85,36 @@ class GradleEditTest {
 
   @Test fun groovyProjectDirectoryMappingCanBeUpdated() {
     val source = "project(':demo').projectDir = file('../demo')\n"
-    val output = apply(source, ProjectSettingsEditor.updateProjectDirMapping(source, ":demo", "../new-demo", false))
+    val edit = ProjectSettingsEditor.updateProjectDirMapping(source, ":demo", "../new-demo", false)
+    assertWithMessage(
+        "Groovy mapping edit was not applied.\nParser calls:\n%s",
+        parserDiagnostics(source),
+    ).that(edit).isInstanceOf(GradleEditResult.Applied::class.java)
+    val output = apply(source, edit)
     assertThat(output).contains("file('../new-demo')")
-    assertThat(ProjectSettingsEditor.findProjectDirectoryMappings(output)).containsExactly(
-        ProjectSettingsEditor.ProjectDirectoryMapping(":demo", "'../new-demo'"),
-    )
+    val mappings = ProjectSettingsEditor.findProjectDirectoryMappings(output)
+    assertWithMessage(
+        "Groovy mapping was not rediscovered.\nParser calls after edit:\n%s\nOutput:\n%s",
+        parserDiagnostics(output),
+        output,
+    ).that(mappings).containsExactly(ProjectSettingsEditor.ProjectDirectoryMapping(":demo", "'../new-demo'"))
   }
 
   @Test fun groovyDependencyCanBeFoundAndRenamed() {
     val source = "dependencies {\n  implementation project(':old')\n}\n"
-    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(source)).containsExactly(
+    val dependencies = BuildScriptDependenciesEditor.findProjectDependencies(source)
+    assertWithMessage(
+        "Groovy dependency was not recognized.\nParser calls:\n%s",
+        parserDiagnostics(source),
+    ).that(dependencies).containsExactly(
         BuildScriptDependenciesEditor.ProjectDependency("implementation", ":old"),
     )
-    val output = apply(source, BuildScriptDependenciesEditor.renameProjectDependency(source, "implementation", ":old", ":new"))
+    val rename = BuildScriptDependenciesEditor.renameProjectDependency(source, "implementation", ":old", ":new")
+    assertWithMessage(
+        "Groovy dependency rename was not applied.\nParser calls:\n%s",
+        parserDiagnostics(source),
+    ).that(rename).isInstanceOf(GradleEditResult.Applied::class.java)
+    val output = apply(source, rename)
     assertThat(output).contains("project(':new')")
   }
 
@@ -161,7 +188,11 @@ dependencies {
     val supported = "dependencies { implementation(project(\":feature\")) }"
     val unsupported = "dependencies { implementation(project(path = \":feature\")) }"
     val commented = "// implementation(project(path = \":feature\"))\ndependencies { }"
-    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(supported)).containsExactly(
+    val supportedDependencies = BuildScriptDependenciesEditor.findProjectDependencies(supported)
+    assertWithMessage(
+        "Supported dependency was not recognized.\nParser calls:\n%s",
+        parserDiagnostics(supported),
+    ).that(supportedDependencies).containsExactly(
         BuildScriptDependenciesEditor.ProjectDependency("implementation", ":feature"),
     )
     assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(supported, ":feature")).isFalse()
@@ -207,6 +238,21 @@ dependencies {
     val output = apply(source, ProjectSettingsEditor.addInclude(source, ":feature", true))
     assertThat(output).contains("\r\n")
     assertThat(output.replace("\r\n", "")).doesNotContain("\n")
+  }
+
+  private fun parserDiagnostics(source: String): String = buildString {
+    append("source=").append(source.replace("\n", "\\n")).append('\n')
+    for (dsl in GradleDsl.values()) {
+      append(dsl.name).append(':')
+      append(System.lineSeparator()).append(GradleParser.describeTree(source, dsl))
+      GradleParser.parse(source, dsl).forEach { call ->
+        append(" ").append(call.name)
+            .append('[').append(call.start).append("..").append(call.end).append(']')
+            .append(" args=").append(call.arguments)
+            .append(" dynamic=").append(call.dynamic)
+      }
+      append(System.lineSeparator())
+    }
   }
 
   private fun apply(source: String, result: GradleEditResult): String = TextEditApplier.apply(source, checkNotNull(result as? GradleEditResult.Applied).edits)
