@@ -44,10 +44,21 @@ object ProjectSettingsEditor {
     if (calls.size > 1) return GradleEditResult.Ambiguous("Multiple parenthesized include calls found")
     if (calls.size == 1) {
       val (open, close) = calls.single()
-      val indentation = lineIndent(source, open)
+      val body = source.substring(open + 1, close)
       val newline = newline(source)
-      val replacement = if (source.substring(open + 1, close).trim().isEmpty()) "$newline$indentation  $entry$newline$indentation" else ",$newline$indentation  $entry$newline$indentation"
-      return GradleEditResult.Applied(listOf(TextEdit(close, close, replacement)))
+      if (body.trim().isEmpty()) {
+        val indentation = lineIndent(source, open)
+        val replacement = "$newline$indentation  $entry$newline$indentation"
+        return GradleEditResult.Applied(listOf(TextEdit(close, close, replacement)))
+      }
+      if (!body.contains('\n')) {
+        return GradleEditResult.Applied(listOf(TextEdit(close, close, ", $entry")))
+      }
+      val entryIndentation = multilineEntryIndent(source, open, close)
+      var insertion = close
+      while (insertion > open + 1 && source[insertion - 1].isWhitespace()) insertion--
+      val replacement = ",$newline$entryIndentation$entry$newline${lineIndent(source, open)}"
+      return GradleEditResult.Applied(listOf(TextEdit(insertion, close, replacement)))
     }
     return appendLine(source, "include($entry)")
   }
@@ -242,5 +253,16 @@ object ProjectSettingsEditor {
   private fun isGradlePath(path: String) = path.matches(Regex(":[A-Za-z0-9_:-]+"))
   private fun newline(source: String) = if (source.contains("\r\n")) "\r\n" else "\n"
   private fun lineIndent(source: String, offset: Int): String { val start = source.lastIndexOf('\n', offset).let { if (it < 0) 0 else it + 1 }; return source.substring(start, offset).takeWhile { it == ' ' || it == '\t' } }
+  private fun multilineEntryIndent(source: String, open: Int, close: Int): String {
+    var lineStart = source.lastIndexOf('\n', close - 1).let { if (it < 0) open + 1 else it + 1 }
+    while (lineStart > open) {
+      val lineEnd = source.indexOf('\n', lineStart).let { if (it < 0 || it > close) close else it }
+      if (source.substring(lineStart, lineEnd).trim().isNotEmpty()) {
+        return source.substring(lineStart, lineEnd).takeWhile { it == ' ' || it == '\t' }
+      }
+      lineStart = source.lastIndexOf('\n', lineStart - 2).let { if (it < 0) open + 1 else it + 1 }
+    }
+    return lineIndent(source, open) + "  "
+  }
   private fun lineEndIncludingNewline(source: String, offset: Int): Int { val end = source.indexOf('\n', offset); return if (end < 0) source.length else end + 1 }
 }

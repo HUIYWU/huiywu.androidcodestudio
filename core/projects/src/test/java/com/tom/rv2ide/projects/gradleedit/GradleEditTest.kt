@@ -1,12 +1,24 @@
 package com.tom.rv2ide.projects.gradleedit
-
 import com.google.common.truth.Truth.assertThat
+import com.itsaky.androidide.treesitter.TreeSitter
+import org.junit.BeforeClass
 import org.junit.Test
 
 class GradleEditTest {
+  companion object {
+    @JvmStatic
+    @BeforeClass
+    fun loadTreeSitterNativeLibraries() {
+      TreeSitter.loadLibrary()
+      System.loadLibrary("tree-sitter-kotlin")
+      System.loadLibrary("tree-sitter-groovy")
+    }
+  }
+
   @Test fun kotlinSettingsIncludeIsAddedWithoutTouchingComments() {
     val source = "// include(\":fake\")\ninclude(\":app\")\n"
     val output = apply(source, ProjectSettingsEditor.addInclude(source, ":feature", true))
+    assertThat(output).contains("include(\":app\", \":feature\")")
     assertThat(output).contains("include(\":feature\")")
     assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":app", ":feature")
     assertThat(output).contains("// include(\":fake\")")
@@ -34,6 +46,12 @@ class GradleEditTest {
     assertThat(output).doesNotContain(":profile2")
     assertThat(output).isEqualTo("include(\n    \":app\",\n    \":tewo\",\n    \":sec\",\n    \":profile1\"\n)\n")
     assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":app", ":tewo", ":sec", ":profile1")
+  }
+
+  @Test fun multilineKotlinIncludeAddsEntryWithExistingCommaStyle() {
+    val source = "include(\n  \":app\",\n  \":profile1\"\n)\n"
+    val output = apply(source, ProjectSettingsEditor.addInclude(source, ":profile2", true))
+    assertThat(output).isEqualTo("include(\n  \":app\",\n  \":profile1\",\n  \":profile2\"\n)\n")
   }
 
   @Test fun includeWithDynamicArgumentFailsClosed() {
@@ -110,6 +128,12 @@ class GradleEditTest {
     val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", true))
     assertThat(output).contains("implementation(project(\":feature\"))")
     assertThat(output).contains("val text = \"dependencies { fake }\"")
+  }
+
+  @Test fun kotlinDependencyUsesExistingEntryIndentAndNoBlankGap() {
+    val source = "dependencies {\n    implementation(project(\":profile1\"))\n\n}\n"
+    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":profile2", true))
+    assertThat(output).isEqualTo("dependencies {\n    implementation(project(\":profile1\"))\n    implementation(project(\":profile2\"))\n}\n")
   }
 
   @Test fun kotlinApplicationBuildScriptDependencyBlockIsFound() {

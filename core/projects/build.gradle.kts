@@ -31,6 +31,13 @@ android {
   namespace = "${BuildConfig.packageName}.projects"
 }
 
+tasks.withType<Test>().configureEach {
+  val home = System.getenv("HOME")
+  val hostNativeLibraryDir =
+      rootProject.file("$home/usr/jvm-test-lib").absoluteFile
+  systemProperty("java.library.path", hostNativeLibraryDir.absolutePath)
+}
+
 kapt {
   arguments {
     arg("eventBusIndex", "${BuildConfig.packageName}.events.ProjectsApiEventsIndex")

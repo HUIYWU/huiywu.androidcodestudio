@@ -13,10 +13,14 @@ object BuildScriptDependenciesEditor {
     if (blocks.size > 1) return GradleEditResult.Ambiguous("Multiple dependencies blocks found")
     if (blocks.isEmpty()) return GradleEditResult.Unsupported("No dependencies block found")
     val block = blocks.single()
-    val indent = indentationForBlock(source, block.openOffset)
-    val line = if (kotlinDsl) "$indent  $configuration(project(\"$gradlePath\"))" else "$indent  $configuration project('$gradlePath')"
+    val blockIndent = indentationForBlock(source, block.openOffset)
+    val entryIndent = dependencyEntryIndent(source, block)
+    val line = if (kotlinDsl) "$entryIndent$configuration(project(\"$gradlePath\"))" else "$entryIndent$configuration project('$gradlePath')"
     val newline = if (source.contains("\r\n")) "\r\n" else "\n"
-    return GradleEditResult.Applied(listOf(TextEdit(block.closeOffset, block.closeOffset, "$newline$line$newline$indent")))
+    var insertion = block.closeOffset
+    while (insertion > block.openOffset + 1 && source[insertion - 1].isWhitespace()) insertion--
+    val replacement = "$newline$line$newline$blockIndent"
+    return GradleEditResult.Applied(listOf(TextEdit(insertion, block.closeOffset, replacement)))
   }
 
   fun removeProjectDependency(source: String, configuration: String, gradlePath: String): GradleEditResult {
@@ -122,6 +126,17 @@ object BuildScriptDependenciesEditor {
 
   private fun isGradlePath(path: String) = path.matches(Regex(":[A-Za-z0-9_:-]+"))
   private fun indentationForBlock(source: String, openOffset: Int): String = source.substring(source.lastIndexOf('\n', openOffset).let { if (it < 0) 0 else it + 1 }, openOffset).takeWhile { it == ' ' || it == '\t' }
+  private fun dependencyEntryIndent(source: String, block: GradleLexicalScanner.Block): String {
+    val blockIndent = indentationForBlock(source, block.openOffset)
+    var lineStart = source.lastIndexOf('\n', block.closeOffset - 1).let { if (it < 0) block.openOffset + 1 else it + 1 }
+    while (lineStart > block.openOffset) {
+      val lineEnd = source.indexOf('\n', lineStart).let { if (it < 0 || it > block.closeOffset) block.closeOffset else it }
+      val line = source.substring(lineStart, lineEnd)
+      if (line.trim().isNotEmpty()) return line.takeWhile { it == ' ' || it == '\t' }
+      lineStart = source.lastIndexOf('\n', lineStart - 2).let { if (it < 0) block.openOffset + 1 else it + 1 }
+    }
+    return "$blockIndent  "
+  }
   private fun lineStart(source: String, offset: Int): Int = source.lastIndexOf('\n', offset).let { if (it < 0) 0 else it + 1 }
   private fun lineEndIncludingNewline(source: String, offset: Int): Int = source.indexOf('\n', offset).let { if (it < 0) source.length else it + 1 }
 }
