@@ -93,8 +93,10 @@ object BuildScriptDependenciesEditor {
   }
 
   private fun dependencyBlocks(source: String): List<GradleLexicalScanner.Block> {
-    val calls = parsedCalls(source).filter { it.name == "dependencies" }
-    return calls.mapNotNull { call ->
+    val kotlinCalls = GradleParser.parse(source, GradleDsl.KOTLIN).filter { it.name == "dependencies" }
+    val groovyCalls = GradleParser.parse(source, GradleDsl.GROOVY).filter { it.name == "dependencies" }
+    val calls = (kotlinCalls + groovyCalls).distinctBy { it.start to it.end }
+    val blocks = calls.mapNotNull { call ->
       val open = GradleLexicalScanner.indexAfterWhitespace(source, call.end)
         .takeIf { it < source.length && source[it] == '{' }
         ?: return@mapNotNull null
@@ -102,6 +104,17 @@ object BuildScriptDependenciesEditor {
         ?: return@mapNotNull null
       GradleLexicalScanner.Block(open, close, '{')
     }
+    if (blocks.isEmpty()) {
+      org.slf4j.LoggerFactory.getLogger(BuildScriptDependenciesEditor::class.java).warn(
+          "No dependencies block recognized; sourceLength={}, kotlinCalls={}, groovyCalls={}, kotlinDependencies={}, groovyDependencies={}",
+          source.length,
+          GradleParser.parse(source, GradleDsl.KOTLIN).size,
+          GradleParser.parse(source, GradleDsl.GROOVY).size,
+          kotlinCalls.size,
+          groovyCalls.size,
+      )
+    }
+    return blocks
   }
 
   private fun isGradlePath(path: String) = path.matches(Regex(":[A-Za-z0-9_:-]+"))

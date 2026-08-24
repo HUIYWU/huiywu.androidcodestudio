@@ -187,6 +187,17 @@ class ModuleCreator {
         ?: return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
     val applicationModule = resolveApplicationModule(projectRoot, applicationPath, applicationInfo)
         ?: return CreationResult(false, "Selected application module '$applicationPath' is unavailable")
+    log.warn(
+        "Preparing module file edits; modulePath={}, applicationPath={}, buildFile={}, buildFileName={}, buildFileExists={}, buildFileLength={}, kotlinDsl={}, projectRoot={}",
+        modulePath.gradlePath,
+        applicationPath,
+        applicationModule.buildFile.absolutePath,
+        applicationModule.buildFile.name,
+        applicationModule.buildFile.isFile,
+        applicationModule.buildFile.length(),
+        useKotlinDsl,
+        projectRoot.absolutePath,
+    )
     val moduleDir = File(projectRoot, modulePath.directoryPath)
     if (moduleDir.exists()) {
       return CreationResult(false, "Module '${modulePath.gradlePath}' already exists")
@@ -610,11 +621,26 @@ public class SampleClass {
   ) {
     val appBuildFile = applicationModule.buildFile
     val source = appBuildFile.readText()
+    val kotlinDsl = appBuildFile.name.endsWith(".kts")
+    log.warn(
+        "Editing application build script dependency; buildFile={}, buildFileName={}, sourceLength={}, kotlinDsl={}, modulePath={}",
+        appBuildFile.absolutePath,
+        appBuildFile.name,
+        source.length,
+        kotlinDsl,
+        modulePath,
+    )
     val result = BuildScriptDependenciesEditor.addProjectDependency(
         source = source,
         configuration = "implementation",
         gradlePath = modulePath,
-        kotlinDsl = appBuildFile.name.endsWith(".kts"),
+        kotlinDsl = kotlinDsl,
+    )
+    log.warn(
+        "Application build script dependency edit result; buildFile={}, modulePath={}, result={}",
+        appBuildFile.absolutePath,
+        modulePath,
+        result,
     )
     applyGradleEdit(appBuildFile, source, result, "application build script", transaction)
   }
