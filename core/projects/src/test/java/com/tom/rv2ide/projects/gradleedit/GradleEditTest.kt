@@ -112,6 +112,27 @@ class GradleEditTest {
     assertThat(output).contains("val text = \"dependencies { fake }\"")
   }
 
+  @Test fun kotlinApplicationBuildScriptDependencyBlockIsFound() {
+    val source = """plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+}
+
+android {
+    namespace = "com.example.app"
+    compileSdk = 36
+}
+
+dependencies {
+    implementation(project(":profile1"))
+
+
+}
+"""
+    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":profile2", true))
+    assertThat(output).contains("implementation(project(\":profile2\"))")
+  }
+
   @Test fun supportedAndUnsupportedDependencyFormsAreDistinguished() {
     val supported = "dependencies { implementation(project(\":feature\")) }"
     val unsupported = "dependencies { implementation(project(path = \":feature\")) }"

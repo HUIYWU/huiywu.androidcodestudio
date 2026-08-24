@@ -97,7 +97,10 @@ object BuildScriptDependenciesEditor {
     val groovyCalls = GradleParser.parse(source, GradleDsl.GROOVY).filter { it.name == "dependencies" }
     val calls = (kotlinCalls + groovyCalls).distinctBy { it.start to it.end }
     val blocks = calls.mapNotNull { call ->
-      val open = GradleLexicalScanner.indexAfterWhitespace(source, call.end)
+      // Kotlin call_expression and Groovy command_chain ranges include the closure.
+      // Locate the opening brace after the call name, not after call.end.
+      val callNameEnd = call.start + call.name.length
+      val open = GradleLexicalScanner.indexAfterWhitespace(source, callNameEnd)
         .takeIf { it < source.length && source[it] == '{' }
         ?: return@mapNotNull null
       val close = GradleLexicalScanner.matchingBrace(source, open)
