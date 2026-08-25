@@ -31,6 +31,36 @@ object ModuleOperations {
       val removeProjectDirectoryMapping: Boolean,
       val dependencyRemovals: List<DependencyRemoval>,
   )
+
+  /** A direct project dependency whose Gradle path will be updated during a module rename. */
+  data class DependencyRename(
+      val dependentProjectPath: String,
+      val buildScript: File,
+      val configuration: String,
+  )
+
+  /** Stage 1 rename plan: changes the Gradle path but deliberately leaves the module directory in place. */
+  data class RenamePlan(
+      val target: GradleProject,
+      val oldGradlePath: String,
+      val newGradlePath: String,
+      val settingsFile: File,
+      val renameProjectDirectoryMapping: Boolean,
+      val addProjectDirectoryMapping: Boolean,
+      val directoryExpression: String,
+      val dependencyRenames: List<DependencyRename>,
+  )
+
+  sealed interface RenamePlanResult {
+    data class Ready(val plan: RenamePlan) : RenamePlanResult
+    data class Blocked(val reasons: List<String>) : RenamePlanResult
+  }
+
+  sealed interface RenameExecutionResult {
+    data class Renamed(val oldGradlePath: String, val newGradlePath: String) : RenameExecutionResult
+    data class Failed(val reason: String, val rollbackFailures: List<String> = emptyList()) : RenameExecutionResult
+  }
+
 sealed interface DeletionPlanResult {
     data class Ready(val plan: DeletionPlan) : DeletionPlanResult
     data class Blocked(val reasons: List<String>) : DeletionPlanResult
@@ -104,6 +134,103 @@ sealed interface DeletionPlanResult {
             removals.distinctBy { Triple(it.buildScript.canonicalPath, it.configuration, it.targetProjectPath) },
         ),
     )
+  }
+
+  fun planRename(workspace: IWorkspace, oldGradlePath: String, newGradlePath: String): RenamePlanResult {
+    val target = workspace.findProject(oldGradlePath)
+        ?: return RenamePlanResult.Blocked(listOf("Module is not present in the synchronized workspace: $oldGradlePath"))
+    if (oldGradlePath == ":") return RenamePlanResult.Blocked(listOf("The root Gradle project cannot be renamed"))
+    if (!isValidGradlePath(newGradlePath)) return RenamePlanResult.Blocked(listOf("Use a valid Gradle path such as :feature:loader"))
+    if (oldGradlePath == newGradlePath) return RenamePlanResult.Blocked(listOf("The new Gradle path is the same as the current path"))
+    if (workspace.findProject(newGradlePath) != null) return RenamePlanResult.Blocked(listOf("A module already exists at $newGradlePath"))
+    if (!target.buildScript.isFile) return RenamePlanResult.Blocked(listOf("Module build script does not exist: ${target.buildScript.path}"))
+
+    val root = workspace.getProjectDir().canonicalFile
+    val settingsFile = findSettingsFile(root) ?: return RenamePlanResult.Blocked(listOf("settings.gradle(.kts) not found in workspace root"))
+    val settingsSource = runCatching { settingsFile.readText() }.getOrElse {
+      return RenamePlanResult.Blocked(listOf("Could not read settings file: ${it.message}"))
+    }
+    val settingsDsl = settingsFile.gradleDsl()
+    val blockers = mutableListOf<String>()
+    val includeEdit = ProjectSettingsEditor.renameInclude(settingsSource, oldGradlePath, newGradlePath, settingsDsl)
+    if (includeEdit !is GradleEditResult.Applied) blockers += "Cannot safely rename include for $oldGradlePath: ${includeEdit.reason()}"
+
+    val mappings = ProjectSettingsEditor.findProjectDirectoryMappings(settingsSource, settingsDsl)
+        .filter { it.gradlePath == oldGradlePath }
+    if (mappings.size > 1) blockers += "Multiple projectDir mappings found for $oldGradlePath"
+    val renameMapping = mappings.size == 1
+    if (renameMapping) {
+      val mappingEdit = ProjectSettingsEditor.renameProjectDirMappingPath(settingsSource, oldGradlePath, newGradlePath, settingsDsl)
+      if (mappingEdit !is GradleEditResult.Applied) blockers += "Cannot safely rename projectDir mapping for $oldGradlePath: ${mappingEdit.reason()}"
+    }
+    val targetDirectory = target.projectDir.canonicalFile
+    val directoryExpression = if (targetDirectory.toPath().startsWith(root.toPath())) {
+      root.toPath().relativize(targetDirectory.toPath()).toString().replace(File.separatorChar, '/')
+    } else if (renameMapping) {
+      // Existing mapping keeps the external directory reachable after its path is renamed.
+      ""
+    } else {
+      blockers += "Module directory is outside the workspace and has no safe projectDir mapping: ${targetDirectory.path}"
+      ""
+    }
+
+    val renames = mutableListOf<DependencyRename>()
+    workspaceProjects(workspace).filter { it.path != oldGradlePath }.forEach { dependent ->
+      val buildScript = dependent.buildScript
+      if (!buildScript.isFile) {
+        blockers += "Cannot inspect build script for ${dependent.path}: ${buildScript.path}"
+        return@forEach
+      }
+      val source = runCatching { buildScript.readText() }.getOrElse {
+        blockers += "Cannot read build script for ${dependent.path}: ${it.message}"
+        return@forEach
+      }
+      val buildDsl = buildScript.gradleDsl()
+      if (BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(source, oldGradlePath, buildDsl)) {
+        blockers += "${dependent.path} has an unsupported project dependency reference to $oldGradlePath"
+      }
+      BuildScriptDependenciesEditor.findProjectDependencies(source, buildDsl)
+          .filter { it.gradlePath == oldGradlePath }
+          .forEach { dependency ->
+            val edit = BuildScriptDependenciesEditor.renameProjectDependency(source, dependency.configuration, oldGradlePath, newGradlePath, buildDsl)
+            if (edit is GradleEditResult.Applied) renames += DependencyRename(dependent.path, buildScript, dependency.configuration)
+            else blockers += "Cannot safely rename ${dependency.configuration} dependency in ${dependent.path}: ${edit.reason()}"
+          }
+    }
+    if (blockers.isNotEmpty()) return RenamePlanResult.Blocked(blockers.distinct())
+    return RenamePlanResult.Ready(
+        RenamePlan(target, oldGradlePath, newGradlePath, settingsFile, renameMapping, !renameMapping, directoryExpression, renames.distinctBy { Triple(it.buildScript.canonicalPath, it.configuration, it.dependentProjectPath) }),
+    )
+  }
+
+  /** Executes a stage-1 rename plan. The module directory is deliberately not moved. */
+  fun executeRename(plan: RenamePlan): RenameExecutionResult {
+    val root = plan.settingsFile.parentFile.canonicalFile
+    val transaction = runCatching {
+      ProjectEditTransaction.begin(root, plan.dependencyRenames.map { it.buildScript.parentFile })
+    }.getOrElse { return RenameExecutionResult.Failed(it.message ?: "Could not start project edit transaction") }
+    return try {
+      val settingsDsl = plan.settingsFile.gradleDsl()
+      val settingsSource = plan.settingsFile.readText()
+      transaction.applyRequiredTextEdit(plan.settingsFile, settingsSource, ProjectSettingsEditor.renameInclude(settingsSource, plan.oldGradlePath, plan.newGradlePath, settingsDsl), "settings include")
+      val afterInclude = plan.settingsFile.readText()
+      val mappingEdit = if (plan.renameProjectDirectoryMapping) {
+        ProjectSettingsEditor.renameProjectDirMappingPath(afterInclude, plan.oldGradlePath, plan.newGradlePath, settingsDsl)
+      } else {
+        ProjectSettingsEditor.addProjectDirMapping(afterInclude, plan.newGradlePath, plan.directoryExpression, settingsDsl)
+      }
+      transaction.applyRequiredTextEdit(plan.settingsFile, afterInclude, mappingEdit, "projectDir mapping")
+      plan.dependencyRenames.groupBy { it.buildScript.canonicalFile }.forEach { (buildScript, renames) ->
+        renames.forEach { rename ->
+          val source = buildScript.readText()
+          transaction.applyRequiredTextEdit(buildScript, source, BuildScriptDependenciesEditor.renameProjectDependency(source, rename.configuration, plan.oldGradlePath, plan.newGradlePath, buildScript.gradleDsl()), "dependency in ${rename.dependentProjectPath}")
+        }
+      }
+      transaction.commit()
+      RenameExecutionResult.Renamed(plan.oldGradlePath, plan.newGradlePath)
+    } catch (error: Throwable) {
+      RenameExecutionResult.Failed(error.message ?: "Module rename failed", transaction.rollback().mapNotNull { it.message })
+    }
   }
 
   /** Executes a previously approved plan. Call [planDeletion] again immediately before confirmation. */
@@ -184,6 +311,7 @@ sealed interface DeletionPlanResult {
   private fun findSettingsFile(root: File): File? =
       listOf(File(root, "settings.gradle.kts"), File(root, "settings.gradle")).firstOrNull { it.isFile }
   private fun File.gradleDsl(): GradleDsl = if (name.endsWith(".gradle.kts")) GradleDsl.KOTLIN else GradleDsl.GROOVY
+  private fun isValidGradlePath(path: String) = path.matches(Regex(":([A-Za-z][A-Za-z0-9_-]*)(:[A-Za-z][A-Za-z0-9_-]*)*"))
   private fun GradleEditResult.isUnsafe() = this is GradleEditResult.Unsupported || this is GradleEditResult.Ambiguous || this is GradleEditResult.Invalid
   private fun GradleEditResult.reason(): String = when (this) {
     is GradleEditResult.Unsupported -> reason

@@ -743,12 +743,118 @@ class ModuleManagerFragment : Fragment() {
       }
       setOnMenuItemClickListener { item ->
         when (item.itemId) {
-          MENU_RENAME_MODULE -> showModuleOperationUnavailable("Renaming module is not implemented yet.")
+          MENU_RENAME_MODULE -> showRenameModuleDialog(module)
           MENU_MOVE_MODULE -> showModuleOperationUnavailable("Moving module is not implemented yet.")
           MENU_DELETE_MODULE -> previewModuleDeletion(module)
           else -> return@setOnMenuItemClickListener false
         }
         true
+      }
+    }
+  }
+
+  private fun showRenameModuleDialog(module: GradleProject) {
+    val field = input("New Gradle path", module.path)
+    MaterialAlertDialogBuilder(requireContext())
+        .setTitle("Rename module")
+        .setMessage("Current Gradle path: ${module.path}\n\nThe module directory will remain in place in this version.")
+        .setView(field.first)
+        .setNegativeButton("Cancel", null)
+        .setPositiveButton("Next", null)
+        .create()
+        .also { dialog ->
+          dialog.setOnShowListener {
+            field.second.selectAll()
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+              val newPath = field.second.text?.toString().orEmpty().trim()
+              if (newPath.isEmpty()) {
+                field.first.error = "Enter a Gradle path"
+              } else {
+                field.first.error = null
+                dialog.dismiss()
+                previewModuleRename(module, newPath)
+              }
+            }
+          }
+          dialog.show()
+        }
+  }
+
+  private fun previewModuleRename(module: GradleProject, newGradlePath: String) {
+    val workspace = IProjectManager.getInstance().getWorkspace()
+        ?: return showModuleOperationUnavailable("Project workspace is unavailable.")
+    val result = ModuleOperations.planRename(workspace, module.path, newGradlePath)
+    val message = when (result) {
+      is ModuleOperations.RenamePlanResult.Ready -> buildString {
+        append("Rename is ready.\n\n")
+        append("Gradle path:\n").append(result.plan.oldGradlePath).append(" → ").append(result.plan.newGradlePath)
+        append("\n\nModule directory:\nNo physical directory move.")
+        append("\n\nSettings changes:\n• Rename include")
+        if (result.plan.renameProjectDirectoryMapping) append("\n• Rename projectDir mapping")
+        else if (result.plan.addProjectDirectoryMapping) append("\n• Add projectDir mapping")
+        if (result.plan.dependencyRenames.isNotEmpty()) {
+          append("\n\nProject dependencies to update:\n")
+          result.plan.dependencyRenames.forEach { rename ->
+            append("• ").append(rename.dependentProjectPath).append(": ")
+                .append(rename.configuration).append(" → ").append(result.plan.newGradlePath).append('\n')
+          }
+        }
+      }
+      is ModuleOperations.RenamePlanResult.Blocked -> buildString {
+        append("Rename is blocked:\n\n")
+        result.reasons.forEach { append("• ").append(it).append('\n') }
+      }
+    }
+    val dialog = MaterialAlertDialogBuilder(requireContext())
+        .setTitle("Rename module")
+        .setMessage(message)
+        .setNegativeButton("Cancel", null)
+    if (result is ModuleOperations.RenamePlanResult.Ready) {
+      dialog.setPositiveButton("Rename") { _, _ -> executeModuleRename(module.path, newGradlePath) }
+    } else {
+      dialog.setPositiveButton("Close", null)
+    }
+    dialog.show()
+  }
+
+  private fun executeModuleRename(oldGradlePath: String, newGradlePath: String) {
+    if (creatingModule || editorViewModel.isInitializing) return
+    val workspace = IProjectManager.getInstance().getWorkspace()
+        ?: return showModuleOperationUnavailable("Project workspace is unavailable.")
+    val plan = when (val result = ModuleOperations.planRename(workspace, oldGradlePath, newGradlePath)) {
+      is ModuleOperations.RenamePlanResult.Ready -> result.plan
+      is ModuleOperations.RenamePlanResult.Blocked -> {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Rename module")
+            .setMessage(result.reasons.joinToString("\n") { "• $it" })
+            .setPositiveButton("Close", null)
+            .show()
+        return
+      }
+    }
+    creatingModule = true
+    render()
+    lifecycleScope.launch {
+      val result = withContext(Dispatchers.IO) { ModuleOperations.executeRename(plan) }
+      if (!isAdded) return@launch
+      creatingModule = false
+      when (result) {
+        is ModuleOperations.RenameExecutionResult.Renamed -> {
+          Toast.makeText(requireContext(), "Module renamed. Syncing project...", Toast.LENGTH_SHORT).show()
+          showModuleList(animated = false)
+          syncProject()
+        }
+        is ModuleOperations.RenameExecutionResult.Failed -> {
+          render()
+          val rollback = result.rollbackFailures.takeIf { it.isNotEmpty() }
+              ?.joinToString("\n") { "• $it" }
+              ?.let { "\n\nRollback issues:\n$it" }.orEmpty()
+          MaterialAlertDialogBuilder(requireContext())
+              .setTitle("Module rename failed")
+              .setMessage(result.reason + rollback)
+              .setPositiveButton("Close", null)
+              .show()
+        }
       }
     }
   }
@@ -759,7 +865,7 @@ class ModuleManagerFragment : Fragment() {
     val result = ModuleOperations.planDeletion(workspace, module.path)
     val message = when (result) {
       is ModuleOperations.DeletionPlanResult.Ready -> buildString {
-        append("Module files were not changed.\n\n")
+        append("Deletion is ready.\n\n")
         append("Deletion can remove ").append(result.plan.target.path).append(" after confirmation.")
         if (result.plan.dependencyRemovals.isNotEmpty()) {
           append("\n\nProject dependencies to remove:\n")
@@ -770,12 +876,12 @@ class ModuleManagerFragment : Fragment() {
         }
       }
       is ModuleOperations.DeletionPlanResult.Blocked -> buildString {
-        append("Module files were not changed. Deletion is blocked:\n\n")
+        append("Deletion is blocked:\n\n")
         result.reasons.forEach { append("• ").append(it).append('\n') }
       }
     }
     val dialog = MaterialAlertDialogBuilder(requireContext())
-        .setTitle("Delete ${module.path}")
+        .setTitle("Delete module")
         .setMessage(message)
         .setNegativeButton("Cancel", null)
     if (result is ModuleOperations.DeletionPlanResult.Ready) {

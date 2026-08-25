@@ -82,13 +82,43 @@ class GradleEditTest {
     assertThat(output).contains("include ':app', ':shared'")
     assertThat(ProjectSettingsEditor.findIncludedPaths(output, GradleDsl.GROOVY)).containsExactly(":app", ":shared")
   }
-
   @Test fun groovySettingsIncludeWithMixedQuotesRemovesEntry() {
     val source = "include(\":app\", \":ltp\", ':lsr')\n"
     val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":lsr", GradleDsl.GROOVY))
     assertThat(output).isEqualTo("include(\":app\", \":ltp\")\n")
     assertThat(ProjectSettingsEditor.findIncludedPaths(output, GradleDsl.GROOVY)).containsExactly(":app", ":ltp")
   }
+
+  @Test fun includePathCanBeRenamedWithExplicitDslAndOriginalQuote() {
+    val kotlinSource = "include(\":old\", \":other\")\n"
+    val kotlinOutput = apply(kotlinSource, ProjectSettingsEditor.renameInclude(kotlinSource, ":old", ":new", GradleDsl.KOTLIN))
+    assertThat(kotlinOutput).isEqualTo("include(\":new\", \":other\")\n")
+
+    val groovySource = "include ':old', ':other'\n"
+    val groovyOutput = apply(groovySource, ProjectSettingsEditor.renameInclude(groovySource, ":old", ":new", GradleDsl.GROOVY))
+    assertThat(groovyOutput).isEqualTo("include ':new', ':other'\n")
+  }
+
+  @Test fun includeRenameFailsClosedForDynamicOrRepeatedCalls() {
+    val dynamic = "include(\":old\", modules.first())\n"
+    assertThat(ProjectSettingsEditor.renameInclude(dynamic, ":old", ":new", GradleDsl.KOTLIN))
+        .isInstanceOf(GradleEditResult.Unsupported::class.java)
+
+    val repeated = "include(\":old\")\ninclude(\":other\")\n"
+    assertThat(ProjectSettingsEditor.renameInclude(repeated, ":old", ":new", GradleDsl.KOTLIN))
+        .isInstanceOf(GradleEditResult.Ambiguous::class.java)
+  }
+
+  @Test fun projectDirectoryMappingPathCanBeRenamed() {
+    val kotlinSource = "project(\":old\").projectDir = file(\"legacy\")\n"
+    val kotlinOutput = apply(kotlinSource, ProjectSettingsEditor.renameProjectDirMappingPath(kotlinSource, ":old", ":new", GradleDsl.KOTLIN))
+    assertThat(kotlinOutput).isEqualTo("project(\":new\").projectDir = file(\"legacy\")\n")
+
+    val groovySource = "project(':old').projectDir = file('legacy')\n"
+    val groovyOutput = apply(groovySource, ProjectSettingsEditor.renameProjectDirMappingPath(groovySource, ":old", ":new", GradleDsl.GROOVY))
+    assertThat(groovyOutput).isEqualTo("project(':new').projectDir = file('legacy')\n")
+  }
+
 
   @Test fun groovyProjectDirectoryMappingCanBeUpdated() {
     val source = "project(':demo').projectDir = file('../demo')\n"
@@ -247,6 +277,27 @@ dependencies {
       assertThat(transaction.rollback()).isEmpty()
       assertThat(settings.readText()).isEqualTo("include(\":app\")\n")
       assertThat(newModule.exists()).isFalse()
+    } finally {
+      root.deleteRecursively()
+    }
+  }
+
+  @Test fun transactionMovesDirectoryAndRestoresItOnRollback() {
+    val root = createTempDir(prefix = "project-move-")
+    try {
+      val source = root.resolve("legacy").apply {
+        mkdirs()
+        resolve("build.gradle.kts").writeText("plugins {}")
+      }
+      val destination = root.resolve("feature/core")
+      val transaction = ProjectEditTransaction.begin(root)
+      transaction.moveDirectory(source, destination)
+      assertThat(source.exists()).isFalse()
+      assertThat(destination.resolve("build.gradle.kts").isFile).isTrue()
+      assertThat(transaction.rollback()).isEmpty()
+      assertThat(source.resolve("build.gradle.kts").isFile).isTrue()
+      assertThat(destination.exists()).isFalse()
+      assertThat(root.resolve("feature").exists()).isFalse()
     } finally {
       root.deleteRecursively()
     }

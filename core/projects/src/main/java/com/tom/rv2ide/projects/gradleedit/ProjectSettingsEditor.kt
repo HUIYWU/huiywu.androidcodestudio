@@ -36,6 +36,19 @@ object ProjectSettingsEditor {
     return GradleEditResult.Applied(listOf(TextEdit(match.statementStart, lineEndIncludingNewline(source, match.statementEnd), "")))
   }
 
+  fun renameProjectDirMappingPath(source: String, oldGradlePath: String, newGradlePath: String, dsl: GradleDsl): GradleEditResult {
+    if (!isGradlePath(oldGradlePath) || !isGradlePath(newGradlePath)) return GradleEditResult.Invalid("Gradle paths must start with ':'")
+    if (oldGradlePath == newGradlePath) return GradleEditResult.NoChange
+    val mappings = mappingStatements(source, dsl)
+    if (mappings.any { it.gradlePath == newGradlePath }) return GradleEditResult.Ambiguous("Target projectDir mapping already exists for $newGradlePath")
+    val matches = mappings.filter { it.gradlePath == oldGradlePath }
+    if (matches.isEmpty()) return GradleEditResult.NoChange
+    if (matches.size > 1) return GradleEditResult.Ambiguous("Multiple projectDir mappings found for $oldGradlePath")
+    val match = matches.single()
+    val target = literalRange(source, match.pathStart, match.pathEnd)
+    return GradleEditResult.Applied(listOf(TextEdit(target.first, target.second, quote(newGradlePath, dsl))))
+  }
+
   fun addInclude(source: String, gradlePath: String, dsl: GradleDsl): GradleEditResult {
     if (!isGradlePath(gradlePath)) return GradleEditResult.Invalid("Gradle path must start with ':'")
     if (findIncludedPaths(source, dsl).contains(gradlePath)) return GradleEditResult.NoChange
@@ -67,6 +80,21 @@ object ProjectSettingsEditor {
    * Removes one literal path from a single include call or standalone include statement.
    * Dynamic arguments and multiple include calls remain fail-closed.
    */
+  fun renameInclude(source: String, oldGradlePath: String, newGradlePath: String, dsl: GradleDsl): GradleEditResult {
+    if (!isGradlePath(oldGradlePath) || !isGradlePath(newGradlePath)) return GradleEditResult.Invalid("Gradle paths must start with ':'")
+    if (oldGradlePath == newGradlePath) return GradleEditResult.NoChange
+    val calls = includeCalls(source, dsl)
+    val matches = calls.flatMap { call -> call.arguments.orEmpty().filter { it.value == oldGradlePath }.map { call to it } }
+    if (matches.isEmpty()) return GradleEditResult.NoChange
+    if (matches.size != 1 || calls.size != 1) return GradleEditResult.Ambiguous("Include path cannot be uniquely renamed: $oldGradlePath")
+    val call = matches.single().first
+    if (call.dynamic) return GradleEditResult.Unsupported("Include contains a dynamic argument")
+    if (call.arguments.orEmpty().any { it.value == newGradlePath }) return GradleEditResult.Ambiguous("Target include already exists: $newGradlePath")
+    val literal = matches.single().second
+    val target = literalRange(source, literal.start, literal.end)
+    return GradleEditResult.Applied(listOf(TextEdit(target.first, target.second, quote(newGradlePath, dsl))))
+  }
+
   fun removeInclude(source: String, gradlePath: String, dsl: GradleDsl): GradleEditResult {
     if (!isGradlePath(gradlePath)) return GradleEditResult.Invalid("Gradle path must start with ':'")
     val calls = includeCalls(source, dsl)
@@ -125,6 +153,8 @@ object ProjectSettingsEditor {
 
   private data class MappingStatement(
       val gradlePath: String,
+      val pathStart: Int,
+      val pathEnd: Int,
       val directoryExpression: String,
       val expressionStart: Int,
       val expressionEnd: Int,
@@ -220,7 +250,7 @@ object ProjectSettingsEditor {
       if (!between.contains("projectDir") || !between.contains('=')) return@mapNotNull null
       val statementStart = source.lastIndexOf('\n', project.start).let { if (it < 0) 0 else it + 1 }
       val statementEnd = if (searchEnd == source.length) file.end else searchEnd
-      mapping(path.value, directory.start, directory.end, source, statementStart, statementEnd)
+      mapping(path.value, path.start, path.end, directory.start, directory.end, source, statementStart, statementEnd)
     }
   }
 
@@ -243,8 +273,8 @@ object ProjectSettingsEditor {
     return actualStart to actualEnd
   }
 
-  private fun mapping(path: String, expressionStart: Int, expressionEnd: Int, source: String, statementStart: Int, statementEnd: Int): MappingStatement =
-      MappingStatement(path, source.substring(expressionStart, expressionEnd), expressionStart, expressionEnd, statementStart, statementEnd)
+  private fun mapping(path: String, pathStart: Int, pathEnd: Int, expressionStart: Int, expressionEnd: Int, source: String, statementStart: Int, statementEnd: Int): MappingStatement =
+      MappingStatement(path, pathStart, pathEnd, source.substring(expressionStart, expressionEnd), expressionStart, expressionEnd, statementStart, statementEnd)
   private fun appendLine(source: String, line: String): GradleEditResult {
     val nl = newline(source); val prefix = if (source.isEmpty() || source.endsWith(nl)) "" else nl
     return GradleEditResult.Applied(listOf(TextEdit(source.length, source.length, "$prefix$line$nl")))
