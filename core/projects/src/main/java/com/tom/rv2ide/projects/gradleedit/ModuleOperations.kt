@@ -39,15 +39,19 @@ object ModuleOperations {
       val configuration: String,
   )
 
-  /** Stage 2 rename plan: moves an in-workspace module directory to match its new Gradle path. */
+  /** Rename plan with optional physical directory movement. */
   data class RenamePlan(
       val target: GradleProject,
       val oldGradlePath: String,
       val newGradlePath: String,
       val settingsFile: File,
+      val moveDirectory: Boolean,
       val oldDirectory: File,
       val newDirectory: File,
+      val renameProjectDirectoryMapping: Boolean,
+      val addProjectDirectoryMapping: Boolean,
       val removeProjectDirectoryMapping: Boolean,
+      val directoryExpression: String,
       val dependencyRenames: List<DependencyRename>,
   )
 
@@ -136,7 +140,7 @@ sealed interface DeletionPlanResult {
     )
   }
 
-  fun planRename(workspace: IWorkspace, oldGradlePath: String, newGradlePath: String): RenamePlanResult {
+  fun planRename(workspace: IWorkspace, oldGradlePath: String, newGradlePath: String, moveDirectory: Boolean): RenamePlanResult {
     val target = workspace.findProject(oldGradlePath)
         ?: return RenamePlanResult.Blocked(listOf("Module is not present in the synchronized workspace: $oldGradlePath"))
     if (oldGradlePath == ":") return RenamePlanResult.Blocked(listOf("The root Gradle project cannot be renamed"))
@@ -161,21 +165,40 @@ sealed interface DeletionPlanResult {
       blockers += "A projectDir mapping already exists for $newGradlePath"
     }
     if (mappings.size > 1) blockers += "Multiple projectDir mappings found for $oldGradlePath"
-    val removeMapping = mappings.size == 1
-    if (removeMapping) {
-      val mappingEdit = ProjectSettingsEditor.removeProjectDirMapping(settingsSource, oldGradlePath, settingsDsl)
-      if (mappingEdit !is GradleEditResult.Applied) blockers += "Cannot safely remove projectDir mapping for $oldGradlePath: ${mappingEdit.reason()}"
-    }
-
     val oldDirectory = target.projectDir.canonicalFile
-    if (!oldDirectory.isDirectory) blockers += "Module directory does not exist: ${oldDirectory.path}"
-    if (!oldDirectory.toPath().startsWith(root.toPath())) {
-      blockers += "Moving modules outside the workspace root is not supported: ${oldDirectory.path}"
-    }
     val newDirectory = File(root, newGradlePath.removePrefix(":").replace(':', File.separatorChar)).canonicalFile
-    if (newDirectory.exists()) blockers += "Target module directory already exists: ${newDirectory.path}"
-    if (newDirectory.toPath().startsWith(oldDirectory.toPath())) {
-      blockers += "Target module directory cannot be inside the current module directory: ${newDirectory.path}"
+    var renameMapping = false
+    var addMapping = false
+    var removeMapping = false
+    var directoryExpression = ""
+    if (moveDirectory) {
+      if (!oldDirectory.isDirectory) blockers += "Module directory does not exist: ${oldDirectory.path}"
+      if (!oldDirectory.toPath().startsWith(root.toPath())) {
+        blockers += "Moving modules outside the workspace root is not supported: ${oldDirectory.path}"
+      }
+      if (newDirectory.exists()) blockers += "Target module directory already exists: ${newDirectory.path}"
+      if (newDirectory.toPath().startsWith(oldDirectory.toPath())) {
+        blockers += "Target module directory cannot be inside the current module directory: ${newDirectory.path}"
+      }
+      removeMapping = mappings.size == 1
+      if (removeMapping) {
+        val mappingEdit = ProjectSettingsEditor.removeProjectDirMapping(settingsSource, oldGradlePath, settingsDsl)
+        if (mappingEdit !is GradleEditResult.Applied) blockers += "Cannot safely remove projectDir mapping for $oldGradlePath: ${mappingEdit.reason()}"
+      }
+    } else {
+      if (oldDirectory.toPath().startsWith(root.toPath())) {
+        directoryExpression = root.toPath().relativize(oldDirectory.toPath()).toString().replace(File.separatorChar, '/')
+        addMapping = mappings.isEmpty()
+        renameMapping = mappings.size == 1
+        if (renameMapping) {
+          val mappingEdit = ProjectSettingsEditor.renameProjectDirMappingPath(settingsSource, oldGradlePath, newGradlePath, settingsDsl)
+          if (mappingEdit !is GradleEditResult.Applied) blockers += "Cannot safely rename projectDir mapping for $oldGradlePath: ${mappingEdit.reason()}"
+        }
+      } else if (mappings.size != 1) {
+        blockers += "Module directory is outside the workspace and has no safe projectDir mapping: ${oldDirectory.path}"
+      } else {
+        renameMapping = true
+      }
     }
 
     val renames = mutableListOf<DependencyRename>()
@@ -212,9 +235,13 @@ sealed interface DeletionPlanResult {
             oldGradlePath = oldGradlePath,
             newGradlePath = newGradlePath,
             settingsFile = settingsFile,
+            moveDirectory = moveDirectory,
             oldDirectory = oldDirectory,
             newDirectory = newDirectory,
+            renameProjectDirectoryMapping = renameMapping,
+            addProjectDirectoryMapping = addMapping,
             removeProjectDirectoryMapping = removeMapping,
+            directoryExpression = directoryExpression,
             dependencyRenames = renames.distinctBy {
               Triple(it.buildScript.canonicalPath, it.configuration, it.dependentProjectPath)
             },
@@ -229,7 +256,9 @@ sealed interface DeletionPlanResult {
       ProjectEditTransaction.begin(root, plan.dependencyRenames.map { it.buildScript.parentFile })
     }.getOrElse { return RenameExecutionResult.Failed(it.message ?: "Could not start project edit transaction") }
     return try {
-      transaction.moveDirectory(plan.oldDirectory, plan.newDirectory)
+      if (plan.moveDirectory) {
+        transaction.moveDirectory(plan.oldDirectory, plan.newDirectory)
+      }
 
       val settingsDsl = plan.settingsFile.gradleDsl()
       val settingsSource = plan.settingsFile.readText()
@@ -239,9 +268,21 @@ sealed interface DeletionPlanResult {
           ProjectSettingsEditor.renameInclude(settingsSource, plan.oldGradlePath, plan.newGradlePath, settingsDsl),
           "settings include",
       )
-      if (plan.removeProjectDirectoryMapping) {
-        val afterInclude = plan.settingsFile.readText()
-        transaction.applyRequiredTextEdit(
+      val afterInclude = plan.settingsFile.readText()
+      when {
+        plan.renameProjectDirectoryMapping -> transaction.applyRequiredTextEdit(
+            plan.settingsFile,
+            afterInclude,
+            ProjectSettingsEditor.renameProjectDirMappingPath(afterInclude, plan.oldGradlePath, plan.newGradlePath, settingsDsl),
+            "projectDir mapping",
+        )
+        plan.addProjectDirectoryMapping -> transaction.applyRequiredTextEdit(
+            plan.settingsFile,
+            afterInclude,
+            ProjectSettingsEditor.addProjectDirMapping(afterInclude, plan.newGradlePath, plan.directoryExpression, settingsDsl),
+            "projectDir mapping",
+        )
+        plan.removeProjectDirectoryMapping -> transaction.applyRequiredTextEdit(
             plan.settingsFile,
             afterInclude,
             ProjectSettingsEditor.removeProjectDirMapping(afterInclude, plan.oldGradlePath, settingsDsl),

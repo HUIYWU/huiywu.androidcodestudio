@@ -17,6 +17,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -763,11 +764,17 @@ class ModuleManagerFragment : Fragment() {
       isCursorVisible = false
     }
     val newPath = input("New Gradle path", "")
+    val moveDirectory = CheckBox(requireContext()).apply {
+      text = "Move module directory"
+      isChecked = false
+      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
     val content = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
       setPadding(dp(24), 0, dp(24), 0)
       addView(currentPath.first)
       addView(newPath.first)
+      addView(moveDirectory)
     }
     MaterialAlertDialogBuilder(requireContext())
         .setTitle("Rename module")
@@ -784,7 +791,7 @@ class ModuleManagerFragment : Fragment() {
               } else {
                 newPath.first.error = null
                 dialog.dismiss()
-                previewModuleRename(module, targetPath)
+                previewModuleRename(module, targetPath, moveDirectory.isChecked)
               }
             }
           }
@@ -792,20 +799,28 @@ class ModuleManagerFragment : Fragment() {
         }
   }
 
-  private fun previewModuleRename(module: GradleProject, newGradlePath: String) {
+  private fun previewModuleRename(module: GradleProject, newGradlePath: String, moveDirectory: Boolean) {
     val workspace = IProjectManager.getInstance().getWorkspace()
         ?: return showModuleOperationUnavailable("Project workspace is unavailable.")
-    val result = ModuleOperations.planRename(workspace, module.path, newGradlePath)
+    val result = ModuleOperations.planRename(workspace, module.path, newGradlePath, moveDirectory)
     val message = when (result) {
       is ModuleOperations.RenamePlanResult.Ready -> buildString {
         append("Rename is ready.\n\n")
         append("Gradle path:\n").append(result.plan.oldGradlePath).append(" → ").append(result.plan.newGradlePath)
-        append("\n\nModule directory:\n")
-            .append(result.plan.oldDirectory.relativeToOrSelf(projectRoot()).path)
-            .append(" → ")
-            .append(result.plan.newDirectory.relativeToOrSelf(projectRoot()).path)
+        if (result.plan.moveDirectory) {
+          append("\n\nModule directory:\n")
+              .append(result.plan.oldDirectory.relativeToOrSelf(projectRoot()).path)
+              .append(" → ")
+              .append(result.plan.newDirectory.relativeToOrSelf(projectRoot()).path)
+        } else {
+          append("\n\nModule directory:\nKeep current location.")
+        }
         append("\n\nSettings changes:\n• Rename include")
-        if (result.plan.removeProjectDirectoryMapping) append("\n• Remove projectDir mapping")
+        when {
+          result.plan.renameProjectDirectoryMapping -> append("\n• Rename projectDir mapping")
+          result.plan.addProjectDirectoryMapping -> append("\n• Add projectDir mapping")
+          result.plan.removeProjectDirectoryMapping -> append("\n• Remove projectDir mapping")
+        }
         if (result.plan.dependencyRenames.isNotEmpty()) {
           append("\n\nProject dependencies to update:\n")
           result.plan.dependencyRenames.forEach { rename ->
@@ -824,18 +839,18 @@ class ModuleManagerFragment : Fragment() {
         .setMessage(message)
         .setNegativeButton("Cancel", null)
     if (result is ModuleOperations.RenamePlanResult.Ready) {
-      dialog.setPositiveButton("Rename") { _, _ -> executeModuleRename(module.path, newGradlePath) }
+      dialog.setPositiveButton("Rename") { _, _ -> executeModuleRename(module.path, newGradlePath, moveDirectory) }
     } else {
       dialog.setPositiveButton("Close", null)
     }
     dialog.show()
   }
 
-  private fun executeModuleRename(oldGradlePath: String, newGradlePath: String) {
+  private fun executeModuleRename(oldGradlePath: String, newGradlePath: String, moveDirectory: Boolean) {
     if (creatingModule || editorViewModel.isInitializing) return
     val workspace = IProjectManager.getInstance().getWorkspace()
         ?: return showModuleOperationUnavailable("Project workspace is unavailable.")
-    val plan = when (val result = ModuleOperations.planRename(workspace, oldGradlePath, newGradlePath)) {
+    val plan = when (val result = ModuleOperations.planRename(workspace, oldGradlePath, newGradlePath, moveDirectory)) {
       is ModuleOperations.RenamePlanResult.Ready -> result.plan
       is ModuleOperations.RenamePlanResult.Blocked -> {
         MaterialAlertDialogBuilder(requireContext())
@@ -854,7 +869,9 @@ class ModuleManagerFragment : Fragment() {
       creatingModule = false
       when (result) {
         is ModuleOperations.RenameExecutionResult.Renamed -> {
-          IProjectManager.getInstance().notifyFileRenamed(plan.oldDirectory, plan.newDirectory)
+          if (plan.moveDirectory) {
+            IProjectManager.getInstance().notifyFileRenamed(plan.oldDirectory, plan.newDirectory)
+          }
           Toast.makeText(requireContext(), "Module renamed. Syncing project...", Toast.LENGTH_SHORT).show()
           showModuleList(animated = false)
           syncProject()
