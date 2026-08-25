@@ -145,10 +145,9 @@ internal object GradleParser {
         dynamic = true
         continue
       }
-      val string = when (argument.type) {
-        "string_literal", "string" -> argument
-        else -> findDescendant(argument) { it.type == "string_literal" || it.type == "string" }
-      }
+      val directString = directStringArgument(argument)
+      val string = directString
+        ?: findDescendant(argument) { it.type == "string_literal" || it.type == "string" }
       if (string == null) {
         dynamic = true
         continue
@@ -156,14 +155,18 @@ internal object GradleParser {
       val raw = text(string, source)
       val value = raw.substringAfter("\"").substringBeforeLast("\"")
         .takeIf { raw.startsWith("\"") } ?: raw.substringAfter("'").substringBeforeLast("'")
-      val literal = Literal(value, offset(string.startByte), offset(string.endByte))
-      literals += literal
-      val directString = argument.type == "string_literal" || argument.type == "string"
-      if (!directString || value.contains("\$")) {
-        dynamic = true
-      }
+      literals += Literal(value, offset(string.startByte), offset(string.endByte))
+      if (directString == null || value.contains('$')) dynamic = true
     }
     return literals to dynamic
+  }
+
+  private fun directStringArgument(node: TSNode): TSNode? {
+    if (!node.canAccess()) return null
+    if (node.type == "string_literal" || node.type == "string") return node
+    if (node.namedChildCount != 1) return null
+    val child = node.getNamedChild(0)
+    return child.takeIf { it.canAccess() && (it.type == "string_literal" || it.type == "string") }
   }
 
   private fun findDescendant(node: TSNode, predicate: (TSNode) -> Boolean): TSNode? {
