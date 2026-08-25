@@ -189,10 +189,18 @@ sealed interface DeletionPlanResult {
       if (oldDirectory.toPath().startsWith(root.toPath())) {
         directoryExpression = root.toPath().relativize(oldDirectory.toPath()).toString().replace(File.separatorChar, '/')
         addMapping = mappings.isEmpty()
-        renameMapping = mappings.size == 1
-        if (renameMapping) {
-          val mappingEdit = ProjectSettingsEditor.renameProjectDirMappingPath(settingsSource, oldGradlePath, newGradlePath, settingsDsl)
-          if (mappingEdit !is GradleEditResult.Applied) blockers += "Cannot safely rename projectDir mapping for $oldGradlePath: ${mappingEdit.reason()}"
+        if (mappings.size == 1) {
+          val mappedDirectory = resolveProjectDirectory(root, mappings.single().directoryExpression)
+          if (mappedDirectory == newDirectory && mappedDirectory == oldDirectory) {
+            // The mapping is redundant after the rename: the new Gradle path matches the default directory layout.
+            removeMapping = true
+            val mappingEdit = ProjectSettingsEditor.removeProjectDirMapping(settingsSource, oldGradlePath, settingsDsl)
+            if (mappingEdit !is GradleEditResult.Applied) blockers += "Cannot safely remove projectDir mapping for $oldGradlePath: ${mappingEdit.reason()}"
+          } else {
+            renameMapping = true
+            val mappingEdit = ProjectSettingsEditor.renameProjectDirMappingPath(settingsSource, oldGradlePath, newGradlePath, settingsDsl)
+            if (mappingEdit !is GradleEditResult.Applied) blockers += "Cannot safely rename projectDir mapping for $oldGradlePath: ${mappingEdit.reason()}"
+          }
         }
       } else if (mappings.size != 1) {
         blockers += "Module directory is outside the workspace and has no safe projectDir mapping: ${oldDirectory.path}"
@@ -386,8 +394,29 @@ sealed interface DeletionPlanResult {
     transaction.applyTextEdit(plan.settingsFile, source, operation(source), "settings file")
   }
 
+  /**
+   * Returns concrete projects only. Gradle may expose implicit parent projects such as :exa for
+   * a real nested module :exa:inj; those parents have no build script of their own and must not be
+   * inspected or edited as dependent projects.
+   */
   private fun workspaceProjects(workspace: IWorkspace): List<GradleProject> =
-      (listOf(workspace.getRootProject()) + workspace.getSubProjects()).distinctBy { it.path }
+      (listOf(workspace.getRootProject()) + workspace.getSubProjects())
+          .distinctBy { it.path }
+          .filter { it.path == ":" || it.buildScript.isFile }
+
+  /** Resolves a literal projectDir mapping expression without interpreting arbitrary code. */
+  private fun resolveProjectDirectory(root: File, expression: String): File {
+    val literal = expression.trim().let {
+      if (it.length >= 2 && ((it.first() == '"' && it.last() == '"') || (it.first() == '\'' && it.last() == '\''))) {
+        it.substring(1, it.length - 1)
+      } else {
+        it
+      }
+    }
+    val file = File(literal)
+    return if (file.isAbsolute) file.canonicalFile else File(root, literal).canonicalFile
+  }
+
   private fun findSettingsFile(root: File): File? =
       listOf(File(root, "settings.gradle.kts"), File(root, "settings.gradle")).firstOrNull { it.isFile }
   private fun File.gradleDsl(): GradleDsl = if (name.endsWith(".gradle.kts")) GradleDsl.KOTLIN else GradleDsl.GROOVY
