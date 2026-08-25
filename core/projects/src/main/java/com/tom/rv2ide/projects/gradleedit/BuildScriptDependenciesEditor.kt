@@ -63,6 +63,19 @@ object BuildScriptDependenciesEditor {
     }
   }
 
+  /** Diagnostic snapshot for a fail-closed project-reference classification. */
+  fun projectDependencyDiagnostic(source: String, gradlePath: String, dsl: GradleDsl): String {
+    val dependencies = dependencyStatements(source, dsl)
+    val supportedRanges = dependencies.filter { it.gradlePath == gradlePath }.map { it.start until it.end }
+    val projectCalls = GradleParser.parse(source, dsl)
+        .filter { it.name == "project" }
+        .map { call ->
+          val value = call.arguments.orEmpty().singleOrNull()?.value
+          "project(value=$value, range=${call.start}..${call.end}, arguments=${call.arguments}, dynamic=${call.dynamic}, supported=${supportedRanges.any { call.start in it }})"
+        }
+    return "dsl=$dsl target=$gradlePath dependencies=${dependencies.map { ProjectDependency(it.configuration, it.gradlePath) }} supportedRanges=$supportedRanges projectCalls=$projectCalls"
+  }
+
   fun containsProjectDependency(source: String, configuration: String, gradlePath: String, dsl: GradleDsl): Boolean =
       dependencyStatements(source, dsl).any { it.configuration == configuration && it.gradlePath == gradlePath }
 

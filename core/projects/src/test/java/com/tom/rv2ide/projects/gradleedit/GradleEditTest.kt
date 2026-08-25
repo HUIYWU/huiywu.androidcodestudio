@@ -191,6 +191,24 @@ dependencies {
     assertThat(output).contains("implementation(project(\":profile2\"))")
   }
 
+  @Test fun kotlinMultipleProjectDependenciesRemainRemovable() {
+    val source = "dependencies {\n  implementation(project(\":ldr\"))\n  implementation(project(\":inj\"))\n}\n"
+    val dependencies = BuildScriptDependenciesEditor.findProjectDependencies(source, GradleDsl.KOTLIN)
+    assertWithMessage(
+        "Kotlin project dependencies were not recognized as removable.\nDependencies: %s\nParser calls and CST:\n%s",
+        dependencies,
+        parserDiagnostics(source),
+    ).that(dependencies).containsExactly(
+        BuildScriptDependenciesEditor.ProjectDependency("implementation", ":ldr"),
+        BuildScriptDependenciesEditor.ProjectDependency("implementation", ":inj"),
+    )
+    assertWithMessage(
+        "Standard Kotlin dependency implementation(project(\":ldr\")) was classified as unsupported.\nDependencies: %s\nParser calls and CST:\n%s",
+        dependencies,
+        parserDiagnostics(source),
+    ).that(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(source, ":ldr", GradleDsl.KOTLIN)).isFalse()
+  }
+
   @Test fun supportedAndUnsupportedDependencyFormsAreDistinguished() {
     val supported = "dependencies { implementation(project(\":feature\")) }"
     val unsupported = "dependencies { implementation(project(path = \":feature\")) }"

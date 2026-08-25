@@ -2,6 +2,7 @@ package com.tom.rv2ide.projects.gradleedit
 
 import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.IWorkspace
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -14,6 +15,8 @@ import java.util.UUID
  * Operations return a plan or blockers; this object deliberately does not modify project files.
  */
 object ModuleOperations {
+  private val log = LoggerFactory.getLogger(ModuleOperations::class.java)
+
   data class DependencyRemoval(
       val dependentProjectPath: String,
       val buildScript: File,
@@ -75,6 +78,12 @@ sealed interface DeletionPlanResult {
       }
       val buildDsl = buildScript.gradleDsl()
       if (BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(source, target.path, buildDsl)) {
+        log.warn(
+            "Module deletion blocked by unsupported project dependency: dependentProject={}, buildScript={}, {}",
+            dependent.path,
+            buildScript.absolutePath,
+            BuildScriptDependenciesEditor.projectDependencyDiagnostic(source, target.path, buildDsl),
+        )
         blockers += "${dependent.path} has an unsupported project dependency reference to ${target.path}"
       }
       BuildScriptDependenciesEditor.findProjectDependencies(source, buildDsl)
