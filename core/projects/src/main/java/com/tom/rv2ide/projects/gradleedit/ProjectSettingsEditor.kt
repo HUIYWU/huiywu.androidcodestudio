@@ -4,43 +4,43 @@ package com.tom.rv2ide.projects.gradleedit
 object ProjectSettingsEditor {
   data class ProjectDirectoryMapping(val gradlePath: String, val directoryExpression: String)
 
-  fun findProjectDirectoryMappings(source: String): List<ProjectDirectoryMapping> = mappingStatements(source).map {
+  fun findProjectDirectoryMappings(source: String, dsl: GradleDsl): List<ProjectDirectoryMapping> = mappingStatements(source, dsl).map {
     ProjectDirectoryMapping(it.gradlePath, it.directoryExpression)
   }
 
-  fun addProjectDirMapping(source: String, gradlePath: String, directoryExpression: String, kotlinDsl: Boolean): GradleEditResult {
+  fun addProjectDirMapping(source: String, gradlePath: String, directoryExpression: String, dsl: GradleDsl): GradleEditResult {
     if (!isGradlePath(gradlePath)) return GradleEditResult.Invalid("Gradle path must start with ':'")
     if (directoryExpression.isBlank()) return GradleEditResult.Invalid("Project directory must not be blank")
-    if (mappingStatements(source).any { it.gradlePath == gradlePath }) return GradleEditResult.NoChange
-    val quote = if (kotlinDsl) '"' else '\''
+    if (mappingStatements(source, dsl).any { it.gradlePath == gradlePath }) return GradleEditResult.NoChange
+    val quote = if (dsl == GradleDsl.KOTLIN) '"' else '\''
     return appendLine(source, "project($quote$gradlePath$quote).projectDir = file($quote$directoryExpression$quote)")
   }
 
-  fun updateProjectDirMapping(source: String, gradlePath: String, directoryExpression: String, kotlinDsl: Boolean): GradleEditResult {
+  fun updateProjectDirMapping(source: String, gradlePath: String, directoryExpression: String, dsl: GradleDsl): GradleEditResult {
     if (!isGradlePath(gradlePath)) return GradleEditResult.Invalid("Gradle path must start with ':'")
     if (directoryExpression.isBlank()) return GradleEditResult.Invalid("Project directory must not be blank")
-    val matches = mappingStatements(source).filter { it.gradlePath == gradlePath }
-    if (matches.isEmpty()) return addProjectDirMapping(source, gradlePath, directoryExpression, kotlinDsl)
+    val matches = mappingStatements(source, dsl).filter { it.gradlePath == gradlePath }
+    if (matches.isEmpty()) return addProjectDirMapping(source, gradlePath, directoryExpression, dsl)
     if (matches.size > 1) return GradleEditResult.Ambiguous("Multiple projectDir mappings found for $gradlePath")
     val match = matches.single()
-    val quote = if (kotlinDsl) '"' else '\''
+    val quote = if (dsl == GradleDsl.KOTLIN) '"' else '\''
     return GradleEditResult.Applied(listOf(TextEdit(match.expressionStart, match.expressionEnd, "$quote$directoryExpression$quote")))
   }
 
-  fun removeProjectDirMapping(source: String, gradlePath: String): GradleEditResult {
+  fun removeProjectDirMapping(source: String, gradlePath: String, dsl: GradleDsl): GradleEditResult {
     if (!isGradlePath(gradlePath)) return GradleEditResult.Invalid("Gradle path must start with ':'")
-    val matches = mappingStatements(source).filter { it.gradlePath == gradlePath }
+    val matches = mappingStatements(source, dsl).filter { it.gradlePath == gradlePath }
     if (matches.isEmpty()) return GradleEditResult.NoChange
     if (matches.size > 1) return GradleEditResult.Ambiguous("Multiple projectDir mappings found for $gradlePath")
     val match = matches.single()
     return GradleEditResult.Applied(listOf(TextEdit(match.statementStart, lineEndIncludingNewline(source, match.statementEnd), "")))
   }
 
-  fun addInclude(source: String, gradlePath: String, kotlinDsl: Boolean): GradleEditResult {
+  fun addInclude(source: String, gradlePath: String, dsl: GradleDsl): GradleEditResult {
     if (!isGradlePath(gradlePath)) return GradleEditResult.Invalid("Gradle path must start with ':'")
-    if (findIncludedPaths(source).contains(gradlePath)) return GradleEditResult.NoChange
+    if (findIncludedPaths(source, dsl).contains(gradlePath)) return GradleEditResult.NoChange
     val calls = GradleLexicalScanner.findCall(source, "include")
-    val entry = quote(gradlePath, kotlinDsl)
+    val entry = quote(gradlePath, dsl)
     if (calls.size > 1) return GradleEditResult.Ambiguous("Multiple parenthesized include calls found")
     if (calls.size == 1) {
       val (open, close) = calls.single()
@@ -67,11 +67,11 @@ object ProjectSettingsEditor {
    * Removes one literal path from a single include call or standalone include statement.
    * Dynamic arguments and multiple include calls remain fail-closed.
    */
-  fun removeInclude(source: String, gradlePath: String): GradleEditResult {
+  fun removeInclude(source: String, gradlePath: String, dsl: GradleDsl): GradleEditResult {
     if (!isGradlePath(gradlePath)) return GradleEditResult.Invalid("Gradle path must start with ':'")
-    val calls = includeCalls(source)
+    val calls = includeCalls(source, dsl)
     val matchingCalls = calls.filter { call -> call.arguments.orEmpty().any { it.value == gradlePath } }
-    if (matchingCalls.isEmpty()) return if (findIncludedPaths(source).contains(gradlePath)) {
+    if (matchingCalls.isEmpty()) return if (findIncludedPaths(source, dsl).contains(gradlePath)) {
       GradleEditResult.Unsupported("Include uses an unsupported or dynamic form")
     } else GradleEditResult.NoChange
     if (matchingCalls.size > 1 || calls.size > 1) return GradleEditResult.Ambiguous("Multiple include calls found for $gradlePath")
@@ -116,14 +116,11 @@ object ProjectSettingsEditor {
   // Legacy literal scanning removed; Tree-sitter supplies literal ranges.
 
 
-  fun findIncludedPaths(source: String): Set<String> =
-    includeCalls(source).flatMap { call -> call.arguments.orEmpty().map { it.value } }.toCollection(linkedSetOf())
+  fun findIncludedPaths(source: String, dsl: GradleDsl): Set<String> =
+    includeCalls(source, dsl).flatMap { call -> call.arguments.orEmpty().map { it.value } }.toCollection(linkedSetOf())
 
-  private fun includeCalls(source: String): List<GradleParser.Call> {
-    val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN).filter { it.name == "include" }
-    val groovy = GradleParser.parse(source, GradleDsl.GROOVY).filter { it.name == "include" }
-    return distinctCalls(source, kotlin + groovy).sortedBy { it.start }
-  }
+  private fun includeCalls(source: String, dsl: GradleDsl): List<GradleParser.Call> =
+    GradleParser.parse(source, dsl).filter { it.name == "include" }.sortedBy { it.start }
 
 
   private data class MappingStatement(
@@ -209,8 +206,8 @@ object ProjectSettingsEditor {
     return lineStart to lineEnd
   }
 
-  private fun mappingStatements(source: String): List<MappingStatement> {
-    val calls = parsedCalls(source)
+  private fun mappingStatements(source: String, dsl: GradleDsl): List<MappingStatement> {
+    val calls = GradleParser.parse(source, dsl)
     val projects = calls.filter { it.name == "project" && it.arguments?.size == 1 && !it.dynamic }
     val files = calls.filter { it.name == "file" && it.arguments?.size == 1 && !it.dynamic }
     return projects.mapNotNull { project ->
@@ -227,16 +224,7 @@ object ProjectSettingsEditor {
     }
   }
 
-  private fun parsedCalls(source: String): List<GradleParser.Call> {
-    val groovy = GradleParser.parse(source, GradleDsl.GROOVY)
-    val kotlin = GradleParser.parse(source, GradleDsl.KOTLIN)
-    return distinctCalls(source, groovy + kotlin)
-  }
-
-  private fun distinctCalls(source: String, calls: List<GradleParser.Call>): List<GradleParser.Call> =
-      calls.distinctBy { call ->
-        "${call.name}:${call.start}"
-      }
+  // Parsing is intentionally performed against the caller-provided DSL only.
 
   private fun mappingSearchEnd(source: String, start: Int): Int {
     val lineEnd = source.indexOf('\n', start).let { if (it < 0) source.length else it }
@@ -261,7 +249,7 @@ object ProjectSettingsEditor {
     val nl = newline(source); val prefix = if (source.isEmpty() || source.endsWith(nl)) "" else nl
     return GradleEditResult.Applied(listOf(TextEdit(source.length, source.length, "$prefix$line$nl")))
   }
-  private fun quote(path: String, kotlinDsl: Boolean) = if (kotlinDsl) "\"$path\"" else "'$path'"
+  private fun quote(path: String, dsl: GradleDsl) = if (dsl == GradleDsl.KOTLIN) "\"$path\"" else "'$path'"
   private fun isGradlePath(path: String) = path.matches(Regex(":[A-Za-z0-9_:-]+"))
   private fun newline(source: String) = if (source.contains("\r\n")) "\r\n" else "\n"
   private fun lineIndent(source: String, offset: Int): String { val start = source.lastIndexOf('\n', offset).let { if (it < 0) 0 else it + 1 }; return source.substring(start, offset).takeWhile { it == ' ' || it == '\t' } }

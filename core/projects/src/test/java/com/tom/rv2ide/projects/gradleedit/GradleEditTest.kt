@@ -27,19 +27,19 @@ class GradleEditTest {
 
   @Test fun kotlinSettingsIncludeIsAddedWithoutTouchingComments() {
     val source = "// include(\":fake\")\ninclude(\":app\")\n"
-    val output = apply(source, ProjectSettingsEditor.addInclude(source, ":feature", true))
+    val output = apply(source, ProjectSettingsEditor.addInclude(source, ":feature", GradleDsl.KOTLIN))
     assertThat(output).contains("include(\":app\", \":feature\")")
-    assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":app", ":feature")
+    assertThat(ProjectSettingsEditor.findIncludedPaths(output, GradleDsl.KOTLIN)).containsExactly(":app", ":feature")
     assertThat(output).contains("// include(\":fake\")")
   }
 
   @Test fun standaloneIncludeIsRemovedAndCompoundIncludeEntryCanBeRemoved() {
     val standalone = "include(\":app\")\n"
-    val output = apply(standalone, ProjectSettingsEditor.removeInclude(standalone, ":app"))
+    val output = apply(standalone, ProjectSettingsEditor.removeInclude(standalone, ":app", GradleDsl.KOTLIN))
     assertThat(output).isEmpty()
 
     val compound = "include(\":feature\", \":shared\")\n"
-    val compoundOutput = apply(compound, ProjectSettingsEditor.removeInclude(compound, ":feature"))
+    val compoundOutput = apply(compound, ProjectSettingsEditor.removeInclude(compound, ":feature", GradleDsl.KOTLIN))
     assertThat(compoundOutput).isEqualTo("include(\":shared\")\n")
   }
 
@@ -52,47 +52,54 @@ class GradleEditTest {
     ":profile2"
 )
 """
-    val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":profile2"))
+    val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":profile2", GradleDsl.KOTLIN))
     assertThat(output).doesNotContain(":profile2")
     assertThat(output).isEqualTo("include(\n    \":app\",\n    \":tewo\",\n    \":sec\",\n    \":profile1\"\n)\n")
-    assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":app", ":tewo", ":sec", ":profile1")
+    assertThat(ProjectSettingsEditor.findIncludedPaths(output, GradleDsl.KOTLIN)).containsExactly(":app", ":tewo", ":sec", ":profile1")
   }
 
   @Test fun multilineKotlinIncludeAddsEntryWithExistingCommaStyle() {
     val source = "include(\n  \":app\",\n  \":profile1\"\n)\n"
-    val output = apply(source, ProjectSettingsEditor.addInclude(source, ":profile2", true))
+    val output = apply(source, ProjectSettingsEditor.addInclude(source, ":profile2", GradleDsl.KOTLIN))
     assertThat(output).isEqualTo("include(\n  \":app\",\n  \":profile1\",\n  \":profile2\"\n)\n")
   }
 
   @Test fun includeWithDynamicArgumentFailsClosed() {
     val source = "include(\":app\", modules.first(), \":profile2\")\n"
-    assertThat(ProjectSettingsEditor.removeInclude(source, ":profile2"))
+    assertThat(ProjectSettingsEditor.removeInclude(source, ":profile2", GradleDsl.KOTLIN))
         .isInstanceOf(GradleEditResult.Unsupported::class.java)
   }
 
   @Test fun repeatedIncludeCallsFailClosed() {
     val source = "include(\":profile2\")\ninclude(\":app\", \":profile2\")\n"
-    assertThat(ProjectSettingsEditor.removeInclude(source, ":profile2"))
+    assertThat(ProjectSettingsEditor.removeInclude(source, ":profile2", GradleDsl.KOTLIN))
         .isInstanceOf(GradleEditResult.Ambiguous::class.java)
   }
 
   @Test fun groovySettingsIncludeIsRemovedWithOtherEntriesPreserved() {
     val source = "include ':app', ':feature', ':shared'\n"
-    val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":feature"))
+    val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":feature", GradleDsl.GROOVY))
     assertThat(output).contains("include ':app', ':shared'")
-    assertThat(ProjectSettingsEditor.findIncludedPaths(output)).containsExactly(":app", ":shared")
+    assertThat(ProjectSettingsEditor.findIncludedPaths(output, GradleDsl.GROOVY)).containsExactly(":app", ":shared")
+  }
+
+  @Test fun groovySettingsIncludeWithMixedQuotesRemovesEntry() {
+    val source = "include(\":app\", \":ltp\", ':lsr')\n"
+    val output = apply(source, ProjectSettingsEditor.removeInclude(source, ":lsr", GradleDsl.GROOVY))
+    assertThat(output).isEqualTo("include(\":app\", \":ltp\")\n")
+    assertThat(ProjectSettingsEditor.findIncludedPaths(output, GradleDsl.GROOVY)).containsExactly(":app", ":ltp")
   }
 
   @Test fun groovyProjectDirectoryMappingCanBeUpdated() {
     val source = "project(':demo').projectDir = file('../demo')\n"
-    val edit = ProjectSettingsEditor.updateProjectDirMapping(source, ":demo", "../new-demo", false)
+    val edit = ProjectSettingsEditor.updateProjectDirMapping(source, ":demo", "../new-demo", GradleDsl.GROOVY)
     assertWithMessage(
         "Groovy mapping edit was not applied.\nParser calls:\n%s",
         parserDiagnostics(source),
     ).that(edit).isInstanceOf(GradleEditResult.Applied::class.java)
     val output = apply(source, edit)
     assertThat(output).contains("file('../new-demo')")
-    val mappings = ProjectSettingsEditor.findProjectDirectoryMappings(output)
+    val mappings = ProjectSettingsEditor.findProjectDirectoryMappings(output, GradleDsl.GROOVY)
     assertWithMessage(
         "Groovy mapping was not rediscovered.\nParser calls after edit:\n%s\nOutput:\n%s",
         parserDiagnostics(output),
@@ -102,14 +109,14 @@ class GradleEditTest {
 
   @Test fun groovyDependencyCanBeFoundAndRenamed() {
     val source = "dependencies {\n  implementation project(':old')\n}\n"
-    val dependencies = BuildScriptDependenciesEditor.findProjectDependencies(source)
+    val dependencies = BuildScriptDependenciesEditor.findProjectDependencies(source, GradleDsl.GROOVY)
     assertWithMessage(
         "Groovy dependency was not recognized.\nParser calls:\n%s",
         parserDiagnostics(source),
     ).that(dependencies).containsExactly(
         BuildScriptDependenciesEditor.ProjectDependency("implementation", ":old"),
     )
-    val rename = BuildScriptDependenciesEditor.renameProjectDependency(source, "implementation", ":old", ":new")
+    val rename = BuildScriptDependenciesEditor.renameProjectDependency(source, "implementation", ":old", ":new", GradleDsl.GROOVY)
     assertWithMessage(
         "Groovy dependency rename was not applied.\nParser calls:\n%s",
         parserDiagnostics(source),
@@ -120,46 +127,46 @@ class GradleEditTest {
 
   @Test fun groovyNamedProjectDependencyIsUnsupported() {
     val source = "dependencies { implementation project(path: ':feature') }"
-    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(source)).isEmpty()
-    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(source, ":feature")).isTrue()
+    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(source, GradleDsl.GROOVY)).isEmpty()
+    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(source, ":feature", GradleDsl.GROOVY)).isTrue()
   }
 
   @Test fun projectDirectoryMappingCanBeUpdatedAndRemoved() {
     val source = "project(\":app\").projectDir = file(\"../app\")\n"
-    val updated = apply(source, ProjectSettingsEditor.updateProjectDirMapping(source, ":app", "../custom-app", true))
-    assertThat(ProjectSettingsEditor.findProjectDirectoryMappings(updated)).containsExactly(ProjectSettingsEditor.ProjectDirectoryMapping(":app", "\"../custom-app\""))
-    val removed = apply(updated, ProjectSettingsEditor.removeProjectDirMapping(updated, ":app"))
+    val updated = apply(source, ProjectSettingsEditor.updateProjectDirMapping(source, ":app", "../custom-app", GradleDsl.KOTLIN))
+    assertThat(ProjectSettingsEditor.findProjectDirectoryMappings(updated, GradleDsl.KOTLIN)).containsExactly(ProjectSettingsEditor.ProjectDirectoryMapping(":app", "\"../custom-app\""))
+    val removed = apply(updated, ProjectSettingsEditor.removeProjectDirMapping(updated, ":app", GradleDsl.KOTLIN))
     assertThat(removed).isEmpty()
   }
 
   @Test fun nestedProjectDirectoryMappingCanBeUpdated() {
     val source = "project(\":demo\") {\n  projectDir = file(\"../demo\")\n}\n"
-    val output = apply(source, ProjectSettingsEditor.updateProjectDirMapping(source, ":demo", "../new-demo", true))
+    val output = apply(source, ProjectSettingsEditor.updateProjectDirMapping(source, ":demo", "../new-demo", GradleDsl.KOTLIN))
     assertThat(output).contains("file(\"../new-demo\")")
   }
 
   @Test fun fakeDependenciesBlockInsideStringIsIgnored() {
     val source = "val text = \"dependencies { fake }\"\n"
-    assertThat(BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", true))
+    assertThat(BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", GradleDsl.KOTLIN))
         .isInstanceOf(GradleEditResult.Unsupported::class.java)
   }
 
   @Test fun groovyDependencyIsInsertedIntoAstLocatedBlock() {
     val source = "dependencies {\n}\n"
-    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", false))
+    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", GradleDsl.GROOVY))
     assertThat(output).contains("implementation project(':feature')")
   }
 
   @Test fun kotlinDependencyIsInsertedIntoRealBlock() {
     val source = "val text = \"dependencies { fake }\"\ndependencies {\n  implementation(project(\":app\"))\n}\n"
-    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", true))
+    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", GradleDsl.KOTLIN))
     assertThat(output).contains("implementation(project(\":feature\"))")
     assertThat(output).contains("val text = \"dependencies { fake }\"")
   }
 
   @Test fun kotlinDependencyUsesExistingEntryIndentAndNoBlankGap() {
     val source = "dependencies {\n    implementation(project(\":profile1\"))\n\n}\n"
-    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":profile2", true))
+    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":profile2", GradleDsl.KOTLIN))
     assertThat(output).isEqualTo("dependencies {\n    implementation(project(\":profile1\"))\n    implementation(project(\":profile2\"))\n}\n")
   }
 
@@ -180,7 +187,7 @@ dependencies {
 
 }
 """
-    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":profile2", true))
+    val output = apply(source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":profile2", GradleDsl.KOTLIN))
     assertThat(output).contains("implementation(project(\":profile2\"))")
   }
 
@@ -188,23 +195,23 @@ dependencies {
     val supported = "dependencies { implementation(project(\":feature\")) }"
     val unsupported = "dependencies { implementation(project(path = \":feature\")) }"
     val commented = "// implementation(project(path = \":feature\"))\ndependencies { }"
-    val supportedDependencies = BuildScriptDependenciesEditor.findProjectDependencies(supported)
+    val supportedDependencies = BuildScriptDependenciesEditor.findProjectDependencies(supported, GradleDsl.KOTLIN)
     assertWithMessage(
         "Supported dependency was not recognized.\nParser calls:\n%s",
         parserDiagnostics(supported),
     ).that(supportedDependencies).containsExactly(
         BuildScriptDependenciesEditor.ProjectDependency("implementation", ":feature"),
     )
-    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(supported, ":feature")).isFalse()
-    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(unsupported, ":feature")).isTrue()
-    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(commented, ":feature")).isFalse()
+    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(supported, ":feature", GradleDsl.KOTLIN)).isFalse()
+    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(unsupported, ":feature", GradleDsl.KOTLIN)).isTrue()
+    assertThat(BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(commented, ":feature", GradleDsl.KOTLIN)).isFalse()
   }
 
   @Test fun projectDependencyCanBeRenamedAndRemoved() {
-    val source = "dependencies {\n  implementation(project(\":old\"))\n  api project(':api-old')\n}\n"
-    val renamed = apply(source, BuildScriptDependenciesEditor.renameProjectDependency(source, "implementation", ":old", ":new"))
+    val source = "dependencies {\n  implementation(project(\":old\"))\n  api(project(\":api-old\"))\n}\n"
+    val renamed = apply(source, BuildScriptDependenciesEditor.renameProjectDependency(source, "implementation", ":old", ":new", GradleDsl.KOTLIN))
     assertThat(renamed).contains("project(\":new\")")
-    val removed = apply(renamed, BuildScriptDependenciesEditor.removeProjectDependency(renamed, "api", ":api-old"))
+    val removed = apply(renamed, BuildScriptDependenciesEditor.removeProjectDependency(renamed, "api", ":api-old", GradleDsl.KOTLIN))
     assertThat(removed).doesNotContain(":api-old")
   }
 
@@ -229,13 +236,13 @@ dependencies {
 
   @Test fun multipleDependencyBlocksFailClosed() {
     val source = "dependencies { implementation(project(\":one\")) }\ndependencies { implementation(project(\":two\")) }\n"
-    assertThat(BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", true)).isInstanceOf(GradleEditResult.Ambiguous::class.java)
-    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(source)).isEmpty()
+    assertThat(BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", ":feature", GradleDsl.KOTLIN)).isInstanceOf(GradleEditResult.Ambiguous::class.java)
+    assertThat(BuildScriptDependenciesEditor.findProjectDependencies(source, GradleDsl.KOTLIN)).isEmpty()
   }
 
   @Test fun crlfIsPreserved() {
     val source = "include(\":app\")\r\n"
-    val output = apply(source, ProjectSettingsEditor.addInclude(source, ":feature", true))
+    val output = apply(source, ProjectSettingsEditor.addInclude(source, ":feature", GradleDsl.KOTLIN))
     assertThat(output).contains("\r\n")
     assertThat(output.replace("\r\n", "")).doesNotContain("\n")
   }

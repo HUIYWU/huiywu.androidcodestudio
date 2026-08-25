@@ -27,6 +27,7 @@ import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
 import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
 import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import com.tom.rv2ide.projects.gradleedit.BuildScriptDependenciesEditor
+import com.tom.rv2ide.projects.gradleedit.GradleDsl as EditorGradleDsl
 import com.tom.rv2ide.projects.gradleedit.GradleEditResult
 import com.tom.rv2ide.projects.gradleedit.ProjectEditTransaction
 import com.tom.rv2ide.projects.gradleedit.ProjectSettingsEditor
@@ -598,7 +599,7 @@ public class SampleClass {
     val result = ProjectSettingsEditor.addInclude(
         source,
         modulePath,
-        settingsFile.name.endsWith(".kts"),
+        if (settingsFile.name.endsWith(".kts")) EditorGradleDsl.KOTLIN else EditorGradleDsl.GROOVY,
     )
     applyGradleEdit(settingsFile, source, result, "settings file", transaction)
   }
@@ -610,12 +611,12 @@ public class SampleClass {
   ) {
     val appBuildFile = applicationModule.buildFile
     val source = appBuildFile.readText()
-    val kotlinDsl = appBuildFile.name.endsWith(".kts")
+    val dsl = if (appBuildFile.name.endsWith(".kts")) EditorGradleDsl.KOTLIN else EditorGradleDsl.GROOVY
     val result = BuildScriptDependenciesEditor.addProjectDependency(
         source = source,
         configuration = "implementation",
         gradlePath = modulePath,
-        kotlinDsl = kotlinDsl,
+        dsl = dsl,
     )
     applyGradleEdit(appBuildFile, source, result, "application build script", transaction)
   }

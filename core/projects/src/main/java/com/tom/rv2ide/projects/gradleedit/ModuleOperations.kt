@@ -55,8 +55,9 @@ sealed interface DeletionPlanResult {
     val settingsSource = runCatching { settingsFile.readText() }.getOrElse {
       return DeletionPlanResult.Blocked(listOf("Could not read settings file: ${it.message}"))
     }
-    val includeEdit = ProjectSettingsEditor.removeInclude(settingsSource, target.path)
-    val mappingEdit = ProjectSettingsEditor.removeProjectDirMapping(settingsSource, target.path)
+    val settingsDsl = settingsFile.gradleDsl()
+    val includeEdit = ProjectSettingsEditor.removeInclude(settingsSource, target.path, settingsDsl)
+    val mappingEdit = ProjectSettingsEditor.removeProjectDirMapping(settingsSource, target.path, settingsDsl)
     val blockers = mutableListOf<String>()
     if (includeEdit.isUnsafe()) blockers += "Cannot safely remove include for ${target.path}: ${includeEdit.reason()}"
     if (mappingEdit.isUnsafe()) blockers += "Cannot safely remove projectDir mapping for ${target.path}: ${mappingEdit.reason()}"
@@ -72,13 +73,14 @@ sealed interface DeletionPlanResult {
         blockers += "Cannot read build script for ${dependent.path}: ${it.message}"
         return@forEach
       }
-      if (BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(source, target.path)) {
+      val buildDsl = buildScript.gradleDsl()
+      if (BuildScriptDependenciesEditor.hasUnsupportedProjectDependencyReference(source, target.path, buildDsl)) {
         blockers += "${dependent.path} has an unsupported project dependency reference to ${target.path}"
       }
-      BuildScriptDependenciesEditor.findProjectDependencies(source)
+      BuildScriptDependenciesEditor.findProjectDependencies(source, buildDsl)
           .filter { it.gradlePath == target.path }
           .forEach { dependency ->
-            val edit = BuildScriptDependenciesEditor.removeProjectDependency(source, dependency.configuration, target.path)
+            val edit = BuildScriptDependenciesEditor.removeProjectDependency(source, dependency.configuration, target.path, buildDsl)
             if (edit is GradleEditResult.Applied) {
               removals += DependencyRemoval(dependent.path, buildScript, dependency.configuration, target.path)
             } else {
@@ -119,12 +121,12 @@ sealed interface DeletionPlanResult {
 
       if (plan.removeProjectDirectoryMapping) {
         editSettings(plan, transaction) { source ->
-          ProjectSettingsEditor.removeProjectDirMapping(source, plan.target.path)
+          ProjectSettingsEditor.removeProjectDirMapping(source, plan.target.path, plan.settingsFile.gradleDsl())
         }
       }
       if (plan.removeSettingsInclude) {
         editSettings(plan, transaction) { source ->
-          ProjectSettingsEditor.removeInclude(source, plan.target.path)
+          ProjectSettingsEditor.removeInclude(source, plan.target.path, plan.settingsFile.gradleDsl())
         }
       }
       plan.dependencyRemovals.groupBy { it.buildScript.canonicalFile }.forEach { (buildScript, removals) ->
@@ -133,7 +135,7 @@ sealed interface DeletionPlanResult {
           transaction.applyTextEdit(
               buildScript,
               source,
-              BuildScriptDependenciesEditor.removeProjectDependency(source, removal.configuration, removal.targetProjectPath),
+              BuildScriptDependenciesEditor.removeProjectDependency(source, removal.configuration, removal.targetProjectPath, buildScript.gradleDsl()),
               "dependency in ${removal.dependentProjectPath}",
           )
         }
@@ -172,6 +174,7 @@ sealed interface DeletionPlanResult {
       (listOf(workspace.getRootProject()) + workspace.getSubProjects()).distinctBy { it.path }
   private fun findSettingsFile(root: File): File? =
       listOf(File(root, "settings.gradle.kts"), File(root, "settings.gradle")).firstOrNull { it.isFile }
+  private fun File.gradleDsl(): GradleDsl = if (name.endsWith(".gradle.kts")) GradleDsl.KOTLIN else GradleDsl.GROOVY
   private fun GradleEditResult.isUnsafe() = this is GradleEditResult.Unsupported || this is GradleEditResult.Ambiguous || this is GradleEditResult.Invalid
   private fun GradleEditResult.reason(): String = when (this) {
     is GradleEditResult.Unsupported -> reason
