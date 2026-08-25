@@ -298,6 +298,12 @@ dependencies {
       assertThat(source.resolve("build.gradle.kts").isFile).isTrue()
       assertThat(destination.exists()).isFalse()
       assertThat(root.resolve("feature").exists()).isFalse()
+
+      val completed = ProjectEditTransaction.begin(root)
+      completed.moveDirectory(source, destination)
+      completed.commit()
+      assertThat(source.exists()).isFalse()
+      assertThat(destination.resolve("build.gradle.kts").isFile).isTrue()
     } finally {
       root.deleteRecursively()
     }

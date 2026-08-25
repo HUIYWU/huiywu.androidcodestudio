@@ -39,15 +39,15 @@ object ModuleOperations {
       val configuration: String,
   )
 
-  /** Stage 1 rename plan: changes the Gradle path but deliberately leaves the module directory in place. */
+  /** Stage 2 rename plan: moves an in-workspace module directory to match its new Gradle path. */
   data class RenamePlan(
       val target: GradleProject,
       val oldGradlePath: String,
       val newGradlePath: String,
       val settingsFile: File,
-      val renameProjectDirectoryMapping: Boolean,
-      val addProjectDirectoryMapping: Boolean,
-      val directoryExpression: String,
+      val oldDirectory: File,
+      val newDirectory: File,
+      val removeProjectDirectoryMapping: Boolean,
       val dependencyRenames: List<DependencyRename>,
   )
 
@@ -155,27 +155,35 @@ sealed interface DeletionPlanResult {
     val includeEdit = ProjectSettingsEditor.renameInclude(settingsSource, oldGradlePath, newGradlePath, settingsDsl)
     if (includeEdit !is GradleEditResult.Applied) blockers += "Cannot safely rename include for $oldGradlePath: ${includeEdit.reason()}"
 
-    val mappings = ProjectSettingsEditor.findProjectDirectoryMappings(settingsSource, settingsDsl)
-        .filter { it.gradlePath == oldGradlePath }
-    if (mappings.size > 1) blockers += "Multiple projectDir mappings found for $oldGradlePath"
-    val renameMapping = mappings.size == 1
-    if (renameMapping) {
-      val mappingEdit = ProjectSettingsEditor.renameProjectDirMappingPath(settingsSource, oldGradlePath, newGradlePath, settingsDsl)
-      if (mappingEdit !is GradleEditResult.Applied) blockers += "Cannot safely rename projectDir mapping for $oldGradlePath: ${mappingEdit.reason()}"
+    val allMappings = ProjectSettingsEditor.findProjectDirectoryMappings(settingsSource, settingsDsl)
+    val mappings = allMappings.filter { it.gradlePath == oldGradlePath }
+    if (allMappings.any { it.gradlePath == newGradlePath }) {
+      blockers += "A projectDir mapping already exists for $newGradlePath"
     }
-    val targetDirectory = target.projectDir.canonicalFile
-    val directoryExpression = if (targetDirectory.toPath().startsWith(root.toPath())) {
-      root.toPath().relativize(targetDirectory.toPath()).toString().replace(File.separatorChar, '/')
-    } else if (renameMapping) {
-      // Existing mapping keeps the external directory reachable after its path is renamed.
-      ""
-    } else {
-      blockers += "Module directory is outside the workspace and has no safe projectDir mapping: ${targetDirectory.path}"
-      ""
+    if (mappings.size > 1) blockers += "Multiple projectDir mappings found for $oldGradlePath"
+    val removeMapping = mappings.size == 1
+    if (removeMapping) {
+      val mappingEdit = ProjectSettingsEditor.removeProjectDirMapping(settingsSource, oldGradlePath, settingsDsl)
+      if (mappingEdit !is GradleEditResult.Applied) blockers += "Cannot safely remove projectDir mapping for $oldGradlePath: ${mappingEdit.reason()}"
+    }
+
+    val oldDirectory = target.projectDir.canonicalFile
+    if (!oldDirectory.isDirectory) blockers += "Module directory does not exist: ${oldDirectory.path}"
+    if (!oldDirectory.toPath().startsWith(root.toPath())) {
+      blockers += "Moving modules outside the workspace root is not supported: ${oldDirectory.path}"
+    }
+    val newDirectory = File(root, newGradlePath.removePrefix(":").replace(':', File.separatorChar)).canonicalFile
+    if (newDirectory.exists()) blockers += "Target module directory already exists: ${newDirectory.path}"
+    if (newDirectory.toPath().startsWith(oldDirectory.toPath())) {
+      blockers += "Target module directory cannot be inside the current module directory: ${newDirectory.path}"
     }
 
     val renames = mutableListOf<DependencyRename>()
     workspaceProjects(workspace).filter { it.path != oldGradlePath }.forEach { dependent ->
+      if (dependent.projectDir.canonicalFile.toPath().startsWith(oldDirectory.toPath())) {
+        blockers += "Cannot rename a module directory containing another synchronized project: ${dependent.path}"
+        return@forEach
+      }
       val buildScript = dependent.buildScript
       if (!buildScript.isFile) {
         blockers += "Cannot inspect build script for ${dependent.path}: ${buildScript.path}"
@@ -199,31 +207,62 @@ sealed interface DeletionPlanResult {
     }
     if (blockers.isNotEmpty()) return RenamePlanResult.Blocked(blockers.distinct())
     return RenamePlanResult.Ready(
-        RenamePlan(target, oldGradlePath, newGradlePath, settingsFile, renameMapping, !renameMapping, directoryExpression, renames.distinctBy { Triple(it.buildScript.canonicalPath, it.configuration, it.dependentProjectPath) }),
+        RenamePlan(
+            target = target,
+            oldGradlePath = oldGradlePath,
+            newGradlePath = newGradlePath,
+            settingsFile = settingsFile,
+            oldDirectory = oldDirectory,
+            newDirectory = newDirectory,
+            removeProjectDirectoryMapping = removeMapping,
+            dependencyRenames = renames.distinctBy {
+              Triple(it.buildScript.canonicalPath, it.configuration, it.dependentProjectPath)
+            },
+        ),
     )
   }
 
-  /** Executes a stage-1 rename plan. The module directory is deliberately not moved. */
+  /** Executes a stage-2 rename plan, including the physical directory move. */
   fun executeRename(plan: RenamePlan): RenameExecutionResult {
     val root = plan.settingsFile.parentFile.canonicalFile
     val transaction = runCatching {
       ProjectEditTransaction.begin(root, plan.dependencyRenames.map { it.buildScript.parentFile })
     }.getOrElse { return RenameExecutionResult.Failed(it.message ?: "Could not start project edit transaction") }
     return try {
+      transaction.moveDirectory(plan.oldDirectory, plan.newDirectory)
+
       val settingsDsl = plan.settingsFile.gradleDsl()
       val settingsSource = plan.settingsFile.readText()
-      transaction.applyRequiredTextEdit(plan.settingsFile, settingsSource, ProjectSettingsEditor.renameInclude(settingsSource, plan.oldGradlePath, plan.newGradlePath, settingsDsl), "settings include")
-      val afterInclude = plan.settingsFile.readText()
-      val mappingEdit = if (plan.renameProjectDirectoryMapping) {
-        ProjectSettingsEditor.renameProjectDirMappingPath(afterInclude, plan.oldGradlePath, plan.newGradlePath, settingsDsl)
-      } else {
-        ProjectSettingsEditor.addProjectDirMapping(afterInclude, plan.newGradlePath, plan.directoryExpression, settingsDsl)
+      transaction.applyRequiredTextEdit(
+          plan.settingsFile,
+          settingsSource,
+          ProjectSettingsEditor.renameInclude(settingsSource, plan.oldGradlePath, plan.newGradlePath, settingsDsl),
+          "settings include",
+      )
+      if (plan.removeProjectDirectoryMapping) {
+        val afterInclude = plan.settingsFile.readText()
+        transaction.applyRequiredTextEdit(
+            plan.settingsFile,
+            afterInclude,
+            ProjectSettingsEditor.removeProjectDirMapping(afterInclude, plan.oldGradlePath, settingsDsl),
+            "projectDir mapping",
+        )
       }
-      transaction.applyRequiredTextEdit(plan.settingsFile, afterInclude, mappingEdit, "projectDir mapping")
       plan.dependencyRenames.groupBy { it.buildScript.canonicalFile }.forEach { (buildScript, renames) ->
         renames.forEach { rename ->
           val source = buildScript.readText()
-          transaction.applyRequiredTextEdit(buildScript, source, BuildScriptDependenciesEditor.renameProjectDependency(source, rename.configuration, plan.oldGradlePath, plan.newGradlePath, buildScript.gradleDsl()), "dependency in ${rename.dependentProjectPath}")
+          transaction.applyRequiredTextEdit(
+              buildScript,
+              source,
+              BuildScriptDependenciesEditor.renameProjectDependency(
+                  source,
+                  rename.configuration,
+                  plan.oldGradlePath,
+                  plan.newGradlePath,
+                  buildScript.gradleDsl(),
+              ),
+              "dependency in ${rename.dependentProjectPath}",
+          )
         }
       }
       transaction.commit()

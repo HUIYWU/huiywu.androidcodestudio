@@ -754,25 +754,37 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun showRenameModuleDialog(module: GradleProject) {
-    val field = input("New Gradle path", module.path)
+    val currentPath = input("Current Gradle path", module.path)
+    currentPath.second.apply {
+      keyListener = null
+      isFocusable = false
+      isClickable = false
+      isLongClickable = false
+      isCursorVisible = false
+    }
+    val newPath = input("New Gradle path", "")
+    val content = LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(dp(24), 0, dp(24), 0)
+      addView(currentPath.first)
+      addView(newPath.first)
+    }
     MaterialAlertDialogBuilder(requireContext())
         .setTitle("Rename module")
-        .setMessage("Current Gradle path: ${module.path}\n\nThe module directory will remain in place in this version.")
-        .setView(field.first)
+        .setView(content)
         .setNegativeButton("Cancel", null)
         .setPositiveButton("Next", null)
         .create()
         .also { dialog ->
           dialog.setOnShowListener {
-            field.second.selectAll()
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-              val newPath = field.second.text?.toString().orEmpty().trim()
-              if (newPath.isEmpty()) {
-                field.first.error = "Enter a Gradle path"
+              val targetPath = newPath.second.text?.toString().orEmpty().trim()
+              if (targetPath.isEmpty()) {
+                newPath.first.error = "Enter a Gradle path"
               } else {
-                field.first.error = null
+                newPath.first.error = null
                 dialog.dismiss()
-                previewModuleRename(module, newPath)
+                previewModuleRename(module, targetPath)
               }
             }
           }
@@ -788,10 +800,12 @@ class ModuleManagerFragment : Fragment() {
       is ModuleOperations.RenamePlanResult.Ready -> buildString {
         append("Rename is ready.\n\n")
         append("Gradle path:\n").append(result.plan.oldGradlePath).append(" → ").append(result.plan.newGradlePath)
-        append("\n\nModule directory:\nNo physical directory move.")
+        append("\n\nModule directory:\n")
+            .append(result.plan.oldDirectory.relativeToOrSelf(projectRoot()).path)
+            .append(" → ")
+            .append(result.plan.newDirectory.relativeToOrSelf(projectRoot()).path)
         append("\n\nSettings changes:\n• Rename include")
-        if (result.plan.renameProjectDirectoryMapping) append("\n• Rename projectDir mapping")
-        else if (result.plan.addProjectDirectoryMapping) append("\n• Add projectDir mapping")
+        if (result.plan.removeProjectDirectoryMapping) append("\n• Remove projectDir mapping")
         if (result.plan.dependencyRenames.isNotEmpty()) {
           append("\n\nProject dependencies to update:\n")
           result.plan.dependencyRenames.forEach { rename ->
@@ -840,6 +854,7 @@ class ModuleManagerFragment : Fragment() {
       creatingModule = false
       when (result) {
         is ModuleOperations.RenameExecutionResult.Renamed -> {
+          IProjectManager.getInstance().notifyFileRenamed(plan.oldDirectory, plan.newDirectory)
           Toast.makeText(requireContext(), "Module renamed. Syncing project...", Toast.LENGTH_SHORT).show()
           showModuleList(animated = false)
           syncProject()
