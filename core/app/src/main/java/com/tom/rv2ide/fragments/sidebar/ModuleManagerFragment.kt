@@ -745,7 +745,7 @@ class ModuleManagerFragment : Fragment() {
       setOnMenuItemClickListener { item ->
         when (item.itemId) {
           MENU_RENAME_MODULE -> showRenameModuleDialog(module)
-          MENU_MOVE_MODULE -> showModuleOperationUnavailable("Moving module is not implemented yet.")
+          MENU_MOVE_MODULE -> showMoveModuleDialog(module)
           MENU_DELETE_MODULE -> previewModuleDeletion(module)
           else -> return@setOnMenuItemClickListener false
         }
@@ -767,7 +767,9 @@ class ModuleManagerFragment : Fragment() {
     val moveDirectory = CheckBox(requireContext()).apply {
       text = "Move module directory"
       isChecked = false
-      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        topMargin = dp(16)
+      }
     }
     val content = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
@@ -797,6 +799,122 @@ class ModuleManagerFragment : Fragment() {
           }
           dialog.show()
         }
+  }
+
+  private fun showMoveModuleDialog(module: GradleProject) {
+    val currentDirectory = input("Current module directory", module.projectDir.relativeToOrSelf(projectRoot()).path)
+    currentDirectory.second.apply {
+      keyListener = null
+      isFocusable = false
+      isClickable = false
+      isLongClickable = false
+      isCursorVisible = false
+    }
+    val newDirectory = input("New module directory", "")
+    val content = LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(dp(24), 0, dp(24), 0)
+      addView(currentDirectory.first)
+      addView(newDirectory.first)
+    }
+    MaterialAlertDialogBuilder(requireContext())
+        .setTitle("Move module")
+        .setView(content)
+        .setNegativeButton("Cancel", null)
+        .setPositiveButton("Next", null)
+        .create()
+        .also { dialog ->
+          dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+              val path = newDirectory.second.text?.toString().orEmpty().trim()
+              if (path.isEmpty()) {
+                newDirectory.first.error = "Enter a module directory"
+              } else {
+                newDirectory.first.error = null
+                dialog.dismiss()
+                previewModuleMove(module, path)
+              }
+            }
+          }
+          dialog.show()
+        }
+  }
+
+  private fun previewModuleMove(module: GradleProject, newDirectoryPath: String) {
+    val workspace = IProjectManager.getInstance().getWorkspace()
+        ?: return showModuleOperationUnavailable("Project workspace is unavailable.")
+    val destination = File(projectRoot(), newDirectoryPath)
+    val result = ModuleOperations.planMove(workspace, module.path, destination)
+    val message = when (result) {
+      is ModuleOperations.MovePlanResult.Ready -> buildString {
+        append("Move is ready.\n\n")
+        append("Gradle path remains:\n").append(result.plan.gradlePath)
+        append("\n\nModule directory:\n")
+            .append(result.plan.oldDirectory.relativeToOrSelf(projectRoot()).path)
+            .append(" → ")
+            .append(result.plan.newDirectory.relativeToOrSelf(projectRoot()).path)
+        append("\n\nSettings changes:")
+        if (result.plan.removeProjectDirectoryMapping) append("\n• Remove redundant projectDir mapping")
+        else append("\n• Update projectDir mapping")
+      }
+      is ModuleOperations.MovePlanResult.Blocked -> buildString {
+        append("Move is blocked:\n\n")
+        result.reasons.forEach { append("• ").append(it).append('\n') }
+      }
+    }
+    val dialog = MaterialAlertDialogBuilder(requireContext())
+        .setTitle("Move module")
+        .setMessage(message)
+        .setNegativeButton("Cancel", null)
+    if (result is ModuleOperations.MovePlanResult.Ready) {
+      dialog.setPositiveButton("Move") { _, _ -> executeModuleMove(module.path, destination) }
+    } else {
+      dialog.setPositiveButton("Close", null)
+    }
+    dialog.show()
+  }
+
+  private fun executeModuleMove(gradlePath: String, newDirectory: File) {
+    if (creatingModule || editorViewModel.isInitializing) return
+    val workspace = IProjectManager.getInstance().getWorkspace()
+        ?: return showModuleOperationUnavailable("Project workspace is unavailable.")
+    val plan = when (val result = ModuleOperations.planMove(workspace, gradlePath, newDirectory)) {
+      is ModuleOperations.MovePlanResult.Ready -> result.plan
+      is ModuleOperations.MovePlanResult.Blocked -> {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Move module")
+            .setMessage(result.reasons.joinToString("\n") { "• $it" })
+            .setPositiveButton("Close", null)
+            .show()
+        return
+      }
+    }
+    creatingModule = true
+    render()
+    lifecycleScope.launch {
+      val result = withContext(Dispatchers.IO) { ModuleOperations.executeMove(plan) }
+      if (!isAdded) return@launch
+      creatingModule = false
+      when (result) {
+        is ModuleOperations.MoveExecutionResult.Moved -> {
+          IProjectManager.getInstance().notifyFileRenamed(plan.oldDirectory, plan.newDirectory)
+          Toast.makeText(requireContext(), "Module moved. Syncing project...", Toast.LENGTH_SHORT).show()
+          showModuleList(animated = false)
+          syncProject()
+        }
+        is ModuleOperations.MoveExecutionResult.Failed -> {
+          render()
+          val rollback = result.rollbackFailures.takeIf { it.isNotEmpty() }
+              ?.joinToString("\n") { "• $it" }
+              ?.let { "\n\nRollback issues:\n$it" }.orEmpty()
+          MaterialAlertDialogBuilder(requireContext())
+              .setTitle("Module move failed")
+              .setMessage(result.reason + rollback)
+              .setPositiveButton("Close", null)
+              .show()
+        }
+      }
+    }
   }
 
   private fun previewModuleRename(module: GradleProject, newGradlePath: String, moveDirectory: Boolean) {

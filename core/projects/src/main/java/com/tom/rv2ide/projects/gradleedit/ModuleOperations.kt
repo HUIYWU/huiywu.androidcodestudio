@@ -60,12 +60,33 @@ object ModuleOperations {
     data class Blocked(val reasons: List<String>) : RenamePlanResult
   }
 
-  sealed interface RenameExecutionResult {
+sealed interface RenameExecutionResult {
     data class Renamed(val oldGradlePath: String, val newGradlePath: String) : RenameExecutionResult
     data class Failed(val reason: String, val rollbackFailures: List<String> = emptyList()) : RenameExecutionResult
   }
 
-sealed interface DeletionPlanResult {
+  data class MovePlan(
+      val target: GradleProject,
+      val gradlePath: String,
+      val settingsFile: File,
+      val oldDirectory: File,
+      val newDirectory: File,
+      val updateProjectDirectoryMapping: Boolean,
+      val removeProjectDirectoryMapping: Boolean,
+      val directoryExpression: String,
+  )
+
+  sealed interface MovePlanResult {
+    data class Ready(val plan: MovePlan) : MovePlanResult
+    data class Blocked(val reasons: List<String>) : MovePlanResult
+  }
+
+  sealed interface MoveExecutionResult {
+    data class Moved(val gradlePath: String) : MoveExecutionResult
+    data class Failed(val reason: String, val rollbackFailures: List<String> = emptyList()) : MoveExecutionResult
+  }
+
+   sealed interface DeletionPlanResult {
     data class Ready(val plan: DeletionPlan) : DeletionPlanResult
     data class Blocked(val reasons: List<String>) : DeletionPlanResult
   }
@@ -257,7 +278,70 @@ sealed interface DeletionPlanResult {
     )
   }
 
-  /** Executes a stage-2 rename plan, including the physical directory move. */
+  fun planMove(workspace: IWorkspace, gradlePath: String, newDirectory: File): MovePlanResult {
+    val target = workspace.findProject(gradlePath)
+        ?: return MovePlanResult.Blocked(listOf("Module is not present in the synchronized workspace: $gradlePath"))
+    if (gradlePath == ":") return MovePlanResult.Blocked(listOf("The root Gradle project cannot be moved"))
+    val root = workspace.getProjectDir().canonicalFile
+    val oldDirectory = target.projectDir.canonicalFile
+    val destination = newDirectory.canonicalFile
+    val blockers = mutableListOf<String>()
+    if (!target.buildScript.isFile) blockers += "Module build script does not exist: ${target.buildScript.path}"
+    if (!oldDirectory.isDirectory) blockers += "Module directory does not exist: ${oldDirectory.path}"
+    if (!oldDirectory.toPath().startsWith(root.toPath())) blockers += "Moving modules outside the workspace root is not supported: ${oldDirectory.path}"
+    if (!destination.toPath().startsWith(root.toPath())) blockers += "Target module directory must be inside the workspace root: ${destination.path}"
+    if (destination.exists()) blockers += "Target module directory already exists: ${destination.path}"
+    if (destination.toPath().startsWith(oldDirectory.toPath())) blockers += "Target module directory cannot be inside the current module directory: ${destination.path}"
+    workspaceProjects(workspace).filter { it.path != gradlePath }.forEach { project ->
+      if (project.projectDir.canonicalFile.toPath().startsWith(oldDirectory.toPath())) {
+        blockers += "Cannot move a module directory containing another synchronized project: ${project.path}"
+      }
+    }
+    val settingsFile = findSettingsFile(root) ?: blockers.add("settings.gradle(.kts) not found in workspace root").let { return MovePlanResult.Blocked(blockers) }
+    val source = runCatching { settingsFile.readText() }.getOrElse {
+      return MovePlanResult.Blocked(listOf("Could not read settings file: ${it.message}"))
+    }
+    val dsl = settingsFile.gradleDsl()
+    val mappings = ProjectSettingsEditor.findProjectDirectoryMappings(source, dsl).filter { it.gradlePath == gradlePath }
+    if (mappings.size > 1) blockers += "Multiple projectDir mappings found for $gradlePath"
+    val mapping = mappings.singleOrNull()
+    val expression = root.toPath().relativize(destination.toPath()).toString().replace(File.separatorChar, '/')
+    val update = mapping != null
+    val remove = mapping != null && resolveProjectDirectory(root, mapping.directoryExpression) == destination
+    if (mapping != null && !remove) {
+      val edit = ProjectSettingsEditor.updateProjectDirMapping(source, gradlePath, expression, dsl)
+      if (edit !is GradleEditResult.Applied) blockers += "Cannot safely update projectDir mapping for $gradlePath: ${edit.reason()}"
+    }
+    if (mapping == null) {
+      val edit = ProjectSettingsEditor.addProjectDirMapping(source, gradlePath, expression, dsl)
+      if (edit !is GradleEditResult.Applied) blockers += "Cannot safely add projectDir mapping for $gradlePath: ${edit.reason()}"
+    }
+    if (blockers.isNotEmpty()) return MovePlanResult.Blocked(blockers.distinct())
+    return MovePlanResult.Ready(MovePlan(target, gradlePath, settingsFile, oldDirectory, destination, update, remove, expression))
+  }
+
+  fun executeMove(plan: MovePlan): MoveExecutionResult {
+    val root = plan.settingsFile.parentFile.canonicalFile
+    val transaction = runCatching { ProjectEditTransaction.begin(root) }
+        .getOrElse { return MoveExecutionResult.Failed(it.message ?: "Could not start project edit transaction") }
+    return try {
+      transaction.moveDirectory(plan.oldDirectory, plan.newDirectory)
+      val source = plan.settingsFile.readText()
+      val dsl = plan.settingsFile.gradleDsl()
+      val edit = when {
+        plan.removeProjectDirectoryMapping -> ProjectSettingsEditor.removeProjectDirMapping(source, plan.gradlePath, dsl)
+        plan.updateProjectDirectoryMapping -> ProjectSettingsEditor.updateProjectDirMapping(source, plan.gradlePath, plan.directoryExpression, dsl)
+        else -> ProjectSettingsEditor.addProjectDirMapping(source, plan.gradlePath, plan.directoryExpression, dsl)
+      }
+      transaction.applyRequiredTextEdit(plan.settingsFile, source, edit, "projectDir mapping")
+      transaction.commit()
+      MoveExecutionResult.Moved(plan.gradlePath)
+    } catch (error: Throwable) {
+      MoveExecutionResult.Failed(error.message ?: "Module move failed", transaction.rollback().mapNotNull { it.message })
+    }
+  }
+
+  /** Executes a rename plan, optionally including the physical directory move. */
   fun executeRename(plan: RenamePlan): RenameExecutionResult {
     val root = plan.settingsFile.parentFile.canonicalFile
     val transaction = runCatching {
