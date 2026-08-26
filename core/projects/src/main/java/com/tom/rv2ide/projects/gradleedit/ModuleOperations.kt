@@ -306,8 +306,13 @@ sealed interface RenameExecutionResult {
     if (mappings.size > 1) blockers += "Multiple projectDir mappings found for $gradlePath"
     val mapping = mappings.singleOrNull()
     val expression = root.toPath().relativize(destination.toPath()).toString().replace(File.separatorChar, '/')
-    val update = mapping != null
-    val remove = mapping != null && resolveProjectDirectory(root, mapping.directoryExpression) == destination
+    val defaultDirectory = File(
+        root,
+        gradlePath.removePrefix(":").replace(':', File.separatorChar),
+    ).canonicalFile
+    // A mapping is redundant when the moved directory matches Gradle's default path layout.
+    val remove = mapping != null && destination == defaultDirectory
+    val update = mapping != null && !remove
     if (mapping != null && !remove) {
       val edit = ProjectSettingsEditor.updateProjectDirMapping(source, gradlePath, expression, dsl)
       if (edit !is GradleEditResult.Applied) blockers += "Cannot safely update projectDir mapping for $gradlePath: ${edit.reason()}"
