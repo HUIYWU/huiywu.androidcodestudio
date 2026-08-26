@@ -81,6 +81,7 @@ class ModuleManagerFragment : Fragment() {
   private var creatingModule = false
   private var screen = Screen.LIST
   private var selectedModule: GradleProject? = null
+  private val wizardStepContentId = View.generateViewId()
   private var wizardStep = 1
   private var moduleType = NewModuleType.ANDROID_LIBRARY
   private var moduleLanguage = ModuleLanguage.KOTLIN
@@ -134,10 +135,9 @@ class ModuleManagerFragment : Fragment() {
     }
     binding.moduleFlipper.displayedChild = 1
     if (animated) {
-      TransitionManager.beginDelayedTransition(
-          binding.moduleContent,
-          MaterialSharedAxis(MaterialSharedAxis.X, forward),
-      )
+      val transition = MaterialSharedAxis(MaterialSharedAxis.X, forward)
+      if (screen == Screen.WIZARD) transition.addTarget(wizardStepContentId)
+      TransitionManager.beginDelayedTransition(binding.moduleContent, transition)
     }
     when (screen) {
       Screen.LIST -> renderModuleList()
@@ -207,21 +207,30 @@ class ModuleManagerFragment : Fragment() {
     binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
-    content.addView(backToolbar(action = { showModuleList() }))
-    val header = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
-    header.addView(text("New module", 20f), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-    header.addView(text("$wizardStep / 3", 14f, secondary = true))
-    content.addView(header)
-    when (wizardStep) {
-      1 -> renderWizardType(content)
-      2 -> renderWizardName(content)
-      else -> renderWizardPreview(content)
+    val navigationRow = LinearLayout(requireContext()).apply {
+      gravity = Gravity.CENTER_VERTICAL
     }
+    navigationRow.addView(
+        backToolbar(action = { showModuleList() }).apply { title = "New module" },
+        LinearLayout.LayoutParams(0, dp(48), 1f),
+    )
+    navigationRow.addView(text("$wizardStep/3", 14f, secondary = true), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    content.addView(navigationRow)
+    val stepContent = LinearLayout(requireContext()).apply {
+      id = wizardStepContentId
+      orientation = LinearLayout.VERTICAL
+      setPadding(0, dp(16), 0, 0)
+    }
+    when (wizardStep) {
+      1 -> renderWizardType(stepContent)
+      2 -> renderWizardName(stepContent)
+      else -> renderWizardPreview(stepContent)
+    }
+    content.addView(stepContent)
     binding.moduleContent.addView(scroll)
   }
-
   private fun renderWizardType(content: LinearLayout) {
-    content.addView(sectionTitle("Module type"))
+
     content.addView(choiceCard("Android library", "Android resources, manifest, and Android Gradle plugin", moduleType == NewModuleType.ANDROID_LIBRARY) {
       if (moduleType != NewModuleType.ANDROID_LIBRARY) {
         moduleType = NewModuleType.ANDROID_LIBRARY
@@ -235,9 +244,10 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun renderWizardName(content: LinearLayout) {
-    content.addView(sectionTitle("Name and location"))
     val nameInput = input("Module name", draftModuleName)
-    val pathInput = input("Gradle path", draftGradlePath)
+    val pathInput = input("Gradle path", draftGradlePath).apply {
+      first.helperText = "By default, a directory is created at this path"
+    }
     nameInput.second.addTextChangedListener { draftModuleName = it?.toString().orEmpty() }
     pathInput.second.addTextChangedListener { draftGradlePath = it?.toString().orEmpty() }
     content.addView(nameInput.first)
@@ -717,6 +727,7 @@ class ModuleManagerFragment : Fragment() {
         text = label
         isAllCaps = false
         setIconResource(icon)
+        iconSize = dp(18)
         iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
         isEnabled = !creatingModule && !editorViewModel.isInitializing
         setOnClickListener { action() }
