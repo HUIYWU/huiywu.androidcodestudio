@@ -341,12 +341,6 @@ class ModuleManagerFragment : Fragment() {
     val scroll = scrollContent()
     val content = scrollBody(scroll)
     content.addView(backToolbar(action = { showModuleList() }, module = module))
-    val header = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
-    val titleGroup = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-    titleGroup.addView(text(module.path, 20f))
-    titleGroup.addView(text(moduleSubtitle(module), 13f, secondary = true))
-    header.addView(titleGroup, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-    content.addView(header)
     val tabs = TabLayout(requireContext())
     listOf("Overview", "Build", "Dependencies").forEach { tabs.addTab(tabs.newTab().setText(it)) }
     content.addView(tabs)
@@ -370,34 +364,27 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun populateOverview(content: LinearLayout, module: GradleProject) {
-    content.addView(sectionTitle("Module information"))
     info(content, "Type", moduleSubtitle(module).substringBefore(" ·"))
     info(content, "Directory", module.projectDir.relativeToOrSelf(projectRoot()).path)
-    info(content, "Build script", module.buildScript.name)
     if (module is AndroidModule) {
       info(content, "Namespace", module.namespace ?: "Unavailable")
-      info(content, "Build variant", module.configuredVariant?.name ?: "Default")
     }
-    content.addView(button("Open build script") { openBuildScript(module) })
-    content.addView(button("Sync project") { syncProject() })
+    content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
+    content.addView(iconButton("Sync project", R.drawable.ic_sync) { syncProject() })
   }
 
   private fun populateBuild(content: LinearLayout, module: GradleProject) {
-    content.addView(sectionTitle("Build configuration"))
     if (module is AndroidModule) {
-      info(content, "Namespace", module.namespace ?: "Unavailable")
       info(content, "Selected variant", module.configuredVariant?.name ?: "Default")
       info(content, "Available variants", module.variants.joinToString { it.name }.ifEmpty { "Unavailable" })
-      content.addView(text("Edit Android build settings in the module build script. Save changes and sync to refresh this model.", 14f, secondary = true))
     } else {
       info(content, "Module type", moduleSubtitle(module))
       content.addView(text("Language target and Gradle configuration are read from the synchronized module model.", 14f, secondary = true))
     }
-    content.addView(button("Open build script") { openBuildScript(module) })
+    content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
   }
 
   private fun populateDependencies(content: LinearLayout, module: GradleProject) {
-    content.addView(sectionTitle("Dependencies"))
     val dependencies = when (module) {
       is AndroidModule -> module.getCompileModuleProjects().map { it.path }
       is JavaModule -> module.getCompileModuleProjects().map { it.path }
@@ -715,6 +702,26 @@ class ModuleManagerFragment : Fragment() {
         setOnClickListener { action() }
       }
 
+  private fun iconButton(label: String, icon: Int, action: () -> Unit) =
+      MaterialButton(requireContext()).apply {
+        text = label
+        isAllCaps = false
+        setIconResource(icon)
+        iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+        isEnabled = !creatingModule && !editorViewModel.isInitializing
+        setOnClickListener { action() }
+      }
+
+  private fun outlinedIconButton(label: String, icon: Int, action: () -> Unit) =
+      MaterialButton(requireContext(), null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        text = label
+        isAllCaps = false
+        setIconResource(icon)
+        iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+        isEnabled = !creatingModule && !editorViewModel.isInitializing
+        setOnClickListener { action() }
+      }
+
   private fun backToolbar(
       action: () -> Unit,
       module: GradleProject? = null,
@@ -732,6 +739,7 @@ class ModuleManagerFragment : Fragment() {
     setNavigationOnClickListener {
       if (!creatingModule && !editorViewModel.isInitializing) action()
     }
+    title = module?.path.orEmpty()
     if (module != null) {
       menu.add(0, MENU_RENAME_MODULE, 0, "Rename module").apply {
         setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_NEVER)
