@@ -82,6 +82,9 @@ class ModuleManagerFragment : Fragment() {
   private var screen = Screen.LIST
   private var selectedModule: GradleProject? = null
   private val wizardStepContentId = View.generateViewId()
+  private var wizardScroll: NestedScrollView? = null
+  private var wizardStepContent: LinearLayout? = null
+  private var wizardStepIndicator: TextView? = null
   private var wizardStep = 1
   private var moduleType = NewModuleType.ANDROID_LIBRARY
   private var moduleLanguage = ModuleLanguage.KOTLIN
@@ -136,8 +139,13 @@ class ModuleManagerFragment : Fragment() {
     binding.moduleFlipper.displayedChild = 1
     if (animated) {
       val transition = MaterialSharedAxis(MaterialSharedAxis.X, forward)
-      if (screen == Screen.WIZARD) transition.addTarget(wizardStepContentId)
-      TransitionManager.beginDelayedTransition(binding.moduleContent, transition)
+      if (screen == Screen.WIZARD) {
+        wizardStepContent
+            ?.takeIf { it.parent != null }
+            ?.let { TransitionManager.beginDelayedTransition(it, transition) }
+      } else {
+        TransitionManager.beginDelayedTransition(binding.moduleContent, transition)
+      }
     }
     when (screen) {
       Screen.LIST -> renderModuleList()
@@ -204,6 +212,15 @@ class ModuleManagerFragment : Fragment() {
   }
   private fun renderWizard() {
     binding.moduleToolbar.visibility = View.GONE
+    val existingStepContent = wizardStepContent
+    val existingScroll = wizardScroll
+    if (existingStepContent != null && existingScroll != null && existingScroll.parent === binding.moduleContent) {
+      wizardStepIndicator?.text = "$wizardStep/3"
+      existingStepContent.removeAllViews()
+      renderWizardStep(existingStepContent)
+      return
+    }
+
     binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
@@ -214,20 +231,28 @@ class ModuleManagerFragment : Fragment() {
         backToolbar(action = { showModuleList() }).apply { title = "New module" },
         LinearLayout.LayoutParams(0, dp(48), 1f),
     )
-    navigationRow.addView(text("$wizardStep/3", 14f, secondary = true), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    val stepIndicator = text("$wizardStep/3", 14f, secondary = true)
+    navigationRow.addView(stepIndicator, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     content.addView(navigationRow)
     val stepContent = LinearLayout(requireContext()).apply {
       id = wizardStepContentId
       orientation = LinearLayout.VERTICAL
       setPadding(0, dp(16), 0, 0)
     }
-    when (wizardStep) {
-      1 -> renderWizardType(stepContent)
-      2 -> renderWizardName(stepContent)
-      else -> renderWizardPreview(stepContent)
-    }
     content.addView(stepContent)
     binding.moduleContent.addView(scroll)
+    wizardScroll = scroll
+    wizardStepContent = stepContent
+    wizardStepIndicator = stepIndicator
+    renderWizardStep(stepContent)
+  }
+
+  private fun renderWizardStep(content: LinearLayout) {
+    when (wizardStep) {
+      1 -> renderWizardType(content)
+      2 -> renderWizardName(content)
+      else -> renderWizardPreview(content)
+    }
   }
   private fun renderWizardType(content: LinearLayout) {
 
