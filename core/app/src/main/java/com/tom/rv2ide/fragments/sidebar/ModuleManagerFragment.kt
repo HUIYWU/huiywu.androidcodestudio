@@ -31,9 +31,8 @@ import androidx.core.widget.addTextChangedListener
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
-import androidx.transition.TransitionManager
 import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.transition.MaterialSharedAxis
+
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
@@ -83,10 +82,10 @@ class ModuleManagerFragment : Fragment() {
   private var screen = Screen.LIST
   private var selectedModule: GradleProject? = null
   private var pageHost: FrameLayout? = null
-  private val wizardStepContentId = View.generateViewId()
-  private var wizardScroll: NestedScrollView? = null
   private var wizardStepContent: LinearLayout? = null
   private var wizardStepIndicator: TextView? = null
+  private var wizardLanguageChips: List<Chip> = emptyList()
+  private var wizardDslChips: List<Chip> = emptyList()
   private var wizardStep = 1
   private var moduleType = NewModuleType.ANDROID_LIBRARY
   private var moduleLanguage = ModuleLanguage.KOTLIN
@@ -144,20 +143,41 @@ class ModuleManagerFragment : Fragment() {
       binding.moduleContent.removeAllViews()
       pageHost = FrameLayout(requireContext()).apply {
         id = View.generateViewId()
+        setBackgroundColor(themeColor(com.google.android.material.R.attr.colorSurface))
         layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
       }
       binding.moduleContent.addView(checkNotNull(pageHost))
     }
-    if (animated) {
-      TransitionManager.beginDelayedTransition(
-          checkNotNull(pageHost),
-          MaterialSharedAxis(MaterialSharedAxis.X, forward),
-      )
-    }
+    val changingWizardStep = screen == Screen.WIZARD && wizardStepContent?.parent != null
     when (screen) {
       Screen.LIST -> renderModuleList()
       Screen.WIZARD -> renderWizard()
       Screen.DETAIL -> renderModuleDetail()
+    }
+    if (animated) {
+      if (changingWizardStep) {
+        animateWizardStep(forward)
+      } else {
+        animatePage(forward)
+      }
+    }
+  }
+
+  private fun animatePage(forward: Boolean) {
+    val page = checkNotNull(pageHost).getChildAt(0)
+    page.post {
+      val distance = page.width.toFloat().coerceAtLeast(1f)
+      page.translationX = if (forward) distance else -distance
+      page.animate().translationX(0f).setDuration(220L).start()
+    }
+  }
+
+  private fun animateWizardStep(forward: Boolean) {
+    val page = checkNotNull(wizardStepContent)
+    page.post {
+      val distance = page.width.toFloat().coerceAtLeast(1f)
+      page.translationX = if (forward) distance else -distance
+      page.animate().translationX(0f).setDuration(220L).start()
     }
   }
 
@@ -221,8 +241,7 @@ class ModuleManagerFragment : Fragment() {
   private fun renderWizard() {
     binding.moduleToolbar.visibility = View.GONE
     val existingStepContent = wizardStepContent
-    val existingScroll = wizardScroll
-    if (existingStepContent != null && existingScroll != null && existingScroll.parent === pageHost) {
+    if (existingStepContent != null && existingStepContent.parent != null) {
       wizardStepIndicator?.text = "$wizardStep/3"
       existingStepContent.removeAllViews()
       renderWizardStep(existingStepContent)
@@ -244,13 +263,11 @@ class ModuleManagerFragment : Fragment() {
     navigationRow.addView(stepIndicator, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     content.addView(navigationRow)
     val stepContent = LinearLayout(requireContext()).apply {
-      id = wizardStepContentId
       orientation = LinearLayout.VERTICAL
       setPadding(0, dp(16), 0, 0)
     }
     content.addView(stepContent)
     host.addView(scroll)
-    wizardScroll = scroll
     wizardStepContent = stepContent
     wizardStepIndicator = stepIndicator
     renderWizardStep(stepContent)
@@ -291,42 +308,32 @@ class ModuleManagerFragment : Fragment() {
     languages.addView(chip("Kotlin", moduleLanguage == ModuleLanguage.KOTLIN) {
       if (moduleLanguage != ModuleLanguage.KOTLIN) {
         moduleLanguage = ModuleLanguage.KOTLIN
-        wizardStepContent?.let {
-          it.removeAllViews()
-          renderWizardName(it)
-        }
+        wizardLanguageChips.forEachIndexed { index, chip -> chip.isChecked = index == 0 }
       }
     })
     languages.addView(chip("Java", moduleLanguage == ModuleLanguage.JAVA) {
       if (moduleLanguage != ModuleLanguage.JAVA) {
         moduleLanguage = ModuleLanguage.JAVA
-        wizardStepContent?.let {
-          it.removeAllViews()
-          renderWizardName(it)
-        }
+        wizardLanguageChips.forEachIndexed { index, chip -> chip.isChecked = index == 1 }
       }
     })
+    wizardLanguageChips = listOf(languages.getChildAt(0) as Chip, languages.getChildAt(1) as Chip)
     content.addView(languages)
     content.addView(text("Gradle DSL", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
     val dsl = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
     dsl.addView(chip("Kotlin", useKotlinDsl) {
       if (!useKotlinDsl) {
         useKotlinDsl = true
-        wizardStepContent?.let {
-          it.removeAllViews()
-          renderWizardName(it)
-        }
+        wizardDslChips.forEachIndexed { index, chip -> chip.isChecked = index == 0 }
       }
     })
     dsl.addView(chip("Groovy", !useKotlinDsl) {
       if (useKotlinDsl) {
         useKotlinDsl = false
-        wizardStepContent?.let {
-          it.removeAllViews()
-          renderWizardName(it)
-        }
+        wizardDslChips.forEachIndexed { index, chip -> chip.isChecked = index == 1 }
       }
     })
+    wizardDslChips = listOf(dsl.getChildAt(0) as Chip, dsl.getChildAt(1) as Chip)
     content.addView(dsl)
     content.addView(bottomActions("Back", "Next") {
       val path = pathInput.second.text.toString().trim()
