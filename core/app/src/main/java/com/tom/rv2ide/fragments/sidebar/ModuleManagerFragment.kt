@@ -19,6 +19,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -131,7 +132,11 @@ class ModuleManagerFragment : Fragment() {
     render()
   }
 
-  private fun render(animated: Boolean = false, forward: Boolean = true) {
+  private fun render(
+      animated: Boolean = false,
+      forward: Boolean = true,
+      wizardStepChange: Boolean = false,
+  ) {
     if (IProjectManager.getInstance().getWorkspace() == null) {
       binding.moduleFlipper.displayedChild = 0
       return
@@ -139,11 +144,11 @@ class ModuleManagerFragment : Fragment() {
     binding.moduleFlipper.displayedChild = 1
     if (animated) {
       val transition = MaterialSharedAxis(MaterialSharedAxis.X, forward)
-      if (screen == Screen.WIZARD && wizardStepContent?.parent != null) {
+      if (wizardStepChange && wizardStepContent?.parent != null) {
         TransitionManager.beginDelayedTransition(checkNotNull(wizardStepContent), transition)
       } else {
-        // On the first entry the wizard content does not exist yet, so animate
-        // the replacement of the current module-list content instead.
+        // Entering or leaving the wizard is a screen transition. Animate the
+        // whole module content, regardless of stale wizard view references.
         TransitionManager.beginDelayedTransition(binding.moduleContent, transition)
       }
     }
@@ -401,22 +406,32 @@ class ModuleManagerFragment : Fragment() {
     val tabs = TabLayout(requireContext())
     listOf("Overview", "Build", "Dependencies").forEach { tabs.addTab(tabs.newTab().setText(it)) }
     content.addView(tabs)
-    val detail = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(16), 0, 0) }
-    fun showTab(index: Int) {
-      detail.removeAllViews()
-      when (index) {
-        0 -> populateOverview(detail, module)
-        1 -> populateBuild(detail, module)
-        else -> populateDependencies(detail, module)
+    val detailHost = FrameLayout(requireContext()).apply {
+      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        topMargin = dp(16)
       }
     }
+    val overview = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+    val build = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+    val dependencies = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+    populateOverview(overview, module)
+    populateBuild(build, module)
+    populateDependencies(dependencies, module)
+    detailHost.addView(overview)
+    build.visibility = View.INVISIBLE
+    dependencies.visibility = View.INVISIBLE
+    detailHost.addView(build)
+    detailHost.addView(dependencies)
     tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-      override fun onTabSelected(tab: TabLayout.Tab) = showTab(tab.position)
+      override fun onTabSelected(tab: TabLayout.Tab) {
+        overview.visibility = if (tab.position == 0) View.VISIBLE else View.INVISIBLE
+        build.visibility = if (tab.position == 1) View.VISIBLE else View.INVISIBLE
+        dependencies.visibility = if (tab.position == 2) View.VISIBLE else View.INVISIBLE
+      }
       override fun onTabUnselected(tab: TabLayout.Tab) = Unit
-      override fun onTabReselected(tab: TabLayout.Tab) = Unit
+      override fun onTabReselected(tab: Tab) = Unit
     })
-    showTab(0)
-    content.addView(detail)
+    content.addView(detailHost)
     binding.moduleContent.addView(scroll)
   }
 
@@ -640,15 +655,19 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun showWizard(step: Int) {
-    val forward = screen != Screen.WIZARD || step >= wizardStep
+    val stepChange = screen == Screen.WIZARD
+    val forward = !stepChange || step >= wizardStep
     wizardStep = step
     screen = Screen.WIZARD
-    render(animated = true, forward = forward)
+    render(animated = true, forward = forward, wizardStepChange = stepChange)
   }
 
   private fun showModuleList(animated: Boolean = true) {
     selectedModule = null
     screen = Screen.LIST
+    wizardScroll = null
+    wizardStepContent = null
+    wizardStepIndicator = null
     render(animated = animated, forward = false)
   }
 
