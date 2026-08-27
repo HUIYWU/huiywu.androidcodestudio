@@ -81,6 +81,29 @@
     <item name="tabInlineLabel">true</item>
   </style>
 
+  <!-- Keep both Tab states on one stable Josefin Sans weight. -->
+  <style name="AppTheme.StableTabText" parent="TextAppearance.Material3.LabelLarge">
+    <item name="fontFamily">@font/josefin_sans</item>
+    <item name="android:fontFamily">@font/josefin_sans</item>
+    <item name="android:fontWeight">400</item>
+    <item name="android:textSize">14sp</item>
+  </style>
+
+  <style name="AppTheme.ModuleDetailTabContext" parent="Theme.AndroidIDE">
+    <item name="tabStyle">@style/AppTheme.ModuleDetailTabLayout</item>
+  </style>
+
+  <style name="AppTheme.ModuleDetailTabLayout" parent="Widget.Material3.TabLayout">
+    <item name="tabTextAppearance">@style/AppTheme.StableTabText</item>
+    <item name="tabSelectedTextAppearance">@style/AppTheme.StableTabText</item>
+  </style>
+
+  <!-- Local override for editor top tabs; bottom-sheet tabs keep AppTheme.TabLayout. -->
+  <style name="AppTheme.EditorTabLayout" parent="AppTheme.TabLayout">
+    <item name="tabTextAppearance">@style/AppTheme.StableTabText</item>
+    <item name="tabSelectedTextAppearance">@style/AppTheme.StableTabText</item>
+  </style>
+
   <style name="AppTheme.ShapeOverlay.Large" parent="">
     <item name="cornerFamily">rounded</item>
     <item name="cornerSizeTopRight">16dp</item>

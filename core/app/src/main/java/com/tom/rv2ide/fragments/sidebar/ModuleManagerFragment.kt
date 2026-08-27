@@ -10,7 +10,6 @@ package com.tom.rv2ide.fragments.sidebar
 
 import android.content.res.ColorStateList
 import android.graphics.Color
-import android.graphics.Typeface
 import android.os.Bundle
 import android.view.ContextThemeWrapper
 import android.text.InputType
@@ -403,25 +402,10 @@ class ModuleManagerFragment : Fragment() {
     val scroll = scrollContent()
     val content = scrollBody(scroll)
     content.addView(backToolbar(action = { showModuleList() }, module = module))
-    val tabs = TabLayout(requireContext())
-    val selectedTabColor = themeColor(R.attr.colorPrimary)
-    val unselectedTabColor = themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant)
-    fun updateTabTitle(tab: TabLayout.Tab, selected: Boolean) {
-      (tab.customView as? TextView)?.setTextColor(
-          if (selected) selectedTabColor else unselectedTabColor,
-      )
-    }
-    listOf("Overview", "Build", "Dependencies").forEach { label ->
-      val title = TextView(requireContext()).apply {
-        text = label
-        textSize = 14f
-        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-        setPadding(dp(16), dp(12), dp(16), dp(12))
-        setTextColor(unselectedTabColor)
-      }
-      tabs.addTab(tabs.newTab().setCustomView(title))
-    }
-    updateTabTitle(checkNotNull(tabs.getTabAt(0)), selected = true)
+    val tabs = TabLayout(
+      ContextThemeWrapper(requireContext(), R.style.AppTheme_ModuleDetailTabContext),
+    )
+    listOf("Overview", "Build", "Dependencies").forEach { tabs.addTab(tabs.newTab().setText(it)) }
     content.addView(tabs)
     val detail = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
@@ -436,15 +420,8 @@ class ModuleManagerFragment : Fragment() {
       }
     }
     tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-      override fun onTabSelected(tab: TabLayout.Tab) {
-        updateTabTitle(tab, selected = true)
-        showTab(tab.position)
-      }
-
-      override fun onTabUnselected(tab: TabLayout.Tab) {
-        updateTabTitle(tab, selected = false)
-      }
-
+      override fun onTabSelected(tab: TabLayout.Tab) = showTab(tab.position)
+      override fun onTabUnselected(tab: TabLayout.Tab) = Unit
       override fun onTabReselected(tab: TabLayout.Tab) = Unit
     })
     showTab(0)
