@@ -429,7 +429,7 @@ class ModuleManagerFragment : Fragment() {
         dependencies.visibility = if (tab.position == 2) View.VISIBLE else View.INVISIBLE
       }
       override fun onTabUnselected(tab: TabLayout.Tab) = Unit
-      override fun onTabReselected(tab: Tab) = Unit
+      override fun onTabReselected(tab: TabLayout.Tab) = Unit
     })
     content.addView(detailHost)
     binding.moduleContent.addView(scroll)
