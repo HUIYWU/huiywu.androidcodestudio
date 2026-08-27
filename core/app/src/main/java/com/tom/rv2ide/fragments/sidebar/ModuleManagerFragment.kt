@@ -10,6 +10,7 @@ package com.tom.rv2ide.fragments.sidebar
 
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
 import android.view.ContextThemeWrapper
 import android.text.InputType
@@ -19,7 +20,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -404,34 +404,51 @@ class ModuleManagerFragment : Fragment() {
     val content = scrollBody(scroll)
     content.addView(backToolbar(action = { showModuleList() }, module = module))
     val tabs = TabLayout(requireContext())
-    listOf("Overview", "Build", "Dependencies").forEach { tabs.addTab(tabs.newTab().setText(it)) }
+    val selectedTabColor = themeColor(com.google.android.material.R.attr.colorPrimary)
+    val unselectedTabColor = themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant)
+    fun updateTabTitle(tab: TabLayout.Tab, selected: Boolean) {
+      (tab.customView as? TextView)?.setTextColor(
+          if (selected) selectedTabColor else unselectedTabColor,
+      )
+    }
+    listOf("Overview", "Build", "Dependencies").forEach { label ->
+      val title = TextView(requireContext()).apply {
+        text = label
+        textSize = 14f
+        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        setPadding(dp(16), dp(12), dp(16), dp(12))
+        setTextColor(unselectedTabColor)
+      }
+      tabs.addTab(tabs.newTab().setCustomView(title))
+    }
+    updateTabTitle(checkNotNull(tabs.getTabAt(0)), selected = true)
     content.addView(tabs)
-    val detailHost = FrameLayout(requireContext()).apply {
-      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-        topMargin = dp(16)
+    val detail = LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(0, dp(16), 0, 0)
+    }
+    fun showTab(index: Int) {
+      detail.removeAllViews()
+      when (index) {
+        0 -> populateOverview(detail, module)
+        1 -> populateBuild(detail, module)
+        else -> populateDependencies(detail, module)
       }
     }
-    val overview = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-    val build = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-    val dependencies = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-    populateOverview(overview, module)
-    populateBuild(build, module)
-    populateDependencies(dependencies, module)
-    detailHost.addView(overview)
-    build.visibility = View.INVISIBLE
-    dependencies.visibility = View.INVISIBLE
-    detailHost.addView(build)
-    detailHost.addView(dependencies)
     tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
       override fun onTabSelected(tab: TabLayout.Tab) {
-        overview.visibility = if (tab.position == 0) View.VISIBLE else View.INVISIBLE
-        build.visibility = if (tab.position == 1) View.VISIBLE else View.INVISIBLE
-        dependencies.visibility = if (tab.position == 2) View.VISIBLE else View.INVISIBLE
+        updateTabTitle(tab, selected = true)
+        showTab(tab.position)
       }
-      override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+
+      override fun onTabUnselected(tab: TabLayout.Tab) {
+        updateTabTitle(tab, selected = false)
+      }
+
       override fun onTabReselected(tab: TabLayout.Tab) = Unit
     })
-    content.addView(detailHost)
+    showTab(0)
+    content.addView(detail)
     binding.moduleContent.addView(scroll)
   }
 
