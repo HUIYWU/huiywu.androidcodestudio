@@ -82,6 +82,7 @@ class ModuleManagerFragment : Fragment() {
   private var screen = Screen.LIST
   private var selectedModule: GradleProject? = null
   private var pageHost: FrameLayout? = null
+  private var wizardPage: NestedScrollView? = null
   private var wizardStepContent: LinearLayout? = null
   private var wizardStepIndicator: TextView? = null
   private var wizardLanguageChips: List<Chip> = emptyList()
@@ -138,17 +139,17 @@ class ModuleManagerFragment : Fragment() {
       return
     }
     binding.moduleFlipper.displayedChild = 1
-    val host = pageHost
-    if (host == null || host.parent !== binding.moduleContent) {
+    val host = pageHost?.takeIf { it.parent === binding.moduleContent } ?: FrameLayout(requireContext()).also {
+      it.id = View.generateViewId()
+      it.setBackgroundColor(themeColor(com.google.android.material.R.attr.colorSurface))
+      it.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
       binding.moduleContent.removeAllViews()
-      pageHost = FrameLayout(requireContext()).apply {
-        id = View.generateViewId()
-        setBackgroundColor(themeColor(com.google.android.material.R.attr.colorSurface))
-        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-      }
-      binding.moduleContent.addView(checkNotNull(pageHost))
+      binding.moduleContent.addView(it)
+      pageHost = it
     }
-    val changingWizardStep = screen == Screen.WIZARD && wizardStepContent?.parent != null
+    val oldPage = host.getChildAt(0)
+    val changingWizardStep = screen == Screen.WIZARD && wizardPage?.parent === host
+    if (!animated && !changingWizardStep) host.removeAllViews()
     when (screen) {
       Screen.LIST -> renderModuleList()
       Screen.WIZARD -> renderWizard()
@@ -158,33 +159,32 @@ class ModuleManagerFragment : Fragment() {
       if (changingWizardStep) {
         animateWizardStep(forward)
       } else {
-        animatePage(forward)
+        val newPage = host.getChildAt(host.childCount - 1)
+        animatePage(oldPage, newPage, forward)
       }
     }
   }
 
-  private fun animatePage(forward: Boolean) {
-    val page = checkNotNull(pageHost).getChildAt(0)
-    page.post {
-      val distance = page.width.toFloat().coerceAtLeast(1f)
-      page.translationX = if (forward) distance else -distance
-      page.animate().translationX(0f).setDuration(220L).start()
+  private fun animatePage(oldPage: View?, newPage: View, forward: Boolean) {
+    newPage.post {
+      val distance = newPage.width.toFloat().coerceAtLeast(1f)
+      newPage.translationX = if (forward) distance else -distance
+      oldPage?.animate()?.translationX(if (forward) -distance else distance)?.setDuration(220L)?.start()
+      newPage.animate().translationX(0f).setDuration(220L).withEndAction {
+        oldPage?.let { checkNotNull(pageHost).removeView(it) }
+      }.start()
     }
   }
 
   private fun animateWizardStep(forward: Boolean) {
     val page = checkNotNull(wizardStepContent)
-    page.post {
-      val distance = page.width.toFloat().coerceAtLeast(1f)
-      page.translationX = if (forward) distance else -distance
-      page.animate().translationX(0f).setDuration(220L).start()
-    }
+    page.animate().cancel()
+    page.translationX = 0f
   }
 
   private fun renderModuleList() {
     binding.moduleToolbar.visibility = View.VISIBLE
     val host = checkNotNull(pageHost)
-    host.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
     val modules = workspaceModules()
@@ -241,7 +241,7 @@ class ModuleManagerFragment : Fragment() {
   private fun renderWizard() {
     binding.moduleToolbar.visibility = View.GONE
     val existingStepContent = wizardStepContent
-    if (existingStepContent != null && existingStepContent.parent != null) {
+    if (existingStepContent != null && wizardPage?.parent === pageHost) {
       wizardStepIndicator?.text = "$wizardStep/3"
       existingStepContent.removeAllViews()
       renderWizardStep(existingStepContent)
@@ -249,7 +249,6 @@ class ModuleManagerFragment : Fragment() {
     }
 
     val host = checkNotNull(pageHost)
-    host.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
     val navigationRow = LinearLayout(requireContext()).apply {
@@ -268,6 +267,7 @@ class ModuleManagerFragment : Fragment() {
     }
     content.addView(stepContent)
     host.addView(scroll)
+    wizardPage = scroll
     wizardStepContent = stepContent
     wizardStepIndicator = stepIndicator
     renderWizardStep(stepContent)
@@ -669,6 +669,11 @@ class ModuleManagerFragment : Fragment() {
   private fun showModuleList(animated: Boolean = true) {
     selectedModule = null
     screen = Screen.LIST
+    wizardPage = null
+    wizardStepContent = null
+    wizardStepIndicator = null
+    wizardLanguageChips = emptyList()
+    wizardDslChips = emptyList()
     render(animated = animated, forward = false)
   }
 
@@ -708,6 +713,7 @@ class ModuleManagerFragment : Fragment() {
     }
     return NestedScrollView(requireContext()).apply {
       isFillViewport = true
+      layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
       addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
   }
