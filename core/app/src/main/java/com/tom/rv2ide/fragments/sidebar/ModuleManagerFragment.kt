@@ -404,7 +404,7 @@ class ModuleManagerFragment : Fragment() {
     val content = scrollBody(scroll)
     content.addView(backToolbar(action = { showModuleList() }, module = module))
     val tabs = TabLayout(requireContext())
-    val selectedTabColor = themeColor(com.google.android.material.R.attr.colorPrimary)
+    val selectedTabColor = themeColor(R.attr.colorPrimary)
     val unselectedTabColor = themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant)
     fun updateTabTitle(tab: TabLayout.Tab, selected: Boolean) {
       (tab.customView as? TextView)?.setTextColor(
