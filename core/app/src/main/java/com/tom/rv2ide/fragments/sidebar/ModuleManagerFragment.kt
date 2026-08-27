@@ -19,7 +19,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -31,8 +30,9 @@ import androidx.core.widget.addTextChangedListener
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.transition.TransitionManager
 import com.google.android.material.appbar.MaterialToolbar
-
+import com.google.android.material.transition.MaterialSharedAxis
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
@@ -81,12 +81,10 @@ class ModuleManagerFragment : Fragment() {
   private var creatingModule = false
   private var screen = Screen.LIST
   private var selectedModule: GradleProject? = null
-  private var pageHost: FrameLayout? = null
-  private var wizardPage: NestedScrollView? = null
+  private val wizardStepContentId = View.generateViewId()
+  private var wizardScroll: NestedScrollView? = null
   private var wizardStepContent: LinearLayout? = null
   private var wizardStepIndicator: TextView? = null
-  private var wizardLanguageChips: List<Chip> = emptyList()
-  private var wizardDslChips: List<Chip> = emptyList()
   private var wizardStep = 1
   private var moduleType = NewModuleType.ANDROID_LIBRARY
   private var moduleLanguage = ModuleLanguage.KOTLIN
@@ -139,52 +137,26 @@ class ModuleManagerFragment : Fragment() {
       return
     }
     binding.moduleFlipper.displayedChild = 1
-    val host = pageHost?.takeIf { it.parent === binding.moduleContent } ?: FrameLayout(requireContext()).also {
-      it.id = View.generateViewId()
-      it.setBackgroundColor(themeColor(com.google.android.material.R.attr.colorSurface))
-      it.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-      binding.moduleContent.removeAllViews()
-      binding.moduleContent.addView(it)
-      pageHost = it
+    if (animated) {
+      val transition = MaterialSharedAxis(MaterialSharedAxis.X, forward)
+      if (screen == Screen.WIZARD && wizardStepContent?.parent != null) {
+        TransitionManager.beginDelayedTransition(checkNotNull(wizardStepContent), transition)
+      } else {
+        // On the first entry the wizard content does not exist yet, so animate
+        // the replacement of the current module-list content instead.
+        TransitionManager.beginDelayedTransition(binding.moduleContent, transition)
+      }
     }
-    val oldPage = host.getChildAt(0)
-    val changingWizardStep = screen == Screen.WIZARD && wizardPage?.parent === host
-    if (!animated && !changingWizardStep) host.removeAllViews()
     when (screen) {
       Screen.LIST -> renderModuleList()
       Screen.WIZARD -> renderWizard()
       Screen.DETAIL -> renderModuleDetail()
     }
-    if (animated) {
-      if (changingWizardStep) {
-        animateWizardStep(forward)
-      } else {
-        val newPage = host.getChildAt(host.childCount - 1)
-        animatePage(oldPage, newPage, forward)
-      }
-    }
-  }
-
-  private fun animatePage(oldPage: View?, newPage: View, forward: Boolean) {
-    newPage.post {
-      val distance = newPage.width.toFloat().coerceAtLeast(1f)
-      newPage.translationX = if (forward) distance else -distance
-      oldPage?.animate()?.translationX(if (forward) -distance else distance)?.setDuration(220L)?.start()
-      newPage.animate().translationX(0f).setDuration(220L).withEndAction {
-        oldPage?.let { checkNotNull(pageHost).removeView(it) }
-      }.start()
-    }
-  }
-
-  private fun animateWizardStep(forward: Boolean) {
-    val page = checkNotNull(wizardStepContent)
-    page.animate().cancel()
-    page.translationX = 0f
   }
 
   private fun renderModuleList() {
     binding.moduleToolbar.visibility = View.VISIBLE
-    val host = checkNotNull(pageHost)
+    binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
     val modules = workspaceModules()
@@ -194,7 +166,7 @@ class ModuleManagerFragment : Fragment() {
     } else {
       modules.forEach { content.addView(moduleCard(it)) }
     }
-    host.addView(scroll)
+    binding.moduleContent.addView(scroll)
   }
 
   private fun moduleCard(module: GradleProject): View {
@@ -241,14 +213,15 @@ class ModuleManagerFragment : Fragment() {
   private fun renderWizard() {
     binding.moduleToolbar.visibility = View.GONE
     val existingStepContent = wizardStepContent
-    if (existingStepContent != null && wizardPage?.parent === pageHost) {
+    val existingScroll = wizardScroll
+    if (existingStepContent != null && existingScroll != null && existingScroll.parent === binding.moduleContent) {
       wizardStepIndicator?.text = "$wizardStep/3"
       existingStepContent.removeAllViews()
       renderWizardStep(existingStepContent)
       return
     }
 
-    val host = checkNotNull(pageHost)
+    binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
     val navigationRow = LinearLayout(requireContext()).apply {
@@ -262,12 +235,13 @@ class ModuleManagerFragment : Fragment() {
     navigationRow.addView(stepIndicator, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     content.addView(navigationRow)
     val stepContent = LinearLayout(requireContext()).apply {
+      id = wizardStepContentId
       orientation = LinearLayout.VERTICAL
       setPadding(0, dp(16), 0, 0)
     }
     content.addView(stepContent)
-    host.addView(scroll)
-    wizardPage = scroll
+    binding.moduleContent.addView(scroll)
+    wizardScroll = scroll
     wizardStepContent = stepContent
     wizardStepIndicator = stepIndicator
     renderWizardStep(stepContent)
@@ -305,35 +279,45 @@ class ModuleManagerFragment : Fragment() {
     content.addView(pathInput.first)
     content.addView(text("Language", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
     val languages = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
-    languages.addView(chip("Kotlin", moduleLanguage == ModuleLanguage.KOTLIN) {
+    lateinit var kotlinLanguageChip: Chip
+    lateinit var javaLanguageChip: Chip
+    kotlinLanguageChip = chip("Kotlin", moduleLanguage == ModuleLanguage.KOTLIN) {
       if (moduleLanguage != ModuleLanguage.KOTLIN) {
         moduleLanguage = ModuleLanguage.KOTLIN
-        wizardLanguageChips.forEachIndexed { index, chip -> chip.isChecked = index == 0 }
+        kotlinLanguageChip.isChecked = true
+        javaLanguageChip.isChecked = false
       }
-    })
-    languages.addView(chip("Java", moduleLanguage == ModuleLanguage.JAVA) {
+    }
+    javaLanguageChip = chip("Java", moduleLanguage == ModuleLanguage.JAVA) {
       if (moduleLanguage != ModuleLanguage.JAVA) {
         moduleLanguage = ModuleLanguage.JAVA
-        wizardLanguageChips.forEachIndexed { index, chip -> chip.isChecked = index == 1 }
+        kotlinLanguageChip.isChecked = false
+        javaLanguageChip.isChecked = true
       }
-    })
-    wizardLanguageChips = listOf(languages.getChildAt(0) as Chip, languages.getChildAt(1) as Chip)
+    }
+    languages.addView(kotlinLanguageChip)
+    languages.addView(javaLanguageChip)
     content.addView(languages)
     content.addView(text("Gradle DSL", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
     val dsl = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
-    dsl.addView(chip("Kotlin", useKotlinDsl) {
+    lateinit var kotlinDslChip: Chip
+    lateinit var groovyDslChip: Chip
+    kotlinDslChip = chip("Kotlin", useKotlinDsl) {
       if (!useKotlinDsl) {
         useKotlinDsl = true
-        wizardDslChips.forEachIndexed { index, chip -> chip.isChecked = index == 0 }
+        kotlinDslChip.isChecked = true
+        groovyDslChip.isChecked = false
       }
-    })
-    dsl.addView(chip("Groovy", !useKotlinDsl) {
+    }
+    groovyDslChip = chip("Groovy", !useKotlinDsl) {
       if (useKotlinDsl) {
         useKotlinDsl = false
-        wizardDslChips.forEachIndexed { index, chip -> chip.isChecked = index == 1 }
+        kotlinDslChip.isChecked = false
+        groovyDslChip.isChecked = true
       }
-    })
-    wizardDslChips = listOf(dsl.getChildAt(0) as Chip, dsl.getChildAt(1) as Chip)
+    }
+    dsl.addView(kotlinDslChip)
+    dsl.addView(groovyDslChip)
     content.addView(dsl)
     content.addView(bottomActions("Back", "Next") {
       val path = pathInput.second.text.toString().trim()
@@ -367,10 +351,7 @@ class ModuleManagerFragment : Fragment() {
       applicationChoices.addView(chip(applicationPath, applicationPath == selectedApplicationPath) {
         if (selectedApplicationPath != applicationPath) {
           selectedApplicationPath = applicationPath
-          wizardStepContent?.let {
-            it.removeAllViews()
-            renderWizardPreview(it)
-          }
+          render()
         }
       })
     }
@@ -413,8 +394,7 @@ class ModuleManagerFragment : Fragment() {
   private fun renderModuleDetail() {
     val module = selectedModule ?: run { showModuleList(animated = false); return }
     binding.moduleToolbar.visibility = View.GONE
-    val host = checkNotNull(pageHost)
-    host.removeAllViews()
+    binding.moduleContent.removeAllViews()
     val scroll = scrollContent()
     val content = scrollBody(scroll)
     content.addView(backToolbar(action = { showModuleList() }, module = module))
@@ -437,7 +417,7 @@ class ModuleManagerFragment : Fragment() {
     })
     showTab(0)
     content.addView(detail)
-    host.addView(scroll)
+    binding.moduleContent.addView(scroll)
   }
 
   private fun populateOverview(content: LinearLayout, module: GradleProject) {
@@ -669,11 +649,6 @@ class ModuleManagerFragment : Fragment() {
   private fun showModuleList(animated: Boolean = true) {
     selectedModule = null
     screen = Screen.LIST
-    wizardPage = null
-    wizardStepContent = null
-    wizardStepIndicator = null
-    wizardLanguageChips = emptyList()
-    wizardDslChips = emptyList()
     render(animated = animated, forward = false)
   }
 
@@ -713,7 +688,6 @@ class ModuleManagerFragment : Fragment() {
     }
     return NestedScrollView(requireContext()).apply {
       isFillViewport = true
-      layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
       addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
   }
@@ -748,7 +722,6 @@ class ModuleManagerFragment : Fragment() {
   private fun input(hint: String, value: String): Pair<TextInputLayout, EditText> {
     val layout = TextInputLayout(requireContext()).apply {
       this.hint = hint
-      minimumHeight = dp(64)
       layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) }
     }
     val edit = EditText(requireContext()).apply { setText(value); inputType = InputType.TYPE_CLASS_TEXT }
