@@ -62,7 +62,7 @@ interface BuildService {
   /** Returns module creation capabilities from the configured Gradle runtime. */
   fun getProjectCreationCapabilities(): CompletableFuture<ProjectCreationCapabilities>
 
-  /** Validates a module candidate in the live Gradle configuration before any project write. */
+  /** Validates the exact module build script in the live Gradle configuration before writing it. */
   fun validateModuleCreation(
       request: ModuleCreationValidationRequest
   ): CompletableFuture<ModuleCreationValidation>

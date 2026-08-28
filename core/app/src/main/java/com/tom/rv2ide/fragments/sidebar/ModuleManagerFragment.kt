@@ -57,7 +57,6 @@ import com.tom.rv2ide.tooling.api.models.ApplicationProjectInfo
 import com.tom.rv2ide.tooling.api.models.GradleDsl
 import com.tom.rv2ide.tooling.api.models.ModuleCreationKind
 import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
-import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import com.tom.rv2ide.utils.ModuleCreationRequest
 import com.tom.rv2ide.utils.ModuleCreator
 import com.tom.rv2ide.viewmodel.EditorViewModel
@@ -98,7 +97,6 @@ class ModuleManagerFragment : Fragment() {
   private var useKotlinDsl = true
   private var applicationProjects: List<String>? = null
   private var applicationProjectDetails: List<ApplicationProjectInfo> = emptyList()
-  private var creationCapabilities: ProjectCreationCapabilities? = null
   private var selectedApplicationPath: String? = null
   private var applicationProjectsJob: Job? = null
   private var creationStatusDialog: AlertDialog? = null
@@ -265,16 +263,12 @@ class ModuleManagerFragment : Fragment() {
   private fun renderWizardType(content: LinearLayout) {
 
     content.addView(choiceCard("Android library", "Android resources, manifest, and Android Gradle plugin", moduleType == ModuleCreationKind.ANDROID_LIBRARY) {
-      if (supportsKind(ModuleCreationKind.ANDROID_LIBRARY)) {
-        moduleType = ModuleCreationKind.ANDROID_LIBRARY
-        render()
-      }
+      moduleType = ModuleCreationKind.ANDROID_LIBRARY
+      render()
     })
     content.addView(choiceCard("Java/Kotlin library", "JVM library with Java or Kotlin source", moduleType == ModuleCreationKind.JAVA_LIBRARY) {
-      if (supportsKind(ModuleCreationKind.JAVA_LIBRARY)) {
-        moduleType = ModuleCreationKind.JAVA_LIBRARY
-        render()
-      }
+      moduleType = ModuleCreationKind.JAVA_LIBRARY
+      render()
     })
     content.addView(bottomActions(null, "Next") { showWizard(2) })
   }
@@ -345,20 +339,15 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
 
   private fun renderWizardPreview(content: LinearLayout) {
     val path = ModuleCreationRequest.normalizePath(draftGradlePath)
-    if (path == null || !supportsSelection()) {
-      content.addView(text("The selected module combination is not supported by the current Gradle project.", 14f, secondary = true))
+    if (path == null) {
+      content.addView(text("Use a valid Gradle path such as :feature:profile.", 14f, secondary = true))
       content.addView(bottomActions("Back", "Close") { showModuleList() })
       return
     }
     val applications = applicationProjects.orEmpty()
-    if (moduleType == ModuleCreationKind.ANDROID_LIBRARY && applications.isEmpty()) {
-      content.addView(text("No Android application module is available after Gradle synchronization.", 14f, secondary = true))
-      content.addView(bottomActions("Back", "Close") { showModuleList() })
-      return
-    }
     if (selectedApplicationPath !in applications) selectedApplicationPath = applications.firstOrNull()
     if (applications.isNotEmpty()) {
-      content.addView(sectionTitle("Consumer module (optional for JVM libraries)"))
+      content.addView(sectionTitle("Consumer module"))
       val choices = ChipGroup(requireContext()).apply { isSingleSelection = true }
       applications.forEach { applicationPath ->
         choices.addView(chip(applicationPath, applicationPath == selectedApplicationPath) {
@@ -468,23 +457,13 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
     render()
     showCheckingDialog()
     lifecycleScope.launch {
-      val preflight = withContext(Dispatchers.IO) {
-        moduleCreator.preflightModuleCreation(request)
+      val result = withContext(Dispatchers.IO) {
+        moduleCreator.createModule(request)
       }
       if (!isAdded) return@launch
-      if (!preflight.success) {
-        creatingModule = false
-        render()
-        showCreationError(preflight.errorMessage ?: "The module configuration could not be checked.")
-        return@launch
-      }
-
       dismissCreationStatusDialog()
       screen = Screen.LIST
       render()
-      val result = withContext(Dispatchers.IO) {
-        moduleCreator.createPreflightValidatedModule(request)
-      }
       if (!isAdded) return@launch
       creatingModule = false
       if (result.success) {
@@ -597,15 +576,7 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
     activity.initializeProject()
   }
 
-  private fun supportsKind(kind: ModuleCreationKind): Boolean =
-      creationCapabilities?.candidates?.any { it.kind == kind } == true
-
-  private fun supportsSelection(): Boolean =
-      creationCapabilities?.candidates?.any {
-        it.kind == moduleType &&
-            it.sourceLanguage == moduleLanguage &&
-            it.buildDsl == if (useKotlinDsl) GradleDsl.KOTLIN else GradleDsl.GROOVY
-      } == true
+  // Module type availability is validated by the isolated Gradle probe, not existing modules.
 
   private fun creationRequest(path: String, consumerPath: String?): ModuleCreationRequest? {
     val normalized = ModuleCreationRequest.normalizePath(path) ?: return null
@@ -638,10 +609,14 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
               }
           if (!isAdded) return@launch
 val applications = capabilities?.applicationProjects
-           creationCapabilities = capabilities
            applicationProjectDetails = capabilities?.applicationProjectDetails.orEmpty()
           if (applications == null) {
-            showCreationError("Application modules could not be read. Check the IDE logs and try again.")
+            // Consumer discovery is optional; the creation probe will validate the module itself.
+            dismissCreationStatusDialog()
+            applicationProjects = emptyList()
+            applicationProjectDetails = emptyList()
+            selectedApplicationPath = null
+            showWizard(1)
             return@launch
           }
           dismissCreationStatusDialog()

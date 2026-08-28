@@ -53,7 +53,7 @@ interface IToolingApiServer {
   /** Inspect module creation capabilities from the configured Gradle runtime. */
   @JsonRequest fun getProjectCreationCapabilities(): CompletableFuture<DefaultProjectCreationCapabilities>
 
-  /** Configure a temporary module in the live Gradle build without writing user project files. */
+  /** Configure the supplied module build script in the live Gradle project without writing user files. */
   @JsonRequest
   fun validateModuleCreation(
       request: ModuleCreationValidationRequest

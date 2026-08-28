@@ -1,3 +1,19 @@
+/*
+ *  This file is part of AndroidCodeStudio.
+ *
+ *  AndroidCodeStudio is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  AndroidCodeStudio is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.tom.rv2ide.utils
 
 import com.tom.rv2ide.lookup.Lookup
@@ -34,23 +50,47 @@ class ModuleCreator {
   }
 
   /** Returns null when the live Gradle probe is unavailable; callers must fail closed. */
-  fun validateModuleCreation(request: ModuleCreationRequest): ModuleCreationValidation? {
+  private fun validateModuleCreation(
+      request: ModuleCreationRequest,
+      buildScript: String,
+  ): ModuleCreationValidation? {
     val service = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) ?: return null
     if (!service.isToolingServerStarted() || service.isBuildInProgress) return null
-    val effective = request.withDetectedAndroidConfig()
     val probe = ModuleCreationValidationRequest(
-        modulePath = effective.gradlePath,
-        kind = effective.kind,
-        sourceLanguage = effective.sourceLanguage,
-        buildDsl = effective.buildDsl,
-        compileSdk = effective.compileSdk,
+        modulePath = request.gradlePath,
+        buildFileName = request.moduleBuildFileName,
+        buildScript = buildScript,
     )
     return runCatching { service.validateModuleCreation(probe).get() }
         .onFailure { log.warn("Module creation probe failed; path={}", request.gradlePath, it) }
         .getOrNull()
   }
 
-  fun preflightModuleCreation(request: ModuleCreationRequest): CreationResult {
+  private fun preflightModuleCreation(request: ModuleCreationRequest): CreationResult {
+    val effective = request.withDetectedAndroidConfig()
+    val local = preflightLocal(effective)
+    if (!local.success) return local
+    val buildScript = generateBuildScript(effective, packageName(effective))
+    val validation = validateModuleCreation(effective, buildScript)
+        ?: return CreationResult(false, "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.")
+    return if (validation.isValid) CreationResult(true)
+    else CreationResult(false, validation.message ?: "This module configuration cannot be applied to the current Gradle project.")
+  }
+
+  fun createModule(request: ModuleCreationRequest): CreationResult {
+    val effective = request.withDetectedAndroidConfig()
+    val local = preflightLocal(effective)
+    if (!local.success) return local
+    val buildScript = generateBuildScript(effective, packageName(effective))
+    val validation = validateModuleCreation(effective, buildScript)
+        ?: return CreationResult(false, "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.")
+    if (!validation.isValid) {
+      return CreationResult(false, validation.message ?: "This module configuration cannot be applied to the current Gradle project.")
+    }
+    return writeValidatedModule(effective, buildScript)
+  }
+
+  private fun preflightLocal(request: ModuleCreationRequest): CreationResult {
     if (ModuleCreationRequest.normalizePath(request.gradlePath) != request.gradlePath) {
       return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
     }
@@ -59,22 +99,10 @@ class ModuleCreator {
     runCatching { findSettingsFile(request.projectRoot) }.getOrElse {
       return CreationResult(false, it.message ?: "settings.gradle(.kts) not found")
     }
-    if (request.kind == ModuleCreationKind.ANDROID_LIBRARY && request.applicationProject == null) {
-      return CreationResult(false, "An Android application module must be selected")
-    }
-    val validation = validateModuleCreation(request)
-        ?: return CreationResult(false, "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.")
-    return if (validation.isValid) CreationResult(true)
-    else CreationResult(false, validation.message ?: "This module configuration cannot be applied to the current Gradle project.")
+    return CreationResult(true)
   }
 
-  fun createModule(request: ModuleCreationRequest): CreationResult {
-    val preflight = preflightModuleCreation(request)
-    if (!preflight.success) return preflight
-    return createPreflightValidatedModule(request)
-  }
-
-  fun createPreflightValidatedModule(request: ModuleCreationRequest): CreationResult {
+  private fun writeValidatedModule(request: ModuleCreationRequest, buildScript: String): CreationResult {
     if (request.moduleDirectory.exists()) return CreationResult(false, "Module '${request.gradlePath}' already exists")
     val settings = runCatching { findSettingsFile(request.projectRoot) }.getOrElse {
       return CreationResult(false, it.message ?: "settings.gradle(.kts) not found")
@@ -90,7 +118,8 @@ class ModuleCreator {
     }.getOrElse { return CreationResult(false, it.message ?: "Could not prepare project edit transaction") }
 
     return try {
-      writeModule(request)
+      writeModule(request, buildScript)
+
       applyEdit(settings, settings.readText(), ProjectSettingsEditor.addInclude(settings.readText(), request.gradlePath, editorDsl(settings)), "settings file", transaction)
       consumer?.let { file ->
         val source = file.readText()
@@ -113,14 +142,16 @@ class ModuleCreator {
     return copy(compileSdk = sdk, minSdk = min)
   }
 
-  private fun writeModule(request: ModuleCreationRequest) {
-    val request = request.withDetectedAndroidConfig()
+  private fun packageName(request: ModuleCreationRequest): String =
+      "com.example.${request.moduleName.replace('-', '_')}"
+
+  private fun writeModule(request: ModuleCreationRequest, buildScript: String) {
     val module = request.moduleDirectory
     val packageName = "com.example.${request.moduleName.replace('-', '_')}"
     val sourceFolder = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "kotlin" else "java"
     val packageDir = File(module, "src/main/$sourceFolder/${packageName.replace('.', '/')}")
     packageDir.mkdirs()
-    File(module, request.moduleBuildFileName).writeText(generateBuildScript(request, packageName))
+    File(module, request.moduleBuildFileName).writeText(buildScript)
     File(packageDir, if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "SampleClass.kt" else "SampleClass.java")
         .writeText(generateSample(request, packageName))
     if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) {

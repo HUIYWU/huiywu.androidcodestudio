@@ -18,14 +18,12 @@ package com.tom.rv2ide.tooling.api.models
 
 import java.io.Serializable
 
-/** Runtime Gradle capabilities used to plan module creation. */
+/** Project information used by module creation, primarily for optional Application consumers. */
 interface ProjectCreationCapabilities : Serializable {
   val projectRoot: String
   val settingsDsl: GradleDsl
   val applicationProjects: List<String>
   val applicationProjectDetails: List<ApplicationProjectInfo>
-  val candidates: List<ModuleCreationCandidate>
-  val diagnostics: List<CreationCapabilityDiagnostic>
 }
 
 /** A configured Android application project with its actual Gradle file locations. */
@@ -47,8 +45,6 @@ data class DefaultProjectCreationCapabilities(
     override val settingsDsl: GradleDsl,
     override val applicationProjects: List<String>,
     override val applicationProjectDetails: List<DefaultApplicationProjectInfo>,
-    override val candidates: List<DefaultModuleCreationCandidate>,
-    override val diagnostics: List<DefaultCreationCapabilityDiagnostic>,
 ) : ProjectCreationCapabilities {
   companion object {
     private const val serialVersionUID = 1L
@@ -69,54 +65,4 @@ enum class ModuleCreationKind : Serializable {
 enum class ModuleSourceLanguage : Serializable {
   JAVA,
   KOTLIN,
-}
-
-enum class PluginApplicationStyle : Serializable {
-  PLUGINS_BLOCK,
-  LEGACY_APPLY,
-  UNKNOWN,
-}
-
-/** A supported module template inferred from an existing configured Gradle project. */
-interface ModuleCreationCandidate : Serializable {
-  val id: String
-  val kind: ModuleCreationKind
-  val sourceLanguage: ModuleSourceLanguage
-  val buildDsl: GradleDsl
-  val pluginStyle: PluginApplicationStyle
-  val sourceProjectPath: String?
-}
-
-data class DefaultModuleCreationCandidate(
-    override val id: String,
-    override val kind: ModuleCreationKind,
-    override val sourceLanguage: ModuleSourceLanguage,
-    override val buildDsl: GradleDsl,
-    override val pluginStyle: PluginApplicationStyle,
-    override val sourceProjectPath: String?,
-) : ModuleCreationCandidate {
-  companion object {
-    private const val serialVersionUID = 1L
-  }
-}
-
-/** A capability warning or informational message emitted by the configured Gradle build. */
-interface CreationCapabilityDiagnostic : Serializable {
-  val severity: CreationCapabilityDiagnosticSeverity
-  val message: String
-}
-
-data class DefaultCreationCapabilityDiagnostic(
-    override val severity: CreationCapabilityDiagnosticSeverity,
-    override val message: String,
-) : CreationCapabilityDiagnostic {
-  companion object {
-    private const val serialVersionUID = 1L
-  }
-}
-
-enum class CreationCapabilityDiagnosticSeverity : Serializable {
-  INFO,
-  WARNING,
-  ERROR,
 }

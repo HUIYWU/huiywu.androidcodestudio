@@ -44,15 +44,10 @@ import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UN
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_CONFIGURATION
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult.Failure.UNSUPPORTED_GRADLE_VERSION
 import com.tom.rv2ide.tooling.api.models.DefaultApplicationProjectInfo
-import com.tom.rv2ide.tooling.api.models.DefaultCreationCapabilityDiagnostic
-import com.tom.rv2ide.tooling.api.models.DefaultModuleCreationCandidate
 import com.tom.rv2ide.tooling.api.models.DefaultProjectCreationCapabilities
-import com.tom.rv2ide.tooling.api.models.GradleDsl
 import com.tom.rv2ide.tooling.api.models.GradleTask
-import com.tom.rv2ide.tooling.api.models.ModuleCreationKind
 import com.tom.rv2ide.tooling.api.models.ModuleCreationValidation
 import com.tom.rv2ide.tooling.api.models.ModuleCreationValidationRequest
-import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
 import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
 import com.tom.rv2ide.tooling.api.models.ToolingServerMetadata
 
@@ -345,22 +340,6 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
                   buildFile = application.buildFile,
               )
             },
-            candidates = capabilities.candidates.map { candidate ->
-              DefaultModuleCreationCandidate(
-                  id = candidate.id,
-                  kind = candidate.kind,
-                  sourceLanguage = candidate.sourceLanguage,
-                  buildDsl = candidate.buildDsl,
-                  pluginStyle = candidate.pluginStyle,
-                  sourceProjectPath = candidate.sourceProjectPath,
-              )
-            },
-            diagnostics = capabilities.diagnostics.map { diagnostic ->
-              DefaultCreationCapabilityDiagnostic(
-                  severity = diagnostic.severity,
-                  message = diagnostic.message,
-              )
-            },
         )
       } catch (error: Throwable) {
         log.warn("Failed to read project creation capabilities from Gradle", error)
@@ -427,32 +406,12 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
     }
     val moduleDirectory = segments.fold(rootDirectory) { directory, segment -> File(directory, segment) }
     check(moduleDirectory.mkdirs()) { "Unable to create module creation probe module directory." }
-    val buildFile = File(moduleDirectory, if (request.buildDsl == GradleDsl.KOTLIN) "build.gradle.kts" else "build.gradle")
-    buildFile.writeText(buildProbeBuildScript(request))
+    val buildFile = File(moduleDirectory, request.buildFileName)
+    buildFile.writeText(request.buildScript)
     return ModuleCreationProbe(rootDirectory)
   }
+  /** The probe validates the exact build script prepared by the application. */
 
-  private fun buildProbeBuildScript(request: ModuleCreationValidationRequest): String {
-    val androidPlugin = request.kind == ModuleCreationKind.ANDROID_LIBRARY
-    val kotlinPlugin = request.sourceLanguage == ModuleSourceLanguage.KOTLIN
-    return if (request.buildDsl == GradleDsl.KOTLIN) {
-      buildString {
-        appendLine("plugins {")
-        if (androidPlugin) appendLine("  id(\"com.android.library\")") else appendLine("  id(\"java-library\")")
-        if (kotlinPlugin) appendLine("  id(\"${if (androidPlugin) "kotlin-android" else "org.jetbrains.kotlin.jvm"}\")")
-        appendLine("}")
-        if (androidPlugin) appendLine("android { namespace = \"com.androidide.probe\"; compileSdk = ${request.compileSdk} }")
-      }
-    } else {
-      buildString {
-        appendLine("plugins {")
-        if (androidPlugin) appendLine("  id 'com.android.library'") else appendLine("  id 'java-library'")
-        if (kotlinPlugin) appendLine("  id '${if (androidPlugin) "kotlin-android" else "org.jetbrains.kotlin.jvm"}'")
-        appendLine("}")
-        if (androidPlugin) appendLine("android { namespace 'com.androidide.probe'; compileSdk ${request.compileSdk} }")
-      }
-    }
-  }
 
   private fun Throwable.rootCauseMessage(): String {
     var cause = this

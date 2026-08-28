@@ -20,10 +20,8 @@ import java.io.Serializable
 
 data class ModuleCreationValidationRequest(
     val modulePath: String,
-    val kind: ModuleCreationKind,
-    val sourceLanguage: ModuleSourceLanguage,
-    val buildDsl: GradleDsl,
-    val compileSdk: Int,
+    val buildFileName: String,
+    val buildScript: String,
 ) : Serializable
 
 data class ModuleCreationValidation(
