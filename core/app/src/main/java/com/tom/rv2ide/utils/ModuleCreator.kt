@@ -105,8 +105,9 @@ class ModuleCreator {
   }
 
   private fun ModuleCreationRequest.withDetectedAndroidConfig(): ModuleCreationRequest {
-    if (kind != ModuleCreationKind.ANDROID_LIBRARY || applicationProject == null) return this
-    val source = runCatching { File(applicationProject.buildFile).readText() }.getOrDefault("")
+    val application = applicationProject
+    if (kind != ModuleCreationKind.ANDROID_LIBRARY || application == null) return this
+    val source = runCatching { File(application.buildFile).readText() }.getOrDefault("")
     val sdk = Regex("compileSdk\\s*[=:]\\s*(\\d+)").find(source)?.groupValues?.get(1)?.toIntOrNull() ?: compileSdk
     val min = Regex("minSdk\\s*[=:]\\s*(\\d+)").find(source)?.groupValues?.get(1)?.toIntOrNull() ?: minSdk
     return copy(compileSdk = sdk, minSdk = min)

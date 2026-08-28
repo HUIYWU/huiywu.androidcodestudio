@@ -19,7 +19,7 @@ data class ModuleCreationRequest(
     val minSdk: Int = 21,
 ) {
   val moduleDirectory: File
-    get() = File(projectRoot, gradlePath.trim(':').replace(':', File.separator))
+    get() = File(projectRoot, gradlePath.trim(':').replace(":", File.separator))
 
   val moduleName: String
     get() = gradlePath.trim(':').substringAfterLast(':')
