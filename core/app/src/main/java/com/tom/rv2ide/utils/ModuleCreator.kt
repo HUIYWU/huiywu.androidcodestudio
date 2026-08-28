@@ -66,17 +66,6 @@ class ModuleCreator {
         .getOrNull()
   }
 
-  private fun preflightModuleCreation(request: ModuleCreationRequest): CreationResult {
-    val effective = request.withDetectedAndroidConfig()
-    val local = preflightLocal(effective)
-    if (!local.success) return local
-    val buildScript = generateBuildScript(effective, packageName(effective))
-    val validation = validateModuleCreation(effective, buildScript)
-        ?: return CreationResult(false, "Module creation validation is unavailable. Wait for Gradle synchronization to finish and try again.")
-    return if (validation.isValid) CreationResult(true)
-    else CreationResult(false, validation.message ?: "This module configuration cannot be applied to the current Gradle project.")
-  }
-
   fun createModule(request: ModuleCreationRequest): CreationResult {
     val effective = request.withDetectedAndroidConfig()
     val local = preflightLocal(effective)
@@ -196,75 +185,80 @@ class ModuleCreator {
       File(module, "consumer-rules.pro").writeText("# Consumer ProGuard rules for this library.\n")
     }
   }
-
   private fun generateBuildScript(request: ModuleCreationRequest, packageName: String): String {
     val kotlin = request.sourceLanguage == ModuleSourceLanguage.KOTLIN
     val javaVersion = request.javaVersion ?: 8
     val javaVersionExpression = "JavaVersion.toVersion(\"$javaVersion\")"
-    return if (request.kind == ModuleCreationKind.JAVA_LIBRARY) {
-      if (request.buildDsl.name == "KOTLIN") """
-        plugins {
-          id("java-library")
-          ${if (kotlin) "id(\"org.jetbrains.kotlin.jvm\")" else ""}
-        }
-        java {
-          sourceCompatibility = $javaVersionExpression
-          targetCompatibility = $javaVersionExpression
-        }
-        ${if (kotlin) """
-        kotlin {
-          compilerOptions {
-            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("$javaVersion")
+    val script = buildString {
+      if (request.kind == ModuleCreationKind.JAVA_LIBRARY) {
+        if (request.buildDsl.name == "KOTLIN") {
+          appendLine("plugins {")
+          appendLine("  id(\"java-library\")")
+          if (kotlin) appendLine("  id(\"org.jetbrains.kotlin.jvm\")")
+          appendLine("}")
+          appendLine()
+          appendLine("java {")
+          appendLine("  sourceCompatibility = $javaVersionExpression")
+          appendLine("  targetCompatibility = $javaVersionExpression")
+          appendLine("}")
+          if (kotlin) {
+            appendLine()
+            appendLine("kotlin {")
+            appendLine("  compilerOptions {")
+            appendLine("    jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(\"$javaVersion\")")
+            appendLine("  }")
+            appendLine("}")
+          }
+        } else {
+          appendLine("plugins {")
+          appendLine("  id 'java-library'")
+          if (kotlin) appendLine("  id 'org.jetbrains.kotlin.jvm'")
+          appendLine("}")
+          appendLine()
+          appendLine("java {")
+          appendLine("  sourceCompatibility = $javaVersionExpression")
+          appendLine("  targetCompatibility = $javaVersionExpression")
+          appendLine("}")
+          if (kotlin) {
+            appendLine()
+            appendLine("kotlin {")
+            appendLine("  compilerOptions {")
+            appendLine("    jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget('$javaVersion')")
+            appendLine("  }")
+            appendLine("}")
           }
         }
-        """.trimIndent() else ""}
-        """.trimIndent()
-      else """
-        plugins {
-          id 'java-library'
-          ${if (kotlin) "id 'org.jetbrains.kotlin.jvm'" else ""}
-        }
-        java {
-          sourceCompatibility = $javaVersionExpression
-          targetCompatibility = $javaVersionExpression
-        }
-        ${if (kotlin) """
-        kotlin {
-          compilerOptions {
-            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget('$javaVersion')
-          }
-        }
-        """.trimIndent() else ""}
-        """.trimIndent()
-    } else if (request.buildDsl.name == "KOTLIN") """
-      plugins {
-        id("com.android.library")
-        ${if (kotlin) "id(\"kotlin-android\")" else ""}
+      } else if (request.buildDsl.name == "KOTLIN") {
+        appendLine("plugins {")
+        appendLine("  id(\"com.android.library\")")
+        if (kotlin) appendLine("  id(\"kotlin-android\")")
+        appendLine("}")
+        appendLine()
+        appendLine("android {")
+        appendLine("  namespace = \"$packageName\"")
+        appendLine("  compileSdk = ${request.compileSdk}")
+        appendLine("  defaultConfig {")
+        appendLine("    minSdk = ${request.minSdk}")
+        appendLine("  }")
+        appendLine("}")
+      } else {
+        appendLine("plugins {")
+        appendLine("  id 'com.android.library'")
+        if (kotlin) appendLine("  id 'kotlin-android'")
+        appendLine("}")
+        appendLine()
+        appendLine("android {")
+        appendLine("  namespace '$packageName'")
+        appendLine("  compileSdk ${request.compileSdk}")
+        appendLine("  defaultConfig {")
+        appendLine("    minSdk ${request.minSdk}")
+        appendLine("  }")
+        appendLine("}")
       }
-      android {
-        namespace = "$packageName"
-        compileSdk = ${request.compileSdk}
-        defaultConfig {
-          minSdk = ${request.minSdk}
-        }
-      }
-      """.trimIndent()
-    else """
-      plugins {
-        id 'com.android.library'
-        ${if (kotlin) "id 'kotlin-android'" else ""}
-      }
-      android {
-        namespace '$packageName'
-        compileSdk ${request.compileSdk}
-        defaultConfig {
-          minSdk ${request.minSdk}
-        }
-      }
-      """.trimIndent()
+    }
+    return script.ensureTrailingNewline()
   }
 
-  private fun javaVersionLiteral(version: Int): String = version.toString()
 
   private fun generateSample(request: ModuleCreationRequest, packageName: String): String =
       if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) """
