@@ -54,6 +54,11 @@ import com.tom.rv2ide.projects.gradleedit.ModuleOperations
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.java.JavaModule
 import com.tom.rv2ide.tooling.api.models.ApplicationProjectInfo
+import com.tom.rv2ide.tooling.api.models.GradleDsl
+import com.tom.rv2ide.tooling.api.models.ModuleCreationKind
+import com.tom.rv2ide.tooling.api.models.ModuleSourceLanguage
+import com.tom.rv2ide.tooling.api.models.ProjectCreationCapabilities
+import com.tom.rv2ide.utils.ModuleCreationRequest
 import com.tom.rv2ide.utils.ModuleCreator
 import com.tom.rv2ide.viewmodel.EditorViewModel
 import java.io.File
@@ -86,21 +91,20 @@ class ModuleManagerFragment : Fragment() {
   private var wizardStepContent: LinearLayout? = null
   private var wizardStepIndicator: TextView? = null
   private var wizardStep = 1
-  private var moduleType = NewModuleType.ANDROID_LIBRARY
-  private var moduleLanguage = ModuleLanguage.KOTLIN
+  private var moduleType = ModuleCreationKind.ANDROID_LIBRARY
+  private var moduleLanguage = ModuleSourceLanguage.KOTLIN
   private var draftModuleName = "profile"
   private var draftGradlePath = ":profile"
   private var useKotlinDsl = true
   private var applicationProjects: List<String>? = null
   private var applicationProjectDetails: List<ApplicationProjectInfo> = emptyList()
+  private var creationCapabilities: ProjectCreationCapabilities? = null
   private var selectedApplicationPath: String? = null
   private var applicationProjectsJob: Job? = null
   private var creationStatusDialog: AlertDialog? = null
   private var creationStatusMessage: TextView? = null
   private var creationStatusProgress: CircularProgressIndicator? = null
 
-  enum class ModuleLanguage { KOTLIN, JAVA }
-  private enum class NewModuleType { ANDROID_LIBRARY }
   private enum class Screen { LIST, WIZARD, DETAIL }
 
   override fun onCreateView(
@@ -260,14 +264,17 @@ class ModuleManagerFragment : Fragment() {
   }
   private fun renderWizardType(content: LinearLayout) {
 
-    content.addView(choiceCard("Android library", "Android resources, manifest, and Android Gradle plugin", moduleType == NewModuleType.ANDROID_LIBRARY) {
-      if (moduleType != NewModuleType.ANDROID_LIBRARY) {
-        moduleType = NewModuleType.ANDROID_LIBRARY
+    content.addView(choiceCard("Android library", "Android resources, manifest, and Android Gradle plugin", moduleType == ModuleCreationKind.ANDROID_LIBRARY) {
+      if (supportsKind(ModuleCreationKind.ANDROID_LIBRARY)) {
+        moduleType = ModuleCreationKind.ANDROID_LIBRARY
         render()
       }
     })
-    content.addView(choiceCard("Java/Kotlin library", "Planned. This module type is not created until its Gradle template is supported.", false) {
-      Toast.makeText(requireContext(), "Java/Kotlin library creation is not available yet", Toast.LENGTH_SHORT).show()
+    content.addView(choiceCard("Java/Kotlin library", "JVM library with Java or Kotlin source", moduleType == ModuleCreationKind.JAVA_LIBRARY) {
+      if (supportsKind(ModuleCreationKind.JAVA_LIBRARY)) {
+        moduleType = ModuleCreationKind.JAVA_LIBRARY
+        render()
+      }
     })
     content.addView(bottomActions(null, "Next") { showWizard(2) })
   }
@@ -285,16 +292,16 @@ class ModuleManagerFragment : Fragment() {
     val languages = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
     lateinit var kotlinLanguageChip: Chip
     lateinit var javaLanguageChip: Chip
-    kotlinLanguageChip = chip("Kotlin", moduleLanguage == ModuleLanguage.KOTLIN) {
-      if (moduleLanguage != ModuleLanguage.KOTLIN) {
-        moduleLanguage = ModuleLanguage.KOTLIN
+kotlinLanguageChip = chip("Kotlin", moduleLanguage == ModuleSourceLanguage.KOTLIN) {
+       if (moduleLanguage != ModuleSourceLanguage.KOTLIN) {
+         moduleLanguage = ModuleSourceLanguage.KOTLIN
         kotlinLanguageChip.isChecked = true
         javaLanguageChip.isChecked = false
       }
     }
-    javaLanguageChip = chip("Java", moduleLanguage == ModuleLanguage.JAVA) {
-      if (moduleLanguage != ModuleLanguage.JAVA) {
-        moduleLanguage = ModuleLanguage.JAVA
+javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
+       if (moduleLanguage != ModuleSourceLanguage.JAVA) {
+         moduleLanguage = ModuleSourceLanguage.JAVA
         kotlinLanguageChip.isChecked = false
         javaLanguageChip.isChecked = true
       }
@@ -337,62 +344,54 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun renderWizardPreview(content: LinearLayout) {
+    val path = ModuleCreationRequest.normalizePath(draftGradlePath)
+    if (path == null || !supportsSelection()) {
+      content.addView(text("The selected module combination is not supported by the current Gradle project.", 14f, secondary = true))
+      content.addView(bottomActions("Back", "Close") { showModuleList() })
+      return
+    }
     val applications = applicationProjects.orEmpty()
-    if (applications.isEmpty()) {
-      content.addView(sectionTitle("Application module"))
+    if (moduleType == ModuleCreationKind.ANDROID_LIBRARY && applications.isEmpty()) {
       content.addView(text("No Android application module is available after Gradle synchronization.", 14f, secondary = true))
       content.addView(bottomActions("Back", "Close") { showModuleList() })
       return
     }
-    if (selectedApplicationPath !in applications) selectedApplicationPath = applications.first()
-    content.addView(sectionTitle("Application module"))
-    content.addView(text("Add the new library as a dependency of:", 14f, secondary = true))
-    val applicationChoices = ChipGroup(requireContext()).apply {
-      isSingleSelection = true
-      isSelectionRequired = true
-    }
-    applications.forEach { applicationPath ->
-      applicationChoices.addView(chip(applicationPath, applicationPath == selectedApplicationPath) {
-        if (selectedApplicationPath != applicationPath) {
+    if (selectedApplicationPath !in applications) selectedApplicationPath = applications.firstOrNull()
+    if (applications.isNotEmpty()) {
+      content.addView(sectionTitle("Consumer module (optional for JVM libraries)"))
+      val choices = ChipGroup(requireContext()).apply { isSingleSelection = true }
+      applications.forEach { applicationPath ->
+        choices.addView(chip(applicationPath, applicationPath == selectedApplicationPath) {
           selectedApplicationPath = applicationPath
           render()
-        }
-      })
+        })
+      }
+      content.addView(choices)
     }
-    content.addView(applicationChoices)
+    val request = creationRequest(path, selectedApplicationPath) ?: return
     content.addView(sectionTitle("Configuration"))
-    val path = draftGradlePath
-    val moduleDirectory = path.removePrefix(":").replace(':', '/')
-    val settingsScript = if (usesKotlinSettings(projectRoot())) "settings.gradle.kts" else "settings.gradle"
-    val moduleBuildScript = if (useKotlinDsl) "build.gradle.kts" else "build.gradle"
-    val applicationPath = checkNotNull(selectedApplicationPath)
-    val applicationInfo = applicationProjectDetails.firstOrNull { it.gradlePath == applicationPath }
-    val applicationDirectory = applicationPath.removePrefix(":").replace(':', '/')
-    val rootDirectory = projectRoot()
-    val appBuildScript = applicationInfo?.buildFile?.let { buildFilePath ->
-      val buildFile = File(buildFilePath)
-      buildFile.relativeToOrNull(rootDirectory)?.path ?: buildFile.absolutePath
-    } ?: if (applicationPath == ":") {
-      if (File(projectRoot(), "build.gradle.kts").isFile) "build.gradle.kts" else "build.gradle"
-    } else if (File(projectRoot(), "$applicationDirectory/build.gradle.kts").isFile) {
-      "$applicationDirectory/build.gradle.kts"
-    } else {
-      "$applicationDirectory/build.gradle"
-    }
-    content.addView(text("Android library · ${moduleLanguage.name.lowercase().replaceFirstChar { it.uppercase() }} · ${if (useKotlinDsl) "Kotlin DSL" else "Groovy DSL"}", 14f, secondary = true))
-    content.addView(text("Module directory: $moduleDirectory", 14f, secondary = true).apply { setPadding(0, dp(12), 0, 0) })
+    content.addView(text("${request.kind.displayName()} · ${request.sourceLanguage.name.lowercase().replaceFirstChar { it.uppercase() }} · ${request.buildDsl.name.lowercase().replaceFirstChar { it.uppercase() }} DSL", 14f, secondary = true))
+    content.addView(text("Module directory: ${request.moduleDirectory.relativeTo(request.projectRoot).path}", 14f, secondary = true).apply { setPadding(0, dp(12), 0, 0) })
     content.addView(sectionTitle("Changes"))
-    content.addView(text("+ $settingsScript include($path)", 14f, secondary = true))
-    content.addView(text("+ $moduleDirectory/$moduleBuildScript", 14f, secondary = true))
-    if (File(projectRoot(), appBuildScript).isFile) {
-      content.addView(text("+ $appBuildScript implementation(project($path))", 14f, secondary = true))
+    content.addView(text("+ ${request.settingsFileName} include(${request.gradlePath})", 14f, secondary = true))
+    content.addView(text("+ ${request.moduleDirectory.relativeTo(request.projectRoot).path}/${request.moduleBuildFileName}", 14f, secondary = true))
+    request.applicationProject?.let { info ->
+      val appBuild = File(info.buildFile).relativeToOrNull(request.projectRoot)?.path ?: info.buildFile
+      content.addView(text("+ $appBuild implementation(project(${request.gradlePath}))", 14f, secondary = true))
     }
-    content.addView(text("+ $moduleDirectory/proguard-rules.pro", 14f, secondary = true))
-    content.addView(text("+ $moduleDirectory/consumer-rules.pro", 14f, secondary = true))
-    val sourceDirectory = if (moduleLanguage == ModuleLanguage.KOTLIN) "kotlin" else "java"
-    val sampleFile = if (moduleLanguage == ModuleLanguage.KOTLIN) "SampleClass.kt" else "SampleClass.java"
-    content.addView(text("+ $moduleDirectory/src/main/$sourceDirectory/.../$sampleFile", 14f, secondary = true))
-    content.addView(bottomActions("Back", "Create and sync") { createModule(path, applicationPath) })
+    val sourceDirectory = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "kotlin" else "java"
+    val sourceFile = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "SampleClass.kt" else "SampleClass.java"
+    content.addView(text("+ ${request.moduleDirectory.relativeTo(request.projectRoot).path}/src/main/$sourceDirectory/.../$sourceFile", 14f, secondary = true))
+    if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) {
+      content.addView(text("+ ${request.moduleDirectory.relativeTo(request.projectRoot).path}/proguard-rules.pro", 14f, secondary = true))
+      content.addView(text("+ ${request.moduleDirectory.relativeTo(request.projectRoot).path}/consumer-rules.pro", 14f, secondary = true))
+    }
+    content.addView(bottomActions("Back", "Create and sync") { createModule(path, selectedApplicationPath) })
+  }
+
+  private fun ModuleCreationKind.displayName() = when (this) {
+    ModuleCreationKind.ANDROID_LIBRARY -> "Android library"
+    ModuleCreationKind.JAVA_LIBRARY -> "JVM library"
   }
 
   private fun renderModuleDetail() {
@@ -461,23 +460,16 @@ class ModuleManagerFragment : Fragment() {
     else dependencies.sorted().forEach { content.addView(text(it, 15f)) }
   }
 
-  private fun createModule(gradlePath: String, applicationPath: String) {
-    val applicationInfo = applicationProjectDetails.firstOrNull { it.gradlePath == applicationPath }
-    if (creatingModule || editorViewModel.isInitializing) return
+  private fun createModule(gradlePath: String, applicationPath: String?) {
+    val request = creationRequest(gradlePath, applicationPath)
+    if (request == null || creatingModule || editorViewModel.isInitializing) return
 
     creatingModule = true
     render()
     showCheckingDialog()
     lifecycleScope.launch {
       val preflight = withContext(Dispatchers.IO) {
-        moduleCreator.preflightModuleCreation(
-            gradlePath,
-            moduleLanguage,
-            projectRoot(),
-            applicationPath,
-            useKotlinDsl,
-            applicationInfo,
-        )
+        moduleCreator.preflightModuleCreation(request)
       }
       if (!isAdded) return@launch
       if (!preflight.success) {
@@ -491,14 +483,7 @@ class ModuleManagerFragment : Fragment() {
       screen = Screen.LIST
       render()
       val result = withContext(Dispatchers.IO) {
-        moduleCreator.createPreflightValidatedModule(
-            gradlePath,
-            moduleLanguage,
-            projectRoot(),
-            applicationPath,
-            useKotlinDsl,
-            applicationInfo,
-        )
+        moduleCreator.createPreflightValidatedModule(request)
       }
       if (!isAdded) return@launch
       creatingModule = false
@@ -612,6 +597,30 @@ class ModuleManagerFragment : Fragment() {
     activity.initializeProject()
   }
 
+  private fun supportsKind(kind: ModuleCreationKind): Boolean =
+      creationCapabilities?.candidates?.any { it.kind == kind } == true
+
+  private fun supportsSelection(): Boolean =
+      creationCapabilities?.candidates?.any {
+        it.kind == moduleType &&
+            it.sourceLanguage == moduleLanguage &&
+            it.buildDsl == if (useKotlinDsl) GradleDsl.KOTLIN else GradleDsl.GROOVY
+      } == true
+
+  private fun creationRequest(path: String, consumerPath: String?): ModuleCreationRequest? {
+    val normalized = ModuleCreationRequest.normalizePath(path) ?: return null
+    val consumer = consumerPath?.let { selected -> applicationProjectDetails.firstOrNull { it.gradlePath == selected } }
+    return ModuleCreationRequest(
+        gradlePath = normalized,
+        kind = moduleType,
+        sourceLanguage = moduleLanguage,
+        buildDsl = if (useKotlinDsl) GradleDsl.KOTLIN else GradleDsl.GROOVY,
+        projectRoot = projectRoot(),
+        consumerProjectPath = consumerPath,
+        applicationProject = consumer,
+    )
+  }
+
   private fun loadApplicationProjectsAndShowWizard() {
     if (creatingModule || editorViewModel.isInitializing) return
     applicationProjectsJob?.cancel()
@@ -628,8 +637,9 @@ class ModuleManagerFragment : Fragment() {
                 moduleCreator.getProjectCreationCapabilities()
               }
           if (!isAdded) return@launch
-          val applications = capabilities?.applicationProjects
-          applicationProjectDetails = capabilities?.applicationProjectDetails.orEmpty()
+val applications = capabilities?.applicationProjects
+           creationCapabilities = capabilities
+           applicationProjectDetails = capabilities?.applicationProjectDetails.orEmpty()
           if (applications == null) {
             showCreationError("Application modules could not be read. Check the IDE logs and try again.")
             return@launch
