@@ -134,12 +134,43 @@ class ModuleCreator {
   }
 
   private fun ModuleCreationRequest.withDetectedAndroidConfig(): ModuleCreationRequest {
-    val application = applicationProject
-    if (kind != ModuleCreationKind.ANDROID_LIBRARY || application == null) return this
-    val source = runCatching { File(application.buildFile).readText() }.getOrDefault("")
-    val sdk = Regex("compileSdk\\s*[=:]\\s*(\\d+)").find(source)?.groupValues?.get(1)?.toIntOrNull() ?: compileSdk
-    val min = Regex("minSdk\\s*[=:]\\s*(\\d+)").find(source)?.groupValues?.get(1)?.toIntOrNull() ?: minSdk
-    return copy(compileSdk = sdk, minSdk = min)
+    val applicationSource = applicationProject
+        ?.let { runCatching { File(it.buildFile).readText() }.getOrNull() }
+        .orEmpty()
+    val detectedJavaVersion = javaVersion
+        ?: detectJavaVersion(applicationSource)
+        ?: runtimeJavaVersion()
+        ?: 8
+    if (kind != ModuleCreationKind.ANDROID_LIBRARY) {
+      return copy(javaVersion = detectedJavaVersion)
+    }
+    val sdk = Regex("compileSdk\\s*[=:]\\s*(\\d+)")
+        .find(applicationSource)?.groupValues?.get(1)?.toIntOrNull() ?: compileSdk
+    val min = Regex("minSdk\\s*[=:]\\s*(\\d+)")
+        .find(applicationSource)?.groupValues?.get(1)?.toIntOrNull() ?: minSdk
+    return copy(javaVersion = detectedJavaVersion, compileSdk = sdk, minSdk = min)
+  }
+
+  private fun detectJavaVersion(source: String): Int? {
+    if (source.isBlank()) return null
+    val patterns = listOf(
+        Regex("(?:jvmTarget|JvmTarget\\.fromTarget)\\s*[=(]\\s*[\\\"']?(?:1\\.)?(\\d+)", RegexOption.IGNORE_CASE),
+        Regex("jvmTarget\\s*[=:]\\s*JvmTarget\\.fromTarget\\(\\s*[\\\"']?(?:1\\.)?(\\d+)", RegexOption.IGNORE_CASE),
+        Regex("jvmTarget\\s*[=:]\\s*(?:JvmTarget\\.)?JVM_(?:1_)?(\\d+)", RegexOption.IGNORE_CASE),
+        Regex("targetCompatibility\\s*[=:]\\s*(?:JavaVersion\\.)?VERSION_(?:1_)?(\\d+)", RegexOption.IGNORE_CASE),
+        Regex("targetCompatibility\\s*[=:]\\s*[\\\"'](?:1\\.)?(\\d+)", RegexOption.IGNORE_CASE),
+        Regex("sourceCompatibility\\s*[=:]\\s*(?:JavaVersion\\.)?VERSION_(?:1_)?(\\d+)", RegexOption.IGNORE_CASE),
+        Regex("sourceCompatibility\\s*[=:]\\s*[\\\"'](?:1\\.)?(\\d+)", RegexOption.IGNORE_CASE),
+    )
+    return patterns.asSequence()
+        .mapNotNull { it.find(source)?.groupValues?.getOrNull(1)?.toIntOrNull() }
+        .firstOrNull { it >= 8 }
+  }
+
+  private fun runtimeJavaVersion(): Int? {
+    val value = System.getProperty("java.specification.version") ?: return null
+    val normalized = value.removePrefix("1.").toIntOrNull() ?: return null
+    return normalized.takeIf { it >= 8 }
   }
 
   private fun packageName(request: ModuleCreationRequest): String =
@@ -151,16 +182,16 @@ class ModuleCreator {
     val sourceFolder = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "kotlin" else "java"
     val packageDir = File(module, "src/main/$sourceFolder/${packageName.replace('.', '/')}")
     packageDir.mkdirs()
-    File(module, request.moduleBuildFileName).writeText(buildScript)
+    File(module, request.moduleBuildFileName).writeText(buildScript.ensureTrailingNewline())
     File(packageDir, if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "SampleClass.kt" else "SampleClass.java")
-        .writeText(generateSample(request, packageName))
+        .writeText(generateSample(request, packageName).ensureTrailingNewline())
     if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) {
       File(module, "src/main/res").mkdirs()
       File(module, "src/main/AndroidManifest.xml").writeText("""
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
           <application />
         </manifest>
-        """.trimIndent())
+        """.trimIndent().ensureTrailingNewline())
       File(module, "proguard-rules.pro").writeText("# Module-specific ProGuard rules.\n")
       File(module, "consumer-rules.pro").writeText("# Consumer ProGuard rules for this library.\n")
     }
@@ -168,46 +199,90 @@ class ModuleCreator {
 
   private fun generateBuildScript(request: ModuleCreationRequest, packageName: String): String {
     val kotlin = request.sourceLanguage == ModuleSourceLanguage.KOTLIN
+    val javaVersion = request.javaVersion ?: 8
+    val javaVersionExpression = "JavaVersion.toVersion(\"$javaVersion\")"
     return if (request.kind == ModuleCreationKind.JAVA_LIBRARY) {
       if (request.buildDsl.name == "KOTLIN") """
         plugins {
           id("java-library")
           ${if (kotlin) "id(\"org.jetbrains.kotlin.jvm\")" else ""}
         }
-        java { toolchain { languageVersion.set(JavaLanguageVersion.of(8)) } }
+        java {
+          sourceCompatibility = $javaVersionExpression
+          targetCompatibility = $javaVersionExpression
+        }
+        ${if (kotlin) """
+        kotlin {
+          compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("$javaVersion")
+          }
+        }
+        """.trimIndent() else ""}
         """.trimIndent()
       else """
         plugins {
           id 'java-library'
           ${if (kotlin) "id 'org.jetbrains.kotlin.jvm'" else ""}
         }
-        java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
+        java {
+          sourceCompatibility = $javaVersionExpression
+          targetCompatibility = $javaVersionExpression
+        }
+        ${if (kotlin) """
+        kotlin {
+          compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget('$javaVersion')
+          }
+        }
+        """.trimIndent() else ""}
         """.trimIndent()
     } else if (request.buildDsl.name == "KOTLIN") """
       plugins {
         id("com.android.library")
         ${if (kotlin) "id(\"kotlin-android\")" else ""}
       }
-      android { namespace = "$packageName"; compileSdk = ${request.compileSdk}; defaultConfig { minSdk = ${request.minSdk} } }
+      android {
+        namespace = "$packageName"
+        compileSdk = ${request.compileSdk}
+        defaultConfig {
+          minSdk = ${request.minSdk}
+        }
+      }
       """.trimIndent()
     else """
       plugins {
         id 'com.android.library'
         ${if (kotlin) "id 'kotlin-android'" else ""}
       }
-      android { namespace '$packageName'; compileSdk ${request.compileSdk}; defaultConfig { minSdk ${request.minSdk} } }
+      android {
+        namespace '$packageName'
+        compileSdk ${request.compileSdk}
+        defaultConfig {
+          minSdk ${request.minSdk}
+        }
+      }
       """.trimIndent()
   }
+
+  private fun javaVersionLiteral(version: Int): String = version.toString()
 
   private fun generateSample(request: ModuleCreationRequest, packageName: String): String =
       if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) """
         package $packageName
-        class SampleClass { fun getGreeting(): String = "Hello from ${request.moduleName} module!" }
-        """.trimIndent()
+        class SampleClass {
+          fun getGreeting(): String = "Hello from ${request.moduleName} module!"
+        }
+        """.trimIndent().plus("\n")
       else """
         package $packageName;
-        public class SampleClass { public String getGreeting() { return "Hello from ${request.moduleName} module!"; } }
+        public class SampleClass {
+          public String getGreeting() {
+            return "Hello from ${request.moduleName} module!";
+          }
+        }
         """.trimIndent()
+
+  private fun String.ensureTrailingNewline(): String = if (endsWith("\n")) this else "$this\n"
 
   private fun findSettingsFile(root: File): File = listOf(File(root, "settings.gradle.kts"), File(root, "settings.gradle"))
       .firstOrNull { it.isFile } ?: throw IOException("settings.gradle(.kts) not found")

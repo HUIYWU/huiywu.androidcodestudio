@@ -31,6 +31,8 @@ data class ModuleCreationRequest(
     val projectRoot: File,
     val consumerProjectPath: String? = null,
     val applicationProject: ApplicationProjectInfo? = null,
+    /** Java/Kotlin target used by JVM libraries; resolved from the selected Application when absent. */
+    val javaVersion: Int? = null,
     val compileSdk: Int = 34,
     val minSdk: Int = 21,
 ) {
