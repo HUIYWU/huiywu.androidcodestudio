@@ -19,7 +19,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.EditText
- import android.widget.ImageView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -262,11 +262,21 @@ class ModuleManagerFragment : Fragment() {
   }
   private fun renderWizardType(content: LinearLayout) {
 
-    content.addView(choiceCard("Android library", "Android resources, manifest, and Android Gradle plugin", moduleType == ModuleCreationKind.ANDROID_LIBRARY) {
+    content.addView(choiceCard(
+        title = "Android library",
+        description = "Android res, manifest, and Gradle plugin",
+        icon = R.drawable.ic_android,
+        selected = moduleType == ModuleCreationKind.ANDROID_LIBRARY,
+    ) {
       moduleType = ModuleCreationKind.ANDROID_LIBRARY
       render()
     })
-    content.addView(choiceCard("Java/Kotlin library", "JVM library with Java or Kotlin source", moduleType == ModuleCreationKind.JAVA_LIBRARY) {
+    content.addView(choiceCard(
+        title = "Java/Kotlin library",
+        description = "JVM library with Java or Kotlin source",
+        icon = R.drawable.duke_bw,
+        selected = moduleType == ModuleCreationKind.JAVA_LIBRARY,
+    ) {
       moduleType = ModuleCreationKind.JAVA_LIBRARY
       render()
     })
@@ -292,14 +302,14 @@ class ModuleManagerFragment : Fragment() {
     val languages = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
     lateinit var kotlinLanguageChip: Chip
     lateinit var javaLanguageChip: Chip
-kotlinLanguageChip = chip("Kotlin", moduleLanguage == ModuleSourceLanguage.KOTLIN) {
+    kotlinLanguageChip = chip("Kotlin", moduleLanguage == ModuleSourceLanguage.KOTLIN) {
        if (moduleLanguage != ModuleSourceLanguage.KOTLIN) {
          moduleLanguage = ModuleSourceLanguage.KOTLIN
         kotlinLanguageChip.isChecked = true
         javaLanguageChip.isChecked = false
       }
     }
-javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
+    javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
        if (moduleLanguage != ModuleSourceLanguage.JAVA) {
          moduleLanguage = ModuleSourceLanguage.JAVA
         kotlinLanguageChip.isChecked = false
@@ -642,7 +652,7 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
                 moduleCreator.getProjectCreationCapabilities()
               }
           if (!isAdded) return@launch
-val applications = capabilities?.applicationProjects
+          val applications = capabilities?.applicationProjects
            applicationProjectDetails = capabilities?.applicationProjectDetails.orEmpty()
           if (applications == null) {
             // Consumer discovery is optional; the creation probe will validate the module itself.
@@ -744,30 +754,46 @@ val applications = capabilities?.applicationProjects
     addView(text(value, 14f), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
   }
 
-  private fun choiceCard(title: String, description: String, selected: Boolean, onClick: () -> Unit): View =
-      MaterialCardView(requireContext()).apply {
-        radius = dp(12).toFloat()
-        cardElevation = dp(2).toFloat()
-        isCheckable = true
-        isChecked = selected
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(72)).apply {
-          bottomMargin = dp(12)
+  private fun choiceCard(
+      title: String,
+      description: String,
+      icon: Int,
+      selected: Boolean,
+      onClick: () -> Unit,
+  ): View = MaterialCardView(requireContext()).apply {
+    radius = dp(12).toFloat()
+    cardElevation = dp(2).toFloat()
+    isCheckable = true
+    isChecked = selected
+    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(72)).apply {
+      bottomMargin = dp(12)
+    }
+    setOnClickListener { onClick() }
+    addView(LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(16))
+      addView(ImageView(requireContext()).apply {
+        setImageResource(icon)
+        contentDescription = null
+        layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply {
+          marginEnd = dp(12)
         }
-        setOnClickListener { onClick() }
-        addView(LinearLayout(requireContext()).apply {
-          orientation = LinearLayout.VERTICAL
-          gravity = Gravity.CENTER_VERTICAL
-          setPadding(dp(8))
-          addView(text(title, 16f).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-          })
-          addView(text(description, 13f, secondary = true).apply {
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-          })
-        }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-      }
+      })
+      addView(LinearLayout(requireContext()).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(text(title, 16f).apply {
+          maxLines = 1
+          ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        addView(text(description, 13f, secondary = true).apply {
+          maxLines = 1
+          ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+      }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+  }
 
   private fun bottomActions(back: String?, next: String, action: () -> Unit): View =
       LinearLayout(requireContext()).apply {
@@ -1249,12 +1275,12 @@ val applications = capabilities?.applicationProjects
 
   private fun usesKotlinSettings(projectRoot: File): Boolean =
       File(projectRoot, "settings.gradle.kts").isFile || !File(projectRoot, "settings.gradle").isFile
- private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))
+  private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))
 
   private fun isValidPackageName(value: String): Boolean =
       value.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"))
 
-   private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+  private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
   // Build scripts can be absent or temporarily unreadable while Gradle refreshes the workspace.
   private fun File.readTextSafe(): String = runCatching { readText() }.getOrDefault("")
