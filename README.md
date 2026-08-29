@@ -1,21 +1,26 @@
-<h2><img src="images/icon.png" alt="Android Code Studio" width="48" height="48" align="absmiddle"/> <b>Android Code Studio</b></h2>
-<p align="left">
+<p align="center">
+  <img src="images/icon.png" alt="Android Code Studio" width="48" height="48" />
+</p>
+
+<h2 align="center">Android Code Studio</h2>
+
+<p align="center">
   An IDE to develop real, Gradle-based Android applications on Android devices.
-<p><br>
+</p>
 
-<p align="left">
+<p align="center">
   <!-- Latest release -->
-  <img src="https://img.shields.io/github/v/release/HUIYWU/huiywu.androidcodestudio?include_prereleases&amp;label=latest%20release" alt="Latest release">
+  <img src="https://img.shields.io/github/v/release/HUIYWU/huiywu.androidcodestudio?include_prereleases&amp;label=latest%20release" alt="Latest release" />
 </p>
 
-<p align="left">
+<p align="center">
   <!-- License -->
-  <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License">
+  <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License" />
 </p>
 
-<p align="left">
+<p align="center">
   <a href="https://docs.androidide.com/">
-    <img src="https://img.shields.io/badge/Docs-Explore-blue?style=for-the-badge&logo=read-the-docs" alt="Explore the docs">
+    <img src="https://img.shields.io/badge/Docs-Explore-blue?style=for-the-badge&logo=read-the-docs" alt="Explore the docs" />
   </a>
 </p>
 
