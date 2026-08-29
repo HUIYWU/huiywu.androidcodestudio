@@ -162,12 +162,11 @@ class ModuleCreator {
     return normalized.takeIf { it >= 8 }
   }
 
-  private fun packageName(request: ModuleCreationRequest): String =
-      "com.example.${request.moduleName.replace('-', '_')}"
+  private fun packageName(request: ModuleCreationRequest): String = request.sourcePackageName
 
   private fun writeModule(request: ModuleCreationRequest, buildScript: String) {
     val module = request.moduleDirectory
-    val packageName = "com.example.${request.moduleName.replace('-', '_')}"
+    val packageName = request.sourcePackageName
     val sourceFolder = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "kotlin" else "java"
     val packageDir = File(module, "src/main/$sourceFolder/${packageName.replace('.', '/')}")
     packageDir.mkdirs()

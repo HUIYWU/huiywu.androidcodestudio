@@ -29,6 +29,8 @@ data class ModuleCreationRequest(
     val sourceLanguage: ModuleSourceLanguage,
     val buildDsl: GradleDsl,
     val projectRoot: File,
+    /** Namespace for Android libraries, package name for JVM libraries. */
+    val sourcePackageName: String,
     val consumerProjectPath: String? = null,
     val applicationProject: ApplicationProjectInfo? = null,
     /** Java/Kotlin target used by JVM libraries; resolved from the selected Application when absent. */

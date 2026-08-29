@@ -92,7 +92,7 @@ class ModuleManagerFragment : Fragment() {
   private var wizardStep = 1
   private var moduleType = ModuleCreationKind.ANDROID_LIBRARY
   private var moduleLanguage = ModuleSourceLanguage.KOTLIN
-  private var draftModuleName = "profile"
+  private var draftSourcePackageName = "com.example.profile"
   private var draftGradlePath = ":profile"
   private var useKotlinDsl = true
   private var applicationProjects: List<String>? = null
@@ -274,13 +274,16 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun renderWizardName(content: LinearLayout) {
-    val nameInput = input("Module name", draftModuleName)
+    val packageInputLabel = if (moduleType == ModuleCreationKind.ANDROID_LIBRARY) "Namespace" else "Package name"
+    val packageInput = input(packageInputLabel, draftSourcePackageName).apply {
+      first.helperText = "Directly affects the source code directory"
+    }
     val pathInput = input("Gradle path", draftGradlePath).apply {
       first.helperText = "By default, a directory is created at this path"
     }
-    nameInput.second.addTextChangedListener { draftModuleName = it?.toString().orEmpty() }
+    packageInput.second.addTextChangedListener { draftSourcePackageName = it?.toString().orEmpty() }
     pathInput.second.addTextChangedListener { draftGradlePath = it?.toString().orEmpty() }
-    content.addView(nameInput.first)
+    content.addView(packageInput.first)
     content.addView(pathInput.first)
     content.addView(text("Language", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
     val languages = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
@@ -326,13 +329,19 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
     content.addView(dsl)
     content.addView(bottomActions("Back", "Next") {
       val path = pathInput.second.text.toString().trim()
-      val name = nameInput.second.text.toString().trim().ifBlank { path.substringAfterLast(':') }
-      if (!isValidPath(path) || path.substringAfterLast(':') != name) {
-         pathInput.first.error = "Use a Gradle path whose final segment matches the module name, such as :feature:profile"
-      } else {
-        draftModuleName = name
-        draftGradlePath = path
-        showWizard(3)
+      val sourcePackageName = packageInput.second.text.toString().trim()
+      when {
+        !isValidPath(path) -> {
+          pathInput.first.error = "Use a valid Gradle path such as :feature:profile"
+        }
+        !isValidPackageName(sourcePackageName) -> {
+          packageInput.first.error = "Use a valid $packageInputLabel such as com.example.profile"
+        }
+        else -> {
+          draftSourcePackageName = sourcePackageName
+          draftGradlePath = path
+          showWizard(3)
+        }
       }
     })
   }
@@ -361,6 +370,8 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
     content.addView(sectionTitle("Configuration"))
     content.addView(text("${request.kind.displayName()} · ${request.sourceLanguage.name.lowercase().replaceFirstChar { it.uppercase() }} · ${request.buildDsl.name.lowercase().replaceFirstChar { it.uppercase() }} DSL", 14f, secondary = true))
     content.addView(text("Module directory: ${request.moduleDirectory.relativeTo(request.projectRoot).path}", 14f, secondary = true).apply { setPadding(0, dp(12), 0, 0) })
+    val sourcePackageLabel = if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) "Namespace" else "Package name"
+    content.addView(text("$sourcePackageLabel: ${request.sourcePackageName}", 14f, secondary = true))
     content.addView(sectionTitle("Changes"))
     content.addView(text("+ ${request.settingsFileName} include(${request.gradlePath})", 14f, secondary = true))
     content.addView(text("+ ${request.moduleDirectory.relativeTo(request.projectRoot).path}/${request.moduleBuildFileName}", 14f, secondary = true))
@@ -587,6 +598,7 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
         sourceLanguage = moduleLanguage,
         buildDsl = if (useKotlinDsl) GradleDsl.KOTLIN else GradleDsl.GROOVY,
         projectRoot = projectRoot(),
+        sourcePackageName = draftSourcePackageName.trim(),
         consumerProjectPath = consumerPath,
         applicationProject = consumer,
     )
@@ -694,12 +706,27 @@ val applications = capabilities?.applicationProjects
 
   private fun choiceCard(title: String, description: String, selected: Boolean, onClick: () -> Unit): View =
       MaterialCardView(requireContext()).apply {
-        radius = dp(12).toFloat(); cardElevation = dp(2).toFloat(); isCheckable = true; isChecked = selected
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) }
+        radius = dp(12).toFloat()
+        cardElevation = dp(2).toFloat()
+        isCheckable = true
+        isChecked = selected
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(96)).apply {
+          bottomMargin = dp(12)
+        }
         setOnClickListener { onClick() }
         addView(LinearLayout(requireContext()).apply {
-          orientation = LinearLayout.VERTICAL; setPadding(dp(16)); addView(text(title, 16f)); addView(text(description, 13f, secondary = true))
-        })
+          orientation = LinearLayout.VERTICAL
+          gravity = Gravity.CENTER_VERTICAL
+          setPadding(dp(16))
+          addView(text(title, 16f).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+          })
+          addView(text(description, 13f, secondary = true).apply {
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+          })
+        }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
       }
 
   private fun bottomActions(back: String?, next: String, action: () -> Unit): View =
@@ -1180,8 +1207,12 @@ val applications = capabilities?.applicationProjects
 
   private fun usesKotlinSettings(projectRoot: File): Boolean =
       File(projectRoot, "settings.gradle.kts").isFile || !File(projectRoot, "settings.gradle").isFile
-private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))
-  private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+ private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))
+
+  private fun isValidPackageName(value: String): Boolean =
+      value.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"))
+
+   private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
   // Build scripts can be absent or temporarily unreadable while Gradle refreshes the workspace.
   private fun File.readTextSafe(): String = runCatching { readText() }.getOrDefault("")
