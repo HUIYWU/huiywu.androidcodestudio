@@ -277,6 +277,9 @@ class ModuleManagerFragment : Fragment() {
     val packageInputLabel = if (moduleType == ModuleCreationKind.ANDROID_LIBRARY) "Namespace" else "Package name"
     val packageInput = input(packageInputLabel, draftSourcePackageName).apply {
       first.helperText = "Directly affects the source code directory"
+      first.layoutParams = (first.layoutParams as LinearLayout.LayoutParams).apply {
+        topMargin = 0
+      }
     }
     val pathInput = input("Gradle path", draftGradlePath).apply {
       first.helperText = "By default, a directory is created at this path"
@@ -356,7 +359,7 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
     val applications = applicationProjects.orEmpty()
     if (selectedApplicationPath !in applications) selectedApplicationPath = applications.firstOrNull()
     if (applications.isNotEmpty()) {
-      content.addView(sectionTitle("Consumer module"))
+      content.addView(sectionTitle("Consumer module", topPadding = 0))
       val choices = ChipGroup(requireContext()).apply { isSingleSelection = true }
       applications.forEach { applicationPath ->
         choices.addView(chip(applicationPath, applicationPath == selectedApplicationPath) {
@@ -367,7 +370,7 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
       content.addView(choices)
     }
     val request = creationRequest(path, selectedApplicationPath) ?: return
-    content.addView(sectionTitle("Configuration"))
+    content.addView(sectionTitle("Configuration", topPadding = if (applications.isEmpty()) 0 else 16))
     content.addView(text("${request.kind.displayName()} · ${request.sourceLanguage.name.lowercase().replaceFirstChar { it.uppercase() }} · ${request.buildDsl.name.lowercase().replaceFirstChar { it.uppercase() }} DSL", 14f, secondary = true))
     content.addView(text("Module directory: ${request.moduleDirectory.relativeTo(request.projectRoot).path}", 14f, secondary = true).apply { setPadding(0, dp(12), 0, 0) })
     val sourcePackageLabel = if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) "Namespace" else "Package name"
@@ -710,7 +713,7 @@ val applications = capabilities?.applicationProjects
         cardElevation = dp(2).toFloat()
         isCheckable = true
         isChecked = selected
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(96)).apply {
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(72)).apply {
           bottomMargin = dp(12)
         }
         setOnClickListener { onClick() }
@@ -1196,7 +1199,9 @@ val applications = capabilities?.applicationProjects
 
   private fun themeColor(attribute: Int): Int = MaterialColors.getColor(requireContext(), attribute, 0)
 
-  private fun sectionTitle(value: String) = text(value, 18f).apply { setPadding(0, dp(16), 0, dp(8)) }
+  private fun sectionTitle(value: String, topPadding: Int = 16) = text(value, 18f).apply {
+    setPadding(0, dp(topPadding), 0, dp(8))
+  }
 
   private fun info(content: LinearLayout, label: String, value: String) {
     content.addView(text(label, 13f, secondary = true))
