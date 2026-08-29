@@ -775,8 +775,9 @@ class ModuleManagerFragment : Fragment() {
       setPadding(dp(16))
       addView(ImageView(requireContext()).apply {
         setImageResource(icon)
+        imageTintList = ColorStateList.valueOf(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
         contentDescription = null
-        layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply {
+        layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply {
           marginEnd = dp(12)
         }
       })
