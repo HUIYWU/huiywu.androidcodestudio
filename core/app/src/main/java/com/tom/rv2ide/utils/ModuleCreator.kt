@@ -171,7 +171,7 @@ class ModuleCreator {
     val packageDir = File(module, "src/main/$sourceFolder/${packageName.replace('.', '/')}")
     packageDir.mkdirs()
     File(module, request.moduleBuildFileName).writeText(buildScript.ensureTrailingNewline())
-    File(packageDir, if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "SampleClass.kt" else "SampleClass.java")
+    File(packageDir, if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "Sample.kt" else "Sample.java")
         .writeText(generateSample(request, packageName).ensureTrailingNewline())
     if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) {
       File(module, "src/main/res").mkdirs()
@@ -262,13 +262,13 @@ class ModuleCreator {
   private fun generateSample(request: ModuleCreationRequest, packageName: String): String =
       if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) """
         package $packageName
-        class SampleClass {
+        class Sample {
           fun getGreeting(): String = "Hello from ${request.moduleName} module!"
         }
         """.trimIndent().plus("\n")
       else """
         package $packageName;
-        public class SampleClass {
+        public class Sample {
           public String getGreeting() {
             return "Hello from ${request.moduleName} module!";
           }

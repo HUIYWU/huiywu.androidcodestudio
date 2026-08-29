@@ -88,7 +88,6 @@ class ModuleManagerFragment : Fragment() {
   private val wizardStepContentId = View.generateViewId()
   private var wizardScroll: NestedScrollView? = null
   private var wizardStepContent: LinearLayout? = null
-  private var wizardActions: LinearLayout? = null
   private var wizardStepIndicator: TextView? = null
   private var wizardStep = 1
   private var moduleType = ModuleCreationKind.ANDROID_LIBRARY
@@ -219,18 +218,17 @@ class ModuleManagerFragment : Fragment() {
   }
   private fun renderWizard() {
     binding.moduleToolbar.visibility = View.GONE
-    binding.moduleContent.removeAllViews()
-    wizardScroll = null
-    wizardStepContent = null
-    wizardActions = null
+    val existingStepContent = wizardStepContent
+    val existingScroll = wizardScroll
+    if (existingStepContent != null && existingScroll != null && existingScroll.parent === binding.moduleContent) {
+      wizardStepIndicator?.text = "$wizardStep/3"
+      existingStepContent.removeAllViews()
+      renderWizardStep(existingStepContent)
+      return
+    }
 
-    val host = LinearLayout(requireContext()).apply {
-      orientation = LinearLayout.VERTICAL
-      layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-    }
-    val scroll = scrollContent().apply {
-      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
-    }
+    binding.moduleContent.removeAllViews()
+    val scroll = scrollContent()
     val content = scrollBody(scroll)
     val navigationRow = LinearLayout(requireContext()).apply {
       gravity = Gravity.CENTER_VERTICAL
@@ -248,16 +246,9 @@ class ModuleManagerFragment : Fragment() {
       setPadding(0, dp(16), 0, 0)
     }
     content.addView(stepContent)
-    host.addView(scroll)
-    val actions = LinearLayout(requireContext()).apply {
-      setBackgroundColor(themeColor(com.google.android.material.R.attr.colorSurface))
-      setPadding(dp(16), dp(8), dp(16), dp(8))
-    }
-    host.addView(actions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-    binding.moduleContent.addView(host)
+    binding.moduleContent.addView(scroll)
     wizardScroll = scroll
     wizardStepContent = stepContent
-    wizardActions = actions
     wizardStepIndicator = stepIndicator
     renderWizardStep(stepContent)
   }
@@ -279,7 +270,7 @@ class ModuleManagerFragment : Fragment() {
       moduleType = ModuleCreationKind.JAVA_LIBRARY
       render()
     })
-    setWizardActions(bottomActions(null, "Next") { showWizard(2) })
+    content.addView(bottomActions(null, "Next") { showWizard(2) })
   }
 
   private fun renderWizardName(content: LinearLayout) {
@@ -339,7 +330,7 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
     dsl.addView(kotlinDslChip)
     dsl.addView(groovyDslChip)
     content.addView(dsl)
-    setWizardActions(bottomActions("Back", "Next") {
+    content.addView(bottomActions("Back", "Next") {
       val path = pathInput.second.text.toString().trim()
       val sourcePackageName = packageInput.second.text.toString().trim()
       when {
@@ -362,7 +353,7 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
     val path = ModuleCreationRequest.normalizePath(draftGradlePath)
     if (path == null) {
       content.addView(text("Use a valid Gradle path such as :feature:profile.", 14f, secondary = true))
-      setWizardActions(bottomActions("Back", "Close") { showModuleList() })
+      content.addView(bottomActions("Back", "Close") { showModuleList() })
       return
     }
     val applications = applicationProjects.orEmpty()
@@ -400,14 +391,16 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
     val changesContent = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
       addView(sectionTitle("Changes", topPadding = 0))
-      addView(text("+ ${request.settingsFileName} include(${request.gradlePath})", 14f, secondary = true))
-      addView(text("+ ${request.moduleDirectory.relativeTo(request.projectRoot).path}/${request.moduleBuildFileName}", 14f, secondary = true))
+      addView(text("· ${request.settingsFileName}", 14f, secondary = true))
+      addView(text("    + include(\"${request.gradlePath}\")", 14f, secondary = true))
       request.applicationProject?.let { info ->
         val appBuild = File(info.buildFile).relativeToOrNull(request.projectRoot)?.path ?: info.buildFile
-        addView(text("+ $appBuild implementation(project(${request.gradlePath}))", 14f, secondary = true))
+        addView(text("· $appBuild", 14f, secondary = true))
+        addView(text("    + implementation(project(\"${request.gradlePath}\"))", 14f, secondary = true))
       }
+      addView(text("+ ${request.moduleDirectory.relativeTo(request.projectRoot).path}/${request.moduleBuildFileName}", 14f, secondary = true))
       val sourceDirectory = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "kotlin" else "java"
-      val sourceFile = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "SampleClass.kt" else "SampleClass.java"
+      val sourceFile = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "Sample.kt" else "Sample.java"
       addView(text("+ ${request.moduleDirectory.relativeTo(request.projectRoot).path}/src/main/$sourceDirectory/.../$sourceFile", 14f, secondary = true))
       if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) {
         addView(text("+ ${request.moduleDirectory.relativeTo(request.projectRoot).path}/proguard-rules.pro", 14f, secondary = true))
@@ -415,7 +408,7 @@ javaLanguageChip = chip("Java", moduleLanguage == ModuleSourceLanguage.JAVA) {
       }
     }
     content.addView(previewCard(changesContent))
-    setWizardActions(bottomActions("Back", "Create and sync") { createModule(path, selectedApplicationPath) })
+    content.addView(bottomActions("Back", "Create and sync") { createModule(path, selectedApplicationPath) })
   }
 
   private fun ModuleCreationKind.displayName() = when (this) {
@@ -733,12 +726,6 @@ val applications = capabilities?.applicationProjects
 
   private fun scrollBody(container: NestedScrollView): LinearLayout = container.getChildAt(0) as LinearLayout
 
-  private fun setWizardActions(view: View) {
-    val actions = wizardActions ?: return
-    actions.removeAllViews()
-    actions.addView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-  }
-
   private fun previewCard(content: View): View = MaterialCardView(requireContext()).apply {
     radius = dp(8).toFloat()
     cardElevation = dp(1).toFloat()
@@ -770,7 +757,7 @@ val applications = capabilities?.applicationProjects
         addView(LinearLayout(requireContext()).apply {
           orientation = LinearLayout.VERTICAL
           gravity = Gravity.CENTER_VERTICAL
-          setPadding(dp(16))
+          setPadding(dp(8))
           addView(text(title, 16f).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -785,7 +772,7 @@ val applications = capabilities?.applicationProjects
   private fun bottomActions(back: String?, next: String, action: () -> Unit): View =
       LinearLayout(requireContext()).apply {
         gravity = Gravity.END
-        setPadding(0, dp(8), 0, dp(8))
+        setPadding(0, dp(24), 0, 0)
         back?.let {
           addView(
               outlinedButton(it) { showWizard(wizardStep - 1) },
