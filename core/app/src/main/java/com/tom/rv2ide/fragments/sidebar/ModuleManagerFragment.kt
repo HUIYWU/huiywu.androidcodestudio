@@ -910,7 +910,14 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun refreshDirectoryIconState(layout: TextInputLayout) {
-    layout.refreshDrawableState()
+    if (!layout.isEnabled) {
+      // TextInputLayout aggregates child states and can retain state_enabled after being attached.
+      // Force one complete state transition so Material receives the actual disabled state.
+      layout.isEnabled = true
+      layout.isEnabled = false
+    } else {
+      layout.refreshDrawableState()
+    }
     themeColorStateList(layout.context, androidx.appcompat.R.attr.colorControlNormal)
         ?.let(layout::setStartIconTintList)
     layout.refreshStartIconDrawableState()
