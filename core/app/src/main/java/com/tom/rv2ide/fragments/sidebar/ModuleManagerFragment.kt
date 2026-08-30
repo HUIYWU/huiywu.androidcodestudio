@@ -320,6 +320,7 @@ class ModuleManagerFragment : Fragment() {
         overwriteGradlePathDirectory = checked
         overrideInput.first.isEnabled = checked
         overrideInput.second.isEnabled = checked
+        overrideInput.first.refreshStartIconDrawableState()
       }
     }
     packageInput.second.addTextChangedListener { draftSourcePackageName = it?.toString().orEmpty() }
@@ -892,6 +893,7 @@ class ModuleManagerFragment : Fragment() {
         )
       }
       layout.refreshDrawableState()
+      layout.refreshStartIconDrawableState()
     }
     return layout to edit
   }
