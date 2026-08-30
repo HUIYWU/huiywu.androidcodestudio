@@ -11,6 +11,7 @@ package com.tom.rv2ide.fragments.sidebar
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.ContextThemeWrapper
 import android.text.InputType
 import android.view.Gravity
@@ -18,6 +19,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
+import androidx.appcompat.content.res.AppCompatResources
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -880,8 +882,16 @@ class ModuleManagerFragment : Fragment() {
     edit.isEnabled = enabled
     startIcon?.let {
       layout.setStartIconDrawable(it)
+      val startIconTint = themeColorStateList(inputContext, androidx.appcompat.R.attr.colorControlNormal)
+      startIconTint?.let(layout::setStartIconTintList)
+      if (hint == "Directory") {
+        log.warn(
+            "Module wizard Directory start-icon theme tint: present={}, stateful={}",
+            startIconTint != null,
+            startIconTint?.isStateful,
+        )
+      }
       layout.refreshDrawableState()
-      layout.startIconDrawable?.state = layout.drawableState
     }
     return layout to edit
   }
@@ -1327,6 +1337,12 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun themeColor(attribute: Int): Int = MaterialColors.getColor(requireContext(), attribute, 0)
+
+  private fun themeColorStateList(context: android.content.Context, attribute: Int): ColorStateList? {
+    val value = TypedValue()
+    if (!context.theme.resolveAttribute(attribute, value, true) || value.resourceId == 0) return null
+    return runCatching { AppCompatResources.getColorStateList(context, value.resourceId) }.getOrNull()
+  }
 
   private fun sectionTitle(value: String, topPadding: Int = 16) = text(value, 18f).apply {
     setPadding(0, dp(topPadding), 0, dp(8))
