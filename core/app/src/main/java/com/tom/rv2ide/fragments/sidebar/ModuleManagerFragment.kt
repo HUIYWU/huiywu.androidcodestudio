@@ -320,7 +320,12 @@ class ModuleManagerFragment : Fragment() {
         overwriteGradlePathDirectory = checked
         overrideInput.first.isEnabled = checked
         overrideInput.second.isEnabled = checked
+        overrideInput.first.refreshDrawableState()
         overrideInput.first.refreshStartIconDrawableState()
+        logDirectoryIconState("switch-immediate-$checked", overrideInput.first, overrideInput.second)
+        overrideInput.first.post {
+          logDirectoryIconState("switch-post-$checked", overrideInput.first, overrideInput.second)
+        }
       }
     }
     packageInput.second.addTextChangedListener { draftSourcePackageName = it?.toString().orEmpty() }
@@ -336,6 +341,10 @@ class ModuleManagerFragment : Fragment() {
     content.addView(pathInput.first)
     content.addView(overwriteSwitch)
     content.addView(overrideInput.first)
+    logDirectoryIconState("after-addView", overrideInput.first, overrideInput.second)
+    overrideInput.first.post {
+      logDirectoryIconState("after-addView-post", overrideInput.first, overrideInput.second)
+    }
     content.addView(text("Language", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
     val languages = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
     lateinit var kotlinLanguageChip: Chip
@@ -885,17 +894,76 @@ class ModuleManagerFragment : Fragment() {
       layout.setStartIconDrawable(it)
       val startIconTint = themeColorStateList(inputContext, androidx.appcompat.R.attr.colorControlNormal)
       startIconTint?.let(layout::setStartIconTintList)
-      if (hint == "Directory") {
-        log.warn(
-            "Module wizard Directory start-icon theme tint: present={}, stateful={}",
-            startIconTint != null,
-            startIconTint?.isStateful,
-        )
-      }
       layout.refreshDrawableState()
       layout.refreshStartIconDrawableState()
+      if (hint == "Directory") {
+        logDirectoryIconState("input-immediate", layout, edit)
+        layout.post {
+          logDirectoryIconState("input-post", layout, edit)
+        }
+      }
     }
     return layout to edit
+  }
+
+  private fun logDirectoryIconState(
+      stage: String,
+      layout: TextInputLayout,
+      edit: EditText,
+  ) {
+    val icon = layout.startIconDrawable
+    val layoutState = layout.drawableState
+    val iconState = icon?.state
+    val tint = themeColorStateList(layout.context, androidx.appcompat.R.attr.colorControlNormal)
+    val resolvedTint = tint?.getColorForState(layoutState, tint.defaultColor)
+    val enabledTint = tint?.getColorForState(intArrayOf(android.R.attr.state_enabled), tint.defaultColor)
+    val disabledTint = tint?.getColorForState(intArrayOf(-android.R.attr.state_enabled), tint.defaultColor)
+    val hasEnabledState = layoutState.contains(android.R.attr.state_enabled)
+    val hasDisabledState = layoutState.contains(-android.R.attr.state_enabled)
+    log.warn(
+        "Module wizard Directory icon [{}]: layoutEnabled={}, editEnabled={}, " +
+            "attached={}, laidOut={}, visibility={}, layoutState={}, hasEnabled={}, hasDisabled={}, " +
+            "editState={}, iconState={}, tintPresent={}, tintStateful={}, tintDefault={}, " +
+            "tintResolved={}, tintEnabledProbe={}, tintDisabledProbe={}, " +
+            "iconAlpha={}, iconFilter={}, iconClass={}, childImages={}", 
+        stage,
+        layout.isEnabled,
+        edit.isEnabled,
+        layout.isAttachedToWindow,
+        layout.isLaidOut,
+        layout.visibility,
+        layoutState.contentToString(),
+        hasEnabledState,
+        hasDisabledState,
+        edit.drawableState.contentToString(),
+        iconState?.contentToString(),
+        tint != null,
+        tint?.isStateful,
+        tint?.defaultColor,
+        resolvedTint,
+        enabledTint,
+        disabledTint,
+        icon?.alpha,
+        icon?.colorFilter?.javaClass?.name,
+        icon?.javaClass?.name,
+        describeDirectoryImageViews(layout),
+    )
+  }
+
+  private fun describeDirectoryImageViews(view: View): String {
+    val values = mutableListOf<String>()
+    fun visit(node: View) {
+      if (node is ImageView) {
+        values += "${node.javaClass.simpleName}(id=${node.id},enabled=${node.isEnabled}," +
+            "state=${node.drawableState.contentToString()},alpha=${node.alpha}," +
+            "filter=${node.drawable?.colorFilter?.javaClass?.name},drawable=${node.drawable?.javaClass?.name})"
+      }
+      if (node is ViewGroup) {
+        for (index in 0 until node.childCount) visit(node.getChildAt(index))
+      }
+    }
+    visit(view)
+    return values.joinToString(";")
   }
 
   private fun chip(label: String, checked: Boolean, onClick: () -> Unit) =
