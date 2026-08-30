@@ -433,9 +433,6 @@ class ModuleManagerFragment : Fragment() {
       addView(previewInfo("Gradle DSL", request.buildDsl.name.lowercase().replaceFirstChar { it.uppercase() }))
       addView(previewInfo(sourcePackageLabel, request.sourcePackageName))
       addView(previewInfo("Module directory", request.moduleDirectory.relativeTo(request.projectRoot).path))
-      if (request.overrideModuleDirectory != null) {
-        addView(previewInfo("Directory mode", "Overwrite generated files"))
-      }
     }
     content.addView(previewCard(configurationContent))
 
@@ -870,8 +867,6 @@ class ModuleManagerFragment : Fragment() {
     }
     val layout = TextInputLayout(inputContext).apply {
       this.hint = hint
-      isEnabled = enabled
-      startIcon?.let { setStartIconDrawable(it) }
       layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
         topMargin = dp(12)
       }
@@ -879,9 +874,15 @@ class ModuleManagerFragment : Fragment() {
     val edit = EditText(requireContext()).apply {
       setText(value)
       inputType = InputType.TYPE_CLASS_TEXT
-      isEnabled = enabled
     }
     layout.addView(edit)
+    layout.isEnabled = enabled
+    edit.isEnabled = enabled
+    startIcon?.let {
+      layout.setStartIconDrawable(it)
+      layout.refreshDrawableState()
+      layout.startIconDrawable?.state = layout.drawableState
+    }
     return layout to edit
   }
 
