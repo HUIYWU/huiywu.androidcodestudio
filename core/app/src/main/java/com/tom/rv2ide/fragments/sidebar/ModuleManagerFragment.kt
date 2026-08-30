@@ -320,10 +320,10 @@ class ModuleManagerFragment : Fragment() {
         overwriteGradlePathDirectory = checked
         overrideInput.first.isEnabled = checked
         overrideInput.second.isEnabled = checked
-        overrideInput.first.refreshDrawableState()
-        overrideInput.first.refreshStartIconDrawableState()
+        refreshDirectoryIconState(overrideInput.first)
         logDirectoryIconState("switch-immediate-$checked", overrideInput.first, overrideInput.second)
         overrideInput.first.post {
+          refreshDirectoryIconState(overrideInput.first)
           logDirectoryIconState("switch-post-$checked", overrideInput.first, overrideInput.second)
         }
       }
@@ -341,9 +341,12 @@ class ModuleManagerFragment : Fragment() {
     content.addView(pathInput.first)
     content.addView(overwriteSwitch)
     content.addView(overrideInput.first)
-    logDirectoryIconState("after-addView", overrideInput.first, overrideInput.second)
+    logDirectoryIconState("after-addView-before-refresh", overrideInput.first, overrideInput.second)
+    refreshDirectoryIconState(overrideInput.first)
+    logDirectoryIconState("after-addView-after-refresh", overrideInput.first, overrideInput.second)
     overrideInput.first.post {
-      logDirectoryIconState("after-addView-post", overrideInput.first, overrideInput.second)
+      refreshDirectoryIconState(overrideInput.first)
+      logDirectoryIconState("after-addView-post-after-refresh", overrideInput.first, overrideInput.second)
     }
     content.addView(text("Language", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
     val languages = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
@@ -906,6 +909,13 @@ class ModuleManagerFragment : Fragment() {
     return layout to edit
   }
 
+  private fun refreshDirectoryIconState(layout: TextInputLayout) {
+    layout.refreshDrawableState()
+    themeColorStateList(layout.context, androidx.appcompat.R.attr.colorControlNormal)
+        ?.let(layout::setStartIconTintList)
+    layout.refreshStartIconDrawableState()
+  }
+
   private fun logDirectoryIconState(
       stage: String,
       layout: TextInputLayout,
@@ -925,7 +935,7 @@ class ModuleManagerFragment : Fragment() {
             "attached={}, laidOut={}, visibility={}, layoutState={}, hasEnabled={}, hasDisabled={}, " +
             "editState={}, iconState={}, tintPresent={}, tintStateful={}, tintDefault={}, " +
             "tintResolved={}, tintEnabledProbe={}, tintDisabledProbe={}, " +
-            "iconAlpha={}, iconFilter={}, iconClass={}, childImages={}", 
+            "iconAlpha={}, iconFilter={}, iconClass={}, childImages={}, enabledStateSources={}", 
         stage,
         layout.isEnabled,
         edit.isEnabled,
@@ -947,16 +957,34 @@ class ModuleManagerFragment : Fragment() {
         icon?.colorFilter?.javaClass?.name,
         icon?.javaClass?.name,
         describeDirectoryImageViews(layout),
+        describeDirectoryEnabledStates(layout),
     )
+  }
+
+  private fun describeDirectoryEnabledStates(view: View): String {
+    val values = mutableListOf<String>()
+    fun visit(node: View) {
+      val state = node.drawableState
+      if (state.contains(android.R.attr.state_enabled) || state.contains(-android.R.attr.state_enabled)) {
+        values += "${node.javaClass.simpleName}(id=${node.id},enabled=${node.isEnabled},state=${state.contentToString()})"
+      }
+      if (node is ViewGroup) {
+        for (index in 0 until node.childCount) visit(node.getChildAt(index))
+      }
+    }
+    visit(view)
+    return values.joinToString(";")
   }
 
   private fun describeDirectoryImageViews(view: View): String {
     val values = mutableListOf<String>()
     fun visit(node: View) {
       if (node is ImageView) {
+        val drawable = node.drawable
         values += "${node.javaClass.simpleName}(id=${node.id},enabled=${node.isEnabled}," +
             "state=${node.drawableState.contentToString()},alpha=${node.alpha}," +
-            "filter=${node.drawable?.colorFilter?.javaClass?.name},drawable=${node.drawable?.javaClass?.name})"
+            "imageTint=${node.imageTintList},imageTintStateful=${node.imageTintList?.isStateful}," +
+            "filter=${drawable?.colorFilter?.javaClass?.name},drawable=${drawable?.javaClass?.name})"
       }
       if (node is ViewGroup) {
         for (index in 0 until node.childCount) visit(node.getChildAt(index))
