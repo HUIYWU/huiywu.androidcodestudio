@@ -318,7 +318,31 @@ class ModuleManagerFragment : Fragment() {
         overwriteGradlePathDirectory = checked
         overrideInput.first.isEnabled = checked
         overrideInput.second.isEnabled = checked
+        log.warn(
+            "Module wizard Directory switch changed: checked={}, layoutEnabled={}, editEnabled={}, " +
+                "layoutState={}, iconState={}, layoutTint={}, drawableTint={}",
+            checked,
+            overrideInput.first.isEnabled,
+            overrideInput.second.isEnabled,
+            overrideInput.first.drawableState.contentToString(),
+            overrideInput.first.startIconDrawable?.state?.contentToString(),
+            overrideInput.first.startIconTintList,
+            overrideInput.first.startIconDrawable?.let { drawable -> drawable.tintList },
+        )
       }
+    }
+    overrideInput.first.post {
+      log.warn(
+          "Module wizard Directory initial state: switchChecked={}, layoutEnabled={}, editEnabled={}, " +
+              "layoutState={}, iconState={}, layoutTint={}, drawableTint={}",
+          overwriteSwitch.isChecked,
+          overrideInput.first.isEnabled,
+          overrideInput.second.isEnabled,
+          overrideInput.first.drawableState.contentToString(),
+          overrideInput.first.startIconDrawable?.state?.contentToString(),
+          overrideInput.first.startIconTintList,
+          overrideInput.first.startIconDrawable?.let { drawable -> drawable.tintList },
+      )
     }
     packageInput.second.addTextChangedListener { draftSourcePackageName = it?.toString().orEmpty() }
     pathInput.second.addTextChangedListener {
