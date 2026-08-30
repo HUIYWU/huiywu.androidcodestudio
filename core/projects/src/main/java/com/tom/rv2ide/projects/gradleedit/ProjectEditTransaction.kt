@@ -17,6 +17,7 @@ class ProjectEditTransaction private constructor(private val allowedRoots: List<
   private data class FileSnapshot(val file: File, val contents: ByteArray)
 
   private val snapshots = linkedMapOf<File, FileSnapshot>()
+  private val createdFiles = linkedSetOf<File>()
   private val createdDirectories = linkedMapOf<File, Boolean>()
   private val movedDirectories = mutableListOf<Pair<File, File>>()
   private var completed = false
@@ -29,6 +30,14 @@ class ProjectEditTransaction private constructor(private val allowedRoots: List<
   }
 
   fun captureAll(files: Iterable<File>) = files.forEach(::capture)
+
+  /** Register a missing file created by this transaction so rollback removes it. */
+  fun trackCreatedFile(file: File) {
+    checkActive()
+    val normalized = normalizeInsideRoot(file)
+    if (normalized.exists()) throw IOException("Cannot track existing file: ${normalized.path}")
+    createdFiles += normalized
+  }
 
   /** Register an empty directory which does not exist yet; rollback removes it only if it remains empty. */
   fun trackCreatedParentDirectory(directory: File) = trackCreatedDirectory(directory, recursiveDelete = false)
@@ -92,6 +101,7 @@ class ProjectEditTransaction private constructor(private val allowedRoots: List<
     checkActive()
     completed = true
     snapshots.clear()
+    createdFiles.clear()
     createdDirectories.clear()
     movedDirectories.clear()
   }
@@ -102,6 +112,10 @@ class ProjectEditTransaction private constructor(private val allowedRoots: List<
     val failures = mutableListOf<Throwable>()
     snapshots.values.forEach { snapshot ->
       runCatching { snapshot.file.writeBytes(snapshot.contents) }.exceptionOrNull()?.let(failures::add)
+    }
+    createdFiles.toList().asReversed().forEach { file ->
+      runCatching { if (file.exists() && !file.delete()) throw IOException("Could not remove transaction-created file: ${file.path}") }
+          .exceptionOrNull()?.let(failures::add)
     }
     movedDirectories.asReversed().forEach { (source, destination) ->
       runCatching {
@@ -125,6 +139,7 @@ class ProjectEditTransaction private constructor(private val allowedRoots: List<
     }
     completed = true
     snapshots.clear()
+    createdFiles.clear()
     movedDirectories.clear()
     createdDirectories.clear()
     return failures

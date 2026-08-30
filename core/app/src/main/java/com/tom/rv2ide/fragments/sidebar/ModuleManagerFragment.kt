@@ -40,6 +40,7 @@ import com.google.android.material.chip.ChipGroup
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.CircularProgressIndicator
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
@@ -94,6 +95,8 @@ class ModuleManagerFragment : Fragment() {
   private var moduleLanguage = ModuleSourceLanguage.KOTLIN
   private var draftSourcePackageName = "com.example.profile"
   private var draftGradlePath = ":profile"
+  private var overwriteGradlePathDirectory = false
+  private var draftOverrideDirectory = "profile"
   private var useKotlinDsl = true
   private var applicationProjects: List<String>? = null
   private var applicationProjectDetails: List<ApplicationProjectInfo> = emptyList()
@@ -285,19 +288,51 @@ class ModuleManagerFragment : Fragment() {
 
   private fun renderWizardName(content: LinearLayout) {
     val packageInputLabel = if (moduleType == ModuleCreationKind.ANDROID_LIBRARY) "Namespace" else "Package name"
-    val packageInput = input(packageInputLabel, draftSourcePackageName).apply {
+    val packageInput = input(packageInputLabel, draftSourcePackageName, R.drawable.ic_package, dense = true).apply {
       first.helperText = "Directly affects the source code directory"
       first.layoutParams = (first.layoutParams as LinearLayout.LayoutParams).apply {
         topMargin = 0
       }
     }
-    val pathInput = input("Gradle path", draftGradlePath).apply {
+    val pathInput = input("Gradle path", draftGradlePath, R.drawable.ic_gradle, dense = true).apply {
       first.helperText = "By default, a directory is created at this path"
     }
+    val defaultDirectory = draftGradlePath.trim().trim(':').replace(':', '/')
+    if (!overwriteGradlePathDirectory) draftOverrideDirectory = defaultDirectory
+    val overrideInput = input(
+        "Directory",
+        draftOverrideDirectory,
+        R.drawable.ic_folder,
+        dense = true,
+        enabled = overwriteGradlePathDirectory,
+    ).apply {
+      first.helperText = "Directory used when overwriting generated files"
+    }
+    val overwriteSwitch = MaterialSwitch(requireContext()).apply {
+      text = "Overwrite the Gradle path directory"
+      isChecked = overwriteGradlePathDirectory
+      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        topMargin = dp(8)
+      }
+      setOnCheckedChangeListener { _, checked ->
+        overwriteGradlePathDirectory = checked
+        overrideInput.first.isEnabled = checked
+        overrideInput.second.isEnabled = checked
+      }
+    }
     packageInput.second.addTextChangedListener { draftSourcePackageName = it?.toString().orEmpty() }
-    pathInput.second.addTextChangedListener { draftGradlePath = it?.toString().orEmpty() }
+    pathInput.second.addTextChangedListener {
+      draftGradlePath = it?.toString().orEmpty()
+      if (!overwriteGradlePathDirectory) {
+        draftOverrideDirectory = draftGradlePath.trim().trim(':').replace(':', '/')
+        overrideInput.second.setText(draftOverrideDirectory)
+      }
+    }
+    overrideInput.second.addTextChangedListener { draftOverrideDirectory = it?.toString().orEmpty() }
     content.addView(packageInput.first)
     content.addView(pathInput.first)
+    content.addView(overwriteSwitch)
+    content.addView(overrideInput.first)
     content.addView(text("Language", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
     val languages = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
     lateinit var kotlinLanguageChip: Chip
@@ -350,6 +385,9 @@ class ModuleManagerFragment : Fragment() {
         !isValidPackageName(sourcePackageName) -> {
           packageInput.first.error = "Use a valid $packageInputLabel such as com.example.profile"
         }
+        overwriteGradlePathDirectory && !isValidDirectoryPath(draftOverrideDirectory) -> {
+          overrideInput.first.error = "Use a project-relative directory such as feature/profile"
+        }
         else -> {
           draftSourcePackageName = sourcePackageName
           draftGradlePath = path
@@ -395,6 +433,9 @@ class ModuleManagerFragment : Fragment() {
       addView(previewInfo("Gradle DSL", request.buildDsl.name.lowercase().replaceFirstChar { it.uppercase() }))
       addView(previewInfo(sourcePackageLabel, request.sourcePackageName))
       addView(previewInfo("Module directory", request.moduleDirectory.relativeTo(request.projectRoot).path))
+      if (request.overrideModuleDirectory != null) {
+        addView(previewInfo("Directory mode", "Overwrite generated files"))
+      }
     }
     content.addView(previewCard(configurationContent))
 
@@ -631,6 +672,10 @@ class ModuleManagerFragment : Fragment() {
         buildDsl = if (useKotlinDsl) GradleDsl.KOTLIN else GradleDsl.GROOVY,
         projectRoot = projectRoot(),
         sourcePackageName = draftSourcePackageName.trim(),
+        overrideModuleDirectory = if (overwriteGradlePathDirectory) {
+          val candidate = File(projectRoot(), draftOverrideDirectory.trim()).canonicalFile
+          candidate.takeIf { it != projectRoot().canonicalFile && it.toPath().startsWith(projectRoot().canonicalFile.toPath()) }
+        } else null,
         consumerProjectPath = consumerPath,
         applicationProject = consumer,
     )
@@ -811,12 +856,31 @@ class ModuleManagerFragment : Fragment() {
         addView(button(next) { action() })
       }
 
-  private fun input(hint: String, value: String): Pair<TextInputLayout, EditText> {
-    val layout = TextInputLayout(requireContext()).apply {
-      this.hint = hint
-      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) }
+  private fun input(
+      hint: String,
+      value: String,
+      startIcon: Int? = null,
+      dense: Boolean = false,
+      enabled: Boolean = true,
+  ): Pair<TextInputLayout, EditText> {
+    val inputContext = if (dense) {
+      ContextThemeWrapper(requireContext(), com.google.android.material.R.style.Widget_Material3_TextInputLayout_OutlinedBox_Dense)
+    } else {
+      requireContext()
     }
-    val edit = EditText(requireContext()).apply { setText(value); inputType = InputType.TYPE_CLASS_TEXT }
+    val layout = TextInputLayout(inputContext).apply {
+      this.hint = hint
+      isEnabled = enabled
+      startIcon?.let { setStartIconDrawable(it) }
+      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        topMargin = dp(12)
+      }
+    }
+    val edit = EditText(requireContext()).apply {
+      setText(value)
+      inputType = InputType.TYPE_CLASS_TEXT
+      isEnabled = enabled
+    }
     layout.addView(edit)
     return layout to edit
   }
@@ -1277,6 +1341,10 @@ class ModuleManagerFragment : Fragment() {
   private fun usesKotlinSettings(projectRoot: File): Boolean =
       File(projectRoot, "settings.gradle.kts").isFile || !File(projectRoot, "settings.gradle").isFile
   private fun isValidPath(path: String) = path.matches(Regex("^(:[A-Za-z][A-Za-z0-9_-]*)+$"))
+
+  private fun isValidDirectoryPath(path: String): Boolean =
+      path.trim().isNotEmpty() && !path.startsWith("/") && !path.contains('\\') &&
+          path.split('/').all { it.isNotEmpty() && it != "." && it != ".." && it.matches(Regex("[A-Za-z0-9._-]+")) }
 
   private fun isValidPackageName(value: String): Boolean =
       value.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"))

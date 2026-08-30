@@ -31,6 +31,8 @@ data class ModuleCreationRequest(
     val projectRoot: File,
     /** Namespace for Android libraries, package name for JVM libraries. */
     val sourcePackageName: String,
+    /** Optional project-relative directory used when existing generated files may be overwritten. */
+    val overrideModuleDirectory: File? = null,
     val consumerProjectPath: String? = null,
     val applicationProject: ApplicationProjectInfo? = null,
     /** Java/Kotlin target used by JVM libraries; resolved from the selected Application when absent. */
@@ -39,7 +41,7 @@ data class ModuleCreationRequest(
     val minSdk: Int = 21,
 ) {
   val moduleDirectory: File
-    get() = File(projectRoot, gradlePath.trim(':').replace(":", File.separator))
+    get() = overrideModuleDirectory ?: File(projectRoot, gradlePath.trim(':').replace(":", File.separator))
 
   val moduleName: String
     get() = gradlePath.trim(':').substringAfterLast(':')

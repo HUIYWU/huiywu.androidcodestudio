@@ -84,7 +84,11 @@ class ModuleCreator {
       return CreationResult(false, "Use a valid Gradle path such as :feature:profile")
     }
     if (!request.projectRoot.isDirectory) return CreationResult(false, "Project root directory does not exist")
-    if (request.moduleDirectory.exists()) return CreationResult(false, "Module '${request.gradlePath}' already exists")
+    val moduleDirectory = request.moduleDirectory.canonicalFile
+    if (!moduleDirectory.toPath().startsWith(request.projectRoot.canonicalFile.toPath()) || moduleDirectory == request.projectRoot.canonicalFile) {
+      return CreationResult(false, "Module directory must be inside the project root")
+    }
+    if (request.overrideModuleDirectory == null && moduleDirectory.exists()) return CreationResult(false, "Module '${request.gradlePath}' already exists")
     runCatching { findSettingsFile(request.projectRoot) }.getOrElse {
       return CreationResult(false, it.message ?: "settings.gradle(.kts) not found")
     }
@@ -92,7 +96,9 @@ class ModuleCreator {
   }
 
   private fun writeValidatedModule(request: ModuleCreationRequest, buildScript: String): CreationResult {
-    if (request.moduleDirectory.exists()) return CreationResult(false, "Module '${request.gradlePath}' already exists")
+    if (request.overrideModuleDirectory == null && request.moduleDirectory.exists()) {
+      return CreationResult(false, "Module '${request.gradlePath}' already exists")
+    }
     val settings = runCatching { findSettingsFile(request.projectRoot) }.getOrElse {
       return CreationResult(false, it.message ?: "settings.gradle(.kts) not found")
     }
@@ -101,8 +107,14 @@ class ModuleCreator {
       ProjectEditTransaction.begin(request.projectRoot, listOfNotNull(consumer?.parentFile)).also { edit ->
         edit.capture(settings)
         consumer?.let(edit::capture)
-        missingParentDirectories(request.projectRoot, request.moduleDirectory).forEach(edit::trackCreatedParentDirectory)
-        edit.trackCreatedDirectory(request.moduleDirectory)
+        if (request.moduleDirectory.exists()) {
+          generatedModuleFiles(request).forEach { file ->
+            if (file.isFile) edit.capture(file) else edit.trackCreatedFile(file)
+          }
+        } else {
+          missingParentDirectories(request.projectRoot, request.moduleDirectory).forEach(edit::trackCreatedParentDirectory)
+          edit.trackCreatedDirectory(request.moduleDirectory)
+        }
       }
     }.getOrElse { return CreationResult(false, it.message ?: "Could not prepare project edit transaction") }
 
@@ -110,6 +122,11 @@ class ModuleCreator {
       writeModule(request, buildScript)
 
       applyEdit(settings, settings.readText(), ProjectSettingsEditor.addInclude(settings.readText(), request.gradlePath, editorDsl(settings)), "settings file", transaction)
+      request.overrideModuleDirectory?.let { directory ->
+        val source = settings.readText()
+        val relativeDirectory = directory.canonicalFile.relativeTo(request.projectRoot.canonicalFile).invariantSeparatorsPath
+        applyEdit(settings, source, ProjectSettingsEditor.addProjectDirMapping(source, request.gradlePath, relativeDirectory, editorDsl(settings)), "settings project directory", transaction)
+      }
       consumer?.let { file ->
         val source = file.readText()
         applyEdit(file, source, BuildScriptDependenciesEditor.addProjectDependency(source, "implementation", request.gradlePath, editorDsl(file)), "consumer build script", transaction)
@@ -163,6 +180,21 @@ class ModuleCreator {
   }
 
   private fun packageName(request: ModuleCreationRequest): String = request.sourcePackageName
+
+  private fun generatedModuleFiles(request: ModuleCreationRequest): List<File> {
+    val module = request.moduleDirectory
+    val sourceFolder = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "kotlin" else "java"
+    val sourceFile = if (request.sourceLanguage == ModuleSourceLanguage.KOTLIN) "Sample.kt" else "Sample.java"
+    return buildList {
+      add(File(module, request.moduleBuildFileName))
+      add(File(module, "src/main/$sourceFolder/${request.sourcePackageName.replace('.', '/')}/$sourceFile"))
+      if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) {
+        add(File(module, "src/main/AndroidManifest.xml"))
+        add(File(module, "proguard-rules.pro"))
+        add(File(module, "consumer-rules.pro"))
+      }
+    }
+  }
 
   private fun writeModule(request: ModuleCreationRequest, buildScript: String) {
     val module = request.moduleDirectory
