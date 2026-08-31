@@ -17,11 +17,16 @@
 
 package com.tom.rv2ide.ui
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.Context
 import android.os.Build
 import android.util.AttributeSet
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.window.BackEvent
 import android.window.OnBackAnimationCallback
 import android.window.OnBackInvokedDispatcher
@@ -67,23 +72,34 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
   private var predictiveBackInProgress = false
 
   @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private var backProgress = 0f
+
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private var backCloseAnimator: ValueAnimator? = null
+
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
   private val backAnimationCallback =
       object : OnBackAnimationCallback {
         override fun onBackStarted(backEvent: BackEvent) {
+          backCloseAnimator?.cancel()
           predictiveBackInProgress = true
+          backProgress = 0f
           findDrawerWithGravityCompat()?.let { drawerView ->
             applyBackProgress(drawerView, 0f)
           }
         }
 
         override fun onBackProgressed(backEvent: BackEvent) {
+          backProgress = backEvent.progress.coerceIn(0f, 1f)
           findDrawerWithGravityCompat()?.let { drawerView ->
-            applyBackProgress(drawerView, backEvent.progress)
+            applyBackProgress(drawerView, backProgress)
           }
         }
 
         override fun onBackCancelled() {
+          backCloseAnimator?.cancel()
           predictiveBackInProgress = false
+          backProgress = 0f
           findDrawerWithGravityCompat()?.let { drawerView ->
             resetBackTranslation(drawerView)
             applyContentTranslation(drawerView, 1f)
@@ -91,20 +107,46 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
         }
 
         override fun onBackInvoked() {
-          findDrawerWithGravityCompat()?.let { drawerView ->
-            if (predictiveBackInProgress) {
-              // The predictive-back progress already moved the drawer visually to its final
-              // position. Commit that position without starting a second close animation.
-              closeDrawer(drawerView, false)
-            } else {
-              // A key/button back has no predictive progress and must retain DrawerLayout's
-              // regular closing animation.
-              closeDrawer(drawerView, true)
-            }
-          }
           predictiveBackInProgress = false
+          findDrawerWithGravityCompat()?.let { drawerView ->
+            animateBackClose(drawerView)
+          }
         }
       }
+
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private fun animateBackClose(drawerView: View) {
+    backCloseAnimator?.cancel()
+
+    val startProgress = backProgress.coerceIn(0f, 1f)
+    var cancelled = false
+    val animator = ValueAnimator.ofFloat(startProgress, 1f).apply {
+      duration = (220L * (1f - startProgress).coerceAtLeast(0.35f)).toLong()
+      interpolator = DecelerateInterpolator()
+      addUpdateListener { animation ->
+        applyBackProgress(drawerView, animation.animatedValue as Float)
+      }
+      addListener(
+          object : AnimatorListenerAdapter() {
+            override fun onAnimationCancel(animation: Animator) {
+              cancelled = true
+            }
+
+            override fun onAnimationEnd(animation: Animator) {
+              if (!cancelled) {
+                closeDrawer(drawerView, false)
+              }
+              if (backCloseAnimator === animation) {
+                backCloseAnimator = null
+              }
+              backProgress = 0f
+            }
+          },
+      )
+    }
+    backCloseAnimator = animator
+    animator.start()
+  }
 
   private fun findDrawerWithGravityCompat(): View? {
     for (index in 0 until childCount) {
@@ -168,6 +210,23 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
     view.translationX = direction * (drawerView.width * slideOffset) * maxOffset
   }
 
+  override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+    if (
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            event.actionMasked == MotionEvent.ACTION_DOWN &&
+            isDrawerOpen(GravityCompat.START)
+    ) {
+      // Unlock only for a real touch gesture so DrawerLayout can continue to handle swipe-close.
+      setDrawerLockMode(LOCK_MODE_UNLOCKED, GravityCompat.START)
+      post {
+        if (isDrawerOpen(GravityCompat.START)) {
+          registerBackAnimationCallback()
+        }
+      }
+    }
+    return super.onInterceptTouchEvent(event)
+  }
+
   private val mListener =
       object : SimpleDrawerListener() {
         override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
@@ -176,13 +235,12 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
 
         override fun onDrawerOpened(drawerView: View) {
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // DrawerLayout registers its own callback after dispatching this event. Register after
-            // that pass so this callback owns the same predictive-back gesture.
-            post {
-              if (isDrawerOpen(drawerView)) {
-                registerBackAnimationCallback()
-              }
-            }
+            backCloseAnimator?.cancel()
+            backProgress = 0f
+            predictiveBackInProgress = false
+            // Prevent DrawerLayout's own API 33 callback from racing the custom callback.
+            setDrawerLockMode(LOCK_MODE_LOCKED_OPEN, GravityCompat.START)
+            post { registerBackAnimationCallback() }
           }
         }
 
@@ -192,6 +250,7 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
             // The predictive-back callback temporarily translates the drawer itself. Clear that
             // visual offset only after DrawerLayout has committed the closed state.
             drawerView.translationX = 0f
+            setDrawerLockMode(LOCK_MODE_UNLOCKED, GravityCompat.START)
           }
           applyContentTranslation(drawerView, 0f)
         }
