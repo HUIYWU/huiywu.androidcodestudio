@@ -47,6 +47,7 @@ import androidx.appcompat.app.ActionBar
 import androidx.appcompat.app.ActionBarDrawerToggle
 import androidx.collection.MutableIntIntMap
 import androidx.core.graphics.Insets
+import androidx.drawerlayout.widget.DrawerLayout
 import androidx.core.view.GravityCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -207,6 +208,7 @@ abstract class BaseEditorActivity :
             return
           }
           if (binding.root.isDrawerOpen(GravityCompat.START)) {
+            logDrawerDiagnostic("back-before-close")
             binding.root.closeDrawer(GravityCompat.START)
           } else if (editorBottomSheet?.state != BottomSheetBehavior.STATE_COLLAPSED) {
             editorBottomSheet?.setState(BottomSheetBehavior.STATE_COLLAPSED)
@@ -1345,6 +1347,48 @@ override fun onApplySystemBarInsets(insets: Insets) {
     text.replace(0, 0, endLine, text.getColumnCount(endLine), generated)
   }
 
+  private fun logDrawerDiagnostic(stage: String) {
+    val currentBinding = _binding ?: return
+    val drawer = currentBinding.editorDrawerLayout
+    val surface = currentBinding.contentCard
+    val swipeReveal = currentBinding.swipeReveal
+    val memoryView = currentBinding.memUsageView.root
+    val bottomSheet = currentBinding.content.bottomSheet
+    val bottomSheetBinding = bottomSheet.binding
+    log.warn(
+        "Editor drawer diagnostic [{}]: drawerOpen={}, drawerVisible={}, " +
+            "drawerAlpha={}, drawerTranslationX={}, surfaceTranslationX={}, surfaceAlpha={}, " +
+            "surfaceVisibility={}, swipeTranslationX={}, swipeAlpha={}, swipeVisibility={}, " +
+            "swipeDragProgress={}, memoryVisibility={}, memoryAlpha={}, memoryTranslationX={}, memoryZ={}, " +
+            "sheetState={}, sheetTranslationY={}, sheetAlpha={}, cardVisibility={}, headerVisibility={}, " +
+            "drawerChildCount={}, drawerWidth={}, navWidth={}", 
+        stage,
+        drawer.isDrawerOpen(GravityCompat.START),
+        drawer.isDrawerVisible(GravityCompat.START),
+        drawer.alpha,
+        drawer.translationX,
+        surface.translationX,
+        surface.alpha,
+        surface.visibility,
+        swipeReveal.translationX,
+        swipeReveal.alpha,
+        swipeReveal.visibility,
+        swipeReveal.dragProgress,
+        memoryView.visibility,
+        memoryView.alpha,
+        memoryView.translationX,
+        memoryView.z,
+        editorBottomSheet?.state,
+        bottomSheet.translationY,
+        bottomSheet.alpha,
+        bottomSheetBinding.cardView.visibility,
+        bottomSheetBinding.headerContainer.visibility,
+        drawer.childCount,
+        drawer.width,
+        currentBinding.startNav.width,
+    )
+  }
+
   private fun setupDrawers() {
     val toggle =
         ActionBarDrawerToggle(
@@ -1356,12 +1400,43 @@ override fun onApplySystemBarInsets(insets: Insets) {
         )
 
     binding.editorDrawerLayout.addDrawerListener(toggle)
+    binding.editorDrawerLayout.addDrawerListener(
+        object : DrawerLayout.SimpleDrawerListener() {
+          private var lastLoggedSlideOffset = -1f
+
+          override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
+            if (lastLoggedSlideOffset < 0f ||
+                kotlin.math.abs(slideOffset - lastLoggedSlideOffset) >= 0.1f ||
+                slideOffset == 0f ||
+                slideOffset == 1f) {
+              lastLoggedSlideOffset = slideOffset
+              logDrawerDiagnostic("drawer-slide-$slideOffset")
+            }
+          }
+
+          override fun onDrawerStateChanged(newState: Int) {
+            logDrawerDiagnostic("drawer-state-$newState")
+          }
+
+          override fun onDrawerOpened(drawerView: View) {
+            logDrawerDiagnostic("drawer-opened")
+          }
+
+          override fun onDrawerClosed(drawerView: View) {
+            logDrawerDiagnostic("drawer-closed")
+            drawerView.post {
+              logDrawerDiagnostic("drawer-closed-post")
+            }
+            drawerView.postDelayed({
+              logDrawerDiagnostic("drawer-closed-post-250ms")
+            }, 250)
+          }
+        },
+    )
     toggle.syncState()
     binding.apply {
       editorDrawerLayout.apply {
-        // Translate the whole editor surface so the hidden memory chart cannot be exposed
-        // independently while the navigation drawer is opening or closing.
-        childId = swipeReveal.id
+        childId = contentCard.id
         translationBehaviorStart = ContentTranslatingDrawerLayout.TranslationBehavior.FULL
         translationBehaviorEnd = ContentTranslatingDrawerLayout.TranslationBehavior.FULL
         setScrimColor(Color.TRANSPARENT)
@@ -1435,10 +1510,21 @@ override fun onApplySystemBarInsets(insets: Insets) {
     binding.contentCard.progress = 0f
     binding.swipeReveal.dragListener =
         object : SwipeRevealLayout.OnDragListener {
-          override fun onDragStateChanged(swipeRevealLayout: SwipeRevealLayout, state: Int) {}
+          private var lastLoggedProgress = -1f
+
+          override fun onDragStateChanged(swipeRevealLayout: SwipeRevealLayout, state: Int) {
+            logDrawerDiagnostic("swipe-state-$state")
+          }
 
           override fun onDragProgress(swipeRevealLayout: SwipeRevealLayout, progress: Float) {
             onSwipeRevealDragProgress(progress)
+            if (lastLoggedProgress < 0f ||
+                kotlin.math.abs(progress - lastLoggedProgress) >= 0.25f ||
+                progress <= 0.01f ||
+                progress >= 0.99f) {
+              lastLoggedProgress = progress
+              logDrawerDiagnostic("swipe-progress-$progress")
+            }
           }
         }
   }
