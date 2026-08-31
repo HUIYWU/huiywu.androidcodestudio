@@ -503,13 +503,28 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun populateOverview(content: LinearLayout, module: GradleProject) {
-    info(content, "Type", moduleSubtitle(module).substringBefore(" ·"))
-    info(content, "Directory", module.projectDir.relativeToOrSelf(projectRoot()).path)
-    if (module is AndroidModule) {
-      info(content, "Namespace", module.namespace ?: "Unavailable")
-      info(content, "Selected variant", module.configuredVariant?.name ?: "Default")
-      info(content, "Available variants", module.variants.joinToString { it.name }.ifEmpty { "Unavailable" })
+    val information = LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.VERTICAL
+      addView(previewInfo("Type", moduleSubtitle(module).substringBefore(" ·")))
+      addView(previewInfo("Directory", module.projectDir.relativeToOrSelf(projectRoot()).path))
+      if (module is AndroidModule) {
+        addView(previewInfo("Namespace", module.namespace ?: "Unavailable"))
+        addView(previewInfo("Selected variant", module.configuredVariant?.name ?: "Default"))
+        addView(previewInfo("Available variants", module.variants.joinToString { it.name }.ifEmpty { "Unavailable" }))
+      }
     }
+    content.addView(MaterialCardView(requireContext()).apply {
+      radius = dp(8).toFloat()
+      cardElevation = 0f
+      setContentPadding(dp(16), dp(8), dp(16), dp(8))
+      layoutParams = LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+      ).apply {
+        bottomMargin = dp(12)
+      }
+      addView(information, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    })
     content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
     content.addView(iconButton("Sync project", R.drawable.ic_sync) { syncProject() })
   }
@@ -1367,11 +1382,6 @@ class ModuleManagerFragment : Fragment() {
 
   private fun sectionTitle(value: String, topPadding: Int = 16) = text(value, 18f).apply {
     setPadding(0, dp(topPadding), 0, dp(8))
-  }
-
-  private fun info(content: LinearLayout, label: String, value: String) {
-    content.addView(text(label, 13f, secondary = true))
-    content.addView(text(value, 15f).apply { setPadding(0, 0, 0, dp(12)) })
   }
 
   private fun projectRoot(): File = IProjectManager.getInstance().projectDir
