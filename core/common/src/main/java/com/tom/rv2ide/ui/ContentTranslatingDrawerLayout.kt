@@ -18,6 +18,7 @@
 package com.tom.rv2ide.ui
 
 import android.content.Context
+import android.graphics.Gravity
 import android.util.AttributeSet
 import android.view.View
 import androidx.core.view.GravityCompat
@@ -54,26 +55,54 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
   /** The [TranslationBehavior] for the end navigation view. */
   var translationBehaviorEnd: TranslationBehavior = TranslationBehavior.DEFAULT
 
+  private fun applyContentTranslation(drawerView: View, slideOffset: Float) {
+    if (childId == -1 || drawerView.width == 0) {
+      return
+    }
+
+    val gravity = (drawerView.layoutParams as LayoutParams).gravity
+    val view = findViewById<View>(childId) ?: return
+    val absoluteGravity = GravityCompat.getAbsoluteGravity(gravity, layoutDirection)
+    val isLeftDrawer = (absoluteGravity and Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.LEFT
+    val maxOffset =
+        if (isLeftDrawer) translationBehaviorStart.maxOffset
+        else translationBehaviorEnd.maxOffset
+    val direction = if (isLeftDrawer) 1 else -1
+    view.translationX = direction * (drawerView.width * slideOffset) * maxOffset
+  }
+
   private val mListener =
       object : SimpleDrawerListener() {
         override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
-          if (childId == -1) {
-            return
-          }
-
-          val gravity = (drawerView.layoutParams as LayoutParams).gravity
-          val view = findViewById<View>(childId) ?: return
-          val (direction, maxOffset) =
-              if (gravity == GravityCompat.START) {
-                1 to translationBehaviorStart.maxOffset
-              } else {
-                -1 to translationBehaviorEnd.maxOffset
-              }
-
-          val offset = (drawerView.width * slideOffset) * maxOffset
-          view.translationX = direction * offset
+          applyContentTranslation(drawerView, slideOffset)
         }
       }
+
+  override fun computeScroll() {
+    super.computeScroll()
+
+    for (index in 0 until childCount) {
+      val drawerView = getChildAt(index)
+      val gravity = (drawerView.layoutParams as? LayoutParams)?.gravity ?: continue
+      val absoluteGravity = GravityCompat.getAbsoluteGravity(gravity, layoutDirection)
+      val isDrawer =
+          (absoluteGravity and Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.LEFT ||
+              (absoluteGravity and Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.RIGHT
+      if (!isDrawer || drawerView.width == 0) {
+        continue
+      }
+
+      val isLeftDrawer =
+          (absoluteGravity and Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.LEFT
+      val slideOffset =
+          if (isLeftDrawer) {
+            (drawerView.left + drawerView.width).toFloat() / drawerView.width
+          } else {
+            (width - drawerView.left).toFloat() / drawerView.width
+          }
+      applyContentTranslation(drawerView, slideOffset.coerceIn(0f, 1f))
+    }
+  }
 
   init {
     addDrawerListener(mListener)
