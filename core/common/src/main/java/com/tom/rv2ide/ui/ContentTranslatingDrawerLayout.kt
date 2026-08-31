@@ -18,9 +18,14 @@
 package com.tom.rv2ide.ui
 
 import android.content.Context
+import android.os.Build
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.View
+import android.window.BackEvent
+import android.window.OnBackAnimationCallback
+import android.window.OnBackInvokedDispatcher
+import androidx.annotation.RequiresApi
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 
@@ -55,6 +60,83 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
   /** The [TranslationBehavior] for the end navigation view. */
   var translationBehaviorEnd: TranslationBehavior = TranslationBehavior.DEFAULT
 
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private var backDispatcher: OnBackInvokedDispatcher? = null
+
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private val backAnimationCallback =
+      object : OnBackAnimationCallback {
+        override fun onBackStarted(backEvent: BackEvent) {
+          findDrawerWithGravityCompat()?.let { drawerView ->
+            applyBackProgress(drawerView, 0f)
+          }
+        }
+
+        override fun onBackProgressed(backEvent: BackEvent) {
+          findDrawerWithGravityCompat()?.let { drawerView ->
+            applyBackProgress(drawerView, backEvent.progress)
+          }
+        }
+
+        override fun onBackCancelled() {
+          findDrawerWithGravityCompat()?.let { drawerView ->
+            resetBackTranslation(drawerView)
+            applyContentTranslation(drawerView, 1f)
+          }
+        }
+
+        override fun onBackInvoked() {
+          findDrawerWithGravityCompat()?.let(::resetBackTranslation)
+          closeDrawers()
+        }
+      }
+
+  private fun findDrawerWithGravityCompat(): View? {
+    for (index in 0 until childCount) {
+      val child = getChildAt(index)
+      val gravity = (child.layoutParams as? LayoutParams)?.gravity ?: continue
+      val absoluteGravity = GravityCompat.getAbsoluteGravity(gravity, layoutDirection)
+      if ((absoluteGravity and Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.LEFT) {
+        return child
+      }
+    }
+    return null
+  }
+
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private fun applyBackProgress(drawerView: View, progress: Float) {
+    val clampedProgress = progress.coerceIn(0f, 1f)
+    val drawerWidth = drawerView.width.toFloat()
+    drawerView.translationX = -drawerWidth * clampedProgress
+    applyContentTranslation(drawerView, 1f - clampedProgress)
+    invalidate()
+  }
+
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private fun resetBackTranslation(drawerView: View) {
+    drawerView.translationX = 0f
+  }
+
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private fun registerBackAnimationCallback() {
+    if (backDispatcher != null || !isAttachedToWindow) {
+      return
+    }
+    findOnBackInvokedDispatcher()?.let { dispatcher ->
+      dispatcher.registerOnBackInvokedCallback(
+          OnBackInvokedDispatcher.PRIORITY_OVERLAY,
+          backAnimationCallback,
+      )
+      backDispatcher = dispatcher
+    }
+  }
+
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private fun unregisterBackAnimationCallback() {
+    backDispatcher?.unregisterOnBackInvokedCallback(backAnimationCallback)
+    backDispatcher = null
+  }
+
   private fun applyContentTranslation(drawerView: View, slideOffset: Float) {
     if (childId == -1 || drawerView.width == 0) {
       return
@@ -76,33 +158,26 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
         override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
           applyContentTranslation(drawerView, slideOffset)
         }
-      }
 
-  override fun computeScroll() {
-    super.computeScroll()
-
-    for (index in 0 until childCount) {
-      val drawerView = getChildAt(index)
-      val gravity = (drawerView.layoutParams as? LayoutParams)?.gravity ?: continue
-      val absoluteGravity = GravityCompat.getAbsoluteGravity(gravity, layoutDirection)
-      val isDrawer =
-          (absoluteGravity and Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.LEFT ||
-              (absoluteGravity and Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.RIGHT
-      if (!isDrawer || drawerView.width == 0) {
-        continue
-      }
-
-      val isLeftDrawer =
-          (absoluteGravity and Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.LEFT
-      val slideOffset =
-          if (isLeftDrawer) {
-            (drawerView.left + drawerView.width).toFloat() / drawerView.width
-          } else {
-            (width - drawerView.left).toFloat() / drawerView.width
+        override fun onDrawerOpened(drawerView: View) {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // DrawerLayout registers its own callback after dispatching this event. Register after
+            // that pass so this callback owns the same predictive-back gesture.
+            post {
+              if (isDrawerOpen(drawerView)) {
+                registerBackAnimationCallback()
+              }
+            }
           }
-      applyContentTranslation(drawerView, slideOffset.coerceIn(0f, 1f))
-    }
-  }
+        }
+
+        override fun onDrawerClosed(drawerView: View) {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            unregisterBackAnimationCallback()
+          }
+          applyContentTranslation(drawerView, 0f)
+        }
+      }
 
   init {
     addDrawerListener(mListener)
