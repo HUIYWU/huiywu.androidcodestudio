@@ -18,8 +18,8 @@
 package com.tom.rv2ide.ui
 
 import android.content.Context
-import android.graphics.Gravity
 import android.util.AttributeSet
+import android.view.Gravity
 import android.view.View
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
