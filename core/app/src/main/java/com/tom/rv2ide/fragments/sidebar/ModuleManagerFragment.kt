@@ -507,17 +507,23 @@ class ModuleManagerFragment : Fragment() {
     info(content, "Directory", module.projectDir.relativeToOrSelf(projectRoot()).path)
     if (module is AndroidModule) {
       info(content, "Namespace", module.namespace ?: "Unavailable")
+      info(content, "Selected variant", module.configuredVariant?.name ?: "Default")
+      info(content, "Available variants", module.variants.joinToString { it.name }.ifEmpty { "Unavailable" })
     }
     content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
     content.addView(iconButton("Sync project", R.drawable.ic_sync) { syncProject() })
   }
 
   private fun populateBuild(content: LinearLayout, module: GradleProject) {
-    if (module is AndroidModule) {
-      info(content, "Selected variant", module.configuredVariant?.name ?: "Default")
-      info(content, "Available variants", module.variants.joinToString { it.name }.ifEmpty { "Unavailable" })
+    val message = if (module is AndroidModule) {
+      "No build features are currently available"
     } else if (module is JavaModule) {
-      content.addView(text("No build items for the JVM library", 14f, secondary = true).apply {
+      "No build items for the JVM library"
+    } else {
+      null
+    }
+    message?.let { value ->
+      content.addView(text(value, 14f, secondary = true).apply {
         gravity = Gravity.CENTER
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -526,9 +532,6 @@ class ModuleManagerFragment : Fragment() {
           setMargins(dp(16), dp(24), dp(16), dp(24))
         }
       })
-    } else {
-      info(content, "Module type", moduleSubtitle(module))
-      content.addView(text("Language target and Gradle configuration are read from the synchronized module model.", 14f, secondary = true))
     }
     content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
   }
