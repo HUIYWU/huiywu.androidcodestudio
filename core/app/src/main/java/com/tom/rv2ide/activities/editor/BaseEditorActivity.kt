@@ -1356,7 +1356,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
     val bottomSheet = currentBinding.content.bottomSheet
     val bottomSheetBinding = bottomSheet.binding
     log.warn(
-        "Editor drawer diagnostic [{}]: drawerOpen={}, drawerVisible={}, " +
+        "Editor drawer diagnostic [source=drawer-diagnostic-v3 stage={}]: drawerOpen={}, drawerVisible={}, " +
             "drawerAlpha={}, drawerTranslationX={}, surfaceTranslationX={}, surfaceAlpha={}, " +
             "surfaceVisibility={}, swipeTranslationX={}, swipeAlpha={}, swipeVisibility={}, " +
             "swipeDragProgress={}, memoryVisibility={}, memoryAlpha={}, memoryTranslationX={}, memoryZ={}, " +
@@ -1433,6 +1433,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
           }
         },
     )
+    log.warn("Editor drawer diagnostic source=drawer-diagnostic-v3 installed")
     toggle.syncState()
     binding.apply {
       editorDrawerLayout.apply {
