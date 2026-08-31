@@ -35,7 +35,24 @@ import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 
 /**
- * A [DrawerLayout] that scales its content when navigation drawers are opened or closed.
+ * A [DrawerLayout] that translates its content when navigation drawers are opened or closed.
+ *
+ * On API 34+ this layout also owns the predictive-back gesture for the start drawer.
+ * DrawerLayout itself registers an [OnBackInvokedCallback] which calls `closeDrawers()`;
+ * on some devices that path produces no intermediate `onDrawerSlide()` frames, so the drawer
+ * vanishes instantly while the translated content is still offset. To keep the two in sync this
+ * class:
+ *
+ * 1. Locks the start drawer to `LOCK_MODE_LOCKED_OPEN` while it is open. DrawerLayout only
+ *    registers its own back callback when the drawer is unlocked, so the parent callback is
+ *    disabled instead of racing the custom one.
+ * 2. Registers its own [OnBackAnimationCallback]. The gesture progress translates both the
+ *    drawer and the content, and a cancelled gesture restores the open position.
+ * 3. On `onBackInvoked()` a short [ValueAnimator] closes the remaining visual distance and then
+ *    commits the closed state with `closeDrawer(drawerView, false)`. The parent is never asked
+ *    to animate again, so a second close animation cannot start.
+ * 4. Temporarily unlocks the drawer while a real touch is being intercepted, preserving
+ *    swipe-to-close. The lock is restored by the drawer listener's `onDrawerClosed`.
  *
  * @author Akash Yadav
  */
@@ -69,9 +86,6 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
   private var backDispatcher: OnBackInvokedDispatcher? = null
 
   @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-  private var predictiveBackInProgress = false
-
-  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
   private var backProgress = 0f
 
   @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -82,7 +96,6 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
       object : OnBackAnimationCallback {
         override fun onBackStarted(backEvent: BackEvent) {
           backCloseAnimator?.cancel()
-          predictiveBackInProgress = true
           backProgress = 0f
           findDrawerWithGravityCompat()?.let { drawerView ->
             applyBackProgress(drawerView, 0f)
@@ -98,7 +111,6 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
 
         override fun onBackCancelled() {
           backCloseAnimator?.cancel()
-          predictiveBackInProgress = false
           backProgress = 0f
           findDrawerWithGravityCompat()?.let { drawerView ->
             resetBackTranslation(drawerView)
@@ -107,7 +119,6 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
         }
 
         override fun onBackInvoked() {
-          predictiveBackInProgress = false
           findDrawerWithGravityCompat()?.let { drawerView ->
             animateBackClose(drawerView)
           }
@@ -237,7 +248,6 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             backCloseAnimator?.cancel()
             backProgress = 0f
-            predictiveBackInProgress = false
             // Prevent DrawerLayout's own API 33 callback from racing the custom callback.
             setDrawerLockMode(LOCK_MODE_LOCKED_OPEN, GravityCompat.START)
             post { registerBackAnimationCallback() }
