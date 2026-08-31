@@ -516,6 +516,16 @@ class ModuleManagerFragment : Fragment() {
     if (module is AndroidModule) {
       info(content, "Selected variant", module.configuredVariant?.name ?: "Default")
       info(content, "Available variants", module.variants.joinToString { it.name }.ifEmpty { "Unavailable" })
+    } else if (module is JavaModule) {
+      content.addView(text("No build items for the JVM library", 14f, secondary = true).apply {
+        gravity = Gravity.CENTER
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+          setMargins(dp(16), dp(24), dp(16), dp(24))
+        }
+      })
     } else {
       info(content, "Module type", moduleSubtitle(module))
       content.addView(text("Language target and Gradle configuration are read from the synchronized module model.", 14f, secondary = true))
