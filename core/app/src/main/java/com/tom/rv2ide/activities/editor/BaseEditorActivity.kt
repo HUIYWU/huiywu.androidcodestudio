@@ -1359,7 +1359,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
     toggle.syncState()
     binding.apply {
       editorDrawerLayout.apply {
-        childId = contentCard.id
+        // Translate the whole editor surface so the hidden memory chart cannot be exposed
+        // independently while the navigation drawer is opening or closing.
+        childId = swipeReveal.id
         translationBehaviorStart = ContentTranslatingDrawerLayout.TranslationBehavior.FULL
         translationBehaviorEnd = ContentTranslatingDrawerLayout.TranslationBehavior.FULL
         setScrimColor(Color.TRANSPARENT)

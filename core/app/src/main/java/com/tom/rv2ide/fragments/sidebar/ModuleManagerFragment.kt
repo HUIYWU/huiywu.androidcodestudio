@@ -214,10 +214,10 @@ class ModuleManagerFragment : Fragment() {
     }
     labels.addView(text(module.path, 16f))
     labels.addView(text(moduleSubtitle(module), 13f, secondary = true))
-    val chevron = text(">", 24f, secondary = true).apply { gravity = Gravity.CENTER }
+    val chevron = text(">", 20f, secondary = true).apply { gravity = Gravity.CENTER }
     row.addView(icon)
     row.addView(labels)
-    row.addView(chevron, LinearLayout.LayoutParams(dp(28), dp(40)))
+    row.addView(chevron, LinearLayout.LayoutParams(dp(24), dp(40)))
     card.addView(row)
     return card
   }
@@ -1382,6 +1382,11 @@ class ModuleManagerFragment : Fragment() {
 
   private fun sectionTitle(value: String, topPadding: Int = 16) = text(value, 18f).apply {
     setPadding(0, dp(topPadding), 0, dp(8))
+  }
+
+  private fun info(content: LinearLayout, label: String, value: String) {
+    content.addView(text(label, 13f, secondary = true))
+    content.addView(text(value, 15f).apply { setPadding(0, 0, 0, dp(12)) })
   }
 
   private fun projectRoot(): File = IProjectManager.getInstance().projectDir
