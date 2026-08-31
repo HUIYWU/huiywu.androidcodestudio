@@ -64,9 +64,13 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
   private var backDispatcher: OnBackInvokedDispatcher? = null
 
   @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  private var predictiveBackInProgress = false
+
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
   private val backAnimationCallback =
       object : OnBackAnimationCallback {
         override fun onBackStarted(backEvent: BackEvent) {
+          predictiveBackInProgress = true
           findDrawerWithGravityCompat()?.let { drawerView ->
             applyBackProgress(drawerView, 0f)
           }
@@ -79,6 +83,7 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
         }
 
         override fun onBackCancelled() {
+          predictiveBackInProgress = false
           findDrawerWithGravityCompat()?.let { drawerView ->
             resetBackTranslation(drawerView)
             applyContentTranslation(drawerView, 1f)
@@ -86,11 +91,18 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
         }
 
         override fun onBackInvoked() {
-          // The predictive-back progress already moved the drawer visually to its final position.
-          // Commit that position without starting a second close animation.
           findDrawerWithGravityCompat()?.let { drawerView ->
-            closeDrawer(drawerView, false)
+            if (predictiveBackInProgress) {
+              // The predictive-back progress already moved the drawer visually to its final
+              // position. Commit that position without starting a second close animation.
+              closeDrawer(drawerView, false)
+            } else {
+              // A key/button back has no predictive progress and must retain DrawerLayout's
+              // regular closing animation.
+              closeDrawer(drawerView, true)
+            }
           }
+          predictiveBackInProgress = false
         }
       }
 
