@@ -86,8 +86,11 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
         }
 
         override fun onBackInvoked() {
-          findDrawerWithGravityCompat()?.let(::resetBackTranslation)
-          closeDrawers()
+          // The predictive-back progress already moved the drawer visually to its final position.
+          // Commit that position without starting a second close animation.
+          findDrawerWithGravityCompat()?.let { drawerView ->
+            closeDrawer(drawerView, false)
+          }
         }
       }
 
@@ -174,6 +177,9 @@ class ContentTranslatingDrawerLayout : InterceptableDrawerLayout {
         override fun onDrawerClosed(drawerView: View) {
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             unregisterBackAnimationCallback()
+            // The predictive-back callback temporarily translates the drawer itself. Clear that
+            // visual offset only after DrawerLayout has committed the closed state.
+            drawerView.translationX = 0f
           }
           applyContentTranslation(drawerView, 0f)
         }
