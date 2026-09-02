@@ -26,7 +26,6 @@ import com.tom.rv2ide.databinding.LayoutTextSizeSliderBinding
 import com.tom.rv2ide.editor.schemes.IDEColorScheme
 import com.tom.rv2ide.editor.schemes.IDEColorSchemeProvider
 import com.tom.rv2ide.preferences.internal.EditorPreferences
-import com.tom.rv2ide.preferences.internal.EditorPreferences.AUTO_SAVE
 import com.tom.rv2ide.preferences.internal.EditorPreferences.AUTO_SAVE_PERIODICALLY
 import com.tom.rv2ide.preferences.internal.EditorPreferences.KEYBOARD_SUGGESTIONS
 import com.tom.rv2ide.preferences.internal.EditorPreferences.COLOR_SCHEME
@@ -88,14 +87,12 @@ private class CommonConfigurations(
     addPreference(ColorSchemePreference())
     addPreference(NonPrintablePaintingFlags())
     addPreference(FontLigatures())
-    //addPreference(autoSave())
     addPreference(keyboardSuggestions())
     addPreference(EditorFontPreference())
     addPreference(UseSoftTab())
     addPreference(WordWrap())
     addPreference(UseMagnifier())
     addPreference(UseICU())
-    addPreference(AutoSave())
     addPreference(PeriodicAutoSave())
     addPreference(VisibiblePasswordFlag())
     addPreference(DeleteEmptyLines())
@@ -186,18 +183,6 @@ private class FontLigatures(
         setValue = EditorPreferences::fontLigatures::set,
         getValue = EditorPreferences::fontLigatures::get,
     )
-
-// @Parcelize
-// private class autoSave(
-    // override val key: String = AUTO_SAVE_TWO,
-    // override val title: Int = string.idepref_editor_autosave_title,
-    // override val summary: Int? = string.idepref_editor_autosave_summary,
-    // override val icon: Int? = drawable.ic_save,
-// ) :
-    // SwitchPreference(
-        // setValue = EditorPreferences::autoSave_two::set,
-        // getValue = EditorPreferences::autoSave_two::get,
-    // )
 
 @Parcelize
 private class keyboardSuggestions(
@@ -343,22 +328,10 @@ private class UseMagnifier(
     )
 
 @Parcelize
-private class AutoSave(
-    override val key: String = AUTO_SAVE,
-    override val title: Int = string.idepref_editor_autoSave_title,
-    override val summary: Int? = string.idepref_editor_autoSave_summary,
-    override val icon: Int? = drawable.ic_save,
-) :
-    SwitchPreference(
-        setValue = EditorPreferences::autoSave::set,
-        getValue = EditorPreferences::autoSave::get,
-    )
-
-@Parcelize
 private class PeriodicAutoSave(
     override val key: String = AUTO_SAVE_PERIODICALLY,
-    override val title: Int = string.idepref_editor_periodicAutoSave_title,
-    override val summary: Int? = string.idepref_editor_periodicAutoSave_summary,
+    override val title: Int = string.idepref_editor_autoSave_title,
+    override val summary: Int? = string.idepref_editor_autoSave_summary,
     override val icon: Int? = drawable.ic_save,
 ) :
     SwitchPreference(

@@ -35,9 +35,6 @@ object EditorPreferences {
   const val FONT_SIZE = "idepref_editor_fontSize"
   const val PRINTABLE_CHARS = "idepref_editor_nonPrintableFlags"
   const val TAB_SIZE = "idepref_editor_tabSize"
-  /** Whether files are saved when they are closed. */
-  const val AUTO_SAVE = "idepref_editor_autoSave"
-
   /** Whether the editor periodically writes pending changes to disk. */
   const val AUTO_SAVE_PERIODICALLY = "auto_save_enabled"
 
@@ -125,12 +122,6 @@ object EditorPreferences {
     get() = prefManager.getInt(TAB_SIZE, 4)
     set(value) {
       prefManager.putInt(TAB_SIZE, value)
-    }
-
-  var autoSave: Boolean
-    get() = prefManager.getBoolean(AUTO_SAVE, false)
-    set(value) {
-      prefManager.putBoolean(AUTO_SAVE, value)
     }
 
   var fontLigatures: Boolean
