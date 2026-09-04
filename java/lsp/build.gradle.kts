@@ -45,10 +45,10 @@ android {
 
 tasks.withType<Test>().configureEach {
   // Workspace integration tests launch this standalone Tooling API artifact in a child process.
-  dependsOn(":tooling:impl:jar")
-
+  dependsOn(":tooling:impl:jar") 
+  val home = System.getenv("HOME")
   val hostNativeLibraryDir =
-      rootProject.file("/data/data/com.tom.rv2ide/files/home/usr/jvm-test-lib").absoluteFile
+      rootProject.file("$home/usr/jvm-test-lib").absoluteFile
   systemProperty("java.library.path", hostNativeLibraryDir.absolutePath)
 }
 

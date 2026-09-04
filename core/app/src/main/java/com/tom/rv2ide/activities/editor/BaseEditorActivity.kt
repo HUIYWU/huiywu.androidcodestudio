@@ -146,7 +146,6 @@ import org.greenrobot.eventbus.ThreadMode.MAIN
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
-import io.github.mohammedbaqernull.seasonal.SeasonalEffects
 
 /**
  * Base class for EditorActivity which handles most of the view related things.
@@ -610,7 +609,6 @@ abstract class BaseEditorActivity :
 
     installationCallback?.destroy()
     installationCallback = null
-    SeasonalEffects.setSnowflakeCount(20)
 
     if (isDestroying) {
       saveAllPendingFiles()
@@ -752,7 +750,6 @@ override fun onApplySystemBarInsets(insets: Insets) {
     // Start auto-save mechanism
     startAutoSave()
     
-    SeasonalEffects.setSnowflakeCount(0)
     // Initialize lsp setup
     val setup = Setup(this)
     setup.scanProjectForLanguageServers(ProjectManagerImpl.getInstance().projectDir) { isSuccessfullyInstalled ->

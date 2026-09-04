@@ -66,7 +66,6 @@ import com.tom.rv2ide.utils.RecyclableObjectPool
 import com.tom.rv2ide.utils.VMUtils
 import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.MemoryProfiler
-import io.github.mohammedbaqernull.seasonal.SeasonalEffects
 import io.github.miyazkaori.silentinstaller.SilentInstaller
 import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
 import java.io.File
@@ -129,12 +128,6 @@ class IDEApplication : TermuxApplication() {
       IdeLogConfig.shouldLogDebug()
     }
 
-    if (GeneralPreferences.snowfallOverlay && isSnowfallSeasonActive()) {
-      SeasonalEffects.init(this)
-      SeasonalEffects.enableChristmas()
-      SeasonalEffects.setSnowflakeCount(20)
-    }
-
     if (BuildConfig.DEBUG) {
       StrictMode.setVmPolicy(
           StrictMode.VmPolicy.Builder(StrictMode.getVmPolicy()).penaltyLog().detectAll().build()
@@ -179,16 +172,6 @@ class IDEApplication : TermuxApplication() {
     // initializePluginSystem()
   }
 
-  /**
-   * Check if the snowfall season is currently active.
-   * Snowfall is active until January 5, 2026.
-   */
-  private fun isSnowfallSeasonActive(): Boolean {
-    val currentDate = java.time.LocalDate.now()
-    val endDate = java.time.LocalDate.of(2026, 1, 5)
-    return currentDate.isBefore(endDate) || currentDate.isEqual(endDate)
-  }
-  
   fun showChangelog() {
     val intent = Intent(Intent.ACTION_VIEW)
     var version = BuildInfo.VERSION_NAME_SIMPLE

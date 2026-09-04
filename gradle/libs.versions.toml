@@ -30,7 +30,6 @@ customizable-cardview = "v1.0"
 [libraries]
 # External deps here
 external-customizable-cardview = { module = "com.github.Mohammed-baqer-null:CustomizableCardView", version.ref = "customizable-cardview" }
-external-seasonal-effects = { module = "com.github.mdbqnull:seasonal-effects-android", version = "1.0.0" }
 
 # Kotlin compiler embeddable for Kotlin LSP
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }

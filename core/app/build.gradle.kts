@@ -181,7 +181,6 @@ dependencies {
   implementation(projects.external.atc) 
   implementation(libs.external.customizable.cardview)
   implementation(projects.external.logwire)
-	implementation(libs.external.seasonal.effects)
   
   // Annotation processors
   kapt(libs.common.glide.ap)

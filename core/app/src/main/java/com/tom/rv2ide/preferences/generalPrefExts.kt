@@ -17,11 +17,9 @@
 
 package com.tom.rv2ide.preferences
 
-import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.preference.Preference
-import com.tom.rv2ide.R as MainR
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
@@ -59,7 +57,6 @@ class InterfaceConfig(
   init {
     addPreference(UiMode())
     addPreference(ThemeSelector())
-    addPreference(Snowfall())
     addPreference(LocaleSelector())
   }
 }
@@ -171,37 +168,6 @@ class ThemeSelector(
         Handler(Looper.getMainLooper()).postDelayed({ AppRestartDialog.restartApp(preference.context) }, 1000)
       }
     }
-  }
-}
-
-@Parcelize
-class Snowfall(
-    override val key: String = GeneralPreferences.SNOWFALL_OVERLAY,
-    override val title: Int = string.title_snowfall_overlay,
-    override val summary: Int? = string.msg_snowfall_overlay,
-    override val icon: Int? = MainR.drawable.snowflake,
-) : SwitchPreference() {
-
-  override fun onCreatePreference(context: Context): Preference {
-    val pref = super.onCreatePreference(context) as androidx.preference.SwitchPreference
-    pref.isChecked = GeneralPreferences.snowfallOverlay
-    return pref
-  }
-
-  override fun onPreferenceChanged(preference: Preference, newValue: Any?): Boolean {
-    val newSnowfallValue = newValue as Boolean? ?: GeneralPreferences.snowfallOverlay
-    
-    AppRestartDialog.show(preference.context) { restart ->
-      if (restart) {
-        GeneralPreferences.snowfallOverlay = newSnowfallValue
-        android.widget.Toast.makeText(preference.context, preference.context.getString(string.restarting), android.widget.Toast.LENGTH_SHORT).show()
-        Handler(Looper.getMainLooper()).postDelayed({ 
-          AppRestartDialog.restartApp(preference.context) 
-        }, 1000)
-      }
-    }
-    
-    return false
   }
 }
 

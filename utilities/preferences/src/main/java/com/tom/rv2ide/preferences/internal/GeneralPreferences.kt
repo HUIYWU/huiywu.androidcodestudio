@@ -30,7 +30,6 @@ object GeneralPreferences {
   const val SELECTED_LOCALE = "idpref_general_locale"
   const val OPEN_PROJECTS = "idepref_general_autoOpenProjects"
   const val CONFIRM_PROJECT_OPEN = "idepref_general_confirmProjectOpen"
-  const val SNOWFALL_OVERLAY = "idepref_general_snowfall"
   const val IDE_LOGS_ENABLED = "idepref_ide_logs_enabled"
   const val TERMINAL_USE_SYSTEM_SHELL = "idepref_general_terminalShell"
   const val LAST_OPENED_PROJECT = "ide_last_project"
@@ -81,12 +80,6 @@ object GeneralPreferences {
     get() = prefManager.getBoolean(CONFIRM_PROJECT_OPEN, false)
     set(value) {
       prefManager.putBoolean(CONFIRM_PROJECT_OPEN, value)
-    }
-
-  var snowfallOverlay: Boolean
-    get() = prefManager.getBoolean(SNOWFALL_OVERLAY, true)
-    set(value) {
-      prefManager.putBoolean(SNOWFALL_OVERLAY, value)
     }
 
   var ideLogsEnabled: Boolean

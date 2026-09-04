@@ -822,9 +822,6 @@
   <string name="msg_tasks_to_run">The following tasks will be run, in order. Click the \'Run\' button again to confirm.\n\n%1$s</string>
   <string name="msg_loading_tasks">Loading tasks...</string>
 
-  <string name="title_snowfall_overlay">Snowfall</string>
-  <string name="msg_snowfall_overlay">Animated falling snowflakes overlay, ends after January 5, 2026</string>
-
   <string name="updates_available">%s Dependency Updates</string>
   <string name="you_have_new_dependency_update">You have new dependency updates available.</string>
   <string name="skip_for_1_min">Skip for 1 min</string>
