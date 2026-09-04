@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.preferences
 
+import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.preference.Preference
