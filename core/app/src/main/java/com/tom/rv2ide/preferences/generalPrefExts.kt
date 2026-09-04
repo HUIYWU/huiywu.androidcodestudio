@@ -52,7 +52,7 @@ class GeneralPreferencesScreen(
 @Parcelize
 class InterfaceConfig(
     override val key: String = "idepref_general_interface",
-    override val title: Int = string.title_interface,
+    override val title: Int = string.idepref_general_interface_title,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceGroup() {
 
