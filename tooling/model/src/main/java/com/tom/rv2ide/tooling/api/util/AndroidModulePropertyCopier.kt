@@ -88,21 +88,15 @@ object AndroidModulePropertyCopier {
   }
 
   fun copy(
-      @Suppress("UNUSED_PARAMETER") flags: AndroidGradlePluginProjectFlags
+      flags: AndroidGradlePluginProjectFlags
   ): DefaultAndroidGradlePluginProjectFlags {
+    // Copy flags by name (not by enum reference) so values remain stable even when the AGP proxy
+    // exposes an older/newer set of BooleanFlag values than the local compile-time enum.
+    // getFlagValue returns null when AGP did not set that flag.
     val flagMap: MutableMap<BooleanFlag, Boolean?> = mutableMapOf()
-    //        log.debug("Flags:", flags)
-    //
-    //        flagMap[APPLICATION_R_CLASS_CONSTANT_IDS] =
-    //            flags.getFlagValue(APPLICATION_R_CLASS_CONSTANT_IDS.name)
-    //        flagMap[JETPACK_COMPOSE] = flags.getFlagValue(JETPACK_COMPOSE.name)
-    //        flagMap[ML_MODEL_BINDING] = flags.getFlagValue(ML_MODEL_BINDING.name)
-    //        flagMap[TEST_R_CLASS_CONSTANT_IDS] =
-    // flags.getFlagValue(TEST_R_CLASS_CONSTANT_IDS.name)
-    //        flagMap[TRANSITIVE_R_CLASS] = flags.getFlagValue(TRANSITIVE_R_CLASS.name)
-    //        flagMap[UNIFIED_TEST_PLATFORM] = flags.getFlagValue(UNIFIED_TEST_PLATFORM.name)
-    //
-    //        log.debug("Flag map:", flagMap)
+    for (flag in BooleanFlag.values()) {
+      flagMap[flag] = flags.getFlagValue(flag.name)
+    }
     return DefaultAndroidGradlePluginProjectFlags(flagMap)
   }
 

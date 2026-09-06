@@ -32,4 +32,15 @@ class DefaultAndroidGradlePluginProjectFlags(val booleanFlagMap: Map<BooleanFlag
   override fun getFlagValue(flagName: String): Boolean? {
     return flagByName[flagName]?.let { booleanFlagMap[it] }
   }
+
+  /**
+   * Returns the effective value of [flag] for this project.
+   *
+   * When AGP did not explicitly report a value, [fallbackValue] is used; if that is also null the
+   * flag's [BooleanFlag.legacyDefault] is returned. This keeps callers free from null-handling
+   * while preserving the "unknown when AGP did not set it" distinction exposed by [getFlagValue].
+   */
+  fun getValue(flag: BooleanFlag, fallbackValue: Boolean? = null): Boolean {
+    return flag.getValue(this, fallbackValue)
+  }
 }
