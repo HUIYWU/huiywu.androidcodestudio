@@ -530,26 +530,57 @@ class ModuleManagerFragment : Fragment() {
   }
 
   private fun populateBuild(content: LinearLayout, module: GradleProject) {
-    val message = if (module is AndroidModule) {
-      "No build features are currently available"
-    } else if (module is JavaModule) {
-      "No build items for the JVM library"
-    } else {
-      null
+    when (module) {
+      is AndroidModule -> {
+        content.addView(buildFeaturesCard(module))
+        content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
+      }
+      is JavaModule -> {
+        content.addView(text("No Android build features for a JVM library.", 14f, secondary = true).apply {
+          gravity = Gravity.CENTER
+          layoutParams = LinearLayout.LayoutParams(
+              ViewGroup.LayoutParams.MATCH_PARENT,
+              ViewGroup.LayoutParams.WRAP_CONTENT,
+          ).apply {
+            setMargins(dp(16), dp(24), dp(16), dp(24))
+          }
+        })
+        content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
+      }
+      else -> {
+        content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
+      }
     }
-    message?.let { value ->
-      content.addView(text(value, 14f, secondary = true).apply {
-        gravity = Gravity.CENTER
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply {
-          setMargins(dp(16), dp(24), dp(16), dp(24))
-        }
-      })
-    }
-    content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
   }
+
+  private fun buildFeaturesCard(module: AndroidModule): View = MaterialCardView(requireContext()).apply {
+    radius = dp(8).toFloat()
+    cardElevation = 0f
+    setContentPadding(dp(16), dp(8), dp(16), dp(8))
+    layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+    ).apply {
+      bottomMargin = dp(12)
+    }
+    val rows = LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.VERTICAL
+      addView(previewInfo("View binding", buildFeatureText(module.viewBindingOptions.isEnabled)))
+      addView(previewInfo("Compose", buildFeatureText(module.flags.getFlagValue("JETPACK_COMPOSE"))))
+      addView(previewInfo("Data binding", buildFeatureText(module.flags.getFlagValue("DATA_BINDING_ENABLED"))))
+      addView(previewInfo("ML model binding", buildFeatureText(module.flags.getFlagValue("ML_MODEL_BINDING"))))
+    }
+    addView(rows, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+  }
+
+  private fun buildFeatureText(enabled: Boolean): String = if (enabled) "Enabled" else "Disabled"
+
+  private fun buildFeatureText(value: Boolean?): String =
+      when (value) {
+        true -> "Enabled"
+        false -> "Disabled"
+        null -> "Unknown"
+      }
 
   private fun populateDependencies(content: LinearLayout, module: GradleProject) {
     val dependencies = when (module) {
