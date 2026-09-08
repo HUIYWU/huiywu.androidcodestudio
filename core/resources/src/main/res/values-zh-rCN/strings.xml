@@ -1068,14 +1068,12 @@
   <string name="module_manager_language">编程语言</string>
   <string name="module_manager_kotlin">Kotlin</string>
   <string name="module_manager_java">Java</string>
-  <string name="module_manager_name_hint">输入模块名称（例如 feature、utils）</string>
   <string name="module_manager_name_valid">模块名称有效</string>
   <string name="module_manager_name_invalid">模块名称无效</string>
   <string name="module_manager_create">创建模块</string>
   <string name="module_manager_created_success">模块“%1$s”创建成功！</string>
   <string name="module_manager_created_error">创建模块失败：%1$s</string>
   <string name="module_manager_info_title">关于模块</string>
-  <string name="module_manager_info_description">模块可帮助你将项目组织为更小、更易管理的组件。每个模块都可以拥有自己的依赖项和构建配置。</string>
   <string name="action_update">更新</string>
   <string name="asset_studio_title">资源工作室</string>
   <string name="asset_studio_subtitle">Drawable 和图标制作器</string>
