@@ -463,10 +463,11 @@ class ModuleManagerFragment : Fragment() {
     content.addView(bottomActions(getString(R.string.back), getString(R.string.module_manager_create_and_sync)) { createModule(path, selectedApplicationPath) })
   }
 
-  private fun ModuleCreationKind.displayName() = when (this) {
-    ModuleCreationKind.ANDROID_LIBRARY -&gt; getString(R.string.module_manager_type_android_library)
-    ModuleCreationKind.JAVA_LIBRARY -&gt; getString(R.string.module_manager_type_jvm_library_short)
-  }
+  private fun ModuleCreationKind.displayName() =
+      when (this) {
+        ModuleCreationKind.ANDROID_LIBRARY -&gt; getString(R.string.module_manager_type_android_library)
+        ModuleCreationKind.JAVA_LIBRARY -&gt; getString(R.string.module_manager_type_jvm_library_short)
+      }
 
   private fun renderModuleDetail() {
     val module = selectedModule ?: run { showModuleList(animated = false); return }
