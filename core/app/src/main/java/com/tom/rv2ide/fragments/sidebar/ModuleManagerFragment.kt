@@ -239,7 +239,7 @@ class ModuleManagerFragment : Fragment() {
       gravity = Gravity.CENTER_VERTICAL
     }
     navigationRow.addView(
-        backToolbar(action = { showModuleList() }).apply { title = "New module" },
+        backToolbar(action = { showModuleList() }).apply { title = getString(R.string.module_manager_wizard_title) },
         LinearLayout.LayoutParams(0, dp(48), 1f),
     )
     val stepIndicator = text("$wizardStep/3", 14f, secondary = true)
@@ -268,8 +268,8 @@ class ModuleManagerFragment : Fragment() {
   private fun renderWizardType(content: LinearLayout) {
 
     content.addView(choiceCard(
-        title = "Android library",
-        description = "Android res, manifest, and Gradle plugin",
+        title = getString(R.string.module_manager_type_android_library),
+        description = getString(R.string.module_manager_type_android_library_desc),
         icon = R.drawable.ic_android,
         selected = moduleType == ModuleCreationKind.ANDROID_LIBRARY,
     ) {
@@ -277,41 +277,41 @@ class ModuleManagerFragment : Fragment() {
       render()
     })
     content.addView(choiceCard(
-        title = "Java/Kotlin library",
-        description = "JVM library with Java or Kotlin source",
+        title = getString(R.string.module_manager_type_jvm_library),
+        description = getString(R.string.module_manager_type_jvm_library_desc),
         icon = R.drawable.duke_bw,
         selected = moduleType == ModuleCreationKind.JAVA_LIBRARY,
     ) {
       moduleType = ModuleCreationKind.JAVA_LIBRARY
       render()
     })
-    content.addView(bottomActions(null, "Next") { showWizard(2) })
+    content.addView(bottomActions(null, getString(R.string.next)) { showWizard(2) })
   }
 
   private fun renderWizardName(content: LinearLayout) {
-    val packageInputLabel = if (moduleType == ModuleCreationKind.ANDROID_LIBRARY) "Namespace" else "Package name"
+    val packageInputLabel = if (moduleType == ModuleCreationKind.ANDROID_LIBRARY) "Namespace" else "Package"
     val packageInput = input(packageInputLabel, draftSourcePackageName, R.drawable.ic_package, dense = true).apply {
-      first.helperText = "Directly affects the source code directory"
+      first.helperText = getString(R.string.module_manager_namespace_helper)
       first.layoutParams = (first.layoutParams as LinearLayout.LayoutParams).apply {
         topMargin = 0
       }
     }
-    val pathInput = input("Gradle path", draftGradlePath, R.drawable.ic_gradle, dense = true).apply {
-      first.helperText = "By default, a directory is created at this path"
+    val pathInput = input(getString(R.string.module_manager_gradle_path), draftGradlePath, R.drawable.ic_gradle, dense = true).apply {
+      first.helperText = getString(R.string.module_manager_gradle_path_helper)
     }
     val defaultDirectory = draftGradlePath.trim().trim(':').replace(':', '/')
     if (!overwriteGradlePathDirectory) draftOverrideDirectory = defaultDirectory
     val overrideInput = input(
-        "Directory",
+        getString(R.string.module_manager_directory),
         draftOverrideDirectory,
         R.drawable.ic_folder,
         dense = true,
         enabled = overwriteGradlePathDirectory,
     ).apply {
-      first.helperText = "Directory used when overwriting generated files"
+      first.helperText = getString(R.string.module_manager_directory_helper)
     }
     val overwriteSwitch = MaterialSwitch(requireContext()).apply {
-      text = "Overwrite the Gradle path directory"
+      text = getString(R.string.module_manager_overwrite_dir)
       isChecked = overwriteGradlePathDirectory
       layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
         topMargin = dp(8)
@@ -337,7 +337,7 @@ class ModuleManagerFragment : Fragment() {
     content.addView(overwriteSwitch)
     content.addView(overrideInput.first)
     refreshDirectoryIconState(overrideInput.first)
-    content.addView(text("Language", 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
+    content.addView(text(getString(R.string.language), 14f, secondary = true).apply { setPadding(0, dp(12), 0, dp(4)) })
     val languages = ChipGroup(requireContext()).apply { isSingleSelection = true; isSelectionRequired = true }
     lateinit var kotlinLanguageChip: Chip
     lateinit var javaLanguageChip: Chip
@@ -379,18 +379,18 @@ class ModuleManagerFragment : Fragment() {
     dsl.addView(kotlinDslChip)
     dsl.addView(groovyDslChip)
     content.addView(dsl)
-    content.addView(bottomActions("Back", "Next") {
+    content.addView(bottomActions(getString(R.string.back), getString(R.string.next)) {
       val path = pathInput.second.text.toString().trim()
       val sourcePackageName = packageInput.second.text.toString().trim()
       when {
         !isValidPath(path) -> {
-          pathInput.first.error = "Use a valid Gradle path such as :feature:profile"
+          pathInput.first.error = getString(R.string.module_manager_error_gradle_path)
         }
         !isValidPackageName(sourcePackageName) -> {
-          packageInput.first.error = "Use a valid $packageInputLabel such as com.example.profile"
+          packageInput.first.error = getString(R.string.module_manager_error_package, packageInputLabel)
         }
         overwriteGradlePathDirectory && !isValidDirectoryPath(draftOverrideDirectory) -> {
-          overrideInput.first.error = "Use a project-relative directory such as feature/profile"
+          overrideInput.first.error = getString(R.string.module_manager_error_directory)
         }
         else -> {
           draftSourcePackageName = sourcePackageName
@@ -404,8 +404,8 @@ class ModuleManagerFragment : Fragment() {
   private fun renderWizardPreview(content: LinearLayout) {
     val path = ModuleCreationRequest.normalizePath(draftGradlePath)
     if (path == null) {
-      content.addView(text("Use a valid Gradle path such as :feature:profile.", 14f, secondary = true))
-      content.addView(bottomActions("Back", "Close") { showModuleList() })
+      content.addView(text(getString(R.string.module_manager_preview_invalid_path), 14f, secondary = true))
+      content.addView(bottomActions(getString(R.string.back), getString(R.string.close)) { showModuleList() })
       return
     }
     val applications = applicationProjects.orEmpty()
@@ -414,7 +414,7 @@ class ModuleManagerFragment : Fragment() {
     if (applications.isNotEmpty()) {
       val consumerContent = LinearLayout(requireContext()).apply {
         orientation = LinearLayout.VERTICAL
-        addView(sectionTitle("Consumer module", topPadding = 0))
+        addView(sectionTitle(getString(R.string.module_manager_consumer_module), topPadding = 0))
         val choices = ChipGroup(requireContext()).apply { isSingleSelection = true }
         applications.forEach { applicationPath ->
           choices.addView(chip(applicationPath, applicationPath == selectedApplicationPath) {
@@ -428,21 +428,21 @@ class ModuleManagerFragment : Fragment() {
     }
 
     val request = creationRequest(path, selectedApplicationPath) ?: return
-    val sourcePackageLabel = if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) "Namespace" else "Package name"
+    val sourcePackageLabel = if (request.kind == ModuleCreationKind.ANDROID_LIBRARY) "Namespace" else "Package"
     val configurationContent = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
-      addView(sectionTitle("Configuration", topPadding = 0))
-      addView(previewInfo("Type", request.kind.displayName()))
-      addView(previewInfo("Source", request.sourceLanguage.name.lowercase().replaceFirstChar { it.uppercase() }))
+      addView(sectionTitle(getString(R.string.module_manager_configuration), topPadding = 0))
+      addView(previewInfo(getString(R.string.module_manager_field_type), request.kind.displayName()))
+      addView(previewInfo(getString(R.string.module_manager_field_source), request.sourceLanguage.name.lowercase().replaceFirstChar { it.uppercase() }))
       addView(previewInfo("Gradle DSL", request.buildDsl.name.lowercase().replaceFirstChar { it.uppercase() }))
       addView(previewInfo(sourcePackageLabel, request.sourcePackageName))
-      addView(previewInfo("Module directory", request.moduleDirectory.relativeTo(request.projectRoot).path))
+      addView(previewInfo(getString(R.string.module_manager_field_directory), request.moduleDirectory.relativeTo(request.projectRoot).path))
     }
     content.addView(previewCard(configurationContent))
 
     val changesContent = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
-      addView(sectionTitle("Changes", topPadding = 0))
+      addView(sectionTitle(getString(R.string.module_manager_changes), topPadding = 0))
       addView(text("· ${request.settingsFileName}", 14f, secondary = true))
       addView(text("    + include(\"${request.gradlePath}\")", 14f, secondary = true))
       request.applicationProject?.let { info ->
@@ -460,12 +460,12 @@ class ModuleManagerFragment : Fragment() {
       }
     }
     content.addView(previewCard(changesContent))
-    content.addView(bottomActions("Back", "Create and sync") { createModule(path, selectedApplicationPath) })
+    content.addView(bottomActions(getString(R.string.back), getString(R.string.module_manager_create_and_sync)) { createModule(path, selectedApplicationPath) })
   }
 
   private fun ModuleCreationKind.displayName() = when (this) {
-    ModuleCreationKind.ANDROID_LIBRARY -> "Android library"
-    ModuleCreationKind.JAVA_LIBRARY -> "JVM library"
+    ModuleCreationKind.ANDROID_LIBRARY -&gt; getString(R.string.module_manager_type_android_library)
+    ModuleCreationKind.JAVA_LIBRARY -&gt; getString(R.string.module_manager_type_jvm_library_short)
   }
 
   private fun renderModuleDetail() {
@@ -611,11 +611,11 @@ class ModuleManagerFragment : Fragment() {
       if (!isAdded) return@launch
       creatingModule = false
       if (result.success) {
-        Toast.makeText(requireContext(), "Module created. Syncing project...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.module_manager_created_syncing), Toast.LENGTH_SHORT).show()
         syncProject()
       } else {
         render()
-        showCreationError(result.errorMessage ?: "Unable to create module files.")
+        showCreationError(result.errorMessage ?: getString(R.string.module_manager_create_files_error))
       }
     }
   }
@@ -631,7 +631,7 @@ class ModuleManagerFragment : Fragment() {
       isIndeterminate = true
       layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
     }
-    val message = text("Checking Gradle configuration...", 16f).apply {
+    val message = text(getString(R.string.module_manager_checking_gradle), 16f).apply {
       layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
         marginStart = dp(16)
       }
@@ -642,10 +642,10 @@ class ModuleManagerFragment : Fragment() {
     creationStatusProgress = progress
     creationStatusDialog =
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Preparing module")
+            .setTitle(getString(R.string.module_manager_preparing))
             .setView(content)
-            .setNegativeButton(if (onCancel == null) null else "Cancel", null)
-            .setPositiveButton("Close", null)
+            .setNegativeButton(if (onCancel == null) null else getString(R.string.cancel), null)
+            .setPositiveButton(getString(R.string.close), null)
             .setCancelable(onCancel != null)
             .create()
             .also { dialog ->
@@ -667,15 +667,15 @@ class ModuleManagerFragment : Fragment() {
     val dialog = creationStatusDialog
     if (dialog == null || !dialog.isShowing) {
       MaterialAlertDialogBuilder(requireContext())
-          .setTitle("Module creation failed")
+          .setTitle(getString(R.string.module_manager_create_failed))
           .setMessage(message)
-          .setPositiveButton("Close", null)
+          .setPositiveButton(getString(R.string.close), null)
           .show()
       return
     }
     creationStatusProgress?.visibility = View.GONE
     creationStatusMessage?.text = message
-    dialog.setTitle("Module creation failed")
+    dialog.setTitle(getString(R.string.module_manager_create_failed))
     dialog.setCancelable(true)
     dialog.setCanceledOnTouchOutside(true)
     dialog.getButton(AlertDialog.BUTTON_POSITIVE).apply {
@@ -749,7 +749,7 @@ class ModuleManagerFragment : Fragment() {
       applicationProjectsJob = null
       cancelCurrentToolingBuild()
     }
-    creationStatusMessage?.text = "Reading application modules..."
+    creationStatusMessage?.text = getString(R.string.module_manager_reading_apps)
     applicationProjectsJob =
         lifecycleScope.launch {
           val capabilities =
