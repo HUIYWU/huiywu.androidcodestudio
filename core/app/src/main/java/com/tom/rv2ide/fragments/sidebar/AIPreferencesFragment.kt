@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.snackbar.Snackbar
@@ -25,15 +26,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 
-class AIPreferencesFragment(
-    private val aiAgent: AIAgentManager,
-    private val agents: Agents,
-    private val codeCompletionManager: CodeCompletionManager?
-) : Fragment() {
+class AIPreferencesFragment : Fragment() {
 
     companion object {
         private val log = LoggerFactory.getLogger(AIPreferencesFragment::class.java)
     }
+
+    private val sharedViewModel: AISharedViewModel by activityViewModels()
+    private val aiAgent: AIAgentManager get() = sharedViewModel.aiAgent
+    private val agents: Agents get() = sharedViewModel.agents
+
+    private val codeCompletionManager: CodeCompletionManager?
+        get() = runCatching {
+            CodeCompletionManager.getInstance(requireContext(), lifecycleScope, aiAgent)
+        }.getOrNull()
 
     private lateinit var providerDropdown: AutoCompleteTextView
     private lateinit var modelDropdown: AutoCompleteTextView

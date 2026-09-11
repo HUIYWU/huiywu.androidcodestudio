@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.button.MaterialButton
@@ -23,14 +24,17 @@ import com.tom.rv2ide.managers.CodeCompletionManager
 import com.tom.rv2ide.handlers.AIRequestHandler
 import com.tom.rv2ide.utils.ProjectHelper.getProjectRoot
 import com.tom.rv2ide.activities.editor.EditorHandlerActivity
+import com.tom.rv2ide.fragments.sidebar.AISharedViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.io.File
-class ChatFragment(
-    private val aiAgent: AIAgentManager
-) : Fragment() {
+
+class ChatFragment : Fragment() {
+
+    private val sharedViewModel: AISharedViewModel by activityViewModels()
+    private val aiAgent: AIAgentManager get() = sharedViewModel.aiAgent
 
     companion object {
         private val log = LoggerFactory.getLogger(ChatFragment::class.java)

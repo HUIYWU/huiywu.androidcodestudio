@@ -7,8 +7,8 @@ import android.view.ViewGroup
 import android.view.animation.AnimationUtils
 import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.commit
-import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
@@ -20,18 +20,23 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.adapters.ViewPagerAdapter
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.agents.Agents
-import com.tom.rv2ide.fragments.ChatFragment
-import com.tom.rv2ide.fragments.AIHistoryFragment
 import com.tom.rv2ide.managers.NavigationRailManager
-import com.tom.rv2ide.managers.CodeCompletionManager
-import com.tom.rv2ide.ui.CodeEditorView
 
-class ArtificialFragment(
-    private val editorView: CodeEditorView? = null
-) : Fragment() {
+/**
+ * AI assistant sidebar entry.
+ *
+ * MUST keep a no-arg constructor: the sidebar framework instantiates this fragment
+ * reflectively (via [com.tom.rv2ide.utils.EditorSidebarActions]) and Android may also
+ * recreate it on configuration changes / process death. All dependencies are resolved
+ * from the activity-scoped [AISharedViewModel] instead of being injected through the
+ * constructor.
+ */
+class ArtificialFragment : Fragment() {
 
-    private lateinit var aiAgent: AIAgentManager
-    private lateinit var agents: Agents
+    private val sharedViewModel: AISharedViewModel by activityViewModels()
+    private val aiAgent: AIAgentManager get() = sharedViewModel.aiAgent
+    private val agents: Agents get() = sharedViewModel.agents
+
     private lateinit var viewPager: ViewPager2
     private lateinit var tabLayout: TabLayout
     private lateinit var undoFab: ExtendedFloatingActionButton
@@ -40,16 +45,16 @@ class ArtificialFragment(
     private lateinit var overlayView: View
     private lateinit var navigationRailManager: NavigationRailManager
     private lateinit var contentContainer: View
-    
+
     private var savedViewPagerPosition = 0
     private var savedContentContainerVisibility = View.GONE
-    
+
     private val backPressedCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
             showMainContent()
         }
     }
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         savedInstanceState?.let {
@@ -57,7 +62,7 @@ class ArtificialFragment(
             savedContentContainerVisibility = it.getInt(KEY_CONTENT_VISIBILITY, View.GONE)
         }
     }
-    
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -65,13 +70,10 @@ class ArtificialFragment(
     ): View? {
         return inflater.inflate(R.layout.fragment_artificial, container, false)
     }
-    
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-    
-        aiAgent = AIAgentManager(requireContext())
-        agents = Agents(requireContext())
-    
+
         viewPager = view.findViewById(R.id.viewPager)
         tabLayout = view.findViewById(R.id.tabLayout)
         undoFab = view.findViewById(R.id.undoFab)
@@ -79,15 +81,15 @@ class ArtificialFragment(
         navigationRail = view.findViewById(R.id.navigationRail)
         overlayView = view.findViewById(R.id.overlayView)
         contentContainer = view.findViewById(R.id.contentContainer)
-    
+
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backPressedCallback)
-    
+
         setupNavigationRail()
         setupFab()
-        
+
         view.post {
             setupViewPager()
-            
+
             if (savedInstanceState != null) {
                 viewPager.setCurrentItem(savedViewPagerPosition, false)
                 contentContainer.visibility = savedContentContainerVisibility
@@ -97,13 +99,13 @@ class ArtificialFragment(
             }
         }
     }
-    
+
     private fun setupViewPager() {
-        val adapter = ViewPagerAdapter(requireActivity(), aiAgent)
+        val adapter = ViewPagerAdapter(requireActivity())
         viewPager.adapter = adapter
         viewPager.offscreenPageLimit = 1
         viewPager.isUserInputEnabled = true
-    
+
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
             tab.text = when (position) {
                 0 -> "Chat"
@@ -111,7 +113,7 @@ class ArtificialFragment(
                 else -> ""
             }
         }.attach()
-        
+
         viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
@@ -120,12 +122,12 @@ class ArtificialFragment(
                 }
             }
         })
-        
+
         viewPager.post {
             viewPager.requestLayout()
         }
     }
-        
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         if (::viewPager.isInitialized) {
@@ -142,7 +144,7 @@ class ArtificialFragment(
             overlayView,
             fabToggleRail
         )
-        
+
         navigationRail.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_chat -> {
@@ -162,33 +164,21 @@ class ArtificialFragment(
             }
         }
     }
-    
-    private fun getCurrentChatFragment(): ChatFragment? {
-        val fragments = childFragmentManager.fragments
-        return fragments.find { it is ChatFragment && it.isVisible } as? ChatFragment
-    }
 
     private fun openAIPreferences() {
-        val chatFragment = getCurrentChatFragment()
-        val completionManager = chatFragment?.getCodeCompletionManager()
-        
-        val preferencesFragment = AIPreferencesFragment(
-            aiAgent,
-            agents,
-            completionManager
-        )
-        
+        val preferencesFragment = AIPreferencesFragment()
+
         val slideIn = AnimationUtils.loadAnimation(requireContext(), android.R.anim.slide_in_left)
         val slideOut = AnimationUtils.loadAnimation(requireContext(), android.R.anim.slide_out_right)
-        
+
         viewPager.startAnimation(slideOut)
         viewPager.visibility = View.GONE
         tabLayout.visibility = View.GONE
-        
+
         contentContainer.visibility = View.VISIBLE
         contentContainer.startAnimation(slideIn)
         backPressedCallback.isEnabled = true
-        
+
         childFragmentManager.commit {
             replace(R.id.contentContainer, preferencesFragment)
             addToBackStack("ai_preferences")
@@ -198,16 +188,16 @@ class ArtificialFragment(
     private fun showMainContent() {
         val slideIn = AnimationUtils.loadAnimation(requireContext(), android.R.anim.slide_in_left)
         val slideOut = AnimationUtils.loadAnimation(requireContext(), android.R.anim.slide_out_right)
-        
+
         contentContainer.startAnimation(slideOut)
         contentContainer.visibility = View.GONE
-        
+
         viewPager.visibility = View.VISIBLE
         tabLayout.visibility = View.VISIBLE
         viewPager.startAnimation(slideIn)
-        
+
         backPressedCallback.isEnabled = false
-        
+
         if (childFragmentManager.backStackEntryCount > 0) {
             childFragmentManager.popBackStack()
         }
@@ -228,7 +218,7 @@ class ArtificialFragment(
             }
         }
     }
-    
+
     override fun onDestroyView() {
         navigationRailManager.cleanup()
         backPressedCallback.remove()
@@ -239,7 +229,7 @@ class ArtificialFragment(
         super.onDestroy()
         com.tom.rv2ide.utils.EditorSidebarActions.removeFragmentFromCache("ide.editor.sidebar.ai_agent")
     }
-    
+
     companion object {
         private const val KEY_VIEWPAGER_POSITION = "viewpager_position"
         private const val KEY_CONTENT_VISIBILITY = "content_visibility"

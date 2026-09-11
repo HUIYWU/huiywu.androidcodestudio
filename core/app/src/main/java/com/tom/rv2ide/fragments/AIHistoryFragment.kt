@@ -5,13 +5,18 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.tom.rv2ide.R
 import com.tom.rv2ide.adapters.HistoryAdapter
+import com.tom.rv2ide.fragments.sidebar.AISharedViewModel
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 
-class AIHistoryFragment(private val aiAgent: AIAgentManager) : Fragment() {
+class AIHistoryFragment : Fragment() {
+
+    private val sharedViewModel: AISharedViewModel by activityViewModels()
+    private val aiAgent: AIAgentManager get() = sharedViewModel.aiAgent
 
     private lateinit var historyRecyclerView: RecyclerView
     private lateinit var historyAdapter: HistoryAdapter
