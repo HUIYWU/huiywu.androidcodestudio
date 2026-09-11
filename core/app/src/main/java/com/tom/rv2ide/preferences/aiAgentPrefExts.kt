@@ -92,7 +92,7 @@ private fun buildApiKeyInput(context: Context, currentValue: String, labelRes: I
           com.google.android.material.R.style.Widget_Material3_TextInputLayout_OutlinedBox,
       )
   inputLayout.hint = context.getString(labelRes)
-  inputLayout.setPadding(dp(context, 8), dp(context, 8), dp(context, 8), 0)
+  inputLayout.setPadding(dp(context, 24), dp(context, 8), dp(context, 24), 0)
   val editText = android.widget.EditText(inputContext)
   editText.setText(currentValue)
   inputLayout.addView(editText)
@@ -114,6 +114,7 @@ private fun dp(context: Context, value: Int): Int =
 private class AIAgentEnabled(
     override val key: String = "ai_agent_enabled",
     override val title: Int = R.string.ai_agent_enable,
+    override val icon: Int = R.drawable.ic_ai_agent,
     @IgnoredOnParcel private val onStateChanged: ((Boolean) -> Unit)? = null,
 ) :
     SwitchPreference(
@@ -138,6 +139,7 @@ private class AIAgentEnabled(
 private class GrokApiKey(
     override val key: String = "ai_agent_grok_api_key",
     override val title: Int = R.string.ai_agent_grok_api_key,
+    override val icon: Int = R.drawable.ic_ai_grok,
 ) : BasePreference() {
 
   @IgnoredOnParcel private var preference: Preference? = null
@@ -196,6 +198,7 @@ private class GrokApiKey(
 private class GeminiApiKey(
     override val key: String = "ai_agent_gemini_api_key",
     override val title: Int = R.string.ai_agent_api_key,
+    override val icon: Int = R.drawable.ic_ai_gemini,
 ) : BasePreference() {
 
   @IgnoredOnParcel private var preference: Preference? = null
@@ -253,6 +256,7 @@ private class GeminiApiKey(
 private class DeepseekApiKey(
     override val key: String = "ai_agent_deepseek_api_key",
     override val title: Int = R.string.ai_agent_deepseek_api_key,
+    override val icon: Int = R.drawable.ic_ai_deepseek,
 ) : BasePreference() {
 
   @IgnoredOnParcel private var preference: Preference? = null
@@ -310,6 +314,7 @@ private class DeepseekApiKey(
 private class OpenAIApiKey(
     override val key: String = "ai_agent_openai_api_key",
     override val title: Int = R.string.ai_agent_openai_api_key,
+    override val icon: Int = R.drawable.ic_ai_gpt,
 ) : BasePreference() {
 
   @IgnoredOnParcel private var preference: Preference? = null
@@ -367,6 +372,7 @@ private class OpenAIApiKey(
 private class AnthropicApiKey(
     override val key: String = "ai_agent_anthropic_api_key",
     override val title: Int = R.string.ai_agent_anthropic_api_key,
+    override val icon: Int = R.drawable.ic_ai_anthropic,
 ) : BasePreference() {
 
   @IgnoredOnParcel private var preference: Preference? = null
