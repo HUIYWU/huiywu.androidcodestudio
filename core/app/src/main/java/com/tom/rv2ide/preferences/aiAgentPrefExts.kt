@@ -19,6 +19,7 @@ package com.tom.rv2ide.preferences
 
 import android.content.Context
 import androidx.preference.Preference
+import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
 import com.tom.rv2ide.preferences.internal.prefManager
 import com.tom.rv2ide.resources.R.string
@@ -97,6 +98,13 @@ private fun buildApiKeyInput(context: Context, currentValue: String, labelRes: I
   inputLayout.addView(editText)
   return inputLayout
 }
+
+/**
+ * Fallback summary when no Context is available.
+ * Cannot use localized resources here, so a neutral English placeholder is used.
+ */
+private fun getFallbackSummary(apiKey: String): String =
+    if (apiKey.isBlank()) "API Key" else apiKey
 
 private fun dp(context: Context, value: Int): Int =
     (value * context.resources.displayMetrics.density).toInt()
@@ -235,7 +243,7 @@ private class GeminiApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_gemini_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
+    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -291,7 +299,7 @@ private class DeepseekApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_deepseek_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
+    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -347,7 +355,7 @@ private class OpenAIApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_openai_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
+    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -403,7 +411,7 @@ private class AnthropicApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
+    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
