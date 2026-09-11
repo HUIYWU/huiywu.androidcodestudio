@@ -88,7 +88,7 @@
   <string name="ai_agent_grok_api_key_dialog_title">Grok</string>
   <string name="ai_agent_grok_api_key_label">Grok API Key</string>
  <string name="ai_agent_click_to_set_api_key">Click to set API key</string>
- <string name="ai_agent_api_key_masked">API Key: %1$s...</string>
+ <string name="ai_agent_api_key_masked">API Key: %1$s</string>
  <string name="action_save">Save</string>
  
  <string name="no_acs_title">ACS Components Missing</string>

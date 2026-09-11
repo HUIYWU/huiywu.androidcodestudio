@@ -651,7 +651,7 @@
   <string name="ai_agent_grok_api_key_dialog_title">Grok</string>
   <string name="ai_agent_grok_api_key_label">Grok API 密钥</string>
   <string name="ai_agent_click_to_set_api_key">点击设置 API 密钥</string>
-  <string name="ai_agent_api_key_masked">API 密钥：%1$s...</string>
+  <string name="ai_agent_api_key_masked">API 密钥：%1$s</string>
   <string name="action_save">保存</string>
   <string name="ai_agent_note"><![CDATA[
 <b>🚨 重要提示</b>
