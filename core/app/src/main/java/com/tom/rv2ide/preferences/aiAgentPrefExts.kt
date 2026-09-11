@@ -103,6 +103,15 @@ private fun dp(context: Context, value: Int): Int =
     (value * context.resources.displayMetrics.density).toInt()
 
 
+private val AI_API_KEY_PREF_KEYS =
+    setOf(
+        "ai_agent_gemini_api_key",
+        "ai_agent_deepseek_api_key",
+        "ai_agent_openai_api_key",
+        "ai_agent_anthropic_api_key",
+        "ai_agent_grok_api_key",
+    )
+
 @Parcelize
 private class AIAgentEnabled(
     override val key: String = "ai_agent_enabled",
@@ -123,7 +132,26 @@ private class AIAgentEnabled(
       key = "ai_agent_enabled"
       title = context.getString(R.string.ai_agent_enable)
       summary = context.getString(R.string.ai_agent_enable_summary)
+      isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
     }
+  }
+
+  override fun onPreferenceChanged(preference: Preference, newValue: Any?): Boolean {
+    val result = super.onPreferenceChanged(preference, newValue)
+    val enabled = newValue as? Boolean ?: prefManager.getBoolean("ai_agent_enabled", false)
+    // Update sibling API key preferences via the live view tree. The parceled
+    // `onStateChanged` callback is dropped during Bundle round-trip, so we must
+    // not rely on it for real-time toggling.
+    val group = preference.parent as? androidx.preference.PreferenceGroup
+    if (group != null) {
+      for (i in 0 until group.preferenceCount) {
+        val child = group.getPreference(i)
+        if (child.key in AI_API_KEY_PREF_KEYS) {
+          child.isEnabled = enabled
+        }
+      }
+    }
+    return result
   }
 }
 
@@ -182,7 +210,7 @@ private class GrokApiKey(
 
   private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_grok_api_key", "")
-    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey)
+    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(12))
   }
 }
 
@@ -239,7 +267,7 @@ private class GeminiApiKey(
 
   private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_gemini_api_key", "")
-    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey)
+    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(12))
   }
 }
 
@@ -296,7 +324,7 @@ private class DeepseekApiKey(
 
   private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_deepseek_api_key", "")
-    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey)
+    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(12))
   }
 }
 
@@ -353,7 +381,7 @@ private class OpenAIApiKey(
 
   private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_openai_api_key", "")
-    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey)
+    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(12))
   }
 }
 
@@ -410,6 +438,6 @@ private class AnthropicApiKey(
 
   private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
-    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey)
+    return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(12))
   }
 }
