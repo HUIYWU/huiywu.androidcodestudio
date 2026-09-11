@@ -64,38 +64,29 @@
   <string name="ai_agent_instructions">Enter your request and the AI will generate code for you. Make sure to configure your Gemini API key in settings.</string>
   <string name="ai_agent_enable">Enable AI Agent</string>
   <string name="ai_agent_enable_summary">Enable AI-powered code generation</string>
-  <string name="ai_agent_api_key">Gemini API Key</string>
-  <string name="ai_agent_api_key_summary">Enter your Google Gemini API key to use AI features</string>
- <string name="ai_agent_api_key_dialog_title">Gemini API Key</string>
- <string name="ai_agent_api_key_dialog_message">Enter your Google Gemini API key</string>
- <string name="ai_agent_gemini_api_key_hint">Enter your Google Gemini API key</string>
+  <string name="ai_agent_api_key">Gemini</string>
+  <string name="ai_agent_api_key_label">Gemini API Key</string>
+  <string name="ai_agent_api_key_dialog_title">Gemini</string>
 
   <!-- AI Agent Deepseek -->
-  <string name="ai_agent_deepseek_api_key">Deepseek API Key</string>
-  <string name="ai_agent_deepseek_api_key_summary">Enter your Deepseek API key to use AI features</string>
- <string name="ai_agent_deepseek_api_key_dialog_title">Deepseek API Key</string>
- <string name="ai_agent_deepseek_api_key_dialog_message">Enter your Deepseek API key</string>
- <string name="ai_agent_deepseek_api_key_hint">Enter your Deepseek API key</string>
+<string name="ai_agent_deepseek_api_key">DeepSeek</string>
+  <string name="ai_agent_deepseek_api_key_dialog_title">DeepSeek</string>
+  <string name="ai_agent_deepseek_api_key_label">DeepSeek API Key</string>
 
   <!-- AI Agent OpenAI -->
-  <string name="ai_agent_openai_api_key">OpenAI API Key</string>
- <string name="ai_agent_openai_api_key_summary">Enter your OpenAI API key to use AI features</string>
- <string name="ai_agent_openai_api_key_dialog_title">OpenAI API Key</string>
- <string name="ai_agent_openai_api_key_dialog_message">Enter your OpenAI API key</string>
- <string name="ai_agent_openai_api_key_hint">Enter your OpenAI API key</string>
+<string name="ai_agent_openai_api_key">GPT</string>
+  <string name="ai_agent_openai_api_key_dialog_title">GPT</string>
+  <string name="ai_agent_openai_api_key_label">OpenAI GPT API Key</string>
 
   <!-- AI Agent anthropic -->
-  <string name="ai_agent_anthropic_api_key">Anthropic API Key</string>
- <string name="ai_agent_anthropic_api_key_summary">Enter your Anthropic API key to use AI features</string>
- <string name="ai_agent_anthropic_api_key_dialog_title">Anthropic API Key</string>
- <string name="ai_agent_anthropic_api_key_dialog_message">Enter your Anthropic API key</string>
- <string name="ai_agent_anthropic_api_key_hint">Enter your Anthropic API key</string>
+<string name="ai_agent_anthropic_api_key">Anthropic</string>
+  <string name="ai_agent_anthropic_api_key_dialog_title">Anthropic</string>
+  <string name="ai_agent_anthropic_api_key_label">Anthropic API Key</string>
 
   <!-- AI Agent grok -->
-  <string name="ai_agent_grok_api_key">Grok API Key</string>
- <string name="ai_agent_grok_api_key_hint">Enter your xAI Grok API key</string>
- <string name="ai_agent_grok_api_key_dialog_title">Grok API Key</string>
- <string name="ai_agent_grok_api_key_dialog_message">Enter your xAI Grok API key</string>
+<string name="ai_agent_grok_api_key">Grok</string>
+  <string name="ai_agent_grok_api_key_dialog_title">Grok</string>
+  <string name="ai_agent_grok_api_key_label">Grok API Key</string>
  <string name="ai_agent_click_to_set_api_key">Click to set API key</string>
  <string name="ai_agent_api_key_masked">API Key: %1$s...</string>
  <string name="action_save">Save</string>

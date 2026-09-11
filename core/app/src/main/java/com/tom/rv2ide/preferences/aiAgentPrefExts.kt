@@ -53,7 +53,7 @@ private class AIAgentConfig(
   @IgnoredOnParcel private var grokApiKeyPref: GrokApiKey? = null
 
   init {
-    val aiAgentEnabled = AIAgentEnabled { isEnabled -> updateApiKeyPreferencesState(isEnabled) }
+    val aiAgentEnabled = AIAgentEnabled { isEnabled -&gt; updateApiKeyPreferencesState(isEnabled) }
 
     geminiApiKeyPref = GeminiApiKey()
     deepseekApiKeyPref = DeepseekApiKey()
@@ -62,10 +62,10 @@ private class AIAgentConfig(
     grokApiKeyPref = GrokApiKey()
 
     addPreference(aiAgentEnabled)
-    addPreference(geminiApiKeyPref!!)
-    addPreference(deepseekApiKeyPref!!)
-    addPreference(openAIApiKeyPref!!)
     addPreference(anthropicApiKeyPref!!)
+    addPreference(deepseekApiKeyPref!!)
+    addPreference(geminiApiKeyPref!!)
+    addPreference(openAIApiKeyPref!!)
     addPreference(grokApiKeyPref!!)
   }
 
@@ -77,6 +77,36 @@ private class AIAgentConfig(
     grokApiKeyPref?.setEnabled(isEnabled)
   }
 }
+
+private fun buildApiKeyInput(context: Context, currentValue: String, labelRes: Int): TextInputLayout {
+  val inputContext =
+      android.view.ContextThemeWrapper(
+          context,
+          com.google.android.material.R.style.Theme_Material3_DayNight,
+      )
+  val inputLayout =
+      TextInputLayout(
+          inputContext,
+          null,
+          com.google.android.material.R.style.Widget_Material3_TextInputLayout_OutlinedBox,
+      )
+  inputLayout.hint = context.getString(labelRes)
+  inputLayout.setPadding(dp(context, 8), dp(context, 8), dp(context, 8), 0)
+  val editText = android.widget.EditText(inputContext)
+  editText.setText(currentValue)
+  inputLayout.addView(editText)
+  return inputLayout
+}
+
+/**
+ * Fallback summary when no Context is available.
+ * Cannot use localized resources here, so a neutral English placeholder is used.
+ */
+private fun getFallbackSummary(apiKey: String): String =
+    if (apiKey.isBlank()) "API Key" else apiKey
+
+private fun dp(context: Context, value: Int): Int =
+    (value * context.resources.displayMetrics.density).toInt()
 
 
 @Parcelize
@@ -125,17 +155,20 @@ private class GrokApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_grok_api_key", ""))
-    editText.hint = "sk-***"
+    val inputLayout =
+        buildApiKeyInput(
+            context,
+            prefManager.getString("ai_agent_grok_api_key", ""),
+            R.string.ai_agent_grok_api_key_label,
+        )
+    val editText = inputLayout.editText!!
 
     val dialog =
         com.google.android.material.dialog
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_grok_api_key_dialog_title)
-            .setMessage(R.string.ai_agent_grok_api_key_dialog_message)
-            .setView(editText)
-            .setPositiveButton(R.string.action_save) { _, _ ->
+            .setView(inputLayout)
+            .setPositiveButton(R.string.action_save) { _, _ -&gt;
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_grok_api_key", apiKey)
               preference.summary = getSummaryText()
@@ -153,7 +186,7 @@ private class GrokApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_grok_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
+    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -180,16 +213,17 @@ private class GeminiApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_gemini_api_key", ""))
-    editText.hint = "sk-***"
+    val editText = buildApiKeyInput(
+        context,
+        prefManager.getString("ai_agent_gemini_api_key", ""),
+        R.string.ai_agent_api_key_label,
+    ).editText!!
 
     val dialog =
         com.google.android.material.dialog
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_api_key_dialog_title)
-            .setMessage(R.string.ai_agent_api_key_dialog_message)
-            .setView(editText)
+            .setView(editText.parent)
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_gemini_api_key", apiKey)
@@ -208,7 +242,7 @@ private class GeminiApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_gemini_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
+    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -235,16 +269,17 @@ private class DeepseekApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_deepseek_api_key", ""))
-    editText.hint = "sk-***"
+    val editText = buildApiKeyInput(
+        context,
+        prefManager.getString("ai_agent_deepseek_api_key", ""),
+        R.string.ai_agent_deepseek_api_key_label,
+    ).editText!!
 
     val dialog =
         com.google.android.material.dialog
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_deepseek_api_key_dialog_title)
-            .setMessage(R.string.ai_agent_deepseek_api_key_dialog_message)
-            .setView(editText)
+            .setView(editText.parent)
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_deepseek_api_key", apiKey)
@@ -263,7 +298,7 @@ private class DeepseekApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_deepseek_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
+    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -290,16 +325,17 @@ private class OpenAIApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_openai_api_key", ""))
-    editText.hint = "sk-***"
+    val editText = buildApiKeyInput(
+        context,
+        prefManager.getString("ai_agent_openai_api_key", ""),
+        R.string.ai_agent_openai_api_key_label,
+    ).editText!!
 
     val dialog =
         com.google.android.material.dialog
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_openai_api_key_dialog_title)
-            .setMessage(R.string.ai_agent_openai_api_key_dialog_message)
-            .setView(editText)
+            .setView(editText.parent)
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_openai_api_key", apiKey)
@@ -318,7 +354,7 @@ private class OpenAIApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_openai_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
+    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -345,16 +381,17 @@ private class AnthropicApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_anthropic_api_key", ""))
-    editText.hint = "sk-***"
+    val editText = buildApiKeyInput(
+        context,
+        prefManager.getString("ai_agent_anthropic_api_key", ""),
+        R.string.ai_agent_anthropic_api_key_label,
+    ).editText!!
 
     val dialog =
         com.google.android.material.dialog
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_anthropic_api_key_dialog_title)
-            .setMessage(R.string.ai_agent_anthropic_api_key_dialog_message)
-            .setView(editText)
+            .setView(editText.parent)
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_anthropic_api_key", apiKey)
@@ -373,7 +410,7 @@ private class AnthropicApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
-    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
+    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
