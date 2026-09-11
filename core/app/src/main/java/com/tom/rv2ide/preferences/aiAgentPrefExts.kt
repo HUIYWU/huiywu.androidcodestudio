@@ -214,17 +214,18 @@ private class GeminiApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val editText = buildApiKeyInput(
+    val inputLayout = buildApiKeyInput(
         context,
         prefManager.getString("ai_agent_gemini_api_key", ""),
         R.string.ai_agent_api_key_label,
-    ).editText!!
+    )
+    val editText = inputLayout.editText!!
 
     val dialog =
         com.google.android.material.dialog
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_api_key_dialog_title)
-            .setView(editText.parent)
+            .setView(inputLayout)
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_gemini_api_key", apiKey)
@@ -270,17 +271,18 @@ private class DeepseekApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val editText = buildApiKeyInput(
+    val inputLayout = buildApiKeyInput(
         context,
         prefManager.getString("ai_agent_deepseek_api_key", ""),
         R.string.ai_agent_deepseek_api_key_label,
-    ).editText!!
+    )
+    val editText = inputLayout.editText!!
 
     val dialog =
         com.google.android.material.dialog
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_deepseek_api_key_dialog_title)
-            .setView(editText.parent)
+            .setView(inputLayout)
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_deepseek_api_key", apiKey)
@@ -326,17 +328,18 @@ private class OpenAIApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val editText = buildApiKeyInput(
+    val inputLayout = buildApiKeyInput(
         context,
         prefManager.getString("ai_agent_openai_api_key", ""),
         R.string.ai_agent_openai_api_key_label,
-    ).editText!!
+    )
+    val editText = inputLayout.editText!!
 
     val dialog =
         com.google.android.material.dialog
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_openai_api_key_dialog_title)
-            .setView(editText.parent)
+            .setView(inputLayout)
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_openai_api_key", apiKey)
@@ -382,17 +385,18 @@ private class AnthropicApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val editText = buildApiKeyInput(
+    val inputLayout = buildApiKeyInput(
         context,
         prefManager.getString("ai_agent_anthropic_api_key", ""),
         R.string.ai_agent_anthropic_api_key_label,
-    ).editText!!
+    )
+    val editText = inputLayout.editText!!
 
     val dialog =
         com.google.android.material.dialog
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_anthropic_api_key_dialog_title)
-            .setView(editText.parent)
+            .setView(inputLayout)
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_anthropic_api_key", apiKey)
