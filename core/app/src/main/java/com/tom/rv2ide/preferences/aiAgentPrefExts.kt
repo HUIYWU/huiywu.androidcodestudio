@@ -99,13 +99,6 @@ private fun buildApiKeyInput(context: Context, currentValue: String, labelRes: I
   return inputLayout
 }
 
-/**
- * Fallback summary when no Context is available.
- * Cannot use localized resources here, so a neutral English placeholder is used.
- */
-private fun getFallbackSummary(apiKey: String): String =
-    if (apiKey.isBlank()) "API Key" else apiKey
-
 private fun dp(context: Context, value: Int): Int =
     (value * context.resources.displayMetrics.density).toInt()
 
@@ -149,7 +142,7 @@ private class GrokApiKey(
         androidx.preference.Preference(context).apply {
           key = "ai_agent_grok_api_key"
           title = context.getString(R.string.ai_agent_grok_api_key)
-          summary = getSummaryText()
+          summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
         }
     return preference!!
@@ -174,7 +167,7 @@ private class GrokApiKey(
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_grok_api_key", apiKey)
-              preference.summary = getSummaryText()
+              preference.summary = summaryText(context)
             }
             .setNegativeButton(R.string.action_cancel, null)
             .create()
@@ -187,9 +180,8 @@ private class GrokApiKey(
     preference?.isEnabled = enabled
   }
 
-  private fun getSummaryText(): String {
+  private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_grok_api_key", "")
-    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -208,7 +200,7 @@ private class GeminiApiKey(
         androidx.preference.Preference(context).apply {
           key = "ai_agent_gemini_api_key"
           title = context.getString(R.string.ai_agent_api_key)
-          summary = getSummaryText()
+          summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
         }
     return preference!!
@@ -232,7 +224,7 @@ private class GeminiApiKey(
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_gemini_api_key", apiKey)
-              preference.summary = getSummaryText()
+              preference.summary = summaryText(context)
             }
             .setNegativeButton(R.string.action_cancel, null)
             .create()
@@ -245,9 +237,8 @@ private class GeminiApiKey(
     preference?.isEnabled = enabled
   }
 
-  private fun getSummaryText(): String {
+  private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_gemini_api_key", "")
-    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -266,7 +257,7 @@ private class DeepseekApiKey(
         androidx.preference.Preference(context).apply {
           key = "ai_agent_deepseek_api_key"
           title = context.getString(R.string.ai_agent_deepseek_api_key)
-          summary = getSummaryText()
+          summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
         }
     return preference!!
@@ -290,7 +281,7 @@ private class DeepseekApiKey(
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_deepseek_api_key", apiKey)
-              preference.summary = getSummaryText()
+              preference.summary = summaryText(context)
             }
             .setNegativeButton(R.string.action_cancel, null)
             .create()
@@ -303,9 +294,8 @@ private class DeepseekApiKey(
     preference?.isEnabled = enabled
   }
 
-  private fun getSummaryText(): String {
+  private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_deepseek_api_key", "")
-    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -324,7 +314,7 @@ private class OpenAIApiKey(
         androidx.preference.Preference(context).apply {
           key = "ai_agent_openai_api_key"
           title = context.getString(R.string.ai_agent_openai_api_key)
-          summary = getSummaryText()
+          summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
         }
     return preference!!
@@ -348,7 +338,7 @@ private class OpenAIApiKey(
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_openai_api_key", apiKey)
-              preference.summary = getSummaryText()
+              preference.summary = summaryText(context)
             }
             .setNegativeButton(R.string.action_cancel, null)
             .create()
@@ -361,9 +351,8 @@ private class OpenAIApiKey(
     preference?.isEnabled = enabled
   }
 
-  private fun getSummaryText(): String {
+  private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_openai_api_key", "")
-    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -382,7 +371,7 @@ private class AnthropicApiKey(
         androidx.preference.Preference(context).apply {
           key = "ai_agent_anthropic_api_key"
           title = context.getString(R.string.ai_agent_anthropic_api_key)
-          summary = getSummaryText()
+          summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
         }
     return preference!!
@@ -406,7 +395,7 @@ private class AnthropicApiKey(
             .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_anthropic_api_key", apiKey)
-              preference.summary = getSummaryText()
+              preference.summary = summaryText(context)
             }
             .setNegativeButton(R.string.action_cancel, null)
             .create()
@@ -419,9 +408,8 @@ private class AnthropicApiKey(
     preference?.isEnabled = enabled
   }
 
-  private fun getSummaryText(): String {
+  private fun summaryText(context: Context): String {
     val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
-    val context = preference?.context ?: return getFallbackSummary(apiKey)
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
