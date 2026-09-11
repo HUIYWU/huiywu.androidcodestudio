@@ -53,7 +53,7 @@ private class AIAgentConfig(
   @IgnoredOnParcel private var grokApiKeyPref: GrokApiKey? = null
 
   init {
-    val aiAgentEnabled = AIAgentEnabled { isEnabled -&gt; updateApiKeyPreferencesState(isEnabled) }
+    val aiAgentEnabled = AIAgentEnabled { isEnabled -> updateApiKeyPreferencesState(isEnabled) }
 
     geminiApiKeyPref = GeminiApiKey()
     deepseekApiKeyPref = DeepseekApiKey()
@@ -97,13 +97,6 @@ private fun buildApiKeyInput(context: Context, currentValue: String, labelRes: I
   inputLayout.addView(editText)
   return inputLayout
 }
-
-/**
- * Fallback summary when no Context is available.
- * Cannot use localized resources here, so a neutral English placeholder is used.
- */
-private fun getFallbackSummary(apiKey: String): String =
-    if (apiKey.isBlank()) "API Key" else apiKey
 
 private fun dp(context: Context, value: Int): Int =
     (value * context.resources.displayMetrics.density).toInt()
@@ -168,7 +161,7 @@ private class GrokApiKey(
             .MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_grok_api_key_dialog_title)
             .setView(inputLayout)
-            .setPositiveButton(R.string.action_save) { _, _ -&gt;
+            .setPositiveButton(R.string.action_save) { _, _ ->
               val apiKey = editText.text.toString().trim()
               prefManager.putString("ai_agent_grok_api_key", apiKey)
               preference.summary = getSummaryText()
@@ -242,7 +235,7 @@ private class GeminiApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_gemini_api_key", "")
-    val context = preference?.context ?: return getFallbackSummary(apiKey)
+    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -298,7 +291,7 @@ private class DeepseekApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_deepseek_api_key", "")
-    val context = preference?.context ?: return getFallbackSummary(apiKey)
+    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -354,7 +347,7 @@ private class OpenAIApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_openai_api_key", "")
-    val context = preference?.context ?: return getFallbackSummary(apiKey)
+    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
@@ -410,7 +403,7 @@ private class AnthropicApiKey(
 
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
-    val context = preference?.context ?: return getFallbackSummary(apiKey)
+    val context = preference?.context ?: return if (apiKey.isBlank()) "点击设置API密钥" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, apiKey.take(8))
   }
 }
