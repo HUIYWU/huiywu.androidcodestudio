@@ -50,25 +50,19 @@ class AppRestartDialog private constructor() {
             .show()
     }
 
+    /**
+     * Historically this restarted the whole app via a cold start (`makeRestartActivityTask` +
+     * `Runtime.exit`). That cold start is what caused the blank startup-window flash and it is
+     * no longer needed: theme / UI-mode changes are applied in-place with `Activity.recreate()`
+     * (see `PreferencesActivity.applyThemeChangeAndRecreate`).
+     *
+     * The function is kept as a no-op with no process side effects because it is still referenced
+     * by the language-server preference screens, where the previous restart never actually had any
+     * effect anyway. Removing the process kill here is safe and intentional.
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun restartApp(context: Context) {
-      val packageManager = context.packageManager
-      val intent = packageManager.getLaunchIntentForPackage(context.packageName)
-      val componentName = intent?.component
-      val mainIntent = Intent.makeRestartActivityTask(componentName)
-      context.startActivity(mainIntent)
-
-      // If the context is an Activity, finish it
-      if (context is AppCompatActivity) {
-        context.finishAffinity()
-      }
-
-      // Add fade transition if it's an Activity
-      if (context is AppCompatActivity) {
-        context.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
-      }
-
-      // Force kill the process to ensure clean restart
-      Runtime.getRuntime().exit(0)
+      // Intentionally does nothing. Theme changes use Activity.recreate() instead.
     }
   }
 }

@@ -18,10 +18,10 @@
 package com.tom.rv2ide.ui.themes
 
 import android.app.Activity
-import androidx.appcompat.app.AppCompatDelegate
+import com.google.android.material.color.DynamicColors
 import com.google.auto.service.AutoService
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
-import com.tom.rv2ide.utils.isSystemInDarkMode
+import com.tom.rv2ide.utils.isDarkModeResolved
 
 /**
  * Theme manager for AndroidIDE.
@@ -40,33 +40,15 @@ class ThemeManager : IThemeManager {
 
     val theme = getCurrentTheme()
     if (theme == IDETheme.MATERIAL_YOU) {
-      // No need to apply Material You theme
+      // Material You colors are applied per-activity so that switching away from (or to) this
+      // theme takes effect on Activity.recreate() without a cold process restart.
+      DynamicColors.applyToActivityIfAvailable(activity)
       return
     }
 
-    val style =
-        if (isDarkModeResolved(activity)) {
-          theme.styleDark
-        } else {
-          theme.styleLight
-        }
+    val style = if (activity.isDarkModeResolved()) theme.styleDark else theme.styleLight
 
     activity.setTheme(style)
-  }
-
-  /**
-   * Resolve dark mode from the user's selected UI mode preference instead of the system
-   * configuration. The system configuration (`AppCompatDelegate`) is only applied after
-   * `Application.onCreate`, which is too late for the first frame of a cold start / restart.
-   * Reading the preference directly keeps every early Activity frame consistent with the user's
-   * choice (fixes the blank white flash when the IDE UI mode differs from the system mode).
-   */
-  private fun isDarkModeResolved(activity: Activity): Boolean {
-    return when (GeneralPreferences.uiMode) {
-      AppCompatDelegate.MODE_NIGHT_YES -> true
-      AppCompatDelegate.MODE_NIGHT_NO -> false
-      else -> activity.isSystemInDarkMode()
-    }
   }
 
   /** Get the currently selected theme. */

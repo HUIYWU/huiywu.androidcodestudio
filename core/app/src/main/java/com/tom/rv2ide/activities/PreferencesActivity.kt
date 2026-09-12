@@ -16,12 +16,12 @@
  */
 package com.tom.rv2ide.activities
 
-import android.app.Activity
-import android.content.Intent
+import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.graphics.Insets
 import androidx.fragment.app.Fragment
 import androidx.preference.Preference
@@ -30,10 +30,10 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.databinding.ActivityPreferencesBinding
 import com.tom.rv2ide.fragments.IDEPreferencesFragment
+import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.preferences.IDEPreferences as prefs
 import com.tom.rv2ide.preferences.addRootPreferences
 import com.tom.rv2ide.utils.EditorFontImporter
-import kotlin.system.exitProcess
 
 class PreferencesActivity : EdgeToEdgeIDEActivity(), PreferenceFragmentCompat.OnPreferenceStartFragmentCallback, FontImportLauncherHost {
 
@@ -94,18 +94,10 @@ class PreferencesActivity : EdgeToEdgeIDEActivity(), PreferenceFragmentCompat.On
     fontPickerLauncher.launch(intent)
   }
 
-  /** Force restart the entire application Call this method when theme changes need to be applied */
-  fun forceRestartApp() {
-    finishAffinity() // Close all activities
-
-    // Restart the application
-    val intent = packageManager.getLaunchIntentForPackage(packageName)
-    intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
-    intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-    startActivity(intent)
-
-    // Force exit to ensure clean restart
-    exitProcess(0)
+  /** Apply theme / UI-mode changes in place without a cold process restart. */
+  fun applyThemeChangeAndRecreate() {
+    AppCompatDelegate.setDefaultNightMode(GeneralPreferences.uiMode)
+    recreate()
   }
 
   override fun onApplySystemBarInsets(insets: Insets) {

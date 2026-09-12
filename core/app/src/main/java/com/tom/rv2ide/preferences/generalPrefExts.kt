@@ -21,6 +21,7 @@ import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.preference.Preference
+import com.tom.rv2ide.activities.PreferencesActivity
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
@@ -29,9 +30,6 @@ import com.tom.rv2ide.ui.themes.IDETheme
 import com.tom.rv2ide.ui.themes.IThemeManager
 import kotlinx.parcelize.IgnoredOnParcel
 import kotlinx.parcelize.Parcelize
-import com.tom.rv2ide.utils.AppRestartDialog
-import android.os.Handler
-import android.os.Looper
 
 @Parcelize
 class GeneralPreferencesScreen(
@@ -121,15 +119,12 @@ class UiMode(
       entry: PreferenceChoices.Entry?,
       position: Int,
   ) {
-    AppRestartDialog.show(preference.context) { restart ->
-      if (restart) {
-        GeneralPreferences.uiMode =
-            (entry?.data as? Int?) ?: AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-        android.widget.Toast.makeText(preference.context, preference.context.getString(string.restarting), 0).show()
-        Handler(Looper.getMainLooper()).postDelayed({ AppRestartDialog.restartApp(preference.context) }, 1000)
-      }
-    }
+    GeneralPreferences.uiMode =
+        (entry?.data as? Int?) ?: AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
 
+    // Apply in place: set the night mode and recreate the hosting Activity. This uses the
+    // configuration-change path, so no startup window (and no blank flash) is produced.
+    (preference.context as? PreferencesActivity)?.applyThemeChangeAndRecreate()
   }
 }
 
@@ -161,14 +156,11 @@ class ThemeSelector(
       entry: PreferenceChoices.Entry?,
       position: Int,
   ) {
-    AppRestartDialog.show(preference.context) { restart ->
-      if (restart) {
-        GeneralPreferences.selectedTheme =
-            (entry?.data as? IDETheme?)?.name ?: IDETheme.DEFAULT.name
-        android.widget.Toast.makeText(preference.context, preference.context.getString(string.restarting), 0).show()
-        Handler(Looper.getMainLooper()).postDelayed({ AppRestartDialog.restartApp(preference.context) }, 1000)
-      }
-    }
+    GeneralPreferences.selectedTheme =
+        (entry?.data as? IDETheme?)?.name ?: IDETheme.DEFAULT.name
+
+    // Apply in place via recreate() so the new theme takes effect without a cold restart.
+    (preference.context as? PreferencesActivity)?.applyThemeChangeAndRecreate()
   }
 }
 

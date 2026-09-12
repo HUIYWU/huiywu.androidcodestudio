@@ -33,7 +33,6 @@ import androidx.work.Operation
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.blankj.utilcode.util.ThrowableUtils.getFullStackTrace
-import com.google.android.material.color.DynamicColors
 import com.termux.app.TermuxApplication
 import com.termux.shared.reflection.ReflectionUtils
 import com.tom.rv2ide.BuildConfig
@@ -57,8 +56,6 @@ import com.tom.rv2ide.stats.AndroidIDEStats
 import com.tom.rv2ide.stats.StatUploadWorker
 import com.tom.rv2ide.syntax.colorschemes.SchemeAndroidIDE
 import com.itsaky.androidide.treesitter.TreeSitter
-import com.tom.rv2ide.ui.themes.IDETheme
-import com.tom.rv2ide.ui.themes.IThemeManager
 import com.tom.rv2ide.utils.ChartMemoryCleanupTask
 import com.tom.rv2ide.utils.Environment
 import com.tom.rv2ide.utils.MemoryManager
@@ -153,10 +150,6 @@ class IDEApplication : TermuxApplication() {
     EventBus.getDefault().register(this)
 
     AppCompatDelegate.setDefaultNightMode(GeneralPreferences.uiMode)
-
-    if (IThemeManager.getInstance().getCurrentTheme() == IDETheme.MATERIAL_YOU) {
-      DynamicColors.applyToActivitiesIfAvailable(this)
-    }
 
     EditorColorScheme.setDefault(SchemeAndroidIDE.newInstance(null))
 

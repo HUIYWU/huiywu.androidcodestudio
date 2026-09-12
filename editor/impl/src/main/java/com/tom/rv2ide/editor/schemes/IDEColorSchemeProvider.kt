@@ -6,7 +6,7 @@ import com.tom.rv2ide.eventbus.events.editor.ColorSchemeInvalidatedEvent
 import com.tom.rv2ide.preferences.internal.EditorPreferences
 import com.tom.rv2ide.syntax.colorschemes.SchemeAndroidIDE
 import com.tom.rv2ide.utils.Environment
-import com.tom.rv2ide.utils.isSystemInDarkMode
+import com.tom.rv2ide.utils.isDarkModeResolved
 import java.io.File
 import java.io.FileFilter
 import java.util.Properties
@@ -190,7 +190,7 @@ object IDEColorSchemeProvider {
     }
 
     val dark = scheme.darkVariant
-    if (context.isSystemInDarkMode() && dark != null) {
+    if (context.isDarkModeResolved() && dark != null) {
       return dark
     }
 
