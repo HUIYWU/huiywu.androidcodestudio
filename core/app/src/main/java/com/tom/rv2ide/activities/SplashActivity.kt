@@ -19,14 +19,47 @@ package com.tom.rv2ide.activities
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
+import androidx.appcompat.app.AppCompatDelegate
+import com.tom.rv2ide.preferences.internal.GeneralPreferences
 
 /** @author Akash Yadav */
 class SplashActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // Resolve the night mode BEFORE the theme/window is applied so the startup
+    // window (windowSplashScreenBackground) matches the user's selected UI mode
+    // instead of falling back to the light values/ resources. This removes the
+    // blank white flash during app restart / theme switching.
+    applyUserNightMode()
+
     super.onCreate(savedInstanceState)
     startActivity(Intent(this, OnboardingActivity::class.java))
     finish()
+  }
+
+  private fun applyUserNightMode() {
+    val target = when (GeneralPreferences.uiMode) {
+      AppCompatDelegate.MODE_NIGHT_YES -> true
+      AppCompatDelegate.MODE_NIGHT_NO -> false
+      else ->
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+    }
+
+    val currentNight =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+
+    if (target != currentNight) {
+      val targetMask =
+          if (target) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+      val newConfig = Configuration(resources.configuration).apply {
+        uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or targetMask
+      }
+      @Suppress("DEPRECATION")
+      resources.updateConfiguration(newConfig, resources.displayMetrics)
+    }
   }
 }
