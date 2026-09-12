@@ -158,7 +158,10 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
   override fun onSaveInstanceState(outState: Bundle) {
     super.onSaveInstanceState(outState)
     outState.apply {
-      putBoolean(STATE_KEY_SHOULD_INITIALIZE, !editorViewModel.isInitializing)
+      // Records whether an initialization was still running when the state was saved. On restore this
+      // tells [initializeProject] whether a configuration change interrupted an initialization that
+      // must be resumed, or whether the project was idle and can keep using its cached result.
+      putBoolean(STATE_KEY_SHOULD_INITIALIZE, editorViewModel.isInitializing)
       putBoolean(STATE_KEY_FROM_SAVED_INSTANACE, true)
     }
   }
@@ -459,6 +462,30 @@ fun initializeProject(buildVariants: Map<String, String>) {
     }
   }
 
+  /**
+   * Initializes the project when the Gradle build service connects.
+   *
+   * A configuration change (theme switch, rotation, ...) restores this activity, but
+   * [ProjectManagerImpl] keeps its state because it is a process-wide singleton and
+   * [onPause] only destroys it when the activity is actually finishing. Re-sending an init
+   * request in that case would make the tooling server re-sync the whole Gradle project for
+   * nothing, so it is skipped whenever a valid initialization result can be reused.
+   *
+   * User initiated syncs call [initializeProject] directly, so they are not affected.
+   */
+  private fun initializeProjectIfNeeded() {
+    val manager = ProjectManagerImpl.getInstance()
+    if (isFromSavedInstance &&
+        !editorViewModel.isInitializing &&
+        manager.projectInitialized &&
+        manager.cachedInitResult != null) {
+      log.debug("Skipping automatic project initialization: the project is already initialized")
+      return
+    }
+
+    initializeProject()
+  }
+
   protected fun onGradleBuildServiceConnected(service: GradleBuildService) {
     log.info("Connected to Gradle build service")
 
@@ -509,7 +536,10 @@ fun initializeProject(buildVariants: Map<String, String>) {
         initializeProject()
       }
     } else {
-      initializeProject()
+      // The tooling server is already running, so this connection is either the very first one or a
+      // reconnect caused by a configuration change. Reuse the existing initialization result in the
+      // latter case instead of forcing the tooling server to sync the whole Gradle project again.
+      initializeProjectIfNeeded()
     }
   }
 

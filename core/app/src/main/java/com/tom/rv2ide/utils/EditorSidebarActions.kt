@@ -151,14 +151,24 @@ internal object EditorSidebarActions {
                 return@SidebarNavigationAdapter
               }
 
-              val fragment = fragmentCache.getOrPut(action.id) {
-                action.fragmentClass!!.java.newInstance()
+              // Prefer the instance restored by the FragmentManager (configuration change). It is
+              // already attached to the container, so creating another instance from the cache would
+              // stack a duplicate page on top of the restored one.
+              val childFm = sidebarFragment.childFragmentManager
+              val restored = childFm.findFragmentByTag(action.id)
+              val fragment =
+                  restored
+                      ?: fragmentCache.getOrPut(action.id) {
+                        action.fragmentClass!!.java.newInstance()
+                      }
+
+              if (restored != null) {
+                fragmentCache[action.id] = restored
               }
 
-              val fragmentManager = sidebarFragment.childFragmentManager
-              val transaction = fragmentManager.beginTransaction()
+              val transaction = childFm.beginTransaction()
 
-              fragmentManager.fragments.forEach { existingFragment ->
+              childFm.fragments.forEach { existingFragment ->
                 if (existingFragment.isAdded) {
                   transaction.hide(existingFragment)
                 }
@@ -197,13 +207,61 @@ internal object EditorSidebarActions {
     navigationRecycler.adapter = adapter
     adapter.submitList(navigationItems)
 
+    // A configuration change (e.g. a light/dark mode switch) makes the FragmentManager
+    // restore the pages that were previously added to this container. Adding the first page
+    // again would stack a second, non-interactive copy on top of the restored one, which is
+    // what produced the "ghost" file tree layer. So adopt the restored instances instead.
+    val fragmentManager = sidebarFragment.childFragmentManager
+    val knownPageIds = navigationItems.map { it.id }.toHashSet()
+    val restoredPages =
+        fragmentManager.fragments.filter { fragment ->
+          // Fragments declared in the layout (e.g. the NavHostFragment placeholder) have no tag
+          // and are not sidebar pages, so they must not be treated as restored pages.
+          val tag = fragment.tag
+          fragment.isAdded && tag != null && tag in knownPageIds
+        }
+
+    if (restoredPages.isNotEmpty()) {
+      restoredPages.forEach { page -> fragmentCache[page.tag!!] = page }
+
+      val visiblePage = restoredPages.lastOrNull { !it.isHidden } ?: restoredPages.last()
+      val transaction = fragmentManager.beginTransaction()
+      var hasChanges = false
+
+      restoredPages.forEach { page ->
+        if (page === visiblePage) {
+          if (page.isHidden) {
+            transaction.show(page)
+            hasChanges = true
+          }
+        } else if (!page.isHidden) {
+          transaction.hide(page)
+          hasChanges = true
+        }
+      }
+
+      if (hasChanges) {
+        transaction.commitNow()
+      }
+
+      currentFragmentId = visiblePage.tag
+
+      val visibleItem = navigationItems.firstOrNull { it.id == visiblePage.tag }
+      updateTitleVisibility(visibleItem?.title)
+      updateSubtitleVisibility(visibleItem?.subtitle)
+      adapter.submitList(
+          navigationItems.map { navItem -> navItem.copy(isSelected = navItem.id == visiblePage.tag) }
+      )
+      return
+    }
+
     val firstItem = navigationItems.first()
     val firstFragment = fragmentCache.getOrPut(firstItem.id) {
       firstItem.action.fragmentClass?.java?.newInstance() 
           ?: throw IllegalStateException("First action must have a fragment")
     }
 
-    sidebarFragment.childFragmentManager.beginTransaction()
+    fragmentManager.beginTransaction()
         .add(binding.fragmentContainer.id, firstFragment, firstItem.id)
         .commitNow()
 
