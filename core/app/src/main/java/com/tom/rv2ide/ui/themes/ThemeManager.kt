@@ -72,4 +72,14 @@ class ThemeManager : IThemeManager {
   override fun getCurrentTheme(): IDETheme {
     return GeneralPreferences.selectedTheme?.let { IDETheme.valueOf(it) } ?: IDETheme.DEFAULT
   }
+
+  /**
+   * Derives the signature from the same two inputs that [applyTheme] uses: the selected [IDETheme]
+   * and the resolved dark mode. For [IDETheme.MATERIAL_YOU] the palette is supplied by the platform,
+   * so the theme name alone is not enough and the resolved mode is included for every theme.
+   */
+  override fun getAppliedThemeSignature(activity: Activity): String {
+    val mode = if (isDarkModeResolved(activity)) "dark" else "light"
+    return "${getCurrentTheme().name}:$mode"
+  }
 }

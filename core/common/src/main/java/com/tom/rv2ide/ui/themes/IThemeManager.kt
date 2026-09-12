@@ -41,4 +41,15 @@ interface IThemeManager {
 
   /** Get the current IDE theme. */
   fun getCurrentTheme(): IDETheme
+
+  /**
+   * Returns a signature identifying the theme that [applyTheme] would resolve for [activity] right
+   * now.
+   *
+   * The signature only changes when the resolved appearance actually changes, so it can be compared
+   * against a previously stored value to detect that an activity is still showing a stale theme.
+   * Implementations must derive it from exactly the same inputs as [applyTheme] so that an activity
+   * which has just been themed never reports a changed signature on its own.
+   */
+  fun getAppliedThemeSignature(activity: Activity): String
 }

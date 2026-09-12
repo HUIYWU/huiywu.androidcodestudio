@@ -192,6 +192,13 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   override fun onStart() {
     super.onStart()
 
+    if (isRecreatingForThemeChange) {
+      // The base class is recreating this activity for a theme change. Restoring the opened files
+      // here would open a duplicate set of tabs in an instance that is about to be torn down; the
+      // recreated instance restores them from the cache instead.
+      return
+    }
+
     if (openedFilesRestored) {
       return
     }

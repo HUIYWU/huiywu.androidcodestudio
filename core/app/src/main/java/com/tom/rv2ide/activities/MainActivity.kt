@@ -85,7 +85,13 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     tomIDEUpdater = TomIDEUpdater(this)
     // tomIDEUpdater.checkForUpdates()
 
-    openLastProject()
+    // Only a fresh launch should auto-open the last project. This used to run on every onCreate,
+    // which meant that any recreation (configuration change, and now the theme-staleness recreate in
+    // BaseIDEActivity) could jump straight back into the last project while the user was sitting on
+    // the main screen.
+    if (savedInstanceState == null) {
+      openLastProject()
+    }
 
     viewModel.currentScreen.observe(this) { screen ->
       if (screen == -1) {

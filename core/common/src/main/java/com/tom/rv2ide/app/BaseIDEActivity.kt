@@ -27,8 +27,11 @@ import com.tom.rv2ide.utils.resolveAttr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.greenrobot.eventbus.EventBus
+import org.slf4j.LoggerFactory
 
 abstract class BaseIDEActivity : AppCompatActivity() {
+
+  private val log = LoggerFactory.getLogger(BaseIDEActivity::class.java)
 
   open val subscribeToEvents: Boolean = false
 
@@ -43,6 +46,24 @@ abstract class BaseIDEActivity : AppCompatActivity() {
   /** [CoroutineScope] for executing tasks with the [Default][Dispatchers.Default] dispatcher. */
   val activityScope = CoroutineScope(Dispatchers.Default)
 
+  /**
+   * Signature of the theme applied in [onCreate]. Compared against the currently selected theme in
+   * [onStart] to detect that this activity is still showing an appearance that is no longer
+   * selected. See [recreateIfThemeIsStale].
+   */
+  private var appliedThemeSignature: String? = null
+
+  /**
+   * Set to `true` while [onStart] is recreating this activity because the theme it was created with
+   * is no longer selected.
+   *
+   * An early `return` in [onStart] cannot stop a subclass from continuing its own `onStart` work, so
+   * subclasses which do meaningful work there should consult this flag and skip it — the recreated
+   * instance will perform that work again anyway.
+   */
+  protected var isRecreatingForThemeChange = false
+    private set
+
   override fun onCreate(savedInstanceState: Bundle?) {
     if (enableSystemBarTheming) {
       window?.apply {
@@ -50,8 +71,16 @@ abstract class BaseIDEActivity : AppCompatActivity() {
         statusBarColor = this@BaseIDEActivity.statusBarColor
       }
     }
-    IThemeManager.getInstance().applyTheme(this)
+    val themeManager = IThemeManager.getInstance()
+    // setTheme() must run before super.onCreate(), because the theme has to be in place by the time
+    // the content view is inflated below.
+    themeManager.applyTheme(this)
     super.onCreate(savedInstanceState)
+    // Recorded only after super.onCreate(), so that AppCompat has already applied the night mode to
+    // this activity's resources. The signature is then resolved under exactly the same conditions as
+    // the comparison in [recreateIfThemeIsStale], which is what keeps a freshly themed activity from
+    // reporting itself as stale and recreating in a loop.
+    appliedThemeSignature = themeManager.getAppliedThemeSignature(this)
     preSetContentLayout()
     setContentView(bindLayout())
   }
@@ -63,9 +92,45 @@ abstract class BaseIDEActivity : AppCompatActivity() {
 
   override fun onStart() {
     super.onStart()
+
+    if (recreateIfThemeIsStale()) {
+      // A recreate() has been scheduled. The early return below cannot stop a subclass from
+      // continuing its own onStart work, so isRecreatingForThemeChange is set as well and checked by
+      // the subclasses which would otherwise perform that work twice.
+      return
+    }
+
     if (!EventBus.getDefault().isRegistered(this) && subscribeToEvents) {
       EventBus.getDefault().register(this)
     }
+  }
+
+  /**
+   * Recreates this activity when the theme it was created with is no longer the selected one.
+   *
+   * A theme change is applied to the activity that hosts the preference (`PreferencesActivity`), and
+   * a pure palette change is not a configuration change, so activities that are already on the back
+   * stack keep their old appearance until they are recreated. Comparing the signature recorded in
+   * [onCreate] against the currently selected theme makes them converge on their own: the mismatch is
+   * detected in [onStart], which runs before the window becomes visible, so the stale content is
+   * never shown.
+   *
+   * @return `true` if a recreate was requested and the caller should stop its `onStart` work.
+   */
+  private fun recreateIfThemeIsStale(): Boolean {
+    val applied = appliedThemeSignature ?: return false
+    val current = IThemeManager.getInstance().getAppliedThemeSignature(this)
+    if (applied == current) {
+      return false
+    }
+
+    log.debug("Theme changed from {} to {}. Recreating {}.", applied, current, javaClass.simpleName)
+    // Updated before recreate() so that the recreated instance is not immediately considered stale
+    // again if onStart is somehow reached twice before the teardown completes.
+    appliedThemeSignature = current
+    isRecreatingForThemeChange = true
+    recreate()
+    return true
   }
 
   override fun onStop() {
