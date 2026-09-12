@@ -19,7 +19,7 @@ package com.tom.rv2ide.syntax.colorschemes
 
 import android.content.Context
 import com.tom.rv2ide.common.R.attr
-import com.tom.rv2ide.utils.isDarkModeResolved
+import com.tom.rv2ide.utils.isSystemInDarkMode
 import com.tom.rv2ide.utils.resolveAttr
 
 /**
@@ -32,7 +32,7 @@ open class DynamicColorScheme : SchemeAndroidIDE() {
   private var isInDarkMode: Boolean = true
 
   fun apply(context: Context) {
-    this.isInDarkMode = context.isDarkModeResolved()
+    this.isInDarkMode = context.isSystemInDarkMode()
     val secondaryVariant = context.resolveAttr(attr.colorSecondaryVariant)
     val surface = context.resolveAttr(attr.colorSurface)
     val surfaceVariant = context.resolveAttr(attr.colorSurfaceVariant)

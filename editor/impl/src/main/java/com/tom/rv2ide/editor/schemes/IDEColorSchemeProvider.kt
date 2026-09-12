@@ -2,11 +2,13 @@ package com.tom.rv2ide.editor.schemes
 
 import android.content.Context
 import androidx.annotation.WorkerThread
+import androidx.appcompat.app.AppCompatDelegate
 import com.tom.rv2ide.eventbus.events.editor.ColorSchemeInvalidatedEvent
 import com.tom.rv2ide.preferences.internal.EditorPreferences
+import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.syntax.colorschemes.SchemeAndroidIDE
 import com.tom.rv2ide.utils.Environment
-import com.tom.rv2ide.utils.isDarkModeResolved
+import com.tom.rv2ide.utils.isSystemInDarkMode
 import java.io.File
 import java.io.FileFilter
 import java.util.Properties
@@ -190,7 +192,13 @@ object IDEColorSchemeProvider {
     }
 
     val dark = scheme.darkVariant
-    if (context.isDarkModeResolved() && dark != null) {
+    val isDark =
+        when (GeneralPreferences.uiMode) {
+          AppCompatDelegate.MODE_NIGHT_YES -> true
+          AppCompatDelegate.MODE_NIGHT_NO -> false
+          else -> context.isSystemInDarkMode()
+        }
+    if (isDark && dark != null) {
       return dark
     }
 
