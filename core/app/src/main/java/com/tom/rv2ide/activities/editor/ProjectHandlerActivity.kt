@@ -86,9 +86,15 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
   protected var mSearchingProgress: ProgressSheet? = null
   protected var mFindInProjectDialog: AlertDialog? = null
   protected var syncNotificationFlashbar: Flashbar? = null
-
   protected var isFromSavedInstance = false
-  protected var shouldInitialize = false
+
+  /**
+   * Whether a project initialization was still running when [onSaveInstanceState] stored the
+   * activity state. Only meaningful together with [isFromSavedInstance]: on restore it tells
+   * [initializeProject] whether a configuration change interrupted an initialization that must be
+   * resumed, or whether the project was idle and can keep reusing its cached result.
+   */
+  protected var wasInitializing = false
 
   protected var initializingFuture: CompletableFuture<out InitializeResult?>? = null
 
@@ -107,7 +113,9 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
   companion object {
 
     const val STATE_KEY_FROM_SAVED_INSTANACE = "ide.editor.isFromSavedInstance"
-    const val STATE_KEY_SHOULD_INITIALIZE = "ide.editor.isInitializing"
+
+    /** Stores [wasInitializing]. The string value is kept unchanged for state-bundle compatibility. */
+    const val STATE_KEY_WAS_INITIALIZING = "ide.editor.isInitializing"
     private const val BOTTOM_SHEET_HIDE_REASON_FIND_DIALOG = "find_in_project_dialog"
   }
 
@@ -129,11 +137,11 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
     super.onCreate(savedInstanceState)
 
     savedInstanceState?.let {
-      this.shouldInitialize = it.getBoolean(STATE_KEY_SHOULD_INITIALIZE, true)
+      this.wasInitializing = it.getBoolean(STATE_KEY_WAS_INITIALIZING, true)
       this.isFromSavedInstance = it.getBoolean(STATE_KEY_FROM_SAVED_INSTANACE, false)
     }
         ?: run {
-          this.shouldInitialize = true
+          this.wasInitializing = true
           this.isFromSavedInstance = false
         }
 
@@ -161,7 +169,7 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
       // Records whether an initialization was still running when the state was saved. On restore this
       // tells [initializeProject] whether a configuration change interrupted an initialization that
       // must be resumed, or whether the project was idle and can keep using its cached result.
-      putBoolean(STATE_KEY_SHOULD_INITIALIZE, editorViewModel.isInitializing)
+      putBoolean(STATE_KEY_WAS_INITIALIZING, editorViewModel.isInitializing)
       putBoolean(STATE_KEY_FROM_SAVED_INSTANACE, true)
     }
   }
@@ -383,7 +391,7 @@ fun initializeProject(buildVariants: Map<String, String>) {
     val initialized = manager.projectInitialized && manager.cachedInitResult != null
     log.debug("Is project initialized: {}", initialized)
 
-    if (isFromSavedInstance && initialized && !shouldInitialize) {
+    if (isFromSavedInstance && initialized && !wasInitializing) {
       log.debug("Skipping init process because initialized && !wasInitializing")
       return
     }
@@ -402,7 +410,7 @@ fun initializeProject(buildVariants: Map<String, String>) {
     }
 
     this.initializingFuture =
-        if (shouldInitialize || (!isFromSavedInstance && !initialized)) {
+        if (wasInitializing || (!isFromSavedInstance && !initialized)) {
           log.debug("Sending init request to tooling server..")
           buildService.initializeProject(createProjectInitParams(projectDir, buildVariants))
         } else {
