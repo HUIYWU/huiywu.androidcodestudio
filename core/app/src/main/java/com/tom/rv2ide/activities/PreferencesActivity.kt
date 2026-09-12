@@ -16,7 +16,8 @@
  */
 package com.tom.rv2ide.activities
 
-import android.content.Context
+import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
