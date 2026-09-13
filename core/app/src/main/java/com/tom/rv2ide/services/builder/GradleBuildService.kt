@@ -562,6 +562,17 @@ class GradleBuildService :
    * Termux-wide [LD_LIBRARY_PATH] makes Android's linker resolve unrelated Prefix libraries
    * (for example, libjpeg) into that dependency graph. Room's sqlite-jdbc verifier then fails on
    * devices whose system-extension JPEG library is incompatible with the Prefix variant.
+   *
+   * [LD_LIBRARY_PATH] is removed and [LD_PRELOAD] is pointed at the Termux exec intercept
+   * library. The two are deliberately treated differently:
+   *
+   * - `LD_LIBRARY_PATH` must stay unset, otherwise the linker resolves unrelated Prefix
+   *   libraries (for example, libjpeg) into the JNI dependency graph and Room's sqlite-jdbc
+   *   verifier fails on devices whose system-extension JPEG library is incompatible with the
+   *   Prefix variant.
+   * - `LD_PRELOAD` must be set, otherwise scripts whose shebang is `#!/usr/bin/env sh` cannot
+   *   be executed at all, because Android has no `/usr/bin/env`. This is what breaks
+   *   `$NDK/ndk-build` (via its `build/ndk-build` child) for `ndkBuild` projects.
    */
   private fun configureGradleEnvironment(processBuilder: ProcessBuilder) {
     val termuxEnv = TermuxShellEnvironment().getEnvironment(this, false)
@@ -582,11 +593,30 @@ class GradleBuildService :
     environment["TMPDIR"] = Environment.TMP_DIR.absolutePath
 
     // Keep generic Termux environment setup intact for other process types, but isolate Gradle
-    // and its workers from Prefix-wide native-library and preload injection.
+    // and its workers from the Prefix-wide native-library search path.
     environment.remove("LD_LIBRARY_PATH")
-    environment.remove("LD_PRELOAD")
 
-    log.info("Gradle native library search path isolated; PATH={}", environment["PATH"])
+    // Re-arm the Termux exec intercept for Gradle and everything it spawns.
+    //
+    // The IDE process itself never has LD_PRELOAD set: the only place it is ever exported is
+    // `$PREFIX/bin/login`, which the integrated terminal runs but the build service does not.
+    // Without it, AGP's `ndk-build` invocation reaches the kernel, which then fails to resolve
+    // the shebang of `$NDK/build/ndk-build` (`#!/usr/bin/env sh`) because Android has no
+    // `/usr/bin/env` - reported as "No such file or directory" with exit code 126.
+    //
+    // `libtermux-exec-ld-preload.so` intercepts execve() and resolves shebangs in userspace,
+    // which is exactly how the terminal path has always worked. It links against libc only,
+    // so it does not contribute to the library-resolution problem described above.
+    val termuxExecPreload = File(Environment.LIB_DIR, "libtermux-exec-ld-preload.so")
+    if (termuxExecPreload.isFile) {
+      environment["LD_PRELOAD"] = termuxExecPreload.absolutePath
+    }
+
+    log.info(
+        "Gradle env isolated: LD_LIBRARY_PATH removed, LD_PRELOAD={}, PATH={}",
+        environment["LD_PRELOAD"] ?: "<unset>",
+        environment["PATH"],
+    )
   }
 
   override fun executeTasks(vararg tasks: String): CompletableFuture<TaskExecutionResult> {

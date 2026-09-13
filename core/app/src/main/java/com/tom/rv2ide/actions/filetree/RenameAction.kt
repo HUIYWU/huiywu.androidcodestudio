@@ -19,7 +19,6 @@ package com.tom.rv2ide.actions.filetree
 
 import android.content.Context
 import android.view.LayoutInflater
-import com.blankj.utilcode.util.FileUtils
 import com.tom.rv2ide.R
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.requireFile
@@ -30,6 +29,7 @@ import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.tasks.launchAsyncWithProgress
 import com.tom.rv2ide.utils.DialogUtils
 import com.tom.rv2ide.utils.FlashType
+import com.tom.rv2ide.utils.GeneralFileUtils
 import com.tom.rv2ide.utils.flashMessage
 import com.unnamed.b.atv.model.TreeNode
 import java.io.File
@@ -71,7 +71,10 @@ class RenameAction(context: Context, override val order: Int) :
           },
           action = { _, _ ->
             val name: String = binding.name.editText!!.text.toString().trim()
-            val renamed = name.length in 1..40 && FileUtils.rename(file, name)
+            // GeneralFileUtils.renameFile is used instead of FileUtils.rename because shared storage is
+            // case-insensitive: FileUtils.rename refuses a case-only rename outright, and a single
+            // rename cannot perform it either. See GeneralFileUtils.renameFile for the details.
+            val renamed = name.length in 1..40 && GeneralFileUtils.renameFile(file, name)
 
             if (renamed) {
               notifyFileRenamed(file, name, context)

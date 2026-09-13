@@ -46,6 +46,7 @@ import com.tom.rv2ide.models.FileItem
 import com.tom.rv2ide.models.FilterPreferences
 import com.tom.rv2ide.utils.PathPreferences
 import com.tom.rv2ide.utils.FileIconManager
+import com.tom.rv2ide.utils.GeneralFileUtils
 import java.io.File
 import com.google.android.material.button.MaterialButton
 
@@ -468,19 +469,17 @@ class FileBrowserFragment : Fragment() {
 
     private fun renameFile(fileItem: FileItem, newName: String) {
         val oldFile = File(fileItem.path)
-        val newFile = File(oldFile.parent, newName)
 
-        if (newFile.exists()) {
-            Toast.makeText(requireContext(), getString(R.string.file_browser_name_exists), Toast.LENGTH_SHORT).show()
+        // GeneralFileUtils.renameFile handles the case-insensitive shared storage: a rename which only
+        // changes the case resolves to the same entry, so it can neither be rejected as "already
+        // exists" nor performed with a single rename.
+        if (!GeneralFileUtils.renameFile(oldFile, newName)) {
+            Toast.makeText(requireContext(), getString(R.string.file_browser_rename_failed), Toast.LENGTH_SHORT).show()
             return
         }
 
-        if (oldFile.renameTo(newFile)) {
-            Toast.makeText(requireContext(), getString(R.string.file_browser_renamed_success), Toast.LENGTH_SHORT).show()
-            listFiles(currentPath)
-        } else {
-            Toast.makeText(requireContext(), getString(R.string.file_browser_rename_failed), Toast.LENGTH_SHORT).show()
-        }
+        Toast.makeText(requireContext(), getString(R.string.file_browser_renamed_success), Toast.LENGTH_SHORT).show()
+        listFiles(currentPath)
     }
 
     private fun copyFullPathToClipboard(fileItem: FileItem) {
