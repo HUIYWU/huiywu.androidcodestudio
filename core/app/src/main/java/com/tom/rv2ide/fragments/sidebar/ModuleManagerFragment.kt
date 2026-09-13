@@ -49,11 +49,17 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.editor.ProjectHandlerActivity
 import com.tom.rv2ide.databinding.FragmentModuleManagerBinding
 import com.tom.rv2ide.lookup.Lookup
+import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
+import com.tom.rv2ide.projects.gradleedit.BuildFeatureScriptEditor
+import com.tom.rv2ide.projects.gradleedit.GradleDsl as EditorGradleDsl
+import com.tom.rv2ide.projects.gradleedit.GradleEditResult
 import com.tom.rv2ide.projects.gradleedit.ModuleOperations
+import com.tom.rv2ide.projects.gradleedit.ProjectEditTransaction
+import com.tom.rv2ide.projects.gradleedit.TextEditApplier
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.java.JavaModule
 import com.tom.rv2ide.tooling.api.models.ApplicationProjectInfo
@@ -77,6 +83,12 @@ class ModuleManagerFragment : Fragment() {
     private const val MENU_RENAME_MODULE = 1
     private const val MENU_MOVE_MODULE = 2
     private const val MENU_DELETE_MODULE = 3
+    private val buildFeatureLabels = linkedMapOf(
+        "viewBinding" to "View binding",
+        "compose" to "Compose",
+        "dataBinding" to "Data binding",
+        "mlModelBinding" to "ML model binding",
+    )
   }
 
   private val log = LoggerFactory.getLogger(ModuleManagerFragment::class.java)
@@ -107,6 +119,10 @@ class ModuleManagerFragment : Fragment() {
   private var creationStatusDialog: AlertDialog? = null
   private var creationStatusMessage: TextView? = null
   private var creationStatusProgress: CircularProgressIndicator? = null
+  private var buildSyncButton: MaterialButton? = null
+  private var applyingBuildFeatures = false
+  private var detailTabIndex = 0
+  private val pendingBuildFeatures = mutableMapOf<String, MutableMap<String, Boolean>>()
 
   private enum class Screen { LIST, WIZARD, DETAIL }
 
@@ -130,6 +146,7 @@ class ModuleManagerFragment : Fragment() {
         refreshAfterSync = false
         selectedModule = null
         screen = Screen.LIST
+        pendingBuildFeatures.clear()
       }
       if (!initializing || IProjectManager.getInstance().getWorkspace() == null) {
         render()
@@ -191,6 +208,7 @@ class ModuleManagerFragment : Fragment() {
       isFocusable = true
       setOnClickListener {
         selectedModule = module
+        detailTabIndex = 0
         screen = Screen.DETAIL
         render(animated = true, forward = true)
       }
@@ -480,12 +498,16 @@ class ModuleManagerFragment : Fragment() {
       ContextThemeWrapper(requireContext(), R.style.AppTheme_ModuleDetailTabContext),
     )
     listOf("Overview", "Build", "Dependencies").forEach { tabs.addTab(tabs.newTab().setText(it)) }
+    // Restore the previously selected tab before the listener attaches so the body renders once.
+    val initialTab = detailTabIndex.coerceIn(0, 2)
+    tabs.getTabAt(initialTab)?.select()
     content.addView(tabs)
     val detail = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
       setPadding(0, dp(16), 0, 0)
     }
     fun showTab(index: Int) {
+      detailTabIndex = index
       detail.removeAllViews()
       when (index) {
         0 -> populateOverview(detail, module)
@@ -498,7 +520,7 @@ class ModuleManagerFragment : Fragment() {
       override fun onTabUnselected(tab: TabLayout.Tab) = Unit
       override fun onTabReselected(tab: TabLayout.Tab) = Unit
     })
-    showTab(0)
+    showTab(initialTab)
     content.addView(detail)
     binding.moduleContent.addView(scroll)
   }
@@ -527,7 +549,6 @@ class ModuleManagerFragment : Fragment() {
       addView(information, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     })
     content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
-    content.addView(iconButton("Sync project", R.drawable.ic_sync) { syncProject() })
   }
 
   private fun populateBuild(content: LinearLayout, module: GradleProject) {
@@ -552,6 +573,13 @@ class ModuleManagerFragment : Fragment() {
         content.addView(outlinedIconButton("Open build script", R.drawable.ic_open_file) { openBuildScript(module) })
       }
     }
+    val pendingCount = pendingBuildFeatures[module.path]?.size ?: 0
+    val syncButton = iconButton(if (pendingCount > 0) "Apply & Sync" else "Sync project", R.drawable.ic_sync) {
+      applyBuildFeatureChangesAndSync(module)
+    }
+    if (applyingBuildFeatures) syncButton.isEnabled = false
+    buildSyncButton = syncButton
+    content.addView(syncButton)
   }
 
   private fun buildFeaturesCard(module: AndroidModule): View = MaterialCardView(requireContext()).apply {
@@ -566,22 +594,136 @@ class ModuleManagerFragment : Fragment() {
     }
     val rows = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
-      addView(previewInfo("View binding", buildFeatureText(module.viewBindingOptions.isEnabled)))
-      addView(previewInfo("Compose", buildFeatureText(module.flags.getFlagValue("JETPACK_COMPOSE"))))
-      addView(previewInfo("Data binding", buildFeatureText(module.flags.getFlagValue("DATA_BINDING_ENABLED"))))
-      addView(previewInfo("ML model binding", buildFeatureText(module.flags.getFlagValue("ML_MODEL_BINDING"))))
+      buildFeatureLabels.forEach { (feature, label) ->
+        addView(buildFeatureRow(module, feature, label))
+      }
     }
     addView(rows, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
   }
 
-  private fun buildFeatureText(enabled: Boolean): String = if (enabled) "Enabled" else "Disabled"
+  /** Reads the effective value reported by the synchronized Gradle/AGP model. */
+  private fun buildFeatureModelValue(module: AndroidModule, feature: String): Boolean? = when (feature) {
+    "viewBinding" -> module.viewBindingOptions.isEnabled
+    "compose" -> module.flags.getFlagValue("JETPACK_COMPOSE")
+    "dataBinding" -> module.flags.getFlagValue("DATA_BINDING_ENABLED")
+    "mlModelBinding" -> module.flags.getFlagValue("ML_MODEL_BINDING")
+    else -> null
+  }
 
-  private fun buildFeatureText(value: Boolean?): String =
-      when (value) {
-        true -> "Enabled"
-        false -> "Disabled"
-        null -> "Unknown"
+  private fun buildFeatureRow(module: AndroidModule, feature: String, label: String): View {
+    val baseline = buildFeatureModelValue(module, feature) ?: false
+    val row = LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(0, dp(4), 0, dp(4))
+    }
+    row.addView(text(label, 13f, secondary = true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    val toggle = MaterialSwitch(requireContext()).apply {
+      isChecked = pendingBuildFeatures[module.path]?.get(feature) ?: baseline
+      isEnabled = !creatingModule && !editorViewModel.isInitializing && !applyingBuildFeatures
+      setOnCheckedChangeListener { _, checked ->
+        if (creatingModule || editorViewModel.isInitializing || applyingBuildFeatures) return@setOnCheckedChangeListener
+        val staged = pendingBuildFeatures.getOrPut(module.path) { mutableMapOf() }
+        if (checked == baseline) staged.remove(feature) else staged[feature] = checked
+        if (staged.isEmpty()) pendingBuildFeatures.remove(module.path)
+        updateBuildSyncButtonLabel(module)
       }
+    }
+    row.addView(toggle)
+    return row
+  }
+
+  private fun updateBuildSyncButtonLabel(module: GradleProject) {
+    val button = buildSyncButton ?: return
+    button.text = if ((pendingBuildFeatures[module.path]?.size ?: 0) > 0) "Apply & Sync" else "Sync project"
+  }
+
+  /** Applies staged build feature toggles to the build script, then starts project synchronization. */
+  private fun applyBuildFeatureChangesAndSync(module: GradleProject) {
+    val pending = pendingBuildFeatures[module.path]
+    if (pending.isNullOrEmpty()) {
+      syncProject()
+      return
+    }
+    if (creatingModule || applyingBuildFeatures || editorViewModel.isInitializing) return
+    if (module !is AndroidModule) {
+      showBuildFeatureError("Build features are only supported for Android modules.")
+      return
+    }
+    val script = module.buildScript
+    if (!script.isFile) {
+      showBuildFeatureError("Build script is unavailable: ${script.path}")
+      return
+    }
+    if (FileManager.isActive(script.toPath())) {
+      showBuildFeatureError(
+          "The build script is open in the editor. Close its tab before applying build feature changes, " +
+              "otherwise the editor may overwrite them.",
+      )
+      return
+    }
+    applyingBuildFeatures = true
+    render()
+    lifecycleScope.launch {
+      val error = withContext(Dispatchers.IO) { writeBuildFeatureChanges(script, pending.toMap()) }
+      applyingBuildFeatures = false
+      if (!isAdded) return@launch
+      if (error == null) {
+        pendingBuildFeatures.remove(module.path)
+        Toast.makeText(requireContext(), "Build script updated. Syncing project...", Toast.LENGTH_SHORT).show()
+        syncProject()
+      } else {
+        render()
+        showBuildFeatureError(error)
+      }
+    }
+  }
+
+  /** Writes every staged feature sequentially inside one reversible transaction. Returns null on success. */
+  private fun writeBuildFeatureChanges(script: File, pending: Map<String, Boolean>): String? {
+    val transaction = runCatching { ProjectEditTransaction.begin(projectRoot()) }
+        .getOrElse { return "Could not start a project edit transaction: ${it.message}" }
+    return try {
+      var source = runCatching { script.readText() }.getOrElse {
+        return "Could not read ${script.path}: ${it.message}"
+      }
+      val dsl = if (script.name.endsWith(".kts")) EditorGradleDsl.KOTLIN else EditorGradleDsl.GROOVY
+      pending.forEach { (feature, enabled) ->
+        when (val result = BuildFeatureScriptEditor.setBuildFeature(source, feature, enabled, dsl)) {
+          is GradleEditResult.Applied -> {
+            transaction.applyTextEdit(script, source, result, "build feature $feature")
+            source = TextEditApplier.apply(source, result.edits)
+          }
+          GradleEditResult.NoChange -> Unit
+          is GradleEditResult.Unsupported -> {
+            transaction.rollback().forEach { log.warn("Build feature rollback failed", it) }
+            return "Cannot apply $feature: ${result.reason}"
+          }
+          is GradleEditResult.Ambiguous -> {
+            transaction.rollback().forEach { log.warn("Build feature rollback failed", it) }
+            return "Cannot apply $feature: ${result.reason}"
+          }
+          is GradleEditResult.Invalid -> {
+            transaction.rollback().forEach { log.warn("Build feature rollback failed", it) }
+            return "Cannot apply $feature: ${result.reason}"
+          }
+        }
+      }
+      transaction.commit()
+      null
+    } catch (error: Exception) {
+      transaction.rollback().forEach { log.warn("Build feature rollback failed", it) }
+      error.message ?: "Unknown error while updating the build script"
+    }
+  }
+
+  private fun showBuildFeatureError(message: String) {
+    MaterialAlertDialogBuilder(requireContext())
+        .setTitle("Build features")
+        .setMessage(message)
+        .setPositiveButton("Close", null)
+        .show()
+  }
 
   private fun populateDependencies(content: LinearLayout, module: GradleProject) {
     val dependencies = when (module) {
@@ -1443,6 +1585,7 @@ class ModuleManagerFragment : Fragment() {
     applicationProjectsJob?.cancel()
     applicationProjectsJob = null
     dismissCreationStatusDialog()
+    buildSyncButton = null
     super.onDestroyView()
     _binding = null
   }

@@ -322,6 +322,99 @@ dependencies {
     assertThat(output.replace("\r\n", "")).doesNotContain("\n")
   }
 
+  @Test fun kotlinBuildFeaturesAreRead() {
+    val source = """android {
+    buildFeatures {
+        viewBinding = true
+        compose = false
+    }
+}
+"""
+    assertThat(BuildFeatureScriptEditor.findEnabled(source, "viewBinding", GradleDsl.KOTLIN)).isTrue()
+    assertThat(BuildFeatureScriptEditor.findEnabled(source, "compose", GradleDsl.KOTLIN)).isFalse()
+    assertThat(BuildFeatureScriptEditor.findEnabled(source, "dataBinding", GradleDsl.KOTLIN)).isNull()
+  }
+
+  @Test fun groovyBuildFeaturesAreRead() {
+    val source = """android {
+    buildFeatures {
+        viewBinding true
+        compose false
+    }
+}
+"""
+    assertThat(BuildFeatureScriptEditor.findEnabled(source, "viewBinding", GradleDsl.GROOVY)).isTrue()
+    assertThat(BuildFeatureScriptEditor.findEnabled(source, "compose", GradleDsl.GROOVY)).isFalse()
+    assertThat(BuildFeatureScriptEditor.findEnabled(source, "mlModelBinding", GradleDsl.GROOVY)).isNull()
+  }
+
+  @Test fun kotlinBuildFeatureValueIsRewrittenInPlace() {
+    val source = "android {\n    buildFeatures {\n        viewBinding = true\n    }\n}\n"
+    val output = apply(source, BuildFeatureScriptEditor.setBuildFeature(source, "viewBinding", false, GradleDsl.KOTLIN))
+    assertThat(output).isEqualTo("android {\n    buildFeatures {\n        viewBinding = false\n    }\n}\n")
+  }
+
+  @Test fun groovyBuildFeatureValueIsRewrittenInPlace() {
+    val source = "android {\n    buildFeatures {\n        viewBinding = true\n    }\n}\n"
+    val output = apply(source, BuildFeatureScriptEditor.setBuildFeature(source, "viewBinding", false, GradleDsl.GROOVY))
+    assertThat(output).isEqualTo("android {\n    buildFeatures {\n        viewBinding = false\n    }\n}\n")
+  }
+
+  @Test fun buildFeatureAlreadyInRequestedStateIsNoChange() {
+    val source = "android {\n    buildFeatures {\n        viewBinding = true\n    }\n}\n"
+    assertThat(BuildFeatureScriptEditor.setBuildFeature(source, "viewBinding", true, GradleDsl.KOTLIN))
+        .isInstanceOf(GradleEditResult.NoChange::class.java)
+  }
+
+  @Test fun kotlinBuildFeatureIsAppendedWithExistingEntryIndent() {
+    val source = "android {\n    buildFeatures {\n        viewBinding = true\n    }\n}\n"
+    val output = apply(source, BuildFeatureScriptEditor.setBuildFeature(source, "compose", true, GradleDsl.KOTLIN))
+    assertThat(output).isEqualTo("android {\n    buildFeatures {\n        viewBinding = true\n        compose = true\n    }\n}\n")
+  }
+
+  @Test fun groovyBuildFeatureIsAppendedWithExistingEntryIndent() {
+    val source = "android {\n    buildFeatures {\n        viewBinding true\n    }\n}\n"
+    val output = apply(source, BuildFeatureScriptEditor.setBuildFeature(source, "compose", false, GradleDsl.GROOVY))
+    assertThat(output).isEqualTo("android {\n    buildFeatures {\n        viewBinding true\n        compose false\n    }\n}\n")
+  }
+
+  @Test fun buildFeaturesBlockIsCreatedInsideAndroidBlock() {
+    val kotlinSource = "android {\n    namespace = \"com.example\"\n}\n"
+    val kotlinOutput = apply(kotlinSource, BuildFeatureScriptEditor.setBuildFeature(kotlinSource, "mlModelBinding", true, GradleDsl.KOTLIN))
+    assertThat(kotlinOutput).isEqualTo("android {\n    namespace = \"com.example\"\n    buildFeatures {\n        mlModelBinding = true\n    }\n}\n")
+
+    val groovySource = "android {\n    namespace 'com.example'\n}\n"
+    val groovyOutput = apply(groovySource, BuildFeatureScriptEditor.setBuildFeature(groovySource, "dataBinding", true, GradleDsl.GROOVY))
+    assertThat(groovyOutput).isEqualTo("android {\n    namespace 'com.example'\n    buildFeatures {\n        dataBinding true\n    }\n}\n")
+  }
+
+  @Test fun buildFeatureEditsFailClosed() {
+    assertThat(BuildFeatureScriptEditor.setBuildFeature("plugins {}\n", "viewBinding", true, GradleDsl.KOTLIN))
+        .isInstanceOf(GradleEditResult.Unsupported::class.java)
+    assertThat(BuildFeatureScriptEditor.setBuildFeature("android {}\nandroid {}\n", "viewBinding", true, GradleDsl.KOTLIN))
+        .isInstanceOf(GradleEditResult.Ambiguous::class.java)
+    assertThat(BuildFeatureScriptEditor.setBuildFeature("android {}\n", "aidl", true, GradleDsl.KOTLIN))
+        .isInstanceOf(GradleEditResult.Invalid::class.java)
+
+    val dynamic = "android {\n    buildFeatures {\n        viewBinding = someFlag\n    }\n}\n"
+    assertThat(BuildFeatureScriptEditor.setBuildFeature(dynamic, "viewBinding", true, GradleDsl.KOTLIN))
+        .isInstanceOf(GradleEditResult.Unsupported::class.java)
+  }
+
+  @Test fun buildFeaturesInCommentsAndStringsAreIgnored() {
+    val kotlinSource = "// buildFeatures { viewBinding = true }\nval fake = \"buildFeatures { viewBinding = true }\"\nandroid {\n    namespace = \"com.example\"\n}\n"
+    val kotlinOutput = apply(kotlinSource, BuildFeatureScriptEditor.setBuildFeature(kotlinSource, "viewBinding", true, GradleDsl.KOTLIN))
+    assertThat(kotlinOutput).contains("// buildFeatures { viewBinding = true }")
+    assertThat(kotlinOutput).contains("val fake = \"buildFeatures { viewBinding = true }\"")
+    assertThat(kotlinOutput).contains("    buildFeatures {\n        viewBinding = true\n    }")
+
+    val groovySource = "// buildFeatures { viewBinding true }\ndef fake = 'buildFeatures { viewBinding true }'\nandroid {\n    namespace 'com.example'\n}\n"
+    val groovyOutput = apply(groovySource, BuildFeatureScriptEditor.setBuildFeature(groovySource, "viewBinding", true, GradleDsl.GROOVY))
+    assertThat(groovyOutput).contains("// buildFeatures { viewBinding true }")
+    assertThat(groovyOutput).contains("def fake = 'buildFeatures { viewBinding true }'")
+    assertThat(groovyOutput).contains("    buildFeatures {\n        viewBinding true\n    }")
+  }
+
   private fun parserDiagnostics(source: String): String = buildString {
     append("source=").append(source.replace("\n", "\\n")).append('\n')
     for (dsl in GradleDsl.values()) {
