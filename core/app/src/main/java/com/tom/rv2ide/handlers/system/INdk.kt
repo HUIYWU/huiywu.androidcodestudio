@@ -61,8 +61,6 @@ class INdk(
   private val NDK_DIR = File(Environment.HOME, "android-sdk/ndk")
   private val ACS_DIR = File(Environment.HOME, "acs")
 
-  private external fun processNdkInstall(version: String, arch: String, filename: String)
-
   override fun updateStatus() {
 
     val activity = context as? IDEConfigurations
@@ -300,7 +298,6 @@ class INdk(
                                       prefManager.putBoolean("ndk_installed", true)
                                       flashSuccess(context.getString(R.string.msg_installation_completed_successfully))
                                       renameDir(NDK_DIR.absolutePath, "$version")
-                                      updateNdkBuild(version)
                                       updateStatus()
                                     }
                                   } catch (e: Exception) {
@@ -346,21 +343,6 @@ class INdk(
           }
         },
     )
-  }
-
-  private fun updateNdkBuild(version: String) {
-    val build_script = File(NDK_DIR, "$version/ndk-build")
-    if (build_script.exists()) {
-      build_script.writeText(
-          """
-    #!/bin/sh
-    DIR=${'$'}(cd "${'$'}(dirname "${'$'}0")" && pwd)
-    ${Environment.BIN_DIR}/bash "${'$'}DIR/build/ndk-build" "${'$'}@"
-            """
-              .trimIndent()
-      )
-      build_script.setExecutable(true)
-    }
   }
 
   private fun renameDir(parentDir: String, newName: String = "ndk") {

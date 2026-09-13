@@ -31,5 +31,7 @@ enum class IdeSetupArgument(val argumentName: String, val requiresValue: Boolean
   WITH_OPENSSH("--with-openssh"),
   SDK_VERSION("--sdk", true),
   JDK_VERSION("--jdk", true),
-  NDK_VERSION("--ndk", false),
+  /** Install the Android NDK. The version is resolved from the package manifest. */
+  WITH_NDK("--with-ndk"),
+  NDK_VERSION("--ndk", true),
 }

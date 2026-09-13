@@ -83,7 +83,7 @@ private constructor(
               com.tom.rv2ide.app.configuration.CpuArch.X86_64 -> "x86_64"
               com.tom.rv2ide.app.configuration.CpuArch.X86 -> "x86"
             }
-        context.assets.open(ToolsManager.getCommonAsset("${folderName}/idesetup")).use { inputStream
+        context.assets.open(ToolsManager.getCommonAsset("${folderName}/idesetup.sh")).use { inputStream
           ->
           FileOutputStream(script).use { outputStream -> inputStream.copyTo(outputStream) }
         }

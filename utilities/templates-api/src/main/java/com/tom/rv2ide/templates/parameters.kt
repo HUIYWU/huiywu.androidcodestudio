@@ -397,33 +397,6 @@ inline fun projectLanguageParameter(
       configure()
     }
 
-enum class NdkVersion(val version: String) {
-  NDK_21E("21.4.7075529"),
-  NDK_22B("22.1.7171670"),
-  NDK_23C("23.2.8568313"),
-  NDK_24("24.0.8215888"),
-  NDK_25C("25.2.9519653"),
-  NDK_26D("26.3.11579264"),
-  NDK_27B("27.0.12077973"),
-  NDK_27D("27.2.12479018"),
-  NDK_28C("28.0.12674087"),
-  NDK_29B("29.0.12682434");
-
-  fun displayName(): String = version
-}
-
-inline fun projectNdkVersionParameter(
-    crossinline configure: EnumParameterBuilder<NdkVersion>.() -> Unit = {}
-) =
-    enumParameter<NdkVersion> {
-      name = string.minimum_sdk // You'll need to add this string resource
-      default = NdkVersion.NDK_26D
-      displayName = NdkVersion::displayName
-      startIcon = { R.drawable.ic_min_sdk } // You'll need to add this icon
-
-      configure()
-    }
-
 inline fun minSdkParameter(crossinline configure: EnumParameterBuilder<Sdk>.() -> Unit = {}) =
     enumParameter<Sdk> {
       name = string.minimum_sdk

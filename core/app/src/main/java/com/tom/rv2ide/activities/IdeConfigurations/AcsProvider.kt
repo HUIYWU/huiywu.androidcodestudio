@@ -284,7 +284,7 @@ object AcsCommandInterface {
                  -a, --get-for <arch>      Architecture to get (e.g., arm64-v8a, x86_64)
                  -f, --get <field>         Field to retrieve (e.g., version, url, filename)
                  -i, --id <package_id>     Package ID to filter by (e.g., android-native-kit)
-                 -v, --version <version>   Specific version to get (e.g., 28.2.13676358)
+                 -v, --version <version>   Specific version to get (e.g., from --list-versions)
                  -l, --list-versions       List all available versions for given architecture and ID
                      --get <url>           Direct URL to download
                  -d, --download            Download the file and verify checksum
@@ -295,10 +295,10 @@ object AcsCommandInterface {
                  acs -r https://example.com/manifest.json --get-for arm64-v8a -i android-native-kit --list-versions
 
                  # Get version for specific package and version
-                 acs -r https://example.com/manifest.json --get-for arm64-v8a -i android-native-kit -v 28.2.13676358 -f version
+                 acs -r https://example.com/manifest.json --get-for arm64-v8a -i android-native-kit -v <version> -f version
 
                  # Download specific version of package
-                 acs -r https://example.com/manifest.json --get-for arm64-v8a -i android-native-kit -v 29.0.14033849 --download
+                 acs -r https://example.com/manifest.json --get-for arm64-v8a -i android-native-kit -v <version> --download
              """
                  .trimIndent()
     }

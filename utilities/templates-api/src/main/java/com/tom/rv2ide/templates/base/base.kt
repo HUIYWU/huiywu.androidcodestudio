@@ -30,7 +30,6 @@ import com.tom.rv2ide.templates.ModuleTemplateData
 import com.tom.rv2ide.templates.ModuleType
 import com.tom.rv2ide.templates.ModuleType.AndroidApp
 import com.tom.rv2ide.templates.ModuleType.AndroidLibrary
-import com.tom.rv2ide.templates.NdkVersion
 import com.tom.rv2ide.templates.ParameterConstraint.DIRECTORY
 import com.tom.rv2ide.templates.ParameterConstraint.EXISTS
 import com.tom.rv2ide.templates.ParameterConstraint.MODULE_NAME
@@ -50,7 +49,6 @@ import com.tom.rv2ide.templates.minSdkParameter
 import com.tom.rv2ide.templates.packageNameParameter
 import com.tom.rv2ide.templates.projectLanguageParameter
 import com.tom.rv2ide.templates.projectNameParameter
-import com.tom.rv2ide.templates.projectNdkVersionParameter
 import com.tom.rv2ide.templates.stringParameter
 import com.tom.rv2ide.templates.useKtsParameter
 import com.tom.rv2ide.templates.useNdkParameter
@@ -146,7 +144,6 @@ inline fun baseProject(
     useNdk: BooleanParameter = useNdkParameter(),
     minSdk: EnumParameter<Sdk> = minSdkParameter(),
     language: EnumParameter<Language> = projectLanguageParameter(),
-    ndkVersion: EnumParameter<NdkVersion> = projectNdkVersionParameter(),
     projectVersionData: ProjectVersionData = ProjectVersionData(),
     context: Context? = null,
     crossinline block: ProjectTemplateBuilder.() -> Unit,
@@ -281,7 +278,6 @@ inline fun baseAndroidModule(
 
         val appName = if (isLibrary) null else projectNameParameter()
         val language = projectLanguageParameter()
-        val ndkVersion = projectNdkVersionParameter()
         val minSdk = minSdkParameter()
         val packageName = packageNameParameter()
         val useKts = useKtsParameter()

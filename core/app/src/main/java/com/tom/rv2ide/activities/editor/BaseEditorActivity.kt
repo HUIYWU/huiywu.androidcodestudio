@@ -106,6 +106,7 @@ import com.tom.rv2ide.indexing.views.IndexingBanner
 import com.tom.rv2ide.projectdata.state.Initialization
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.tasks.cancelIfActive
+import com.tom.rv2ide.templates.android.etc.NativeCpp.Check
 import com.tom.rv2ide.ui.CodeEditorView
 import com.tom.rv2ide.ui.ContentTranslatingDrawerLayout
 import com.tom.rv2ide.ui.EditorQuickInputOverlayController
@@ -114,7 +115,6 @@ import com.tom.rv2ide.uidesigner.UIDesignerActivity
 import com.tom.rv2ide.utils.ActionMenuUtils.createMenu
 import com.tom.rv2ide.utils.ApkInstallationSessionCallback
 import com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder
-import com.tom.rv2ide.utils.Environment
 import com.tom.rv2ide.utils.InstallationResultHandler.onResult
 import com.tom.rv2ide.utils.IntentUtils
 import com.tom.rv2ide.utils.MemoryUsageWatcher
@@ -1237,19 +1237,16 @@ override fun onApplySystemBarInsets(insets: Insets) {
     return androidMkFile.exists() || cmakeListsFile.exists()
   }
 
-  private fun isNdkInstalled(): Boolean {
-    val ndkBuildFile = File(Environment.ANDROID_HOME, "ndk/28.2.13676358/ndk-build")
-    return ndkBuildFile.exists()
-  }
+  private fun isNdkInstalled(): Boolean = Check.isAtLeastOneInstalled()
 
   private fun showNdkNotInstalledDialog(context: Context, onDismiss: () -> Unit = {}) {
     MaterialAlertDialogBuilder(context)
         .setTitle("NDK Not Found")
         .setMessage(
-            "A compatible NDK (version 28.2.13676358) is not installed.\n\n" +
+            "No compatible NDK is installed.\n\n" +
                 "Native code features will be disabled for this project.\n\n" +
-                "To enable native development, please install NDK version 28.2.13676358 " +
-                "open a terminal then run: 'idesetup -y -c -wn'."
+                "To enable native development, install an NDK from the IDE configuration " +
+                "screen, or open a terminal and run: 'idesetup -y -c -wn'."
         )
         .setPositiveButton("OK") { dialog, _ ->
           dialog.dismiss()

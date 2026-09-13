@@ -47,6 +47,16 @@ import com.tom.rv2ide.utils.ConnectionInfo
 import com.tom.rv2ide.utils.Environment
 import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.getConnectionInfo
+import java.io.File
+
+/** Dropdown entry that skips the NDK installation. */
+private const val NDK_SKIP = "Skip"
+
+/**
+ * Dropdown entry that asks the setup script to resolve and install the latest NDK version
+ * available in the package manifest.
+ */
+private const val NDK_LATEST = "Latest"
 
 /**
  * original @author Akash Yadav Modified by Mohammed-baqer-null @
@@ -126,8 +136,7 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
           )
       )
 
-      val ndkVersions =
-          NdkVersion.entries.map { if (it.version == "0") "Skip" else "NDK ${it.version}" }
+      val ndkVersions = buildNdkVersionOptions()
       ndkVersion.setText(ndkVersions[0])
       ndkVersion.setAdapter(
           ArrayAdapter(
@@ -139,6 +148,24 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
     }
 
     updateConnectionStatus()
+  }
+
+  /**
+   * Builds the NDK version dropdown options. [NDK_LATEST] is listed first so that the latest
+   * version is selected by default; already installed versions follow (newest first) and
+   * [NDK_SKIP] is always available as the last option.
+   */
+  private fun buildNdkVersionOptions(): Array<String> {
+    val installed =
+        File(Environment.HOME, "android-sdk/ndk")
+            .listFiles()
+            ?.filter { it.isDirectory }
+            ?.map { it.name }
+            ?.sorted()
+            ?.reversed()
+            .orEmpty()
+
+    return (listOf(NDK_LATEST) + installed + NDK_SKIP).toTypedArray()
   }
 
   fun isAutoInstall(): Boolean = content.autoInstallSwitch.isChecked
@@ -154,10 +181,20 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
         IdeSetupArgument.JDK_VERSION,
         JdkVersion.fromDisplayName(content.jdkVersion.text).version,
     )
-    args.setArgument(
-        IdeSetupArgument.NDK_VERSION,
-        NdkVersion.fromDisplayName(content.ndkVersion.text).version,
-    )
+    val selectedNdk = content.ndkVersion.text.toString().trim()
+    when (selectedNdk) {
+      NDK_SKIP -> {
+        // Do not pass any NDK argument.
+      }
+      NDK_LATEST -> {
+        // Let the setup script resolve and install the latest available NDK version.
+        args.setArgument(IdeSetupArgument.WITH_NDK)
+      }
+      else -> {
+        args.setArgument(IdeSetupArgument.WITH_NDK)
+        args.setArgument(IdeSetupArgument.NDK_VERSION, selectedNdk)
+      }
+    }
     args.setArgument(IdeSetupArgument.ASSUME_YES)
     if (content.installGit.isChecked) {
       args.setArgument(IdeSetupArgument.WITH_GIT)

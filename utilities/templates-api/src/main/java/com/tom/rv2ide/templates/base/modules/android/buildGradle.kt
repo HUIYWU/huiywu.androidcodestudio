@@ -212,19 +212,53 @@ private fun AndroidModuleTemplateBuilder.hasNativeFiles(): Boolean {
   return androidMkFile.exists() || cmakeListsFile.exists()
 }
 
-private fun AndroidModuleTemplateBuilder.isNdkInstalled(): Boolean {
-  val ndkBuildFile = File(Environment.ANDROID_HOME, "ndk/28.2.13676358/ndk-build")
-  return ndkBuildFile.exists()
+private fun AndroidModuleTemplateBuilder.isNdkInstalled(): Boolean =
+    getAllInstalledNdkVersions().isNotEmpty()
+
+/**
+ * Returns the NDK versions installed under `$ANDROID_HOME/ndk`, sorted from the highest to the
+ * lowest. Versions are discovered at runtime so neither the templates nor the NDK checks depend on
+ * a hardcoded release.
+ */
+private fun AndroidModuleTemplateBuilder.getAllInstalledNdkVersions(): List<String> {
+  val ndkDir = File(Environment.ANDROID_HOME, "ndk")
+  if (!ndkDir.isDirectory) {
+    return emptyList()
+  }
+
+  return ndkDir
+      .listFiles()
+      .orEmpty()
+      .filter { it.isDirectory && it.name.matches(Regex("""\d+(\.\d+)+""")) }
+      .map { it.name }
+      .sortedWith(
+          Comparator { a, b ->
+            val aParts = a.split('.').map { it.toIntOrNull() ?: 0 }
+            val bParts = b.split('.').map { it.toIntOrNull() ?: 0 }
+            var comparison = 0
+            for (index in 0 until maxOf(aParts.size, bParts.size)) {
+              comparison = aParts.getOrElse(index) { 0 }.compareTo(bParts.getOrElse(index) { 0 })
+              if (comparison != 0) {
+                break
+              }
+            }
+            -comparison
+          }
+      )
 }
+
+/** Highest NDK version installed on the device, or `null` when no NDK is installed. */
+private fun AndroidModuleTemplateBuilder.resolveNdkVersion(): String? =
+    getAllInstalledNdkVersions().firstOrNull()
 
 private fun AndroidModuleTemplateBuilder.showNdkNotInstalledDialog(context: Context) {
   MaterialAlertDialogBuilder(context)
       .setTitle("NDK Not Found")
       .setMessage(
-          "A compatible NDK (version 28.2.13676358) is not installed.\n\n" +
+          "No compatible NDK is installed.\n\n" +
               "Native code features will be disabled for this project.\n\n" +
-              "To enable native development, please install NDK version 28.2.13676358 " +
-              "open a terminal then run: 'idesetup -y -c -wn'."
+              "To enable native development, install an NDK from the IDE configuration " +
+              "screen, or open a terminal and run: 'idesetup -y -c -wn'."
       )
       .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
       .setCancelable(false)
@@ -235,6 +269,7 @@ private fun AndroidModuleTemplateBuilder.buildGradleSrcKts(isComposeModule: Bool
   val shouldUseNdk = data.useNdk
   val hasNative = hasNativeFiles() || shouldUseNdk
   val ndkInstalled = isNdkInstalled()
+  val ndkVersion = resolveNdkVersion()
 
   // Calculate compileSdk value first
   val compileSdkValue = if (isComposeModule) 36 else data.versions.compileSdk.api
@@ -250,7 +285,7 @@ plugins {
 android {
     namespace = "${data.packageName}"
     compileSdk = $compileSdkValue
-    ${if (hasNative && ndkInstalled) """ndkVersion = "28.2.13676358"""" else ""}
+    ${if (hasNative && ndkInstalled && ndkVersion != null) """ndkVersion = "$ndkVersion"""" else ""}
     
     defaultConfig {
         applicationId = "${data.packageName}"
@@ -303,6 +338,7 @@ private fun AndroidModuleTemplateBuilder.buildGradleSrcGroovy(isComposeModule: B
   val shouldUseNdk = data.useNdk
   val hasNative = hasNativeFiles() || shouldUseNdk
   val ndkInstalled = isNdkInstalled()
+  val ndkVersion = resolveNdkVersion()
 
   // Calculate compileSdk value first
   val compileSdkValue = if (isComposeModule) 36 else data.versions.compileSdk.api
@@ -319,7 +355,7 @@ plugins {
 android {
     namespace '${data.packageName}'
     compileSdk $compileSdkValue
-    ${if (hasNative && ndkInstalled) """ndkVersion '28.2.13676358'""" else ""}
+    ${if (hasNative && ndkInstalled && ndkVersion != null) """ndkVersion '$ndkVersion'""" else ""}
     
     defaultConfig {
         applicationId "${data.packageName}"

@@ -72,26 +72,8 @@ enum class JdkVersion(val version: String) {
   }
 }
 
-/**
- * NDK versions.
- *
- * @author Mohammed-baqer-null
+/*
+ * NOTE: NDK versions are intentionally not listed here. The available versions are fetched from
+ * the ACS manifest at runtime (see IdeSetupConfigurationFragment) and the installed NDK is
+ * resolved dynamically from the SDK directory.
  */
-enum class NdkVersion(val version: String) {
-
-  NDK_DISABLE("0"),
-  NDK_28("28.2.13676358"),
-  ;
-
-  val displayName = if (version == "0") "Skip" else "NDK $version"
-
-  companion object {
-
-    @JvmStatic
-    fun fromDisplayName(displayName: CharSequence) =
-        entries.first { it.displayName.contentEquals(displayName) }
-
-    @JvmStatic
-    fun fromVersion(version: CharSequence) = entries.first { it.version.contentEquals(version) }
-  }
-}

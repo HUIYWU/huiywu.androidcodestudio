@@ -35,11 +35,11 @@ import com.tom.rv2ide.preferences.internal.JavaPreferences
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.services.builder.GradleBuildService
+import com.tom.rv2ide.templates.android.etc.NativeCpp.Check
 import com.tom.rv2ide.tooling.api.messages.result.BuildInfo
 import com.tom.rv2ide.tooling.events.ProgressEvent
 import com.tom.rv2ide.tooling.events.configuration.ProjectConfigurationStartEvent
 import com.tom.rv2ide.tooling.events.task.TaskStartEvent
-import com.tom.rv2ide.utils.Environment
 import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.flashSuccess
 import java.io.File
@@ -174,20 +174,17 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
   }
 
   /** Check if NDK is installed */
-  private fun isNdkInstalled(): Boolean {
-    val ndkBuildFile = File(Environment.ANDROID_HOME, "ndk/28.2.13676358/ndk-build")
-    return ndkBuildFile.exists()
-  }
+  private fun isNdkInstalled(): Boolean = Check.isAtLeastOneInstalled()
 
   /** Show dialog when NDK is not installed but required */
   private fun showNdkNotInstalledDialog(context: Context, onDismiss: () -> Unit = {}) {
     MaterialAlertDialogBuilder(context)
         .setTitle("NDK Not Found")
         .setMessage(
-            "A compatible NDK (version 28.2.13676358) is not installed.\n\n" +
+            "No compatible NDK is installed.\n\n" +
                 "Native code features will be disabled for this project.\n\n" +
-                "To enable native development, please install NDK version 28.2.13676358 " +
-                "open a terminal then run: 'idesetup -y -c -wn'."
+                "To enable native development, install an NDK from the IDE configuration " +
+                "screen, or open a terminal and run: 'idesetup -y -c -wn'."
         )
         .setPositiveButton("OK") { dialog, _ ->
           dialog.dismiss()
