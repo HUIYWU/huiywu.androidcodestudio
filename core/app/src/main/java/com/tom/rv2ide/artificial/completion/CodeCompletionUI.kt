@@ -26,7 +26,6 @@ class CodeCompletionUI(
     
     private var suggestionJob: Job? = null
     private var currentSuggestion: String? = null
-    private var suggestionStartPosition: Int = 0
     private val debounceDelayMs = 1500L
     private var lastChangeTime = 0L
     private var isRequestingsuggestion = false
@@ -208,7 +207,6 @@ class CodeCompletionUI(
                 }
                 
                 if (suggestionResult != null && suggestionResult.text.isNotBlank()) {
-                    suggestionStartPosition = cursorPosition
                     currentSuggestion = suggestionResult.text
                     onSuggestionChanged?.invoke(suggestionResult.text)
                 } else {
@@ -324,8 +322,6 @@ class CodeCompletionUI(
         suggestionJob = null
         clearSuggestionDisplay()
     }
-    
-    fun getCurrentSuggestion(): String? = currentSuggestion
     
     fun cleanup() {
         android.util.Log.d("CodeCompletionUI", "cleanup() - unsubscribing events")

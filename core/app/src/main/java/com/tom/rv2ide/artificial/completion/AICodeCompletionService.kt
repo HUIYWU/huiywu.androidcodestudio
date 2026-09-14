@@ -17,19 +17,16 @@
 
 package com.tom.rv2ide.artificial.completion
 
-import android.content.Context
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.exceptions.RateLimitException
 import com.tom.rv2ide.artificial.exceptions.QuotaExceededException
 import com.tom.rv2ide.artificial.exceptions.InsufficientBalanceException
 import com.tom.rv2ide.artificial.exceptions.InvalidApiKeyException
 import com.tom.rv2ide.artificial.secrets.ApiKey
-import com.tom.rv2ide.setup.updater.LspUpdateDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class AICodeCompletionService(
-    private val context: Context,
     private val aiAgent: AIAgent
 ) {
     

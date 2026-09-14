@@ -35,7 +35,6 @@ import com.tom.rv2ide.artificial.dialogs.ProviderSwitchDialog
 
 class AIAgentManager(private val context: Context) {
 
-    private val snippetParser = SnippetParser()
     private val permissionManager = AIPermissionManager(context)
     private var currentProjectRoot: File? = null
     private var currentProviderId: String = DEFAULT_PROVIDER_ID

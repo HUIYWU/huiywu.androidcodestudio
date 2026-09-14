@@ -699,7 +699,6 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
     analysisJob?.cancel()
     codeEditorScope.cancelIfActive("Cancellation was requested")
-    releaseSuggestionView()
     _binding?.editor?.apply {
       clearDiagnostics()
       cleanupCompletionTooltips()

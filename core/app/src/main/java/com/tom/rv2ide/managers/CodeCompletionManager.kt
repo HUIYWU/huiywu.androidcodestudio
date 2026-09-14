@@ -116,7 +116,7 @@ class CodeCompletionManager private constructor(
                 
                 codeCompletionUI?.cleanup()
                 
-                val codeCompletionService = AICodeCompletionService(context, agent)
+                val codeCompletionService = AICodeCompletionService(agent)
                 
                 codeCompletionUI = CodeCompletionUI(editor, codeCompletionService, lifecycleScope)
                 
