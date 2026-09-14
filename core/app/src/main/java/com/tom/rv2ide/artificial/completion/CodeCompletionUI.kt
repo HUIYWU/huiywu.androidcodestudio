@@ -37,8 +37,20 @@ class CodeCompletionUI(
     
     var onSuggestionChanged: ((String?) -> Unit)? = null
     
+    /** Releases editor event subscriptions without touching the owner-provided callbacks. */
+    private fun releaseEditorListeners() {
+        contentChangeReceipt?.unsubscribe()
+        selectionChangeReceipt?.unsubscribe()
+        contentChangeReceipt = null
+        selectionChangeReceipt = null
+    }
+
     fun initialize() {
-        cleanup()
+        // Must not delegate to cleanup() here: cleanup() also clears onSuggestionChanged, but the
+        // owner (CodeCompletionManager) assigns that callback *before* calling initialize(). Calling
+        // cleanup() would therefore silently drop the only channel that displays a suggestion, and
+        // the chain would compute completions that are never shown.
+        releaseEditorListeners()
         setupEditorListeners()
     }
     
@@ -276,9 +288,11 @@ class CodeCompletionUI(
                         ""
                     }
                     
-                    val lineContent = content.getLine(currentLine)
+                    // Append after the previously inserted line (insertLine - 1). Appending at the
+                    // original line's end reversed the order of the continuation lines.
+                    val lineContent = content.getLine(insertLine - 1)
                     val lineLength = lineContent.length
-                    content.insert(currentLine, lineLength, "\n" + indentedLine)
+                    content.insert(insertLine - 1, lineLength, "\n" + indentedLine)
                     insertLine++
                 }
                 
@@ -321,9 +335,6 @@ class CodeCompletionUI(
         currentSuggestion = null
         onSuggestionChanged = null
         
-        contentChangeReceipt?.unsubscribe()
-        selectionChangeReceipt?.unsubscribe()
-        contentChangeReceipt = null
-        selectionChangeReceipt = null
+        releaseEditorListeners()
     }
 }

@@ -9,6 +9,7 @@ import androidx.recyclerview.widget.RecyclerView
 import android.widget.LinearLayout
 import com.tom.rv2ide.adapters.FileModificationAdapter
 import com.tom.rv2ide.artificial.agents.AIAgentManager
+import com.tom.rv2ide.artificial.render.AIMarkdownRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -26,12 +27,17 @@ class AIRequestHandler(
     private val fileModificationAdapter: FileModificationAdapter,
     private val summaryCard: LinearLayout,
     private val onFileOpen: (String) -> Unit,
-    private val onTypeText: (String, Long) -> Unit,
     private val getCurrentFile: () -> File?,
     private val refreshEditor: () -> Unit
 ) {
-    
     private var executionJob: Job? = null
+
+    // Built lazily and reused: constructing a Markwon instance per reply would rebuild the parser
+    // and plugin chain on every request.
+    private val markdownRenderer: AIMarkdownRenderer by lazy {
+        AIMarkdownRenderer(statusText.context)
+    }
+
     
     fun execute(userRequest: String) {
         executionJob?.cancel()
@@ -141,7 +147,9 @@ class AIRequestHandler(
     private fun handleTextResponse(response: String) {
         progressIndicator.visibility = View.GONE
         executeBtn.isEnabled = true
-        statusText.text = response
+        // Plain-language answers are Markdown. Assign the rendered spans instead of the raw string,
+        // otherwise `**bold**`, headings, lists and ``` fences were shown literally.
+        statusText.text = markdownRenderer.render(response)
         summaryCard.visibility = View.GONE
         fileModificationList.visibility = View.GONE
     }

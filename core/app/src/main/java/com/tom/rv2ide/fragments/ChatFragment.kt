@@ -54,7 +54,6 @@ class ChatFragment : Fragment() {
     private lateinit var codeCompletionManager: CodeCompletionManager
     private lateinit var aiRequestHandler: AIRequestHandler
     
-    private var typingJob: Job? = null
     private var fileMonitorJob: Job? = null
     private var completionStateMonitorJob: Job? = null
     private var lastMonitoredFile: File? = null
@@ -150,7 +149,6 @@ class ChatFragment : Fragment() {
             onFileOpen = { fileName ->
                 openFileInEditor(fileName)
             },
-            onTypeText = { text, delay -> typeText(text, delay) },
             getCurrentFile = { getCurrentFile() },
             refreshEditor = { refreshCurrentEditor() }
         )
@@ -390,36 +388,9 @@ class ChatFragment : Fragment() {
         }
     }
 
-    private fun typeText(text: String, delayMs: Long = 10L) {
-        typingJob?.cancel()
-        typingJob = lifecycleScope.launch {
-            try {
-                val editor = getCurrentEditor() ?: return@launch
-                val lines = text.lines()
-                val currentText = StringBuilder()
-                
-                for (line in lines) {
-                    val words = line.split(" ")
-                    for (i in words.indices) {
-                        currentText.append(words[i])
-                        if (i < words.size - 1) {
-                            currentText.append(" ")
-                        }
-                        editor.setText(currentText.toString())
-                        delay(delayMs)
-                    }
-                    currentText.append("\n")
-                    editor.setText(currentText.toString())
-                }
-            } catch (e: Exception) {
-            }
-        }
-    }
-
     fun clearConversation() {
         lifecycleScope.launch {
             try {
-                typingJob?.cancel()
                 codeCompletionManager.clearSuggestion()
                 aiAgent.clearConversation()
                 
@@ -493,7 +464,6 @@ class ChatFragment : Fragment() {
     }
     
     override fun onDestroyView() {
-        typingJob?.cancel()
         fileMonitorJob?.cancel()
         completionStateMonitorJob?.cancel()
         aiRequestHandler.cancel()

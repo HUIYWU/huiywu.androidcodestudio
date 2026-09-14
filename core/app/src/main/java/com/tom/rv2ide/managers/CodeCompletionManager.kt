@@ -23,6 +23,7 @@ import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.completion.AICodeCompletionService
 import com.tom.rv2ide.artificial.completion.CodeCompletionUI
 import com.tom.rv2ide.artificial.completion.SuggestionView
+import com.tom.rv2ide.artificial.secrets.ApiKey
 import io.github.rosemoe.sora.widget.CodeEditor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -78,6 +79,13 @@ class CodeCompletionManager private constructor(
         
         if (!isEnabled) {
             onError(Exception("Code completion is disabled"))
+            return
+        }
+
+        // Master switch. Reuse the shared gate so the completion chain cannot bypass the
+        // "ai_agent_enabled" preference by asking a provider for suggestions.
+        if (!ApiKey.isAIAgentEnabled()) {
+            onError(Exception("AI Agent is disabled"))
             return
         }
         

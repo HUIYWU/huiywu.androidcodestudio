@@ -191,6 +191,9 @@ dependencies {
   implementation(libs.common.utilcode)
   implementation(libs.common.glide)
   implementation(libs.common.jsoup)
+  // AI chat replies are Markdown; the same renderer family already used by the editor hover.
+  implementation(libs.common.markwon.core)
+  implementation(libs.common.markwon.extStrikethrough)
   implementation(libs.common.kotlin.coroutines.android)
   implementation(libs.common.retrofit)
   implementation(libs.common.retrofit.gson)

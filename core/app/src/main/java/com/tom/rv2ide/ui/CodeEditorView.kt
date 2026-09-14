@@ -209,8 +209,9 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   }
 
   private fun ensureSuggestionView(): SuggestionView? {
-    // Keep the editor layout identical to upstream AndroidIDE. Inline suggestion UI is disabled
-    // until it can be hosted without wrapping the editor root in an extra FrameLayout.
+    // Keep the editor layout identical to upstream AndroidIDE. Inline suggestion UI is
+    // intentionally disabled for now: the presentation approach (hosting, alignment, theming)
+    // is still to be decided; do not mount the view here.
     return null
   }
 
@@ -698,6 +699,7 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
     analysisJob?.cancel()
     codeEditorScope.cancelIfActive("Cancellation was requested")
+    releaseSuggestionView()
     _binding?.editor?.apply {
       clearDiagnostics()
       cleanupCompletionTooltips()

@@ -23,6 +23,7 @@ import com.tom.rv2ide.artificial.exceptions.RateLimitException
 import com.tom.rv2ide.artificial.exceptions.QuotaExceededException
 import com.tom.rv2ide.artificial.exceptions.InsufficientBalanceException
 import com.tom.rv2ide.artificial.exceptions.InvalidApiKeyException
+import com.tom.rv2ide.artificial.secrets.ApiKey
 import com.tom.rv2ide.setup.updater.LspUpdateDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -77,6 +78,12 @@ class AICodeCompletionService(
                     android.util.Log.d("AICodeCompletionService", "AI response: $response")
                     val completionResult = extractSuggestion(response)
                     if (completionResult != null && completionResult.text.isNotBlank()) {
+                        // Bound the cache: prompts and responses are large, and an unbounded map
+                        // kept every distinct context seen during the session alive for the whole
+                        // process lifetime.
+                        if (completionCache.size >= MAX_CACHE_ENTRIES) {
+                            completionCache.clear()
+                        }
                         completionCache[cacheKey] = completionResult
                         android.util.Log.d("AICodeCompletionService", "Extracted suggestion: '${completionResult.text}'")
                         return@withContext completionResult
@@ -188,5 +195,13 @@ Completion:""".trimIndent()
         completionCache.clear()
     }
     
-    fun isEnabled(): Boolean = true
+    fun isEnabled(): Boolean = ApiKey.isAIAgentEnabled()
+
+    companion object {
+        /**
+         * Upper bound for [completionCache]. Completions are keyed by the preceding context, so the
+         * map grows with every distinct context the user types through.
+         */
+        private const val MAX_CACHE_ENTRIES = 64
+    }
 }

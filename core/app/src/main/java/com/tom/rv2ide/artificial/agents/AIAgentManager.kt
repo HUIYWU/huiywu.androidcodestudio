@@ -38,7 +38,7 @@ class AIAgentManager(private val context: Context) {
     private val snippetParser = SnippetParser()
     private val permissionManager = AIPermissionManager(context)
     private var currentProjectRoot: File? = null
-    private var currentProviderId: String = "gemini"
+    private var currentProviderId: String = DEFAULT_PROVIDER_ID
     private var currentAgent: AIAgent? = null
     private val providerSwitchDialog = ProviderSwitchDialog(context)
 
@@ -53,7 +53,15 @@ class AIAgentManager(private val context: Context) {
         permissionManager.setFileWriteEnabled(true)
         permissionManager.setRequireConfirmation(false)
         
-        setProvider(currentProviderId)
+        // Restore the provider the user selected in the settings screen instead of always starting
+        // on Gemini. The selection was persisted by Agents.setProvider() but never read back here,
+        // so a user who picked e.g. DeepSeek silently went back to Gemini on every launch.
+        // If the persisted provider cannot be initialized (e.g. its API key was removed), fall back
+        // to the default so the agent stays usable.
+        val persistedProvider = Agents(context).getProvider()
+        if (!setProvider(persistedProvider)) {
+            setProvider(DEFAULT_PROVIDER_ID)
+        }
     }
     
     fun getCurrentAgent(): AIAgent? = currentAgent
@@ -132,6 +140,16 @@ class AIAgentManager(private val context: Context) {
     }
 
     suspend fun executeRequest(userRequest: String, callback: AIAgentCallback) {
+        // Master switch. The AI Agent must be explicitly enabled before anything is sent to a
+        // provider; previously the "ai_agent_enabled" preference only disabled the API key fields
+        // in the settings screen and had no effect on the actual request path.
+        if (!ApiKey.isAIAgentEnabled()) {
+            callback.onError(
+                "AI Agent is disabled.\n\nTurn it on in the AI sidebar settings to continue."
+            )
+            return
+        }
+
         var success = false
         var providerSwitched = false
 
@@ -304,7 +322,7 @@ class AIAgentManager(private val context: Context) {
 
                         val rawContent = contentBuilder.toString().trim()
                         val cleanedContent = parser.cleanFileContent(rawContent)
-                        val previousContent = previousFileStates[currentFile]
+                        val previousContent = resolvePreviousContent(currentFile, previousFileStates)
 
                         val writeResult = currentAgent?.writeFile(currentFile, cleanedContent)
                             ?: FileWriteResult.Error("No agent initialized")
@@ -332,7 +350,7 @@ class AIAgentManager(private val context: Context) {
 
                 val rawContent = contentBuilder.toString().trim()
                 val cleanedContent = parser.cleanFileContent(rawContent)
-                val previousContent = previousFileStates[currentFile]
+                val previousContent = resolvePreviousContent(currentFile, previousFileStates)
 
                 val writeResult = currentAgent?.writeFile(currentFile, cleanedContent)
                     ?: FileWriteResult.Error("No agent initialized")
@@ -348,6 +366,36 @@ class AIAgentManager(private val context: Context) {
         }
 
         return modifications
+    }
+
+    /**
+     * Resolves the pre-write content that [AIAgent.recordModification] stores for undo.
+     *
+     * The captured snapshot only covers a subset of extensions (see [captureCurrentFileStates]),
+     * yet the agent may legitimately rewrite files outside of it (e.g. `gradle.properties` or
+     * `libs.versions.toml`). Returning `null` for such an existing file is wrong: [undoLastModification]
+     * interprets `null` as "the agent created this file" and deletes it, which silently destroys the
+     * user's own file (and [executeRequest] triggers an undo automatically when it gives up).
+     *
+     * So the snapshot is only a cache: on a miss, read the file from disk. `null` is then returned
+     * only when the file genuinely did not exist before the write.
+     */
+    private fun resolvePreviousContent(
+        filePath: String,
+        previousFileStates: Map<String, String>
+    ): String? {
+        previousFileStates[filePath]?.let { return it }
+
+        val file = File(filePath)
+        if (!file.exists() || !file.isFile) return null
+
+        return try {
+            file.readText()
+        } catch (e: Exception) {
+            // Cannot read it, but it does exist: report empty content instead of `null` so that undo
+            // restores (empties) the file rather than deleting it.
+            ""
+        }
     }
 
     private fun formatErrorMessage(error: Throwable): String {
@@ -541,6 +589,11 @@ class AIAgentManager(private val context: Context) {
         val name: String,
         val isAvailable: Boolean
     )
+
+    companion object {
+        /** Provider used for the very first launch, before the user picks one. */
+        private const val DEFAULT_PROVIDER_ID = "gemini"
+    }
 }
 
 data class BaseFileModification(
