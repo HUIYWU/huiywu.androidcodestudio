@@ -1,15 +1,9 @@
 package com.tom.rv2ide.artificial.completion
 
-import android.graphics.Color
-import android.graphics.Typeface
-import android.text.SpannableString
-import android.text.style.ForegroundColorSpan
-import android.text.style.StyleSpan
 import android.view.KeyEvent
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.SelectionChangeEvent
-import io.github.rosemoe.sora.event.EventReceiver
 import io.github.rosemoe.sora.event.SubscriptionReceipt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

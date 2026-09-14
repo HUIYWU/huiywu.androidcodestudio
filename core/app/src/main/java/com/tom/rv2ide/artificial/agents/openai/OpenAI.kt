@@ -18,7 +18,6 @@
 package com.tom.rv2ide.artificial.agents.openai
 
 import android.content.Context
-import com.tom.rv2ide.artificial.services.ArtificialService
 import com.tom.rv2ide.artificial.rules.WritingRules
 import com.tom.rv2ide.artificial.project.awareness.ProjectTreeResult
 import com.tom.rv2ide.artificial.file.AIFileWriter
