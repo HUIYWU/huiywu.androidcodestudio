@@ -950,6 +950,15 @@
   <string name="ai_preferences_not_set">未设置</string>
   <string name="local_llm_default_base_url">http://localhost:1234</string>
   <string name="local_llm_default_model_name">local-model</string>
+
+  <!-- AI Agent local LLM -->
+  <string name="ai_agent_local_llm">本地 LLM</string>
+  <string name="ai_agent_local_llm_summary">配置基础 URL、API 密钥与模型</string>
+  <string name="local_llm_api_key">API 密钥</string>
+  <string name="local_llm_fetch_models">获取可用模型列表</string>
+  <string name="local_llm_fetch_loaded">已加载 %1$d 个模型</string>
+  <string name="local_llm_fetch_failed">获取模型列表失败：%1$s</string>
+  <string name="local_llm_base_url_required">请先填写基础 URL</string>
   <string name="file_browser_select_destination">选择目标位置</string>
   <string name="file_browser_goto_my_project">前往我的项目</string>
   <string name="file_browser_paste_here">粘贴到此处</string>

@@ -17,6 +17,7 @@ import com.google.android.material.textview.MaterialTextView
 import com.tom.rv2ide.R
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.agents.Agents
+import com.tom.rv2ide.artificial.catalog.ModelSources
 import com.tom.rv2ide.artificial.dialogs.ProviderSwitchDialog
 import com.tom.rv2ide.artificial.dialogs.LocalLLMConfigDialog
 import com.tom.rv2ide.common.logging.IdeLogConfig
@@ -104,7 +105,8 @@ class AIPreferencesFragment : Fragment() {
             "localllm" to "Local LLM"
         )
         
-        val allProviderIds = listOf("gemini", "openai", "claude", "deepseek", "grok", "localllm")
+        // Single source of provider ids; the catalogue owns the canonical order.
+        val allProviderIds = ModelSources.PROVIDER_IDS
         val providerNames = allProviderIds.map { providerMap[it] ?: it }
         
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, providerNames)
@@ -187,7 +189,7 @@ class AIPreferencesFragment : Fragment() {
         val currentProvider = agents.getProvider()
         val models = agents.getModelsForProvider(currentProvider)
         
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, models.toList())
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, models)
         modelDropdown.setAdapter(adapter)
         
         val currentModel = agents.getAgent()
@@ -305,19 +307,15 @@ class AIPreferencesFragment : Fragment() {
         if (IdeLogConfig.shouldLogDebug()) {
             log.debug("Switching to provider: {}", providerId)
         }
-        
-        val availableModels = agents.getModelsForProvider(providerId)
+        val models = agents.getModelsForProvider(providerId)
+        // Model lists are never empty: the repository falls back to the built-in catalogue.
+        val defaultModel = agents.getDefaultModelForProvider(providerId)
+        agents.setModel(providerId, defaultModel)
         if (IdeLogConfig.shouldLogDebug()) {
-            log.debug("Available models for {}: {}", providerId, availableModels.joinToString())
+            log.debug("Available models for {}: {}", providerId, models.joinToString())
+            log.debug("Set default model: {}", defaultModel)
         }
         
-        if (availableModels.isNotEmpty()) {
-            val defaultModel = availableModels[0]
-            agents.setAgent(defaultModel)
-            if (IdeLogConfig.shouldLogDebug()) {
-                log.debug("Set default model: {}", defaultModel)
-            }
-        }
         
         agents.setProvider(providerId)
         
@@ -347,7 +345,7 @@ class AIPreferencesFragment : Fragment() {
         if (IdeLogConfig.shouldLogDebug()) {
             log.debug("Switching to model: {}", modelName)
         }
-        agents.setAgent(modelName)
+        agents.setModel(agents.getProvider(), modelName)
         aiAgent.reinitializeWithSelectedModel()
         updateCurrentStatus()
         

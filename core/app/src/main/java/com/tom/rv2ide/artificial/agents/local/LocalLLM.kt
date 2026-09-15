@@ -22,6 +22,7 @@ import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.Agents
+import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
 import com.tom.rv2ide.artificial.secrets.ApiKey
 import com.tom.rv2ide.artificial.rules.WritingRules
 import com.tom.rv2ide.artificial.project.awareness.ProjectTreeResult
@@ -272,6 +273,13 @@ class LocalLLM : AIAgent {
 
           val request = Request.Builder()
               .url("$baseUrl/v1/chat/completions")
+              .apply {
+                // Most local servers are unauthenticated, but the settings dialog allows a key for
+                // the ones that are; sending it here keeps the two consistent. It is read from the
+                // same source the dialog writes to, since initialize() does not retain its key.
+                LocalLlmSettings.apiKey()
+                  ?.let { header("Authorization", "Bearer $it") }
+              }
               .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
               .build()
 

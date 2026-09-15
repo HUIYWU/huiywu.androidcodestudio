@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import com.tom.rv2ide.artificial.agents.Agents
+import com.tom.rv2ide.artificial.catalog.ModelRepository
 import org.json.JSONObject
 import org.json.JSONArray
 import java.net.HttpURLConnection
@@ -51,13 +52,16 @@ class OpenAI : AIAgent {
   private var currentAttemptCount = 0
   private val maxRetryAttempts = 3
   private var agents: Agents? = null
-  private var selectedModel: String = "gpt-4o"
-  override val providerId = "openai"
+  private var selectedModel: String = ModelRepository.getDefaultModel(PROVIDER_ID)
+  override val providerId = PROVIDER_ID
   override val providerName = "OpenAI"
 
   companion object {
+      /** Id shared by the registry, the catalogue and the persisted selection. */
+      const val PROVIDER_ID = "openai"
+
       fun registerAgent() {
-          AIAgentRegistry.register("openai", object : AIAgentRegistry.AgentFactory {
+          AIAgentRegistry.register(PROVIDER_ID, object : AIAgentRegistry.AgentFactory {
               override fun create(context: Context): AIAgent {
                   return OpenAI()
               }
@@ -81,16 +85,18 @@ class OpenAI : AIAgent {
       try {
           this.apiKey = apiKey
           agents = Agents(context)
-          var selectedModel = agents?.getAgent() ?: "gpt-4o"
-          
-          // Ensure we're using a valid OpenAI model
-          if (!agents!!.isValidModelForProvider(selectedModel, "openai")) {
-              selectedModel = "gpt-4o"
-              agents?.setAgent(selectedModel)
-              agents?.setProvider("openai")
+          val agentsRef = agents!!
+          val storedModel = agentsRef.getAgent()
+
+          // Resolve through the catalogue instead of repeating a literal default here: these
+          // fallbacks were the copies that kept pointing at retired model names.
+          selectedModel = if (agentsRef.isValidModelForProvider(storedModel, PROVIDER_ID)) {
+              storedModel
+          } else {
+              agentsRef.getDefaultModelForProvider(PROVIDER_ID).also {
+                  agentsRef.setModel(PROVIDER_ID, it)
+              }
           }
-          
-          this.selectedModel = selectedModel
       } catch (e: Exception) {
           throw e
       }

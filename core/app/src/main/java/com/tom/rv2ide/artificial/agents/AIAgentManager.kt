@@ -439,10 +439,9 @@ class AIAgentManager(private val context: Context) {
             onProviderSelected = { providerId ->
                 setProvider(providerId)
                 val agents = Agents(context)
-                val availableModels = agents.getModelsForProvider(providerId)
-                if (availableModels.isNotEmpty()) {
-                    agents.setAgent(availableModels[0])
-                }
+                // Use the provider's declared default rather than "first item of the list": the
+                // order of a fetched catalogue is not something we control.
+                agents.setModel(providerId, agents.getDefaultModelForProvider(providerId))
                 reinitializeWithSelectedModel()
                 onProviderSelected(providerId)
             },
@@ -451,10 +450,10 @@ class AIAgentManager(private val context: Context) {
                 if (alternativeProvider != null) {
                     setProvider(alternativeProvider)
                     val agents = Agents(context)
-                    val availableModels = agents.getModelsForProvider(alternativeProvider)
-                    if (availableModels.isNotEmpty()) {
-                        agents.setAgent(availableModels[0])
-                    }
+                    agents.setModel(
+                        alternativeProvider,
+                        agents.getDefaultModelForProvider(alternativeProvider)
+                    )
                     reinitializeWithSelectedModel()
                 }
             }

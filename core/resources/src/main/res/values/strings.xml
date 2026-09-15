@@ -89,6 +89,15 @@
   <string name="ai_agent_grok_api_key_label">Grok API Key</string>
  <string name="ai_agent_click_to_set_api_key">Click to set API key</string>
  <string name="ai_agent_api_key_masked">API Key: %1$s</string>
+
+  <!-- AI Agent local LLM -->
+  <string name="ai_agent_local_llm">Local LLM</string>
+  <string name="ai_agent_local_llm_summary">Configure Base URL, API key and model</string>
+  <string name="local_llm_api_key">API Key</string>
+  <string name="local_llm_fetch_models">Fetch available models</string>
+  <string name="local_llm_fetch_loaded">Loaded %1$d model(s)</string>
+  <string name="local_llm_fetch_failed">Could not fetch models: %1$s</string>
+  <string name="local_llm_base_url_required">Base URL is required</string>
  <string name="action_save">Save</string>
  
  <string name="no_acs_title">ACS Components Missing</string>

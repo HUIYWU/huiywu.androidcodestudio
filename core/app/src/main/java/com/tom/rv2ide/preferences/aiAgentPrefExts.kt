@@ -18,9 +18,13 @@
 package com.tom.rv2ide.preferences
 
 import android.content.Context
+import android.content.ContextWrapper
+import androidx.fragment.app.FragmentActivity
 import androidx.preference.Preference
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
+import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
+import com.tom.rv2ide.artificial.dialogs.LocalLLMDialog
 import com.tom.rv2ide.preferences.internal.prefManager
 import com.tom.rv2ide.resources.R.string
 import kotlinx.parcelize.IgnoredOnParcel
@@ -52,6 +56,7 @@ private class AIAgentConfig(
   @IgnoredOnParcel private var openAIApiKeyPref: OpenAIApiKey? = null
   @IgnoredOnParcel private var anthropicApiKeyPref: AnthropicApiKey? = null
   @IgnoredOnParcel private var grokApiKeyPref: GrokApiKey? = null
+  @IgnoredOnParcel private var localLlmPref: LocalLlmConfig? = null
 
   init {
     val aiAgentEnabled = AIAgentEnabled { isEnabled -> updateApiKeyPreferencesState(isEnabled) }
@@ -61,6 +66,7 @@ private class AIAgentConfig(
     openAIApiKeyPref = OpenAIApiKey()
     anthropicApiKeyPref = AnthropicApiKey()
     grokApiKeyPref = GrokApiKey()
+    localLlmPref = LocalLlmConfig()
 
     addPreference(aiAgentEnabled)
     addPreference(anthropicApiKeyPref!!)
@@ -68,6 +74,7 @@ private class AIAgentConfig(
     addPreference(geminiApiKeyPref!!)
     addPreference(openAIApiKeyPref!!)
     addPreference(grokApiKeyPref!!)
+    addPreference(localLlmPref!!)
   }
 
   private fun updateApiKeyPreferencesState(isEnabled: Boolean) {
@@ -76,6 +83,7 @@ private class AIAgentConfig(
     openAIApiKeyPref?.setEnabled(isEnabled)
     anthropicApiKeyPref?.setEnabled(isEnabled)
     grokApiKeyPref?.setEnabled(isEnabled)
+    localLlmPref?.setEnabled(isEnabled)
   }
 }
 
@@ -417,4 +425,77 @@ private class AnthropicApiKey(
     val display = if (apiKey.length > 12) apiKey.take(12) + "…" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, display)
   }
+}
+
+/**
+ * Opens the Local LLM configuration dialog.
+ *
+ * Unlike the cloud providers this entry does not store a single secret: the endpoint, the optional
+ * key and the model name are all entered in the dialog itself.
+ */
+@Parcelize
+private class LocalLlmConfig(
+    override val key: String = "idepref_ai_agent_local_llm",
+    override val title: Int = R.string.ai_agent_local_llm,
+    override val icon: Int = R.drawable.ic_ai_local,
+) : BasePreference() {
+
+  @IgnoredOnParcel private var preference: Preference? = null
+
+  override fun onCreatePreference(context: Context): Preference {
+    preference =
+        androidx.preference.Preference(context).apply {
+          key = "idepref_ai_agent_local_llm"
+          title = context.getString(R.string.ai_agent_local_llm)
+          summary = summaryText(context)
+          isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
+        }
+    return preference!!
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+
+    // A hosting FragmentActivity is required to show a DialogFragment; without one there is
+    // simply nowhere to display the editor.
+    val host = context.findFragmentActivity() ?: return true
+
+    LocalLLMDialog()
+        .apply {
+          // Refreshes the summary once the dialog has actually written the new values.
+          onSaved = { preference.summary = summaryText(context) }
+        }
+        .show(host.supportFragmentManager, LocalLLMDialog.TAG)
+    return true
+  }
+
+  fun setEnabled(enabled: Boolean) {
+    preference?.isEnabled = enabled
+  }
+
+  /**
+   * Endpoint plus model name, which is what makes this provider usable; the API key is usually
+   * absent, and the entry falls back to the same prompt the API key entries use when unconfigured.
+   */
+  private fun summaryText(context: Context): String {
+    val baseUrl = LocalLlmSettings.baseUrl()
+        ?: return context.getString(R.string.ai_agent_click_to_set_api_key)
+    val model = prefManager.getString(LocalLlmSettings.MODEL_KEY, null).orEmpty()
+    return if (model.isBlank()) baseUrl else "$baseUrl · $model"
+  }
+}
+
+/**
+ * Finds the [FragmentActivity] hosting [this] context.
+ *
+ * Preference views are created with a themed context wrapper, so the preference's own context is
+ * not the activity and cannot be cast to one.
+ */
+private fun Context.findFragmentActivity(): FragmentActivity? {
+  var context: Context? = this
+  while (context is ContextWrapper) {
+    if (context is FragmentActivity) return context
+    context = context.baseContext
+  }
+  return null
 }

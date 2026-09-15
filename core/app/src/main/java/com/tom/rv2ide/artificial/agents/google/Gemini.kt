@@ -48,12 +48,15 @@ class Gemini : AIAgent {
   private var currentAttemptCount = 0
   private val maxRetryAttempts = 3
   private var agents: Agents? = null
-  override val providerId = "gemini"
+  override val providerId = PROVIDER_ID
   override val providerName = "Google Gemini"
 
   companion object {
+      /** Id shared by the registry, the catalogue and the persisted selection. */
+      const val PROVIDER_ID = "gemini"
+
       fun registerAgent() {
-          AIAgentRegistry.register("gemini", object : AIAgentRegistry.AgentFactory {
+          AIAgentRegistry.register(PROVIDER_ID, object : AIAgentRegistry.AgentFactory {
               override fun create(context: Context): AIAgent {
                   return Gemini()
               }
@@ -76,15 +79,19 @@ class Gemini : AIAgent {
   override fun initialize(apiKey: String, context: Context) {
       try {
           agents = Agents(context)
-          var selectedModel = agents?.getAgent() ?: "gemini-2.5-pro"
-          
-          // Ensure we're using a valid Gemini model
-          if (!agents!!.isValidModelForProvider(selectedModel, "gemini")) {
-              selectedModel = "gemini-2.5-pro"
-              agents?.setAgent(selectedModel)
-              agents?.setProvider("gemini")
+          val agentsRef = agents!!
+          val storedModel = agentsRef.getAgent()
+
+          // Resolve through the catalogue instead of repeating a literal default here: these
+          // fallbacks were the copies that kept pointing at retired model names.
+          val selectedModel = if (agentsRef.isValidModelForProvider(storedModel, PROVIDER_ID)) {
+              storedModel
+          } else {
+              agentsRef.getDefaultModelForProvider(PROVIDER_ID).also {
+                  agentsRef.setModel(PROVIDER_ID, it)
+              }
           }
-          
+
           generativeModel = GenerativeModel(
               modelName = selectedModel,
               apiKey = apiKey,

@@ -22,6 +22,7 @@ import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.Agents
+import com.tom.rv2ide.artificial.catalog.ModelRepository
 import com.tom.rv2ide.artificial.rules.WritingRules
 import com.tom.rv2ide.artificial.project.awareness.ProjectTreeResult
 import com.tom.rv2ide.artificial.file.AIFileWriter
@@ -46,13 +47,16 @@ class Grok : AIAgent {
   private var currentAttemptCount = 0
   private val maxRetryAttempts = 3
   private var agents: Agents? = null
-  private var selectedModel: String = "grok-beta"
-  override val providerId = "grok"
+  private var selectedModel: String = ModelRepository.getDefaultModel(PROVIDER_ID)
+  override val providerId = PROVIDER_ID
   override val providerName = "xAI Grok"
 
   companion object {
+      /** Id shared by the registry, the catalogue and the persisted selection. */
+      const val PROVIDER_ID = "grok"
+
       fun registerAgent() {
-          AIAgentRegistry.register("grok", object : AIAgentRegistry.AgentFactory {
+          AIAgentRegistry.register(PROVIDER_ID, object : AIAgentRegistry.AgentFactory {
               override fun create(context: Context): AIAgent {
                   return Grok()
               }
@@ -74,15 +78,18 @@ class Grok : AIAgent {
       try {
           this.apiKey = apiKey
           agents = Agents(context)
-          var selectedModel = agents?.getAgent() ?: "grok-beta"
-          
-          if (!agents!!.isValidModelForProvider(selectedModel, "grok")) {
-              selectedModel = "grok-beta"
-              agents?.setAgent(selectedModel)
-              agents?.setProvider("grok")
+          val agentsRef = agents!!
+          val storedModel = agentsRef.getAgent()
+
+          // Resolve through the catalogue instead of repeating a literal default here: these
+          // fallbacks were the copies that kept pointing at retired model names.
+          selectedModel = if (agentsRef.isValidModelForProvider(storedModel, PROVIDER_ID)) {
+              storedModel
+          } else {
+              agentsRef.getDefaultModelForProvider(PROVIDER_ID).also {
+                  agentsRef.setModel(PROVIDER_ID, it)
+              }
           }
-          
-          this.selectedModel = selectedModel
       } catch (e: Exception) {
           throw e
       }
