@@ -79,17 +79,9 @@ class DeepSeek : AIAgent {
           this.apiKey = apiKey
           agents = Agents(context)
           val agentsRef = agents!!
-          val storedModel = agentsRef.getModel(PROVIDER_ID)
-
-          // Resolve the model through the catalogue instead of repeating a literal default here:
-          // this fallback is what kept pointing at a retired model name.
-          selectedModel = if (agentsRef.isValidModelForProvider(storedModel, PROVIDER_ID)) {
-              storedModel
-          } else {
-              agentsRef.getDefaultModelForProvider(PROVIDER_ID).also {
-                  agentsRef.setModel(PROVIDER_ID, it)
-              }
-          }
+          // Resolved through the catalogue instead of a literal: this fallback is what used to keep
+          // pointing at a retired model name.
+          selectedModel = agentsRef.resolveModel(PROVIDER_ID)
       } catch (e: Exception) {
           throw e
       }

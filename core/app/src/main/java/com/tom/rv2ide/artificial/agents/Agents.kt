@@ -137,4 +137,26 @@ class Agents(ctx: Context) {
   fun isValidModelForProvider(modelName: String, providerId: String): Boolean {
     return modelName in getModelsForProvider(providerId)
   }
+
+  /**
+   * The model [providerId] should currently run, replacing a stale selection.
+   *
+   * A stored name the provider no longer offers (renamed or retired) is substituted by the
+   * provider's default and written back, so the entry stops pointing at a model the provider will
+   * reject. Providers call this instead of reading [getModel] directly: the value is non-null, and
+   * the fallback is only effective if it is persisted.
+   *
+   * Local LLM's fallback is not persisted: its model is chosen on the configuration page and need
+   * not appear in its own catalogue, so rewriting it here would replace the user's server-side name.
+   */
+  fun resolveModel(providerId: String): String {
+    val stored = getModel(providerId)
+    if (stored != null && isValidModelForProvider(stored, providerId)) return stored
+
+    val fallback = getDefaultModelForProvider(providerId)
+    if (providerId != LocalLlmSettings.PROVIDER_ID) {
+      setModel(providerId, fallback)
+    }
+    return fallback
+  }
 }

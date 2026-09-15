@@ -80,17 +80,10 @@ class Gemini : AIAgent {
       try {
           agents = Agents(context)
           val agentsRef = agents!!
-          val storedModel = agentsRef.getModel(PROVIDER_ID)
-
-          // Resolve through the catalogue instead of repeating a literal default here: these
-          // fallbacks were the copies that kept pointing at retired model names.
-          val selectedModel = if (agentsRef.isValidModelForProvider(storedModel, PROVIDER_ID)) {
-              storedModel
-          } else {
-              agentsRef.getDefaultModelForProvider(PROVIDER_ID).also {
-                  agentsRef.setModel(PROVIDER_ID, it)
-              }
-          }
+          // Resolved through the catalogue instead of a literal: a stored name the provider no
+          // longer offers is replaced by its default, which is what the copies of these fallbacks
+          // used to disagree about.
+          val selectedModel = agentsRef.resolveModel(PROVIDER_ID)
 
           generativeModel = GenerativeModel(
               modelName = selectedModel,
