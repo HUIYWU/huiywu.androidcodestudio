@@ -628,8 +628,10 @@
   <string name="msg_grant_permissions">请授予权限以继续。</string>
   <string name="msg_no_internet">您似乎已离线，检查您的互联网连接。</string>
   <string name="ai_agent_title">AI 助手</string>
-  <string name="ai_agent_description">使用 AI 助手获取 AI 驱动的代码生成功能</string>
-   <string name="chat_block_open_file">打开文件</string>
+   <string name="ai_agent_description">使用 AI 助手获取 AI 驱动的代码生成功能</string>
+   <!-- Composer hint of the chat page (see fragment_chat.xml). -->
+   <string name="ai_agent_prompt_hint">描述你想要生成的代码...</string>
+    <string name="chat_block_open_file">打开文件</string>
    <string name="chat_empty_prompt">请输入请求内容</string>
    <string name="chat_cleared">对话已清空</string>
    <string name="chat_project_load_failed">加载项目失败</string>
