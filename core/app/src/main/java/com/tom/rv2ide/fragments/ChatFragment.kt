@@ -135,12 +135,18 @@ class ChatFragment : Fragment() {
 
     private fun setupMessageList() {
         messageAdapter = ChatMessageAdapter(onOpenFile = { filePath -> openFileInEditor(filePath) })
-        messageList.apply {
-            layoutManager = LinearLayoutManager(requireContext())
-            adapter = messageAdapter
-            // The transcript grows at the bottom; without this the first message appears at the top
-            // of an otherwise empty list.
+
+        // `stackFromEnd` belongs to the LayoutManager, not to the RecyclerView. The transcript grows
+        // at the bottom, so without it the first message sits at the top of an otherwise empty
+        // viewport.
+        val listLayoutManager = LinearLayoutManager(requireContext()).apply {
             stackFromEnd = true
+        }
+
+        messageList.apply {
+            layoutManager = listLayoutManager
+            adapter = messageAdapter
+            // The list is rebuilt wholesale on every update; the default cross-fade reads as flicker.
             itemAnimator = null
         }
     }
