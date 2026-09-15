@@ -88,16 +88,26 @@ object ModelRepository {
     /**
      * Fetches the live catalogue and caches it.
      *
-     * Returns a failure instead of throwing so the caller (settings screen) can surface a message.
+     * [apiKey] defaults to the stored key, but interactive callers pass the one the user has just
+     * typed: a key that is not saved yet must still be able to fetch, and using the stored key would
+     * otherwise report "no models" for a key the user is in the middle of entering.
+     *
+     * Returns a failure instead of throwing so the caller (settings dialog) can surface a message.
      * A failed refresh leaves the previous cache intact — a transient outage must not wipe a good
      * list.
      */
-    suspend fun refresh(providerId: String): RefreshResult {
+    suspend fun refresh(
+        providerId: String,
+        apiKey: String? = apiKeyFor(providerId)
+    ): RefreshResult {
         val source = ModelSources[providerId]
             ?: return RefreshResult.Failure("Unknown provider: $providerId")
 
+        // Collected from the HTTP layer so the dialog can show *why* nothing came back; "HTTP 401"
+        // and "no models" are different problems and only the first is actionable.
+        var failure: String? = null
         val models = try {
-            source.fetchModels(apiKeyFor(providerId))
+            source.fetchModels(apiKey) { failure = it }
         } catch (e: Exception) {
             // Sources are written to swallow errors, but a bug in one of them must not break the
             // whole refresh path.
@@ -105,9 +115,7 @@ object ModelRepository {
         }
 
         if (models.isEmpty()) {
-            return RefreshResult.Failure(
-                "No models reported by the provider. Keeping the built-in list."
-            )
+            return RefreshResult.Failure(failure ?: "No models reported by the provider")
         }
 
         memoryCache[providerId] = models
@@ -122,40 +130,46 @@ object ModelRepository {
     }
 
     /**
-     * Fetches a Local LLM server's catalogue from the URL the user typed, without caching it.
+     * Fetches a provider's catalogue from an explicit Local LLM endpoint, without caching it.
      *
-     * Caching is a separate, explicit step ([cacheLocalModels]) because the dialog can be cancelled:
+     * The endpoint is a parameter rather than read from the settings because the caller is the
+     * configuration dialog, which has to query the URL the user is editing — going through
+     * [refresh] would use the stored URL and silently list another server's models.
+     *
+     * Caching is a separate, explicit step ([cacheModels]) because the dialog can be cancelled:
      * storing a list fetched from an endpoint that was never saved would leave the picker showing
      * one server's models while the provider talks to another.
      *
-     * Unlike [refresh] this reports *why* it failed, since the user is waiting on a button.
+     * Reports *why* it failed, since the user is waiting on a button.
      */
-    suspend fun fetchLocalModels(baseUrl: String, apiKey: String?): LocalModelsResult {
+    suspend fun fetchLocalModels(baseUrl: String, apiKey: String?): RefreshResult {
         val endpoint = baseUrl.trim()
-        if (endpoint.isEmpty()) return LocalModelsResult.Failure("Base URL is empty")
+        if (endpoint.isEmpty()) return RefreshResult.Failure("Base URL is empty")
 
         var failure: String? = null
         val models = ModelSources.fetchLocalModels(endpoint, apiKey) { failure = it }
 
         return if (models.isEmpty()) {
-            LocalModelsResult.Failure(failure ?: "No models reported by the server")
+            RefreshResult.Failure(failure ?: "No models reported by the server")
         } else {
-            LocalModelsResult.Success(models)
+            RefreshResult.Success(models)
         }
     }
 
     /**
-     * Publishes a fetched Local LLM list to the rest of the app.
+     * Publishes an interactively fetched list to the rest of the app.
      *
-     * Called once the corresponding endpoint has actually been saved, so the cached list and the
-     * configured base URL always describe the same server.
+     * Only the endpoint-based paths need this explicit call: [refresh] caches by itself, whereas a
+     * list fetched from an endpoint the user is still editing is only valid for that endpoint and
+     * must not be stored behind the repository's back — hence a separate step, performed once the
+     * endpoint has actually been saved.
      */
-    fun cacheLocalModels(models: List<String>) {
+    fun cacheModels(providerId: String, models: List<String>) {
         val cleaned = models.filter { it.isNotBlank() }
         if (cleaned.isEmpty()) return
 
-        memoryCache[LocalLlmSettings.PROVIDER_ID] = cleaned
-        writeDiskCache(LocalLlmSettings.PROVIDER_ID, cleaned)
+        memoryCache[providerId] = cleaned
+        writeDiskCache(providerId, cleaned)
     }
 
     private fun readDiskCache(providerId: String): List<String>? {
@@ -196,14 +210,9 @@ object ModelRepository {
         else -> null
     }.takeIf { !it.isNullOrBlank() }
 
+    /** Outcome of an interactive fetch, with a reason the UI can display. */
     sealed interface RefreshResult {
         data class Success(val models: List<String>) : RefreshResult
         data class Failure(val reason: String) : RefreshResult
-    }
-
-    /** Outcome of an interactive [fetchLocalModels] call, with a reason the UI can display. */
-    sealed interface LocalModelsResult {
-        data class Success(val models: List<String>) : LocalModelsResult
-        data class Failure(val reason: String) : LocalModelsResult
     }
 }

@@ -24,6 +24,7 @@ import androidx.preference.Preference
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
 import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
+import com.tom.rv2ide.artificial.dialogs.DeepSeekConfigDialog
 import com.tom.rv2ide.artificial.dialogs.LocalLLMDialog
 import com.tom.rv2ide.preferences.internal.prefManager
 import com.tom.rv2ide.resources.R.string
@@ -276,27 +277,16 @@ private class DeepseekApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
 
-    val inputLayout = buildApiKeyInput(
-        context,
-        prefManager.getString("ai_agent_deepseek_api_key", ""),
-        R.string.ai_agent_deepseek_api_key_label,
-    )
-    val editText = inputLayout.editText!!
+    // A hosting FragmentActivity is required to show a DialogFragment; without one there is
+    // simply nowhere to display the editor.
+    val host = context.findFragmentActivity() ?: return true
 
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.ai_agent_deepseek_api_key_dialog_title)
-            .setView(inputLayout)
-            .setPositiveButton(R.string.action_save) { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_deepseek_api_key", apiKey)
-              preference.summary = summaryText(context)
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .create()
-
-    dialog.show()
+    DeepSeekConfigDialog()
+        .apply {
+          // Refreshes the summary once the dialog has actually written the new values.
+          onSaved = { preference.summary = summaryText(context) }
+        }
+        .show(host.supportFragmentManager, DeepSeekConfigDialog.TAG)
     return true
   }
 
@@ -474,12 +464,13 @@ private class LocalLlmConfig(
   }
 
   /**
-   * Endpoint plus model name, which is what makes this provider usable; the API key is usually
-   * absent, and the entry falls back to the same prompt the API key entries use when unconfigured.
+   * Endpoint plus model name, which is what makes this provider usable. When nothing is configured
+   * yet it points at what has to be filled in rather than at the API key the other entries expect,
+   * since the endpoint is the only required field here.
    */
   private fun summaryText(context: Context): String {
     val baseUrl = LocalLlmSettings.baseUrl()
-        ?: return context.getString(R.string.ai_agent_click_to_set_api_key)
+        ?: return context.getString(R.string.ai_agent_local_llm_summary)
     val model = prefManager.getString(LocalLlmSettings.MODEL_KEY, null).orEmpty()
     return if (model.isBlank()) baseUrl else "$baseUrl · $model"
   }

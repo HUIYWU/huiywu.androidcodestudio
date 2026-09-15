@@ -56,4 +56,30 @@ internal object LocalLlmSettings {
         .getString(API_KEY_KEY, null)
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
+
+    /**
+     * Model name configured here, or `null` when nothing usable was stored.
+     *
+     * Blank and whitespace-only values are rejected; the generic placeholder is *not*, because it is
+     * a perfectly valid name for a single-model server and is what the provider falls back to
+     * anyway. Preferring a concrete fetched name over the placeholder is display logic and stays
+     * with the caller that knows a fetched list exists.
+     */
+    fun model(): String? = BaseApplication.getBaseInstance()
+        .prefManager
+        .getString(MODEL_KEY, null)
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+
+    /**
+     * Stores the model name.
+     *
+     * Needed because the provider reads its model from here and not from the provider/model pair
+     * `Agents` stores: a selection made elsewhere would otherwise be displayed but never used.
+     */
+    fun setModel(modelName: String) {
+        BaseApplication.getBaseInstance()
+            .prefManager
+            .putString(MODEL_KEY, modelName.trim())
+    }
 }

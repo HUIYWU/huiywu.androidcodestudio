@@ -23,13 +23,10 @@ import com.tom.rv2ide.artificial.agents.AIAgentRegistry
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
-import com.tom.rv2ide.artificial.secrets.ApiKey
 import com.tom.rv2ide.artificial.rules.WritingRules
 import com.tom.rv2ide.artificial.project.awareness.ProjectTreeResult
 import com.tom.rv2ide.artificial.file.AIFileWriter
 import com.tom.rv2ide.artificial.file.FileWriteResult
-import com.tom.rv2ide.managers.PreferenceManager
-import com.tom.rv2ide.app.BaseApplication
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -69,11 +66,12 @@ class LocalLLM : AIAgent {
               }
               
               override fun hasValidApiKey(): Boolean {
-                  val prefs = BaseApplication.getBaseInstance().prefManager
-                  val url = prefs.getString("local_llm_base_url", null)
-                  val model = prefs.getString("local_llm_model_name", null)
+                  // Reads the same source as the configuration dialog, so a configured-but-unusable
+                  // endpoint (blank, or with stray whitespace) is not reported as valid.
+                  val url = LocalLlmSettings.baseUrl()
+                  val model = LocalLlmSettings.model()
                   android.util.Log.d("LocalLLM", "hasValidApiKey check: url=$url, model=$model")
-                  return url != null && url.isNotEmpty() && model != null && model.isNotEmpty()
+                  return url != null && model != null
               }
               
               override fun getApiKey(): String? {
@@ -86,13 +84,14 @@ class LocalLLM : AIAgent {
   override fun initialize(apiKey: String, context: Context) {
       try {
           agents = Agents(context)
-          val prefs = BaseApplication.getBaseInstance().prefManager
-          baseUrl = prefs.getString("local_llm_base_url", null)
-          modelName = prefs.getString("local_llm_model_name", null)
-          
+          // Shared with the configuration dialog: the endpoint is stored without a trailing slash
+          // there, so appending "/v1/chat/completions" cannot produce a double slash.
+          baseUrl = LocalLlmSettings.baseUrl()
+          modelName = LocalLlmSettings.model()
+
           android.util.Log.d("LocalLLM", "Initialized with baseUrl=$baseUrl, model=$modelName")
-          
-          if (baseUrl == null || baseUrl!!.isEmpty() || modelName == null || modelName!!.isEmpty()) {
+
+          if (baseUrl == null || modelName == null) {
               throw IllegalStateException("Local LLM not configured. Please set base URL and model name.")
           }
       } catch (e: Exception) {

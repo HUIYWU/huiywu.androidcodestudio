@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Item layout shared by every provider/model dropdown.
+
+  The stock layouts either wrap long entries onto several lines or cut them off with an ellipsis.
+  Model names are long and share their prefixes, so both behaviours hide the part that tells two
+  entries apart. Here the entry is always a single line, and the AutoCompleteTextViews that use it
+  set dropDownWidth to wrap_content so the popup grows to the longest entry: nothing wraps and
+  nothing is hidden behind an ellipsis.
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/text1"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:ellipsize="none"
+    android:gravity="center_vertical"
+    android:minHeight="48dp"
+    android:paddingStart="16dp"
+    android:paddingEnd="24dp"
+    android:singleLine="true"
+    android:textAppearance="?attr/textAppearanceBodyLarge" />

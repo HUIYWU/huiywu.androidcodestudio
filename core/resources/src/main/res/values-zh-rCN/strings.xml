@@ -937,7 +937,7 @@
   <string name="updating_dependencies">正在更新依赖项</string>
   <string name="local_llm_config_title">配置本地 LLM</string>
   <string name="local_llm_base_url">基础 URL</string>
-  <string name="local_llm_model_name">模型名称</string>
+
   <string name="git_branch_name_hint">分支名称</string>
   <string name="ai_preferences_provider_hint">AI 提供商</string>
   <string name="ai_preferences_model_hint">模型 / 助手</string>
@@ -948,8 +948,6 @@
   <string name="ai_preferences_provider_label">提供商：</string>
   <string name="ai_preferences_model_label">模型：</string>
   <string name="ai_preferences_not_set">未设置</string>
-  <string name="local_llm_default_base_url">http://localhost:1234</string>
-  <string name="local_llm_default_model_name">local-model</string>
 
   <!-- AI Agent local LLM -->
   <string name="ai_agent_local_llm">本地 LLM</string>
@@ -958,7 +956,9 @@
   <string name="local_llm_fetch_models">获取可用模型列表</string>
   <string name="local_llm_fetch_loaded">已加载 %1$d 个模型</string>
   <string name="local_llm_fetch_failed">获取模型列表失败：%1$s</string>
-  <string name="local_llm_base_url_required">请先填写基础 URL</string>
+  <string name="model_config_base_url_required">请先填写基础 URL</string>
+  <string name="model_config_api_key_required">请先填写 API 密钥</string>
+  <string name="model_config_model_hint">模型</string>
   <string name="file_browser_select_destination">选择目标位置</string>
   <string name="file_browser_goto_my_project">前往我的项目</string>
   <string name="file_browser_paste_here">粘贴到此处</string>

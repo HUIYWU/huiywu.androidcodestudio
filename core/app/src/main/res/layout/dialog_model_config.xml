@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Content of the Local LLM configuration dialog opened from the AI Agent preferences page.
+  Content of the per-provider model configuration dialog.
 
-  Field order is deliberate: endpoint first, credentials second, model last, because the model list
-  cannot be fetched until the endpoint (and, for secured servers, the key) is known.
+  Field order is deliberate: endpoint first (when the provider has one), credentials second, model
+  last, because the model list cannot be fetched until the endpoint and key are known.
+
+  Shared by every provider: the hints are set from code so one layout can serve providers whose
+  wording and required fields differ. The endpoint row is hidden for providers with a fixed
+  endpoint, which is why it carries no hint of its own here.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -14,14 +18,13 @@
     android:paddingEnd="24dp"
     android:paddingTop="8dp">
 
-    <!-- 1. Base URL -->
+    <!-- 1. Base URL: only for providers whose endpoint the user supplies -->
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/baseUrlLayout"
         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:hint="@string/local_llm_base_url">
+        android:layout_marginBottom="16dp">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/baseUrlInput"
@@ -32,14 +35,13 @@
 
     </com.google.android.material.textfield.TextInputLayout>
 
-    <!-- 2. API key (optional: most local servers run unauthenticated) -->
+    <!-- 2. API key -->
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/apiKeyLayout"
         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
-        android:hint="@string/local_llm_api_key"
         app:endIconMode="password_toggle">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -51,7 +53,7 @@
 
     </com.google.android.material.textfield.TextInputLayout>
 
-    <!-- 3. Model dropdown + button that fetches the server's model list -->
+    <!-- 3. Model dropdown + button that fetches the provider's model list -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -63,14 +65,19 @@
             style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="@string/local_llm_model_name">
+            android:layout_weight="1">
 
             <com.google.android.material.textfield.MaterialAutoCompleteTextView
                 android:id="@+id/modelDropdown"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="none" />
+                android:completionThreshold="0"
+                android:dropDownWidth="wrap_content"
+                android:ellipsize="none"
+                android:inputType="none"
+                android:scrollHorizontally="true"
+                android:singleLine="true"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
 
         </com.google.android.material.textfield.TextInputLayout>
 

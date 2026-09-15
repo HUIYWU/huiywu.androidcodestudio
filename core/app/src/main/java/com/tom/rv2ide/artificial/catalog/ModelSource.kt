@@ -52,8 +52,11 @@ interface ModelSource {
      * Returns an empty list instead of throwing on *any* failure (offline, revoked key, provider
      * outage, malformed body). The repository reads an empty result as "unavailable" and degrades
      * to [fallbackModels]; a thrown exception would instead break the caller's refresh flow.
+     *
+     * [onError] carries the reason an empty result is empty. It is only consumed by interactive
+     * callers, which have to tell the user whether the key was rejected or the endpoint was wrong.
      */
-    suspend fun fetchModels(apiKey: String?): List<String>
+    suspend fun fetchModels(apiKey: String?, onError: ((String) -> Unit)? = null): List<String>
 }
 
 /**

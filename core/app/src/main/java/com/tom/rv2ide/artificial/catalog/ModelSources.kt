@@ -104,9 +104,15 @@ internal object ModelSources {
 
         override val defaultModel = "gpt-5.1-codex-max"
 
-        override suspend fun fetchModels(apiKey: String?): List<String> = withContext(Dispatchers.IO) {
-            val json = ModelCatalogHttp.getJson("https://api.openai.com/v1/models", apiKey)
-                ?: return@withContext emptyList()
+        override suspend fun fetchModels(
+            apiKey: String?,
+            onError: ((String) -> Unit)?
+        ): List<String> = withContext(Dispatchers.IO) {
+            val json = ModelCatalogHttp.getJson(
+                url = "https://api.openai.com/v1/models",
+                apiKey = apiKey,
+                onError = onError
+            ) ?: return@withContext emptyList()
             // The raw catalogue holds hundreds of entries that cannot be called through
             // /chat/completions (embeddings, TTS, images, legacy completions-only models), so the
             // allow-list matters more here than anywhere else.
@@ -128,10 +134,23 @@ internal object ModelSources {
 
         override val defaultModel = "deepseek-flash"
 
-        override suspend fun fetchModels(apiKey: String?): List<String> = withContext(Dispatchers.IO) {
+        override suspend fun fetchModels(
+            apiKey: String?,
+            onError: ((String) -> Unit)?
+        ): List<String> = withContext(Dispatchers.IO) {
+            // The list endpoint requires the same bearer token as the chat endpoint, so a missing
+            // key can be reported as such instead of as an unexplained 401.
+            if (apiKey.isNullOrBlank()) {
+                onError?.invoke("API key is required")
+                return@withContext emptyList()
+            }
+
             // DeepSeek's base URL carries no /v1 suffix (the chat path is /chat/completions).
-            val json = ModelCatalogHttp.getJson("https://api.deepseek.com/models", apiKey)
-                ?: return@withContext emptyList()
+            val json = ModelCatalogHttp.getJson(
+                url = "https://api.deepseek.com/models",
+                apiKey = apiKey,
+                onError = onError
+            ) ?: return@withContext emptyList()
             ModelCatalogHttp.parseOpenAiStyleIds(json)
                 .filter { ModelCatalogFilters.isChatCapable(it) }
         }
@@ -156,9 +175,15 @@ internal object ModelSources {
 
         override val defaultModel = "grok-4.6"
 
-        override suspend fun fetchModels(apiKey: String?): List<String> = withContext(Dispatchers.IO) {
-            val json = ModelCatalogHttp.getJson("https://api.x.ai/v1/models", apiKey)
-                ?: return@withContext emptyList()
+        override suspend fun fetchModels(
+            apiKey: String?,
+            onError: ((String) -> Unit)?
+        ): List<String> = withContext(Dispatchers.IO) {
+            val json = ModelCatalogHttp.getJson(
+                url = "https://api.x.ai/v1/models",
+                apiKey = apiKey,
+                onError = onError
+            ) ?: return@withContext emptyList()
             ModelCatalogHttp.parseOpenAiStyleIds(json)
                 .filter { ModelCatalogFilters.isChatCapable(it) }
         }
@@ -183,7 +208,10 @@ internal object ModelSources {
 
         override val defaultModel = "claude-sonnet-4-5-20250929"
 
-        override suspend fun fetchModels(apiKey: String?): List<String> = withContext(Dispatchers.IO) {
+        override suspend fun fetchModels(
+            apiKey: String?,
+            onError: ((String) -> Unit)?
+        ): List<String> = withContext(Dispatchers.IO) {
             // Anthropic does not accept a bearer token here: the key travels in a bare `x-api-key`
             // header and the API version must be pinned explicitly.
             val json = ModelCatalogHttp.getJson(
@@ -191,7 +219,8 @@ internal object ModelSources {
                 apiKey = apiKey,
                 apiKeyHeader = "x-api-key",
                 apiKeyPrefix = "",
-                headers = mapOf("anthropic-version" to "2023-06-01")
+                headers = mapOf("anthropic-version" to "2023-06-01"),
+                onError = onError
             ) ?: return@withContext emptyList()
             ModelCatalogHttp.parseOpenAiStyleIds(json)
                 .filter { ModelCatalogFilters.isChatCapable(it) }
@@ -215,14 +244,21 @@ internal object ModelSources {
         // users as the default, and this matches what the provider defaulted to before.
         override val defaultModel = "gemini-2.5-pro"
 
-        override suspend fun fetchModels(apiKey: String?): List<String> = withContext(Dispatchers.IO) {
-            if (apiKey.isNullOrBlank()) return@withContext emptyList()
+        override suspend fun fetchModels(
+            apiKey: String?,
+            onError: ((String) -> Unit)?
+        ): List<String> = withContext(Dispatchers.IO) {
+            if (apiKey.isNullOrBlank()) {
+                onError?.invoke("API key is required")
+                return@withContext emptyList()
+            }
 
             // Gemini authenticates via the query string and returns `models[]` entries whose
             // `name` is prefixed with "models/", which the chat API does not expect.
             val json = ModelCatalogHttp.getJson(
-                "https://generativelanguage.googleapis.com/v1beta/models" +
-                    "?key=${ModelCatalogHttp.encode(apiKey)}&pageSize=200"
+                url = "https://generativelanguage.googleapis.com/v1beta/models" +
+                    "?key=${ModelCatalogHttp.encode(apiKey)}&pageSize=200",
+                onError = onError
             ) ?: return@withContext emptyList()
 
             val models = json.optJSONArray("models") ?: return@withContext emptyList()
@@ -254,13 +290,20 @@ internal object ModelSources {
 
         override val defaultModel = LocalLlmSettings.DEFAULT_MODEL
 
-        override suspend fun fetchModels(apiKey: String?): List<String> = withContext(Dispatchers.IO) {
+        override suspend fun fetchModels(
+            apiKey: String?,
+            onError: ((String) -> Unit)?
+        ): List<String> = withContext(Dispatchers.IO) {
             // Same source the provider itself reads, so no Context needs to be threaded through.
-            val baseUrl = LocalLlmSettings.baseUrl() ?: return@withContext emptyList()
+            val baseUrl = LocalLlmSettings.baseUrl()
+            if (baseUrl == null) {
+                onError?.invoke("Base URL is not configured")
+                return@withContext emptyList()
+            }
 
             // Shares the parsing and filtering with the settings dialog, which fetches from the
             // URL the user is editing rather than from the stored one.
-            ModelSources.fetchLocalModels(baseUrl, apiKey)
+            ModelSources.fetchLocalModels(baseUrl, apiKey, onError)
         }
     }
 }
