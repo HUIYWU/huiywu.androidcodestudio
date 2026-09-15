@@ -7,19 +7,14 @@ import android.view.ViewGroup
 import android.view.animation.AnimationUtils
 import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.commit
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import com.google.android.material.navigationrail.NavigationRailView
-import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import com.tom.rv2ide.R
 import com.tom.rv2ide.adapters.ViewPagerAdapter
-import com.tom.rv2ide.artificial.agents.AIAgentManager
-import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.managers.NavigationRailManager
 
 /**
@@ -27,19 +22,16 @@ import com.tom.rv2ide.managers.NavigationRailManager
  *
  * MUST keep a no-arg constructor: the sidebar framework instantiates this fragment
  * reflectively (via [com.tom.rv2ide.utils.EditorSidebarActions]) and Android may also
- * recreate it on configuration changes / process death. All dependencies are resolved
- * from the activity-scoped [AISharedViewModel] instead of being injected through the
- * constructor.
+ * recreate it on configuration changes / process death.
+ *
+ * This fragment is only the host — the Chat/History pages and the settings page are child
+ * fragments, and each of them resolves its own dependencies from the activity-scoped
+ * `AISharedViewModel` rather than through a constructor.
  */
 class ArtificialFragment : Fragment() {
 
-    private val sharedViewModel: AISharedViewModel by activityViewModels()
-    private val aiAgent: AIAgentManager get() = sharedViewModel.aiAgent
-    private val agents: Agents get() = sharedViewModel.agents
-
     private lateinit var viewPager: ViewPager2
     private lateinit var tabLayout: TabLayout
-    private lateinit var undoFab: ExtendedFloatingActionButton
     private lateinit var fabToggleRail: FloatingActionButton
     private lateinit var navigationRail: NavigationRailView
     private lateinit var overlayView: View
@@ -76,7 +68,6 @@ class ArtificialFragment : Fragment() {
 
         viewPager = view.findViewById(R.id.viewPager)
         tabLayout = view.findViewById(R.id.tabLayout)
-        undoFab = view.findViewById(R.id.undoFab)
         fabToggleRail = view.findViewById(R.id.fabToggleRail)
         navigationRail = view.findViewById(R.id.navigationRail)
         overlayView = view.findViewById(R.id.overlayView)
@@ -85,7 +76,6 @@ class ArtificialFragment : Fragment() {
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backPressedCallback)
 
         setupNavigationRail()
-        setupFab()
 
         view.post {
             setupViewPager()
@@ -200,22 +190,6 @@ class ArtificialFragment : Fragment() {
 
         if (childFragmentManager.backStackEntryCount > 0) {
             childFragmentManager.popBackStack()
-        }
-    }
-
-    private fun setupFab() {
-        undoFab.setOnClickListener {
-            val success = aiAgent.undoLastModification()
-            if (success) {
-                view?.let {
-                    Snackbar.make(it, "Last modification undone", Snackbar.LENGTH_SHORT).show()
-                }
-                undoFab.visibility = View.GONE
-            } else {
-                view?.let {
-                    Snackbar.make(it, "Nothing to undo", Snackbar.LENGTH_SHORT).show()
-                }
-            }
         }
     }
 

@@ -34,6 +34,11 @@ import org.commonmark.node.FencedCodeBlock
  * The chat output used to assign the raw provider response to a plain `TextView`, so `**bold**`,
  * headings, lists and fenced code blocks were displayed as literal markup. Rendering is best-effort:
  * if Markwon fails, the original text is returned so the agent's answer is never lost.
+ *
+ * Use [shared] from list items. The transcript is a `RecyclerView`, so a renderer built per adapter
+ * call would rebuild the Markwon parser and its plugin chain on every scroll. Only the theme is
+ * captured at construction time, and it is read from the application context, so one instance is
+ * valid for the whole process.
  */
 class AIMarkdownRenderer(context: Context) {
 
@@ -78,6 +83,21 @@ class AIMarkdownRenderer(context: Context) {
             markwon.toMarkdown(text)
         } catch (e: Exception) {
             text
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var instance: AIMarkdownRenderer? = null
+
+        /**
+         * Process-wide renderer. See the class KDoc for why this is shared rather than constructed
+         * per call site.
+         */
+        fun shared(context: Context): AIMarkdownRenderer {
+            return instance ?: synchronized(this) {
+                instance ?: AIMarkdownRenderer(context.applicationContext).also { instance = it }
+            }
         }
     }
 }

@@ -1,76 +1,95 @@
 package com.tom.rv2ide.fragments
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textview.MaterialTextView
-import androidx.recyclerview.widget.RecyclerView
-import android.widget.LinearLayout
-import android.content.SharedPreferences
+import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
-import com.tom.rv2ide.adapters.FileModificationAdapter
+import com.tom.rv2ide.activities.editor.EditorHandlerActivity
+import com.tom.rv2ide.adapters.ChatMessageAdapter
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.common.logging.IdeLogConfig
-import com.tom.rv2ide.managers.CodeCompletionManager
 import com.tom.rv2ide.handlers.AIRequestHandler
-import com.tom.rv2ide.utils.ProjectHelper.getProjectRoot
-import com.tom.rv2ide.activities.editor.EditorHandlerActivity
+import com.tom.rv2ide.managers.CodeCompletionManager
 import com.tom.rv2ide.fragments.sidebar.AISharedViewModel
+import com.tom.rv2ide.utils.ProjectHelper.getProjectRoot
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.io.File
 
+/**
+ * Chat page of the AI sidebar.
+ *
+ * The transcript lives in [AISharedViewModel] rather than in this fragment, so answers survive view
+ * recreation. This class therefore only wires the list, the composer and code completion; the
+ * request lifecycle belongs to [AIRequestHandler].
+ */
 class ChatFragment : Fragment() {
 
     private val sharedViewModel: AISharedViewModel by activityViewModels()
     private val aiAgent: AIAgentManager get() = sharedViewModel.aiAgent
 
+    private val messages get() = sharedViewModel.chatMessages
+
     companion object {
         private val log = LoggerFactory.getLogger(ChatFragment::class.java)
+
+        private const val PREFS_NAME = "ai_preferences"
+        private const val KEY_COMPLETION_ENABLED = "code_completion_enabled"
     }
 
-
+    private lateinit var promptLayout: TextInputLayout
     private lateinit var promptInput: TextInputEditText
-    private lateinit var executeBtn: MaterialButton
+    private lateinit var sendBtn: MaterialButton
     private lateinit var clearBtn: MaterialButton
-    private lateinit var statusText: MaterialTextView
-    private lateinit var summaryText: MaterialTextView
-    private lateinit var progressIndicator: CircularProgressIndicator
-    private lateinit var fileModificationList: RecyclerView
-    private lateinit var summaryCard: LinearLayout
-    private lateinit var fileModificationAdapter: FileModificationAdapter
-    
+    private lateinit var sendProgress: CircularProgressIndicator
+    private lateinit var messageList: RecyclerView
+    private lateinit var emptyState: View
+    private lateinit var messageAdapter: ChatMessageAdapter
+
     private lateinit var codeCompletionManager: CodeCompletionManager
     private lateinit var aiRequestHandler: AIRequestHandler
-    
-    private var fileMonitorJob: Job? = null
+
     private var completionStateMonitorJob: Job? = null
-    private var lastMonitoredFile: File? = null
     private var isSettingUpCompletion = false
-    
-    private val userRootProject = getProjectRoot().absolutePath.toString()
-    
-    private val sharedPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
-        if (key == "code_completion_enabled") {
-            val isEnabled = prefs.getBoolean(key, true)
+
+    /**
+     * Project root of the editor.
+     *
+     * A `get()` rather than a `val`: evaluated once at construction it captured whichever project
+     * happened to be open when the sidebar page was first built, and stayed stale afterwards.
+     */
+    private val userRootProject: String get() = getProjectRoot().absolutePath
+
+    /**
+     * Single listener for the completion preference.
+     *
+     * Replaces the previous pair of listeners (this fragment's, plus a 200 ms polling loop) and the
+     * settings screen's 100 ms loop. `getSharedPreferences` hands out one instance per process, so a
+     * listener registered here also observes writes made from the settings screen.
+     */
+    private val sharedPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == KEY_COMPLETION_ENABLED) {
+            val enabled = completionPrefs().getBoolean(KEY_COMPLETION_ENABLED, true)
             if (IdeLogConfig.shouldLogDebug()) {
-                log.debug("Completion preference changed: {}", isEnabled)
+                log.debug("Completion preference changed: {}", enabled)
             }
-            
-            lifecycleScope.launch {
-                handleCompletionStateChange(isEnabled)
-            }
+            lifecycleScope.launch { handleCompletionStateChange(enabled) }
         }
     }
 
@@ -84,48 +103,45 @@ class ChatFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        
+
         initializeViews(view)
-        setupRecyclerView()
+        setupMessageList()
         setupManagers()
         setupListeners()
+        observeState()
         loadProject()
         registerPreferenceListener()
     }
-    
+
     override fun onResume() {
         super.onResume()
-        startFileMonitoring()
         startCompletionStateMonitoring()
     }
-    
+
     override fun onPause() {
         super.onPause()
-        stopFileMonitoring()
         stopCompletionStateMonitoring()
     }
 
     private fun initializeViews(view: View) {
-        promptInput = view.findViewById(R.id.anyText)
-        executeBtn = view.findViewById(R.id.executeBtn)
+        promptLayout = view.findViewById(R.id.promptLayout)
+        promptInput = view.findViewById(R.id.promptInput)
+        sendBtn = view.findViewById(R.id.sendBtn)
         clearBtn = view.findViewById(R.id.clearBtn)
-        statusText = view.findViewById(R.id.statusText)
-        summaryText = view.findViewById(R.id.summaryText)
-        progressIndicator = view.findViewById(R.id.progressIndicator)
-        fileModificationList = view.findViewById(R.id.fileModificationList)
-        summaryCard = view.findViewById(R.id.summaryCard)
+        sendProgress = view.findViewById(R.id.sendProgress)
+        messageList = view.findViewById(R.id.messageList)
+        emptyState = view.findViewById(R.id.emptyState)
     }
 
-    private fun setupRecyclerView() {
-        fileModificationAdapter = FileModificationAdapter()
-        fileModificationList.apply {
+    private fun setupMessageList() {
+        messageAdapter = ChatMessageAdapter(onOpenFile = { filePath -> openFileInEditor(filePath) })
+        messageList.apply {
             layoutManager = LinearLayoutManager(requireContext())
-            adapter = fileModificationAdapter
-            isNestedScrollingEnabled = false
-        }
-        
-        fileModificationAdapter.setOnItemClickListener { fileName ->
-            openFileInEditor(fileName)
+            adapter = messageAdapter
+            // The transcript grows at the bottom; without this the first message appears at the top
+            // of an otherwise empty list.
+            stackFromEnd = true
+            itemAnimator = null
         }
     }
 
@@ -135,101 +151,106 @@ class ChatFragment : Fragment() {
             lifecycleScope,
             aiAgent
         )
-        
+
         aiRequestHandler = AIRequestHandler(
-            lifecycleScope,
-            aiAgent,
-            statusText,
-            summaryText,
-            progressIndicator,
-            executeBtn,
-            fileModificationList,
-            fileModificationAdapter,
-            summaryCard,
-            onFileOpen = { fileName ->
-                openFileInEditor(fileName)
-            },
-            getCurrentFile = { getCurrentFile() },
-            refreshEditor = { refreshCurrentEditor() }
+            lifecycleScope = lifecycleScope,
+            aiAgent = aiAgent,
+            messages = messages
         )
     }
 
     private fun setupListeners() {
-        executeBtn.setOnClickListener {
-            val userRequest = promptInput.text.toString()
-            
-            if (userRequest.isBlank()) {
-                showSnackbar("Please enter a request")
-                return@setOnClickListener
+        sendBtn.setOnClickListener { submitPrompt() }
+
+        clearBtn.setOnClickListener { clearConversation() }
+    }
+
+    /**
+     * Mirrors the transcript into the list and keeps the send button in sync with the request state.
+     */
+    private fun observeState() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    messages.messages.collect { items ->
+                        messageAdapter.submitList(items) {
+                            if (items.isNotEmpty()) {
+                                messageList.scrollToPosition(items.size - 1)
+                            }
+                        }
+                        emptyState.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+                    }
+                }
+                launch {
+                    messages.isProcessing.collect { processing ->
+                        sendBtn.isEnabled = !processing
+                        sendProgress.visibility = if (processing) View.VISIBLE else View.GONE
+                        // Blocked rather than merely unsent: the provider keeps no queue, so a prompt
+                        // typed while a request runs would be silently discarded on submit.
+                        promptLayout.isEnabled = !processing
+                    }
+                }
             }
-            
-            codeCompletionManager.clearSuggestion()
-            aiRequestHandler.execute(userRequest)
-        }
-    
-        clearBtn.setOnClickListener {
-            clearConversation()
         }
     }
-    
+
+    private fun submitPrompt() {
+        val userRequest = promptInput.text.toString()
+
+        if (userRequest.isBlank()) {
+            showSnackbar(getString(R.string.chat_empty_prompt))
+            return
+        }
+
+        if (messages.isProcessing.value) {
+            return
+        }
+
+        promptInput.text?.clear()
+        codeCompletionManager.clearSuggestion()
+        aiRequestHandler.execute(userRequest)
+    }
+
     private fun registerPreferenceListener() {
-        val prefs = requireContext().getSharedPreferences("ai_preferences", android.content.Context.MODE_PRIVATE)
-        prefs.registerOnSharedPreferenceChangeListener(sharedPrefsListener)
+        completionPrefs().registerOnSharedPreferenceChangeListener(sharedPrefsListener)
     }
-    
+
     private fun unregisterPreferenceListener() {
-        val prefs = requireContext().getSharedPreferences("ai_preferences", android.content.Context.MODE_PRIVATE)
-        prefs.unregisterOnSharedPreferenceChangeListener(sharedPrefsListener)
+        completionPrefs().unregisterOnSharedPreferenceChangeListener(sharedPrefsListener)
     }
-    
+
+    private fun completionPrefs(): SharedPreferences =
+        requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
     private suspend fun handleCompletionStateChange(enabled: Boolean) {
         if (IdeLogConfig.shouldLogDebug()) {
             log.debug("handleCompletionStateChange: {}", enabled)
         }
-        
+
         if (enabled) {
-            delay(200)
-            val editor = getCurrentEditor()
-            val suggestionView = getCurrentSuggestionView()
-            
-            if (editor != null && suggestionView != null) {
-                if (IdeLogConfig.shouldLogDebug()) {
-                    log.debug("Re-enabling completion for current file")
-                }
-                setupCodeCompletionForCurrentFile()
-            }
+            setupCodeCompletionForCurrentFile()
         } else {
-            if (IdeLogConfig.shouldLogDebug()) {
-                log.debug("Disabling completion")
-            }
             codeCompletionManager.cleanup()
         }
     }
-    
+
+    /**
+     * Re-applies the completion preference when the page comes back to the foreground.
+     *
+     * Replaces a 200 ms polling loop: the preference is re-read at the only moments it can have
+     * changed behind this fragment's back, which is while it was not resumed.
+     */
     private fun startCompletionStateMonitoring() {
         stopCompletionStateMonitoring()
-        
+
         completionStateMonitorJob = lifecycleScope.launch {
-            var lastKnownState = requireContext().getSharedPreferences("ai_preferences", android.content.Context.MODE_PRIVATE)
-                .getBoolean("code_completion_enabled", true)
-            
-            while (true) {
-                delay(200)
-                
-                val currentState = requireContext().getSharedPreferences("ai_preferences", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("code_completion_enabled", true)
-                
-                if (currentState != lastKnownState) {
-                    if (IdeLogConfig.shouldLogDebug()) {
-                        log.debug("State change detected in monitor: {} -> {}", lastKnownState, currentState)
-                    }
-                    lastKnownState = currentState
-                    handleCompletionStateChange(currentState)
-                }
+            val enabled = completionPrefs().getBoolean(KEY_COMPLETION_ENABLED, true)
+            if (enabled) {
+                setupCodeCompletionForCurrentFile()
             }
         }
     }
-    
+
     private fun stopCompletionStateMonitoring() {
         completionStateMonitorJob?.cancel()
         completionStateMonitorJob = null
@@ -239,57 +260,18 @@ class ChatFragment : Fragment() {
         lifecycleScope.launch {
             try {
                 val success = aiAgent.setProjectRoot(userRootProject)
-                
+
                 if (success) {
-                    statusText.text = "Project loaded successfully"
                     showSnackbar("✦ Project loaded: ${userRootProject.substringAfterLast("/")}")
                 } else {
-                    statusText.text = "Failed to load project"
-                    showSnackbar("✗ Project not found or invalid path")
+                    showSnackbar(getString(R.string.chat_project_load_failed))
                 }
             } catch (e: Exception) {
-                statusText.text = "Error loading project"
                 showSnackbar("Error: ${e.message}")
             }
         }
     }
-    
-    private fun startFileMonitoring() {
-        stopFileMonitoring()
-        
-        fileMonitorJob = lifecycleScope.launch {
-            while (true) {
-                delay(500)
-                
-                if (isSettingUpCompletion) {
-                    continue
-                }
-                
-                val prefs = requireContext().getSharedPreferences("ai_preferences", android.content.Context.MODE_PRIVATE)
-                val isEnabled = prefs.getBoolean("code_completion_enabled", true)
-                
-                if (!isEnabled) {
-                    continue
-                }
-                
-                val currentFile = getCurrentFile()
-                
-                if (currentFile != null && currentFile != lastMonitoredFile) {
-                    if (IdeLogConfig.shouldLogDebug()) {
-                        log.debug("File changed detected: {}", currentFile.name)
-                    }
-                    lastMonitoredFile = currentFile
-                    setupCodeCompletionForCurrentFile()
-                }
-            }
-        }
-    }
-    
-    private fun stopFileMonitoring() {
-        fileMonitorJob?.cancel()
-        fileMonitorJob = null
-    }
-    
+
     private fun setupCodeCompletionForCurrentFile() {
         if (isSettingUpCompletion) {
             if (IdeLogConfig.shouldLogDebug()) {
@@ -297,25 +279,20 @@ class ChatFragment : Fragment() {
             }
             return
         }
-        
-        val prefs = requireContext().getSharedPreferences("ai_preferences", android.content.Context.MODE_PRIVATE)
-        val isEnabled = prefs.getBoolean("code_completion_enabled", true)
-        
-        if (!isEnabled) {
+
+        if (!completionPrefs().getBoolean(KEY_COMPLETION_ENABLED, true)) {
             if (IdeLogConfig.shouldLogDebug()) {
                 log.debug("Code completion is disabled, skipping setup")
             }
             return
         }
-        
+
         isSettingUpCompletion = true
-        
+
         lifecycleScope.launch {
-            delay(200)
-            
             val editor = getCurrentEditor()
             val suggestionView = getCurrentSuggestionView()
-            
+
             if (editor != null && suggestionView != null) {
                 if (IdeLogConfig.shouldLogDebug()) {
                     log.debug("Setting up code completion")
@@ -344,47 +321,42 @@ class ChatFragment : Fragment() {
             }
         }
     }
-    
+
     fun getCodeCompletionManager(): CodeCompletionManager {
         return codeCompletionManager
     }
 
-    private fun openFileInEditor(fileName: String) {
-        if (userRootProject.isBlank()) {
-            showSnackbar("Project path not set")
-            return
-        }
-        
+    private fun openFileInEditor(filePath: String) {
         lifecycleScope.launch {
             try {
-                val file = findFileInProject(File(userRootProject), fileName)
+                // The agent reports absolute paths, so trust the path itself first; the name lookup
+                // is only a fallback for responses that carried a bare file name.
+                val file = File(filePath)
+                    .takeIf { it.exists() && it.isFile }
+                    ?: findFileInProject(File(userRootProject), File(filePath).name)
+
                 if (file == null) {
-                    showSnackbar("File not found: $fileName")
+                    showSnackbar("File not found: ${File(filePath).name}")
                     return@launch
                 }
-                
+
                 val activity = requireActivity()
                 if (activity is EditorHandlerActivity) {
                     activity.openFile(file)
-                    showSnackbar("Opened: ${file.name}")
-                    
-                    lastMonitoredFile = file
-                    delay(500)
-                    setupCodeCompletionForCurrentFile()
                 }
             } catch (e: Exception) {
                 showSnackbar("Error opening file: ${e.message}")
             }
         }
     }
-    
+
     private fun findFileInProject(projectRoot: File, fileName: String): File? {
         if (!projectRoot.exists() || !projectRoot.isDirectory) {
             return null
         }
-        
-        return projectRoot.walkTopDown().firstOrNull { 
-            it.isFile && it.name == fileName 
+
+        return projectRoot.walkTopDown().firstOrNull {
+            it.isFile && it.name == fileName
         }
     }
 
@@ -393,14 +365,10 @@ class ChatFragment : Fragment() {
             try {
                 codeCompletionManager.clearSuggestion()
                 aiAgent.clearConversation()
-                
+                messages.clear()
                 promptInput.text?.clear()
-                statusText.text = "Conversation cleared. Ready for new request."
-                fileModificationList.visibility = View.GONE
-                summaryCard.visibility = View.GONE
-                fileModificationAdapter.clear()
-                
-                showSnackbar("Conversation cleared")
+
+                showSnackbar(getString(R.string.chat_cleared))
             } catch (e: Exception) {
                 showSnackbar("Error clearing: ${e.message}")
             }
@@ -426,7 +394,7 @@ class ChatFragment : Fragment() {
     } catch (e: Exception) {
         null
     }
-    
+
     private fun getCurrentSuggestionView() = try {
         val activity = requireActivity()
         if (activity is EditorHandlerActivity) {
@@ -438,35 +406,23 @@ class ChatFragment : Fragment() {
         null
     }
 
-    private fun refreshCurrentEditor() {
-        try {
-            val activity = requireActivity()
-            if (activity is EditorHandlerActivity) {
-                val currentEditor = activity.getCurrentEditor()
-                val file = currentEditor?.file
-                val newContent = file?.readText()
-                val editorText = currentEditor?.editor?.text
-
-                if (editorText != null && newContent != null) {
-                    editorText.replace(0, editorText.length, newContent)
-                }
-            }
-        } catch (e: Exception) {
-        }
-    }
-
     private fun showSnackbar(message: String) {
-        val anchorView = activity?.findViewById<View>(android.R.id.content) 
-            ?: view 
+        val anchorView = activity?.findViewById<View>(android.R.id.content)
+            ?: view
             ?: return
-        
+
         Snackbar.make(anchorView, message, Snackbar.LENGTH_SHORT).show()
     }
-    
+
     override fun onDestroyView() {
-        fileMonitorJob?.cancel()
         completionStateMonitorJob?.cancel()
-        aiRequestHandler.cancel()
+        // Guarded because setupManagers() is not guaranteed to have run: when onViewCreated() throws
+        // before reaching it, the view is still destroyed and this callback still fires, and reading
+        // an uninitialized lateinit on the way out would replace the real error with a misleading
+        // UninitializedPropertyAccessException.
+        if (::aiRequestHandler.isInitialized) {
+            aiRequestHandler.cancel()
+        }
         unregisterPreferenceListener()
         super.onDestroyView()
     }

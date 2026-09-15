@@ -21,7 +21,6 @@ import com.tom.rv2ide.artificial.catalog.ModelSources
 import com.tom.rv2ide.artificial.dialogs.ProviderSwitchDialog
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.managers.CodeCompletionManager
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -50,7 +49,6 @@ class AIPreferencesFragment : Fragment() {
     
     private val providerSwitchDialog by lazy { ProviderSwitchDialog(requireContext()) }
     
-    private var completionStateMonitorJob: Job? = null
     private var isCompletionEnabled = true
 
     override fun onCreateView(
@@ -69,7 +67,6 @@ class AIPreferencesFragment : Fragment() {
         setupModelDropdown()
         setupToggles()
         updateCurrentStatus()
-        startCompletionStateMonitoring()
     }
 
     override fun onResume() {
@@ -78,11 +75,6 @@ class AIPreferencesFragment : Fragment() {
         updateProviderDropdownSelection()
         updateModelDropdown()
         syncCodeCompletionToggle()
-    }
-    
-    override fun onPause() {
-        super.onPause()
-        stopCompletionStateMonitoring()
     }
 
     private fun initializeViews(view: View) {
@@ -236,37 +228,6 @@ class AIPreferencesFragment : Fragment() {
         }
     }
     
-    private fun startCompletionStateMonitoring() {
-        stopCompletionStateMonitoring()
-        
-        completionStateMonitorJob = lifecycleScope.launch {
-            while (true) {
-                delay(100)
-                
-                val savedState = requireContext().getSharedPreferences("ai_preferences", Context.MODE_PRIVATE)
-                    .getBoolean("code_completion_enabled", true)
-                
-                if (savedState != isCompletionEnabled) {
-                    if (IdeLogConfig.shouldLogDebug()) {
-                        log.debug("State mismatch detected: saved={}, current={}", savedState, isCompletionEnabled)
-                    }
-                    isCompletionEnabled = savedState
-                    
-                    if (codeCompletionToggle.isChecked != savedState) {
-                        codeCompletionToggle.isChecked = savedState
-                    }
-                    
-                    applyCompletionStateChange(savedState)
-                }
-            }
-        }
-    }
-    
-    private fun stopCompletionStateMonitoring() {
-        completionStateMonitorJob?.cancel()
-        completionStateMonitorJob = null
-    }
-    
     private suspend fun applyCompletionStateChange(enabled: Boolean) {
         if (IdeLogConfig.shouldLogDebug()) {
             log.debug("Applying completion state change: {}", enabled)
@@ -368,7 +329,6 @@ class AIPreferencesFragment : Fragment() {
     }
     
     override fun onDestroyView() {
-        stopCompletionStateMonitoring()
         super.onDestroyView()
     }
 }

@@ -58,11 +58,11 @@
   <!-- AI Agent Gemini -->
   <string name="ai_agent_title">AI Agent</string>
   <string name="ai_agent_description">Get AI-powered code generation using AI Agent</string>
-  <string name="ai_agent_prompt_hint">Describe what code you want to generate...</string>
-  <string name="ai_agent_send">Send</string>
-  <string name="ai_agent_settings">Settings</string>
-  <string name="ai_agent_instructions">Enter your request and the AI will generate code for you. Make sure to configure your Gemini API key in settings.</string>
-  <string name="ai_agent_enable">Enable AI Agent</string>
+   <string name="chat_block_open_file">Open file</string>
+   <string name="chat_empty_prompt">Please enter a request</string>
+   <string name="chat_cleared">Conversation cleared</string>
+   <string name="chat_project_load_failed">Failed to load project</string>
+   <string name="ai_agent_enable">Enable AI Agent</string>
   <string name="ai_agent_enable_summary">Enable AI-powered code generation</string>
   <string name="ai_agent_api_key">Gemini</string>
   <string name="ai_agent_api_key_label">Gemini API Key</string>
@@ -1280,9 +1280,6 @@ Add a remote to push/pull changes</string>
   <string name="chat_prompt_hint">What would you like me to do?</string>
   <string name="clear">Clear</string>
   <string name="send">Send</string>
-  <string name="status">Status</string>
-  <string name="ready_to_assist_you">Ready to assist you</string>
-  <string name="modification_summary">Modification Summary</string>
   <string name="dynamic_color">Dynamic Color</string>
   <string name="alpha">Alpha</string>
   <string name="red">Red</string>
@@ -1412,8 +1409,7 @@ Add a remote to push/pull changes</string>
   <string name="module_config_min_sdk">Min SDK</string>
   <string name="module_config_target_sdk">Target SDK</string>
   <string name="module_config_compile_sdk">Compile SDK</string>
-  <string name="ai_agent_simple_prompt_hint">Ask AI anything...</string>
-  <string name="dependency_update_title">Update Dependency</string>
+   <string name="dependency_update_title">Update Dependency</string>
   <string name="module_manager_title">Module Management</string>
   <string name="module_manager_subtitle">Create and manage project modules</string>
   <string name="module_manager_configuration">Module Configuration</string>

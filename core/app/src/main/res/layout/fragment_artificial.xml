@@ -59,17 +59,6 @@
         app:layout_behavior="@string/appbar_scrolling_view_behavior"
         android:visibility="gone" />
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/undoFab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="16dp"
-        android:text="@string/undo"
-        android:visibility="gone"
-        app:icon="@drawable/ic_undo"
-        style="@style/Widget.Material3.ExtendedFloatingActionButton.Primary" />
-
     <View
         android:id="@+id/overlayView"
         android:layout_width="match_parent"

@@ -629,11 +629,11 @@
   <string name="msg_no_internet">您似乎已离线，检查您的互联网连接。</string>
   <string name="ai_agent_title">AI 助手</string>
   <string name="ai_agent_description">使用 AI 助手获取 AI 驱动的代码生成功能</string>
-  <string name="ai_agent_prompt_hint">描述你想要生成的代码...</string>
-  <string name="ai_agent_send">发送</string>
-  <string name="ai_agent_settings">设置</string>
-  <string name="ai_agent_instructions">输入你的请求，AI 将为你生成代码。请确保已在设置中配置 Gemini API 密钥。</string>
-  <string name="ai_agent_enable">启用 AI 助手</string>
+   <string name="chat_block_open_file">打开文件</string>
+   <string name="chat_empty_prompt">请输入请求内容</string>
+   <string name="chat_cleared">对话已清空</string>
+   <string name="chat_project_load_failed">加载项目失败</string>
+   <string name="ai_agent_enable">启用 AI 助手</string>
   <string name="ai_agent_enable_summary">启用 AI 驱动的代码生成</string>
   <string name="ai_agent_api_key">Gemini</string>
   <string name="ai_agent_api_key_dialog_title">Gemini</string>
@@ -887,9 +887,6 @@
   <string name="chat_prompt_hint">你希望我做什么？</string>
   <string name="clear">清除</string>
   <string name="send">发送</string>
-  <string name="status">状态</string>
-  <string name="ready_to_assist_you">已准备好协助你</string>
-  <string name="modification_summary">修改摘要</string>
   <string name="dynamic_color">动态颜色</string>
   <string name="alpha">透明度</string>
   <string name="red">红色</string>
@@ -1026,8 +1023,7 @@
   <string name="module_config_min_sdk">最低 SDK</string>
   <string name="module_config_target_sdk">目标 SDK</string>
   <string name="module_config_compile_sdk">编译 SDK</string>
-  <string name="ai_agent_simple_prompt_hint">向 AI 提问任何内容...</string>
-  <string name="dependency_update_title">更新依赖项</string>
+   <string name="dependency_update_title">更新依赖项</string>
   <string name="dependency_update_warning_title">⚠️ 警告</string>
   <string name="dependency_update_warning_single_message">你即将更新：
 

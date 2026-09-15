@@ -21,6 +21,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.agents.Agents
+import com.tom.rv2ide.artificial.chat.ChatMessageStore
 
 /**
  * Activity-scoped ViewModel that owns the long-lived AI state.
@@ -41,4 +42,13 @@ class AISharedViewModel(app: Application) : AndroidViewModel(app) {
     val aiAgent: AIAgentManager by lazy { AIAgentManager(getApplication()) }
 
     val agents: Agents by lazy { Agents(getApplication()) }
+
+    /**
+     * Transcript of the Chat page.
+     *
+     * Living here (rather than in [ChatFragment]) is what makes it survive view recreation: the
+     * fragment's view is destroyed on a theme switch or when the sidebar page is recreated, but this
+     * ViewModel is scoped to the hosting Activity.
+     */
+    val chatMessages: ChatMessageStore = ChatMessageStore()
 }
