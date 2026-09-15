@@ -80,7 +80,7 @@ class Gemini : AIAgent {
       try {
           agents = Agents(context)
           val agentsRef = agents!!
-          val storedModel = agentsRef.getAgent()
+          val storedModel = agentsRef.getModel(PROVIDER_ID)
 
           // Resolve through the catalogue instead of repeating a literal default here: these
           // fallbacks were the copies that kept pointing at retired model names.

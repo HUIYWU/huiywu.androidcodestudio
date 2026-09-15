@@ -20,6 +20,7 @@ package com.tom.rv2ide.artificial.agents
 import android.content.Context
 import android.content.SharedPreferences
 import android.preference.PreferenceManager
+import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
 import com.tom.rv2ide.artificial.catalog.ModelRepository
 
 /**
@@ -33,8 +34,30 @@ import com.tom.rv2ide.artificial.catalog.ModelRepository
 class Agents(ctx: Context) {
 
   private val sp: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(ctx)
-  private val AGENT_KEY = "ai_agent_model_name"
   private val PROVIDER_KEY = "ai_provider_name"
+
+  /** Entry every provider's selection used to share, before models were stored per provider. */
+  private val LEGACY_AGENT_KEY = "ai_agent_model_name"
+
+  init {
+    // Adopt the shared entry, once, for the provider it actually described: it was written by
+    // whichever provider was active, so it belongs to the persisted one. Without this every upgrade
+    // would silently drop the user's selected model and fall back to the provider default.
+    //
+    // Local LLM is skipped: its model has its own entry (`LocalLlmSettings`) and is already correct
+    // there, so adopting the shared value would only overwrite it with whatever ran last.
+    sp.getString(LEGACY_AGENT_KEY, null)?.takeIf { it.isNotBlank() }?.let { legacy ->
+      val provider = getProvider()
+      val edit = sp.edit()
+      if (provider != LocalLlmSettings.PROVIDER_ID) {
+        val key = modelKey(provider)
+        if (sp.getString(key, null).isNullOrBlank()) {
+          edit.putString(key, legacy)
+        }
+      }
+      edit.remove(LEGACY_AGENT_KEY).apply()
+    }
+  }
 
   fun getModelsForProvider(providerId: String): List<String> =
     ModelRepository.getModels(providerId)
@@ -53,25 +76,49 @@ class Agents(ctx: Context) {
   // fetched at runtime, and its silent `else` branch caused provider/model mismatches.
 
   /**
-   * Stores the model together with the provider it belongs to.
+   * Model entry for one provider.
    *
-   * The provider is a parameter rather than something inferred from the model name. Inference
-   * cannot work against a fetched catalogue — an unknown model name maps back to nothing — and the
-   * old fallback silently kept the previous provider, producing a provider/model mismatch.
+   * A model name only means something for the provider that offered it, so each provider keeps its
+   * own. The single shared entry this replaced was written by every provider's selection, so
+   * choosing a model for Grok overwrote the one Local LLM was running on and the sidebar displayed
+   * Grok's model for Local LLM.
+   */
+  private fun modelKey(providerId: String) = "ai_agent_model_name_$providerId"
+
+  /** The model selected for [providerId], or `null` when none was chosen yet. */
+  fun getModel(providerId: String): String? =
+    if (providerId == LocalLlmSettings.PROVIDER_ID) {
+      // Local LLM keeps its model in its own settings object, because the provider reads it from
+      // there when building requests. Reading a second copy here would be the very divergence this
+      // class now avoids, so the configuration entry is the answer for this provider.
+      LocalLlmSettings.model()
+    } else {
+      sp.getString(modelKey(providerId), null)?.takeIf { it.isNotBlank() }
+    }
+
+  /**
+   * Stores one provider's model.
+   *
+   * The active provider is deliberately left alone: selecting a model for a provider the user is
+   * merely configuring must not switch to it as a side effect of pressing Save.
    */
   fun setModel(providerId: String, modelName: String) {
+    // Local LLM's model lives in its own settings object, because the provider reads it from there
+    // when building requests; writing a second copy here would be the very divergence this class
+    // now avoids.
+    if (providerId == LocalLlmSettings.PROVIDER_ID) {
+      LocalLlmSettings.setModel(modelName)
+      return
+    }
+
     sp.edit()
-      .putString(PROVIDER_KEY, providerId)
-      .putString(AGENT_KEY, modelName)
+      .putString(modelKey(providerId), modelName)
       .apply()
   }
 
-  fun getAgent(): String {
-    val savedModel = sp.getString(AGENT_KEY, null)
-    if (savedModel != null) return savedModel
-
-    return getDefaultModelForProvider(getProvider())
-  }
+  /** Model the active provider will use, falling back to its default when none was chosen. */
+  fun getAgent(): String =
+    getModel(getProvider()) ?: getDefaultModelForProvider(getProvider())
 
   fun setProvider(provider: String) {
     sp.edit().putString(PROVIDER_KEY, provider).apply()

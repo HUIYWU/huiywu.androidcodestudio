@@ -96,8 +96,17 @@ class AIAgentManager(private val context: Context) {
             
             android.util.Log.d("AIAgentManager", "Agent initialized: ${currentAgent?.isInitialized()}")
         }
-        
-        return currentAgent?.isInitialized() ?: false
+
+        // Recorded here because this is the single place a provider actually becomes active. It used
+        // to be a side effect of `Agents.setModel`, which no longer touches the selection, so without
+        // this the provider chosen from the error dialog or by auto-switch would not survive a
+        // restart.
+        val initialized = currentAgent?.isInitialized() ?: false
+        if (initialized) {
+            Agents(context).setProvider(providerId)
+        }
+
+        return initialized
     }
 
     fun getCurrentProviderId(): String = currentProviderId
@@ -442,6 +451,8 @@ class AIAgentManager(private val context: Context) {
                 // Use the provider's declared default rather than "first item of the list": the
                 // order of a fetched catalogue is not something we control.
                 agents.setModel(providerId, agents.getDefaultModelForProvider(providerId))
+                // `setProvider` above already initialized the agent, but with the model that was
+                // current at the time; the default written just now has to be picked up.
                 reinitializeWithSelectedModel()
                 onProviderSelected(providerId)
             },

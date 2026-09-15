@@ -79,7 +79,7 @@ class DeepSeek : AIAgent {
           this.apiKey = apiKey
           agents = Agents(context)
           val agentsRef = agents!!
-          val storedModel = agentsRef.getAgent()
+          val storedModel = agentsRef.getModel(PROVIDER_ID)
 
           // Resolve the model through the catalogue instead of repeating a literal default here:
           // this fallback is what kept pointing at a retired model name.

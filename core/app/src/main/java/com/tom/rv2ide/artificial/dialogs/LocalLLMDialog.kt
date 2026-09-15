@@ -64,10 +64,6 @@ class LocalLLMDialog : ProviderConfigDialog() {
     override fun readModel(): String? =
         LocalLlmSettings.model()?.takeIf { it != LocalLlmSettings.DEFAULT_MODEL }
 
-    override fun storeModel(value: String) {
-        LocalLlmSettings.setModel(value)
-    }
-
     /**
      * Fetches from the URL being edited rather than the stored one.
      *

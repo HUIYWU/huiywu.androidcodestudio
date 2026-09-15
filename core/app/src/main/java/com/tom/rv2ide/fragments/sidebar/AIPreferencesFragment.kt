@@ -17,7 +17,6 @@ import com.google.android.material.textview.MaterialTextView
 import com.tom.rv2ide.R
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.agents.Agents
-import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
 import com.tom.rv2ide.artificial.catalog.ModelSources
 import com.tom.rv2ide.artificial.dialogs.ProviderSwitchDialog
 import com.tom.rv2ide.common.logging.IdeLogConfig
@@ -305,19 +304,15 @@ class AIPreferencesFragment : Fragment() {
         val models = agents.getModelsForProvider(providerId)
         // Model lists are never empty: the repository falls back to the built-in catalogue.
         //
-        // Local LLM is the exception to "use the provider default": its model is chosen in the AI
-        // Agent preferences page, so the default would overwrite the configured name with the
-        // placeholder. The configured name wins whenever it is known.
-        val defaultModel =
-            if (providerId == LocalLlmSettings.PROVIDER_ID) {
-                LocalLlmSettings.model() ?: agents.getDefaultModelForProvider(providerId)
-            } else {
-                agents.getDefaultModelForProvider(providerId)
-            }
-        agents.setModel(providerId, defaultModel)
+        // The model already chosen for this provider wins over its default: models are stored per
+        // provider, so switching back to one should restore the selection made for it rather than
+        // reset it. `Agents` resolves to the right entry for every provider, Local LLM included.
+        val modelForProvider =
+            agents.getModel(providerId) ?: agents.getDefaultModelForProvider(providerId)
+        agents.setModel(providerId, modelForProvider)
         if (IdeLogConfig.shouldLogDebug()) {
             log.debug("Available models for {}: {}", providerId, models.joinToString())
-            log.debug("Set default model: {}", defaultModel)
+            log.debug("Set default model: {}", modelForProvider)
         }
         
         
@@ -350,11 +345,6 @@ class AIPreferencesFragment : Fragment() {
             log.debug("Switching to model: {}", modelName)
         }
         agents.setModel(agents.getProvider(), modelName)
-        // Local LLM reads its model from the configuration page's preferences, not from the stored
-        // provider/model pair, so both have to be written or the two would disagree.
-        if (agents.getProvider() == LocalLlmSettings.PROVIDER_ID) {
-            LocalLlmSettings.setModel(modelName)
-        }
         aiAgent.reinitializeWithSelectedModel()
         updateCurrentStatus()
         

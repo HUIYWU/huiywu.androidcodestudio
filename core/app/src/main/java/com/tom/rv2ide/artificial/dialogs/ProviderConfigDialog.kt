@@ -113,12 +113,7 @@ abstract class ProviderConfigDialog : DialogFragment() {
     protected open val isApiKeyRequired: Boolean = true
 
     /** Model currently stored for this provider, or `null` when nothing usable is stored. */
-    protected open fun readModel(): String? {
-        val agents = Agents(requireContext())
-        // The stored model belongs to whichever provider is active, so it is only this provider's
-        // model when the two agree.
-        return if (agents.getProvider() == providerId) agents.getAgent() else null
-    }
+    protected open fun readModel(): String? = Agents(requireContext()).getModel(providerId)
 
     /** Falls back to the provider's declared default when nothing is stored. */
     protected open fun defaultModel(): String =
@@ -141,18 +136,13 @@ abstract class ProviderConfigDialog : DialogFragment() {
     }
 
     /**
-     * Stores the model together with its provider, then restores the previously active provider.
+     * Stores the model for this provider.
      *
-     * `Agents.setModel` writes the provider as well, so storing a selection for a provider the user
-     * is merely configuring would otherwise switch to it as a side effect of pressing Save.
+     * The active provider is left alone: configuring a provider is not the same as switching to it,
+     * and `Agents.setModel` no longer touches the selection, so no save/restore dance is needed.
      */
     protected open fun storeModel(value: String) {
-        val agents = Agents(requireContext())
-        val previousProvider = agents.getProvider()
-        agents.setModel(providerId, value)
-        if (previousProvider != providerId) {
-            agents.setProvider(previousProvider)
-        }
+        Agents(requireContext()).setModel(providerId, value)
     }
 
     /**
