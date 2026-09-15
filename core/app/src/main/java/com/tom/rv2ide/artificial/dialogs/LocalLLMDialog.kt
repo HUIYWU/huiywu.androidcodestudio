@@ -25,19 +25,21 @@ import com.tom.rv2ide.preferences.internal.prefManager
 /**
  * Configures the Local LLM provider from the AI Agent preferences page.
  *
- * The layout, validation, fetch and save flows come from [ModelConfigDialog]; only the storage
+ * The layout, validation, fetch and save flows come from [ProviderConfigDialog]; only the storage
  * locations are specific to this provider. Its model list is not hard-coded at all — local servers
  * decide which models they serve, so the list is fetched from the server's own `/v1/models`
  * endpoint on demand. Until then the stored value is shown, so the dialog is usable without a
  * running server.
  */
-class LocalLLMDialog : ModelConfigDialog() {
+class LocalLLMDialog : ProviderConfigDialog() {
 
     override val providerId = LocalLlmSettings.PROVIDER_ID
 
     override val titleRes = R.string.local_llm_config_title
 
     override val apiKeyHintRes = R.string.local_llm_api_key
+
+    override val apiKeyKey = LocalLlmSettings.API_KEY_KEY
 
     /** This is the provider whose endpoint the user supplies, so the row is shown here. */
     override val baseUrlHintRes = R.string.local_llm_base_url
@@ -50,12 +52,6 @@ class LocalLLMDialog : ModelConfigDialog() {
 
     override fun storeBaseUrl(value: String) {
         prefManager.putString(LocalLlmSettings.BASE_URL_KEY, value)
-    }
-
-    override fun readApiKey(): String? = prefManager.getString(LocalLlmSettings.API_KEY_KEY, "")
-
-    override fun storeApiKey(value: String) {
-        prefManager.putString(LocalLlmSettings.API_KEY_KEY, value)
     }
 
     /**

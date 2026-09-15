@@ -23,19 +23,20 @@ import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.ArrayAdapter
-import android.widget.Toast
+import androidx.core.view.isVisible
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
+import com.tom.rv2ide.preferences.internal.prefManager
 import kotlinx.coroutines.launch
 
 /**
@@ -46,10 +47,13 @@ import kotlinx.coroutines.launch
  * where the values live and whether the endpoint is user-supplied, so those are the hooks; the
  * dialog layout, validation, fetch flow and save flow are identical and live here.
  *
+ * That leaves each provider's own file as little more than a table of storage locations, which is
+ * what keeps them from drifting apart the way their hand-written dialogs did.
+ *
  * Subclasses only override the hooks they need and must remain instantiable by the framework, so
  * nothing is passed through a constructor.
  */
-abstract class ModelConfigDialog : DialogFragment() {
+abstract class ProviderConfigDialog : DialogFragment() {
 
     private var baseUrlLayout: TextInputLayout? = null
     private var baseUrlInput: TextInputEditText? = null
@@ -58,19 +62,17 @@ abstract class ModelConfigDialog : DialogFragment() {
     private var modelDropdownLayout: TextInputLayout? = null
     private var modelDropdown: MaterialAutoCompleteTextView? = null
     private var fetchButton: MaterialButton? = null
-    private var fetchProgress: LinearProgressIndicator? = null
-
-    /** Models reported by the provider during this dialog's lifetime. */
-    private var fetchedModels: List<String> = emptyList()
+    private var fetchProgress: CircularProgressIndicator? = null
 
     /**
-     * Endpoint [fetchedModels] came from.
+     * Catalogue remembered for the endpoint the dialog opened with.
      *
-     * Tracked so the list is only published when it still describes the endpoint being saved: the
-     * user can fetch from one server and then edit the URL to another, and caching the first
-     * server's models against the second URL would make the picker list models that cannot be used.
+     * Held so a fetch made during this dialog can be reused after the user edits an endpoint and
+     * changes it back: the repository cache no longer describes that endpoint, but this copy still
+     * does.
      */
-    private var fetchedFrom: String? = null
+    private var lastFetchedModels: List<String>? = null
+    private var lastFetchedFrom: String? = null
 
     /**
      * Invoked after the values have been written.
@@ -90,6 +92,14 @@ abstract class ModelConfigDialog : DialogFragment() {
 
     /** Hint for the API key field. */
     protected abstract val apiKeyHintRes: Int
+
+    /**
+     * Preference entry holding this provider's API key.
+     *
+     * Declared here rather than left to each subclass so reading and writing cannot name different
+     * entries — the failure mode that let a saved key go unread.
+     */
+    protected abstract val apiKeyKey: String
 
     /**
      * Hint for the endpoint field, or `null` when the provider has a fixed endpoint.
@@ -117,11 +127,33 @@ abstract class ModelConfigDialog : DialogFragment() {
     protected open fun readBaseUrl(): String? = null
     protected open fun storeBaseUrl(value: String) = Unit
 
-    protected open fun readApiKey(): String? = null
-    protected open fun storeApiKey(value: String) = Unit
+    /**
+     * Reads the key from the entry declared by [apiKeyKey].
+     *
+     * Providers whose key is also read elsewhere (`ApiKey`) override this so that the reader and
+     * this dialog cannot name different entries.
+     */
+    protected open fun readApiKey(): String? =
+        prefManager.getString(apiKeyKey, "").takeIf { it.isNotBlank() }
 
-    /** Called after validation succeeds, so it can assume a non-blank model. */
-    protected open fun storeModel(value: String) = Unit
+    protected open fun storeApiKey(value: String) {
+        prefManager.putString(apiKeyKey, value)
+    }
+
+    /**
+     * Stores the model together with its provider, then restores the previously active provider.
+     *
+     * `Agents.setModel` writes the provider as well, so storing a selection for a provider the user
+     * is merely configuring would otherwise switch to it as a side effect of pressing Save.
+     */
+    protected open fun storeModel(value: String) {
+        val agents = Agents(requireContext())
+        val previousProvider = agents.getProvider()
+        agents.setModel(providerId, value)
+        if (previousProvider != providerId) {
+            agents.setProvider(previousProvider)
+        }
+    }
 
     /**
      * Fetches the provider's catalogue.
@@ -172,7 +204,7 @@ abstract class ModelConfigDialog : DialogFragment() {
     private fun applyHints(context: Context) {
         val baseUrlHint = baseUrlHintRes
         if (baseUrlHint == null) {
-            baseUrlLayout?.visibility = View.GONE
+            baseUrlLayout?.isVisible = false
         } else {
             baseUrlLayout?.hint = context.getString(baseUrlHint)
         }
@@ -182,29 +214,43 @@ abstract class ModelConfigDialog : DialogFragment() {
     }
 
     private fun loadSavedConfig() {
-        baseUrlLayout?.takeIf { it.visibility == View.VISIBLE }?.let {
+        baseUrlLayout?.takeIf { it.isVisible }?.let {
             baseUrlInput?.setText(readBaseUrl().orEmpty())
         }
         apiKeyInput?.setText(readApiKey().orEmpty())
 
-        // A previously fetched catalogue is preferred: it holds names the provider has actually
-        // reported. Without one the stored or declared default is shown, so the dialog is usable
-        // before anything has been fetched.
-        val stored = readModel()
-        val model = stored
-            ?.takeIf { it.isNotBlank() }
-            ?: ModelRepository.getModels(providerId).firstOrNull()
-            ?: defaultModel()
+        // A catalogue cached earlier — by an earlier dialog or by the sidebar — is offered whole, so
+        // the dialog opens with every model selectable instead of forcing a fetch first. The
+        // timestamp is what distinguishes a real listing from the bundled fallback: only the former
+        // should be offered as if the provider had reported it.
+        val hasCatalogue = ModelRepository.lastUpdated(providerId) != null
+        val cached = ModelRepository.getModels(providerId)
 
-        setModelOptions(listOf(model), model)
+        // The stored model wins over the first entry: substituting another name would display a
+        // model that is not the configured one.
+        val model = readModel()?.takeIf { it.isNotBlank() } ?: defaultModel()
+        val options = cached.takeIf { hasCatalogue && it.isNotEmpty() } ?: emptyList()
+
+        if (hasCatalogue) {
+            lastFetchedModels = cached
+            lastFetchedFrom = currentBaseUrl()
+        }
+
+        setModelOptions(options, model)
     }
 
     /** Replaces the dropdown contents, keeping [selected] as the current value. */
     private fun setModelOptions(models: List<String>, selected: String?) {
         val dropdown = modelDropdown ?: return
-        // A non-empty list is required: an empty adapter would clear the field and the saved value
-        // would silently look like "no model".
-        val options = models.filter { it.isNotBlank() }.ifEmpty { listOf(defaultModel()) }
+
+        // The current selection is always offered even when the catalogue does not list it: a local
+        // server's model name need not appear in its own catalogue, and dropping it would make the
+        // field display a model that is not the configured one.
+        val filtered = models.filter { it.isNotBlank() }
+        val options = (filtered + listOfNotNull(selected?.takeIf { it.isNotBlank() }))
+            .distinct()
+            .ifEmpty { listOf(defaultModel()) }
+
         // Without this the popup filters itself against the text in the field, which is one of the
         // entries, leaving a single line to choose from.
         dropdown.threshold = 0
@@ -218,13 +264,24 @@ abstract class ModelConfigDialog : DialogFragment() {
         )
     }
 
+    /** Endpoint as currently entered, or `null` for providers that do not have one. */
+    private fun currentBaseUrl(): String? =
+        baseUrlInput?.text?.toString()?.trim().orEmpty().takeIf { it.isNotEmpty() }
+
     // ----------------------------------------------------------------- fetch
 
+    /**
+     * Refreshes the dropdown from the provider.
+     *
+     * The fetch is explicit rather than automatic: the list is already populated from the cache, so
+     * this only exists to pick up models the provider has added since.
+     */
     private fun fetchModels() {
         val context = context ?: return
-        val baseUrl = if (baseUrlLayout?.visibility == View.VISIBLE) {
-            baseUrlInput?.text?.toString()?.trim().orEmpty().also {
-                if (it.isEmpty()) {
+
+        val baseUrl = if (baseUrlLayout?.isVisible == true) {
+            currentBaseUrl().also {
+                if (it == null) {
                     baseUrlInput?.error = getString(R.string.model_config_base_url_required)
                     return
                 }
@@ -239,9 +296,10 @@ abstract class ModelConfigDialog : DialogFragment() {
             return
         }
         apiKeyLayout?.error = null
+        modelDropdownLayout?.error = null
 
         // Resolved before the spinner is shown: returning after enabling it would leave the button
-        // disabled with a progress bar stuck on screen.
+        // replaced by a spinner that never goes away.
         val host = activity as? FragmentActivity ?: return
 
         hideKeyboard()
@@ -255,19 +313,21 @@ abstract class ModelConfigDialog : DialogFragment() {
             setFetching(false)
             when (result) {
                 is ModelRepository.RefreshResult.Success -> {
-                    fetchedModels = result.models
-                    fetchedFrom = baseUrl
+                    lastFetchedModels = result.models
+                    lastFetchedFrom = baseUrl
+
                     val current = modelDropdown?.text?.toString()?.trim()
                     val selected = current?.takeIf { it in result.models } ?: result.models.first()
                     setModelOptions(result.models, selected)
-                    toast(context.getString(R.string.local_llm_fetch_loaded, result.models.size))
                     // The list was just replaced, so open it: that is what the button was pressed for.
                     showModelDropdown()
                 }
 
                 is ModelRepository.RefreshResult.Failure -> {
-                    // Keep whatever is on screen: a failed refresh must not wipe the model name.
-                    toast(context.getString(R.string.local_llm_fetch_failed, result.reason))
+                    // Reported on the field rather than in a toast: it has to survive long enough to
+                    // be acted on, and the endpoint field is where the fix is made.
+                    modelDropdownLayout?.error =
+                        context.getString(R.string.model_config_fetch_failed, result.reason)
                 }
             }
         }
@@ -287,9 +347,9 @@ abstract class ModelConfigDialog : DialogFragment() {
     // ------------------------------------------------------------------ save
 
     private fun save() {
-        val baseUrl = if (baseUrlLayout?.visibility == View.VISIBLE) {
-            baseUrlInput?.text?.toString()?.trim().orEmpty().also {
-                if (it.isEmpty()) {
+        val baseUrl = if (baseUrlLayout?.isVisible == true) {
+            currentBaseUrl().also {
+                if (it == null) {
                     baseUrlInput?.error = getString(R.string.model_config_base_url_required)
                     return
                 }
@@ -314,10 +374,17 @@ abstract class ModelConfigDialog : DialogFragment() {
         storeApiKey(apiKey)
         storeModel(model)
 
-        // Make the fetched list reusable by the sidebar picker — but only while it still describes
-        // the endpoint being saved.
-        if (fetchedModels.isNotEmpty() && fetchedFrom == baseUrl) {
-            ModelRepository.cacheModels(providerId, fetchedModels)
+        // Make the list reusable by the next dialog and the sidebar picker — but only while it still
+        // describes the endpoint being saved. The in-dialog fetch wins over the cache that seeded
+        // the dialog, because only the former is known to describe the URL just entered.
+        val fetched = lastFetchedModels
+        val fetchedForSavedEndpoint = when {
+            fetched == null -> emptyList()
+            lastFetchedFrom == baseUrl -> fetched
+            else -> ModelRepository.getModels(providerId)
+        }
+        if (fetchedForSavedEndpoint.isNotEmpty()) {
+            ModelRepository.cacheModels(providerId, fetchedForSavedEndpoint)
         }
 
         // Lets the preference entry refresh the summary it shows; the values are already persisted
@@ -328,9 +395,15 @@ abstract class ModelConfigDialog : DialogFragment() {
 
     // --------------------------------------------------------------- helpers
 
+    /**
+     * Swaps the button for the spinner in place.
+     *
+     * They share one 48dp box, so the row does not resize when the icon is replaced.
+     */
     private fun setFetching(fetching: Boolean) {
+        fetchButton?.isVisible = !fetching
         fetchButton?.isEnabled = !fetching
-        fetchProgress?.visibility = if (fetching) View.VISIBLE else View.GONE
+        fetchProgress?.isVisible = fetching
     }
 
     private fun hideKeyboard() {
@@ -338,9 +411,5 @@ abstract class ModelConfigDialog : DialogFragment() {
         val manager = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE)
             as? InputMethodManager
         manager?.hideSoftInputFromWindow(view.windowToken, 0)
-    }
-
-    private fun toast(message: String) {
-        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
     }
 }

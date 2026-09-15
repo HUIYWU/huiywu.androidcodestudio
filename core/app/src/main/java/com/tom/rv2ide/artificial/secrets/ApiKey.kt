@@ -23,7 +23,20 @@ import com.tom.rv2ide.preferences.internal.prefManager
 */
 
 object ApiKey {
-    
+
+    /**
+     * Preference entries holding the provider keys.
+     *
+     * Declared here because this is where they are read, and the configuration dialogs that write
+     * them name the same constants; keeping a second copy of the literals is how a saved key ends up
+     * unreadable.
+     */
+    const val GEMINI_KEY = "ai_agent_gemini_api_key"
+    const val OPENAI_KEY = "ai_agent_openai_api_key"
+    const val DEEPSEEK_KEY = "ai_agent_deepseek_api_key"
+    const val ANTHROPIC_KEY = "ai_agent_anthropic_api_key"
+    const val GROK_KEY = "ai_agent_grok_api_key"
+
     // Check if AI Agent is enabled
     fun isAIAgentEnabled(): Boolean {
         return prefManager.getBoolean("ai_agent_enabled", false)
@@ -31,7 +44,7 @@ object ApiKey {
     
     // Gemini API Key
     fun getGeminiApiKey(): String {
-        return prefManager.getString("ai_agent_gemini_api_key", "")
+        return prefManager.getString(GEMINI_KEY, "")
     }
     
     fun hasGeminiKey(): Boolean {
@@ -41,7 +54,7 @@ object ApiKey {
     
     // OpenAI API Key
     fun getOpenAIApiKey(): String {
-        return prefManager.getString("ai_agent_openai_api_key", "")
+        return prefManager.getString(OPENAI_KEY, "")
     }
     
     fun hasOpenAIKey(): Boolean {
@@ -51,7 +64,7 @@ object ApiKey {
     
     // Deepseek API Key
     fun getDeepseekApiKey(): String {
-        return prefManager.getString("ai_agent_deepseek_api_key", "")
+        return prefManager.getString(DEEPSEEK_KEY, "")
     }
     
     fun hasDeepseekKey(): Boolean {
@@ -61,7 +74,7 @@ object ApiKey {
     
     // Anthropic API Key
     fun getAnthropicApiKey(): String {
-        return prefManager.getString("ai_agent_anthropic_api_key", "")
+        return prefManager.getString(ANTHROPIC_KEY, "")
     }
     
     fun hasAnthropicKey(): Boolean {
@@ -71,7 +84,7 @@ object ApiKey {
     
     // Grok API Key
     fun getGrokApiKey(): String {
-        return prefManager.getString("ai_agent_grok_api_key", "")
+        return prefManager.getString(GROK_KEY, "")
     }
     
     fun hasGrokKey(): Boolean {

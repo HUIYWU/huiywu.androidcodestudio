@@ -24,6 +24,7 @@ import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
 import com.tom.rv2ide.artificial.rules.WritingRules
+import com.tom.rv2ide.artificial.secrets.ApiKey
 import com.tom.rv2ide.artificial.project.awareness.ProjectTreeResult
 import com.tom.rv2ide.artificial.file.AIFileWriter
 import com.tom.rv2ide.artificial.file.FileWriteResult
@@ -71,8 +72,7 @@ class Anthropic : AIAgent {
               }
               
               override fun getApiKey(): String? {
-                  val prefManager = com.tom.rv2ide.preferences.internal.prefManager
-                  return prefManager.getString("ai_agent_anthropic_api_key", "")?.takeIf { it.isNotBlank() }
+                  return ApiKey.getAnthropicApiKey().takeIf { it.isNotBlank() }
               }
           })
       }

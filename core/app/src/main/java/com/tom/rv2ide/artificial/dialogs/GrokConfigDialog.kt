@@ -18,36 +18,36 @@
 package com.tom.rv2ide.artificial.dialogs
 
 import com.tom.rv2ide.R
-import com.tom.rv2ide.artificial.agents.deepseek.DeepSeek
+import com.tom.rv2ide.artificial.agents.grok.Grok
 import com.tom.rv2ide.artificial.secrets.ApiKey
 
 /**
- * Configures the DeepSeek provider from the AI Agent preferences page.
+ * Configures the xAI Grok provider from the AI Agent preferences page.
  *
  * Credentials, then the model to use, with the list fetched from the provider rather than
  * hard-coded; the flow itself lives in [ProviderConfigDialog].
  *
- * The endpoint is deliberately absent: DeepSeek is reached at a fixed URL, so the row stays hidden
+ * The endpoint is deliberately absent: Grok is reached at a fixed URL, so the row stays hidden
  * rather than offering a setting that would be ignored.
  */
-class DeepSeekConfigDialog : ProviderConfigDialog() {
+class GrokConfigDialog : ProviderConfigDialog() {
 
-    override val providerId = DeepSeek.PROVIDER_ID
+    override val providerId = Grok.PROVIDER_ID
 
-    override val titleRes = R.string.ai_agent_deepseek_api_key_dialog_title
+    override val titleRes = R.string.ai_agent_grok_api_key_dialog_title
 
-    override val apiKeyHintRes = R.string.ai_agent_deepseek_api_key_label
+    override val apiKeyHintRes = R.string.ai_agent_grok_api_key_label
 
-    override val apiKeyKey = ApiKey.DEEPSEEK_KEY
+    override val apiKeyKey = ApiKey.GROK_KEY
 
     /**
      * Read through [ApiKey] rather than from [apiKeyKey] directly, so the two cannot disagree about
      * which entry holds this provider's key.
      */
-    override fun readApiKey(): String? = ApiKey.getDeepseekApiKey().takeIf { it.isNotBlank() }
+    override fun readApiKey(): String? = ApiKey.getGrokApiKey().takeIf { it.isNotBlank() }
 
     companion object {
         /** Tag for `show`; also keeps the dialog recoverable across configuration changes. */
-        const val TAG = "deepseek_config_dialog"
+        const val TAG = "grok_config_dialog"
     }
 }

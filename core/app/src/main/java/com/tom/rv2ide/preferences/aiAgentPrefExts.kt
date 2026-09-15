@@ -21,11 +21,16 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.fragment.app.FragmentActivity
 import androidx.preference.Preference
-import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
 import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
+import com.tom.rv2ide.artificial.dialogs.AnthropicConfigDialog
 import com.tom.rv2ide.artificial.dialogs.DeepSeekConfigDialog
+import com.tom.rv2ide.artificial.dialogs.GeminiConfigDialog
+import com.tom.rv2ide.artificial.dialogs.GrokConfigDialog
 import com.tom.rv2ide.artificial.dialogs.LocalLLMDialog
+import com.tom.rv2ide.artificial.dialogs.OpenAIConfigDialog
+import com.tom.rv2ide.artificial.dialogs.ProviderConfigDialog
+import com.tom.rv2ide.artificial.secrets.ApiKey
 import com.tom.rv2ide.preferences.internal.prefManager
 import com.tom.rv2ide.resources.R.string
 import kotlinx.parcelize.IgnoredOnParcel
@@ -88,28 +93,25 @@ private class AIAgentConfig(
   }
 }
 
-private fun buildApiKeyInput(context: Context, currentValue: String, labelRes: Int): TextInputLayout {
-  val inputContext =
-      android.view.ContextThemeWrapper(
-          context,
-          com.google.android.material.R.style.Theme_Material3_DayNight,
-      )
-  val inputLayout =
-      TextInputLayout(
-          inputContext,
-          null,
-          com.google.android.material.R.style.Widget_Material3_TextInputLayout_OutlinedBox,
-      )
-  inputLayout.hint = context.getString(labelRes)
-  inputLayout.setPadding(dp(context, 24), dp(context, 8), dp(context, 24), 0)
-  val editText = android.widget.EditText(inputContext)
-  editText.setText(currentValue)
-  inputLayout.addView(editText)
-  return inputLayout
+/**
+ * Shows a provider configuration dialog from a preference entry.
+ *
+ * A hosting [FragmentActivity] is required to show a DialogFragment; without one there is simply
+ * nowhere to display the editor, so the click is consumed and nothing happens.
+ *
+ * [refreshSummary] runs after the dialog has actually written its values — refreshing on click
+ * would read the old ones, since the dialog is shown asynchronously.
+ */
+private fun Context.showProviderConfigDialog(
+    dialog: ProviderConfigDialog,
+    tag: String,
+    refreshSummary: () -> Unit,
+) {
+  val host = findFragmentActivity() ?: return
+  dialog
+      .apply { onSaved = refreshSummary }
+      .show(host.supportFragmentManager, tag)
 }
-
-private fun dp(context: Context, value: Int): Int =
-    (value * context.resources.displayMetrics.density).toInt()
 
 
 @Parcelize
@@ -139,7 +141,7 @@ private class AIAgentEnabled(
 
 @Parcelize
 private class GrokApiKey(
-    override val key: String = "ai_agent_grok_api_key",
+    override val key: String = ApiKey.GROK_KEY,
     override val title: Int = R.string.ai_agent_grok_api_key,
     override val icon: Int = R.drawable.ic_ai_grok,
 ) : BasePreference() {
@@ -149,7 +151,7 @@ private class GrokApiKey(
   override fun onCreatePreference(context: Context): Preference {
     preference =
         androidx.preference.Preference(context).apply {
-          key = "ai_agent_grok_api_key"
+          key = ApiKey.GROK_KEY
           title = context.getString(R.string.ai_agent_grok_api_key)
           summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
@@ -158,30 +160,10 @@ private class GrokApiKey(
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val inputLayout =
-        buildApiKeyInput(
-            context,
-            prefManager.getString("ai_agent_grok_api_key", ""),
-            R.string.ai_agent_grok_api_key_label,
-        )
-    val editText = inputLayout.editText!!
-
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.ai_agent_grok_api_key_dialog_title)
-            .setView(inputLayout)
-            .setPositiveButton(R.string.action_save) { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_grok_api_key", apiKey)
-              preference.summary = summaryText(context)
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .create()
-
-    dialog.show()
+    preference.context.showProviderConfigDialog(
+        GrokConfigDialog(),
+        GrokConfigDialog.TAG,
+    ) { preference.summary = summaryText(preference.context) }
     return true
   }
 
@@ -190,7 +172,7 @@ private class GrokApiKey(
   }
 
   private fun summaryText(context: Context): String {
-    val apiKey = prefManager.getString("ai_agent_grok_api_key", "")
+    val apiKey = prefManager.getString(ApiKey.GROK_KEY, "")
     val display = if (apiKey.length > 12) apiKey.take(12) + "…" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, display)
   }
@@ -198,7 +180,7 @@ private class GrokApiKey(
 
 @Parcelize
 private class GeminiApiKey(
-    override val key: String = "ai_agent_gemini_api_key",
+    override val key: String = ApiKey.GEMINI_KEY,
     override val title: Int = R.string.ai_agent_api_key,
     override val icon: Int = R.drawable.ic_ai_gemini,
 ) : BasePreference() {
@@ -208,7 +190,7 @@ private class GeminiApiKey(
   override fun onCreatePreference(context: Context): Preference {
     preference =
         androidx.preference.Preference(context).apply {
-          key = "ai_agent_gemini_api_key"
+          key = ApiKey.GEMINI_KEY
           title = context.getString(R.string.ai_agent_api_key)
           summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
@@ -217,29 +199,10 @@ private class GeminiApiKey(
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val inputLayout = buildApiKeyInput(
-        context,
-        prefManager.getString("ai_agent_gemini_api_key", ""),
-        R.string.ai_agent_api_key_label,
-    )
-    val editText = inputLayout.editText!!
-
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.ai_agent_api_key_dialog_title)
-            .setView(inputLayout)
-            .setPositiveButton(R.string.action_save) { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_gemini_api_key", apiKey)
-              preference.summary = summaryText(context)
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .create()
-
-    dialog.show()
+    preference.context.showProviderConfigDialog(
+        GeminiConfigDialog(),
+        GeminiConfigDialog.TAG,
+    ) { preference.summary = summaryText(preference.context) }
     return true
   }
 
@@ -248,7 +211,7 @@ private class GeminiApiKey(
   }
 
   private fun summaryText(context: Context): String {
-    val apiKey = prefManager.getString("ai_agent_gemini_api_key", "")
+    val apiKey = prefManager.getString(ApiKey.GEMINI_KEY, "")
     val display = if (apiKey.length > 12) apiKey.take(12) + "…" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, display)
   }
@@ -256,7 +219,7 @@ private class GeminiApiKey(
 
 @Parcelize
 private class DeepseekApiKey(
-    override val key: String = "ai_agent_deepseek_api_key",
+    override val key: String = ApiKey.DEEPSEEK_KEY,
     override val title: Int = R.string.ai_agent_deepseek_api_key,
     override val icon: Int = R.drawable.ic_ai_deepseek,
 ) : BasePreference() {
@@ -266,7 +229,7 @@ private class DeepseekApiKey(
   override fun onCreatePreference(context: Context): Preference {
     preference =
         androidx.preference.Preference(context).apply {
-          key = "ai_agent_deepseek_api_key"
+          key = ApiKey.DEEPSEEK_KEY
           title = context.getString(R.string.ai_agent_deepseek_api_key)
           summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
@@ -275,18 +238,10 @@ private class DeepseekApiKey(
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    // A hosting FragmentActivity is required to show a DialogFragment; without one there is
-    // simply nowhere to display the editor.
-    val host = context.findFragmentActivity() ?: return true
-
-    DeepSeekConfigDialog()
-        .apply {
-          // Refreshes the summary once the dialog has actually written the new values.
-          onSaved = { preference.summary = summaryText(context) }
-        }
-        .show(host.supportFragmentManager, DeepSeekConfigDialog.TAG)
+    preference.context.showProviderConfigDialog(
+        DeepSeekConfigDialog(),
+        DeepSeekConfigDialog.TAG,
+    ) { preference.summary = summaryText(preference.context) }
     return true
   }
 
@@ -295,7 +250,7 @@ private class DeepseekApiKey(
   }
 
   private fun summaryText(context: Context): String {
-    val apiKey = prefManager.getString("ai_agent_deepseek_api_key", "")
+    val apiKey = prefManager.getString(ApiKey.DEEPSEEK_KEY, "")
     val display = if (apiKey.length > 12) apiKey.take(12) + "…" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, display)
   }
@@ -303,7 +258,7 @@ private class DeepseekApiKey(
 
 @Parcelize
 private class OpenAIApiKey(
-    override val key: String = "ai_agent_openai_api_key",
+    override val key: String = ApiKey.OPENAI_KEY,
     override val title: Int = R.string.ai_agent_openai_api_key,
     override val icon: Int = R.drawable.ic_ai_gpt,
 ) : BasePreference() {
@@ -313,7 +268,7 @@ private class OpenAIApiKey(
   override fun onCreatePreference(context: Context): Preference {
     preference =
         androidx.preference.Preference(context).apply {
-          key = "ai_agent_openai_api_key"
+          key = ApiKey.OPENAI_KEY
           title = context.getString(R.string.ai_agent_openai_api_key)
           summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
@@ -322,29 +277,10 @@ private class OpenAIApiKey(
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val inputLayout = buildApiKeyInput(
-        context,
-        prefManager.getString("ai_agent_openai_api_key", ""),
-        R.string.ai_agent_openai_api_key_label,
-    )
-    val editText = inputLayout.editText!!
-
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.ai_agent_openai_api_key_dialog_title)
-            .setView(inputLayout)
-            .setPositiveButton(R.string.action_save) { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_openai_api_key", apiKey)
-              preference.summary = summaryText(context)
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .create()
-
-    dialog.show()
+    preference.context.showProviderConfigDialog(
+        OpenAIConfigDialog(),
+        OpenAIConfigDialog.TAG,
+    ) { preference.summary = summaryText(preference.context) }
     return true
   }
 
@@ -353,7 +289,7 @@ private class OpenAIApiKey(
   }
 
   private fun summaryText(context: Context): String {
-    val apiKey = prefManager.getString("ai_agent_openai_api_key", "")
+    val apiKey = prefManager.getString(ApiKey.OPENAI_KEY, "")
     val display = if (apiKey.length > 12) apiKey.take(12) + "…" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, display)
   }
@@ -361,7 +297,7 @@ private class OpenAIApiKey(
 
 @Parcelize
 private class AnthropicApiKey(
-    override val key: String = "ai_agent_anthropic_api_key",
+    override val key: String = ApiKey.ANTHROPIC_KEY,
     override val title: Int = R.string.ai_agent_anthropic_api_key,
     override val icon: Int = R.drawable.ic_ai_anthropic,
 ) : BasePreference() {
@@ -371,7 +307,7 @@ private class AnthropicApiKey(
   override fun onCreatePreference(context: Context): Preference {
     preference =
         androidx.preference.Preference(context).apply {
-          key = "ai_agent_anthropic_api_key"
+          key = ApiKey.ANTHROPIC_KEY
           title = context.getString(R.string.ai_agent_anthropic_api_key)
           summary = summaryText(context)
           isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
@@ -380,29 +316,10 @@ private class AnthropicApiKey(
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val inputLayout = buildApiKeyInput(
-        context,
-        prefManager.getString("ai_agent_anthropic_api_key", ""),
-        R.string.ai_agent_anthropic_api_key_label,
-    )
-    val editText = inputLayout.editText!!
-
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.ai_agent_anthropic_api_key_dialog_title)
-            .setView(inputLayout)
-            .setPositiveButton(R.string.action_save) { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_anthropic_api_key", apiKey)
-              preference.summary = summaryText(context)
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .create()
-
-    dialog.show()
+    preference.context.showProviderConfigDialog(
+        AnthropicConfigDialog(),
+        AnthropicConfigDialog.TAG,
+    ) { preference.summary = summaryText(preference.context) }
     return true
   }
 
@@ -411,7 +328,7 @@ private class AnthropicApiKey(
   }
 
   private fun summaryText(context: Context): String {
-    val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
+    val apiKey = prefManager.getString(ApiKey.ANTHROPIC_KEY, "")
     val display = if (apiKey.length > 12) apiKey.take(12) + "…" else apiKey
     return if (apiKey.isBlank()) context.getString(R.string.ai_agent_click_to_set_api_key) else context.getString(R.string.ai_agent_api_key_masked, display)
   }
@@ -444,18 +361,10 @@ private class LocalLlmConfig(
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    // A hosting FragmentActivity is required to show a DialogFragment; without one there is
-    // simply nowhere to display the editor.
-    val host = context.findFragmentActivity() ?: return true
-
-    LocalLLMDialog()
-        .apply {
-          // Refreshes the summary once the dialog has actually written the new values.
-          onSaved = { preference.summary = summaryText(context) }
-        }
-        .show(host.supportFragmentManager, LocalLLMDialog.TAG)
+    preference.context.showProviderConfigDialog(
+        LocalLLMDialog(),
+        LocalLLMDialog.TAG,
+    ) { preference.summary = summaryText(preference.context) }
     return true
   }
 

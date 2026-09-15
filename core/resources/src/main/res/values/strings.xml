@@ -94,9 +94,8 @@
   <string name="ai_agent_local_llm">Local LLM</string>
   <string name="ai_agent_local_llm_summary">Configure Base URL, API key and model</string>
   <string name="local_llm_api_key">API Key</string>
-  <string name="local_llm_fetch_models">Fetch available models</string>
-  <string name="local_llm_fetch_loaded">Loaded %1$d model(s)</string>
-  <string name="local_llm_fetch_failed">Could not fetch models: %1$s</string>
+  <string name="model_config_fetch_models">Fetch available models</string>
+  <string name="model_config_fetch_failed">Could not fetch models: %1$s</string>
   <string name="model_config_base_url_required">Base URL is required</string>
   <string name="model_config_api_key_required">API key is required</string>
   <string name="model_config_model_hint">Model</string>
