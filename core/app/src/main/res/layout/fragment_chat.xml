@@ -11,14 +11,13 @@
     off screen.
 
   Model picker:
-  - The visible control is the Chip (it shows the model in effect). A transparent exposed-dropdown field
-    is laid under it and the chip's click opens that field's dropdown, so the menu is the standard
-    Material one: placement and up/down flip stay in the framework.
-  - The popup width does not come from the rows. The popup is as wide as its anchor (the transparent
-    field), so ChatFragment.menuWidth() measures the widest row and assigns dropDownWidth.
-  - That backing field spans the row so the popup is never clamped to the chip's own width. It spans
-    via layout_weight - a match_parent child of a wrap_content FrameLayout is measured against the
-    whole row, which pushed the two buttons out of the layout.
+  - The Chip is the only control: it shows the model in effect, and its click toggles the model menu.
+    The menu is a ListPopupWindow owned by ChatFragment, anchored to the chip, so the framework still
+    places it and flips it up when there is no room below.
+  - There is deliberately no field behind the chip. An AutoCompleteTextView used as the menu owner
+    paints the selected model as its own text (MaterialAutoCompleteTextView calls setText() from its
+    internal item-click listener), so the value leaked out beside the chip whenever the chip was
+    narrower than the name.
   - The menu lists the models of the provider currently selected; picking one switches the model within
     that provider.
 -->
@@ -60,7 +59,7 @@
                 android:alpha="0.5"
                 android:contentDescription="@string/ai_agent_title"
                 android:src="@drawable/ic_ai"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                app:tint="?attr/colorPrimary" />
 
             <com.google.android.material.textview.MaterialTextView
                 android:layout_width="match_parent"
@@ -80,9 +79,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="8dp"
+        android:paddingHorizontal="12dp"
         android:paddingTop="8dp"
-        android:paddingBottom="8dp">
+        android:paddingBottom="16dp">
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
@@ -124,47 +123,19 @@
                     android:orientation="horizontal"
                     android:paddingTop="4dp">
 
-                    <!-- Chip + the transparent field that owns the menu, laid in the same cell. The
-                         field spans the row: the menu popup takes its width from that field
-                         (ChatFragment.menuWidth() overrides it with the widest row). layout_weight,
-                         not match_parent in a wrap_content parent, which is what pushed the buttons
-                         out. -->
-                    <FrameLayout
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/modelChip"
+                        style="@style/Widget.Material3.Chip.Assist"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="middle"
+                        android:maxWidth="200dp"
+                        android:singleLine="true" />
+
+                    <Space
                         android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1">
-
-                        <com.google.android.material.textfield.TextInputLayout
-                            android:id="@+id/modelMenuAnchor"
-                            style="@style/AppTheme.TextInputLayout.Dropdown.MenuAnchor"
-                            android:layout_width="match_parent"
-                            android:layout_height="match_parent"
-                            android:importantForAccessibility="no">
-
-                            <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                                android:id="@+id/modelDropdown"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:completionThreshold="0"
-                                android:dropDownWidth="wrap_content"
-                                android:inputType="none"
-                                android:popupBackground="@drawable/bg_atc_dropdown_popup"
-                                android:singleLine="true"
-                                android:textAppearance="?attr/textAppearanceBodyLarge" />
-
-                        </com.google.android.material.textfield.TextInputLayout>
-
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/modelChip"
-                            style="@style/Widget.Material3.Chip.Assist"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_gravity="start|center_vertical"
-                            android:ellipsize="middle"
-                            android:maxWidth="200dp"
-                            android:singleLine="true" />
-
-                    </FrameLayout>
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/clearBtn"

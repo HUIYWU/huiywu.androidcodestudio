@@ -7,9 +7,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
-import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.ListPopupWindow
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -22,7 +23,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.snackbar.Snackbar
-import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.editor.EditorHandlerActivity
@@ -65,7 +65,8 @@ class ChatFragment : Fragment() {
     private lateinit var clearBtn: MaterialButton
     private lateinit var modelChip: Chip
 
-    private lateinit var modelDropdown: MaterialAutoCompleteTextView
+    private var modelMenu: ListPopupWindow? = null
+    private var modelMenuOpen = false
 
     private lateinit var messageList: RecyclerView
     private lateinit var emptyState: View
@@ -142,7 +143,6 @@ class ChatFragment : Fragment() {
         sendBtn = view.findViewById(R.id.sendBtn)
         clearBtn = view.findViewById(R.id.clearBtn)
         modelChip = view.findViewById(R.id.modelChip)
-        modelDropdown = view.findViewById(R.id.modelDropdown)
         messageList = view.findViewById(R.id.messageList)
         emptyState = view.findViewById(R.id.emptyState)
     }
@@ -240,15 +240,14 @@ class ChatFragment : Fragment() {
     }
 
     /**
-     * Opens or closes the model menu.
+     * Opens the model menu, or closes it when it is already open.
      *
-     * A toggle rather than a plain `showDropDown()`: the menu drops *below* the composer, so the chip
-     * stays reachable while the menu is open and tapping it again is the natural way to close it. A
-     * plain open would stack a second menu every time the chip was tapped.
+     * The menu hangs from the chip, which stays reachable while it is open, so tapping the chip again
+     * is the natural way to close it.
      */
     private fun toggleModelMenu() {
-        if (modelDropdown.isPopupShowing) {
-            modelDropdown.dismissDropDown()
+        if (modelMenuOpen) {
+            dismissModelMenu()
             return
         }
 
@@ -257,45 +256,57 @@ class ChatFragment : Fragment() {
             return
         }
 
-        populateModelMenu(modelDropdown)
-        modelDropdown.post { modelDropdown.showDropDown() }
+        showModelMenu()
     }
 
     /**
-     * Fills the menu with the models of the provider that is currently in effect.
+     * Shows the menu with the models of the provider that is currently in effect.
      *
      * The menu picks a *model*, not a provider: the provider is chosen on the settings page, and this
      * is the same catalogue that page offers for it.
      */
-    private fun populateModelMenu(dropdown: MaterialAutoCompleteTextView) {
+    private fun showModelMenu() {
         val agents = Agents(requireContext())
         val providerId = agents.getProvider()
-
         val models = agents.getModelsForProvider(providerId).distinct()
 
-        dropdown.setAdapter(
-            ArrayAdapter(requireContext(), R.layout.item_dropdown_single_line, models)
-        )
-        dropdown.threshold = 0
-        dropdown.dropDownWidth = menuWidth(dropdown, models)
-
-        dropdown.onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
-            models.getOrNull(position)?.let { model -> switchToModel(providerId, model) }
+        val popup = ListPopupWindow(requireContext()).apply {
+            anchorView = modelChip
+            isModal = true
+            width = menuWidth(models)
+            setAdapter(ArrayAdapter(requireContext(), R.layout.item_dropdown_single_line, models))
+            setBackgroundDrawable(
+                ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
+            )
+            setOnItemClickListener { _, _, position, _ ->
+                models.getOrNull(position)?.let { model -> switchToModel(providerId, model) }
+            }
+            setOnDismissListener { clearModelMenu() }
         }
+
+        modelMenu = popup
+        modelMenuOpen = true
+        popup.show()
+    }
+
+    private fun dismissModelMenu() {
+        val popup = modelMenu
+        clearModelMenu()
+        popup?.dismiss()
+    }
+
+    private fun clearModelMenu() {
+        modelMenu = null
+        modelMenuOpen = false
     }
 
     /**
-     * Width of the model menu popup, in pixels.
+     * Width of the model menu, in pixels.
      *
-     * The popup does not size itself from its rows: `MaterialAutoCompleteTextView` only uses the
-     * content width to grow the *field* (`onMeasure`, AT_MOST), and an `AutoCompleteTextView` with no
-     * explicit width takes the popup width from its anchor — here the transparent field behind the
-     * chip, which is a few characters wide.
-     *
-     * So the widest row is measured instead, with the same item layout the adapter uses, and clamped
-     * to the window.
+     * The rows are measured with the same layout the adapter uses, and the menu is never narrower than
+     * the chip it hangs from nor wider than the window less its margins.
      */
-    private fun menuWidth(dropdown: MaterialAutoCompleteTextView, models: List<String>): Int {
+    private fun menuWidth(models: List<String>): Int {
         val margin = (16 * resources.displayMetrics.density).toInt()
         val row = layoutInflater.inflate(R.layout.item_dropdown_single_line, null, false) as TextView
         // Inflated without a parent, so it has no LayoutParams; TextView.setText() then throws in
@@ -312,8 +323,8 @@ class ChatFragment : Fragment() {
             row.measuredWidth
         } ?: 0
 
-        // coerceIn throws when min > max, and the field can be wider than the window less the margins.
-        val min = dropdown.width.coerceAtLeast(margin)
+        // coerceIn throws when min > max, and the chip can be wider than the window less the margins.
+        val min = modelChip.width.coerceAtLeast(margin)
         val max = (resources.displayMetrics.widthPixels - margin * 2).coerceAtLeast(min)
 
         return widestRow.coerceIn(min, max)
@@ -632,8 +643,7 @@ class ChatFragment : Fragment() {
 
     override fun onDestroyView() {
         completionStateMonitorJob?.cancel()
-        // No popup is dismissed here: the model menus belong to their AutoCompleteTextView, so the
-        // framework tears them down with the view tree.
+        dismissModelMenu()
         // Guarded because setupManagers() is not guaranteed to have run: when onViewCreated() throws
         // before reaching it, the view is still destroyed and this callback still fires, and reading
         // an uninitialized lateinit on the way out would replace the real error with a misleading
