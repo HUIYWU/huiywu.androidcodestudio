@@ -4,18 +4,12 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.AnimationUtils
-import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.commit
 import androidx.viewpager2.widget.ViewPager2
-import com.google.android.material.floatingactionbutton.FloatingActionButton
-import com.google.android.material.navigationrail.NavigationRailView
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import com.tom.rv2ide.R
 import com.tom.rv2ide.adapters.ViewPagerAdapter
-import com.tom.rv2ide.managers.NavigationRailManager
 
 /**
  * AI assistant sidebar entry.
@@ -24,35 +18,20 @@ import com.tom.rv2ide.managers.NavigationRailManager
  * reflectively (via [com.tom.rv2ide.utils.EditorSidebarActions]) and Android may also
  * recreate it on configuration changes / process death.
  *
- * This fragment is only the host — the Chat/History pages and the settings page are child
- * fragments, and each of them resolves its own dependencies from the activity-scoped
- * `AISharedViewModel` rather than through a constructor.
+ * This fragment is only the host — Chat/History/Settings are child fragments, and each of them
+ * resolves its own dependencies from the activity-scoped `AISharedViewModel` rather than through a
+ * constructor.
  */
 class ArtificialFragment : Fragment() {
 
     private lateinit var viewPager: ViewPager2
     private lateinit var tabLayout: TabLayout
-    private lateinit var fabToggleRail: FloatingActionButton
-    private lateinit var navigationRail: NavigationRailView
-    private lateinit var overlayView: View
-    private lateinit var navigationRailManager: NavigationRailManager
-    private lateinit var contentContainer: View
 
     private var savedViewPagerPosition = 0
-    private var savedContentContainerVisibility = View.GONE
-
-    private val backPressedCallback = object : OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() {
-            showMainContent()
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        savedInstanceState?.let {
-            savedViewPagerPosition = it.getInt(KEY_VIEWPAGER_POSITION, 0)
-            savedContentContainerVisibility = it.getInt(KEY_CONTENT_VISIBILITY, View.GONE)
-        }
+        savedViewPagerPosition = savedInstanceState?.getInt(KEY_VIEWPAGER_POSITION, 0) ?: 0
     }
 
     override fun onCreateView(
@@ -68,24 +47,12 @@ class ArtificialFragment : Fragment() {
 
         viewPager = view.findViewById(R.id.viewPager)
         tabLayout = view.findViewById(R.id.tabLayout)
-        fabToggleRail = view.findViewById(R.id.fabToggleRail)
-        navigationRail = view.findViewById(R.id.navigationRail)
-        overlayView = view.findViewById(R.id.overlayView)
-        contentContainer = view.findViewById(R.id.contentContainer)
-
-        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backPressedCallback)
-
-        setupNavigationRail()
 
         view.post {
             setupViewPager()
 
             if (savedInstanceState != null) {
                 viewPager.setCurrentItem(savedViewPagerPosition, false)
-                contentContainer.visibility = savedContentContainerVisibility
-                viewPager.visibility = if (savedContentContainerVisibility == View.VISIBLE) View.GONE else View.VISIBLE
-                tabLayout.visibility = if (savedContentContainerVisibility == View.VISIBLE) View.GONE else View.VISIBLE
-                backPressedCallback.isEnabled = savedContentContainerVisibility == View.VISIBLE
             }
         }
     }
@@ -97,21 +64,21 @@ class ArtificialFragment : Fragment() {
         viewPager.isUserInputEnabled = true
 
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
-            tab.text = when (position) {
-                0 -> "Chat"
-                1 -> "History"
-                else -> ""
-            }
-        }.attach()
-
-        viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
-            override fun onPageSelected(position: Int) {
-                super.onPageSelected(position)
-                if (navigationRailManager.isRailExpanded()) {
-                    navigationRailManager.collapse()
+            when (position) {
+                0 -> {
+                    tab.text = "Chat"
+                    tab.setIcon(R.drawable.ic_chat)
+                }
+                1 -> {
+                    tab.text = "History"
+                    tab.setIcon(R.drawable.ic_history)
+                }
+                2 -> {
+                    tab.text = "Settings"
+                    tab.setIcon(R.drawable.ic_settings)
                 }
             }
-        })
+        }.attach()
 
         viewPager.post {
             viewPager.requestLayout()
@@ -123,80 +90,6 @@ class ArtificialFragment : Fragment() {
         if (::viewPager.isInitialized) {
             outState.putInt(KEY_VIEWPAGER_POSITION, viewPager.currentItem)
         }
-        if (::contentContainer.isInitialized) {
-            outState.putInt(KEY_CONTENT_VISIBILITY, contentContainer.visibility)
-        }
-    }
-
-    private fun setupNavigationRail() {
-        navigationRailManager = NavigationRailManager(
-            navigationRail,
-            overlayView,
-            fabToggleRail
-        )
-
-        navigationRail.setOnItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_chat -> {
-                    if (contentContainer.visibility == View.VISIBLE) {
-                        showMainContent()
-                    }
-                    viewPager.currentItem = 0
-                    navigationRailManager.collapse()
-                    true
-                }
-                R.id.nav_settings -> {
-                    openAIPreferences()
-                    navigationRailManager.collapse()
-                    true
-                }
-                else -> false
-            }
-        }
-    }
-
-    private fun openAIPreferences() {
-        val preferencesFragment = AIPreferencesFragment()
-
-        val slideIn = AnimationUtils.loadAnimation(requireContext(), android.R.anim.slide_in_left)
-        val slideOut = AnimationUtils.loadAnimation(requireContext(), android.R.anim.slide_out_right)
-
-        viewPager.startAnimation(slideOut)
-        viewPager.visibility = View.GONE
-        tabLayout.visibility = View.GONE
-
-        contentContainer.visibility = View.VISIBLE
-        contentContainer.startAnimation(slideIn)
-        backPressedCallback.isEnabled = true
-
-        childFragmentManager.commit {
-            replace(R.id.contentContainer, preferencesFragment)
-            addToBackStack("ai_preferences")
-        }
-    }
-
-    private fun showMainContent() {
-        val slideIn = AnimationUtils.loadAnimation(requireContext(), android.R.anim.slide_in_left)
-        val slideOut = AnimationUtils.loadAnimation(requireContext(), android.R.anim.slide_out_right)
-
-        contentContainer.startAnimation(slideOut)
-        contentContainer.visibility = View.GONE
-
-        viewPager.visibility = View.VISIBLE
-        tabLayout.visibility = View.VISIBLE
-        viewPager.startAnimation(slideIn)
-
-        backPressedCallback.isEnabled = false
-
-        if (childFragmentManager.backStackEntryCount > 0) {
-            childFragmentManager.popBackStack()
-        }
-    }
-
-    override fun onDestroyView() {
-        navigationRailManager.cleanup()
-        backPressedCallback.remove()
-        super.onDestroyView()
     }
 
     override fun onDestroy() {
@@ -206,6 +99,5 @@ class ArtificialFragment : Fragment() {
 
     companion object {
         private const val KEY_VIEWPAGER_POSITION = "viewpager_position"
-        private const val KEY_CONTENT_VISIBILITY = "content_visibility"
     }
 }

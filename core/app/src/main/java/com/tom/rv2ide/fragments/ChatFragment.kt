@@ -12,6 +12,7 @@ import android.widget.ListPopupWindow
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -80,6 +81,8 @@ class ChatFragment : Fragment() {
 
     /** Last IME lift applied to the page, so a layout pass only reacts when it actually changes. */
     private var lastImeLift = 0
+
+    private var imeAnimating = false
 
     /**
      * Project root of the editor.
@@ -176,6 +179,32 @@ class ChatFragment : Fragment() {
                 }
             }
         )
+
+        // Follows the keyboard frame by frame. On the layout passes alone the translation lands one
+        // frame late and the page visibly trails the keyboard.
+        ViewCompat.setWindowInsetsAnimationCallback(
+            view,
+            object : WindowInsetsAnimationCompat.Callback(
+                WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
+            ) {
+                override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+                    imeAnimating = true
+                }
+
+                override fun onProgress(
+                    insets: WindowInsetsCompat,
+                    runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+                ): WindowInsetsCompat {
+                    applyImeLift(view, insets, animated = true, scroll = false)
+                    return insets
+                }
+
+                override fun onEnd(animation: WindowInsetsAnimationCompat) {
+                    imeAnimating = false
+                    applyImeLift(view, null)
+                }
+            }
+        )
     }
 
     /**
@@ -188,9 +217,25 @@ class ChatFragment : Fragment() {
      * The lift is `ime - reservedBelow`, `reservedBelow` being the strip the sidebar keeps under this
      * page (`fragment_editor_sidebar.xml` stacks a 72dp navigation row below the scroll area). The
      * keyboard covers that strip first, so lifting by the whole inset leaves a gap.
+     *
+     * [animated] marks a call from the insets animation, where [dispatched] carries the *current frame*
+     * of the keyboard. The window's insets already hold the end value there, so mixing the two in a
+     * `max` would jump straight to the end on the way up while still animating on the way down.
      */
-    private fun applyImeLift(view: View, dispatched: WindowInsetsCompat?) {
+    private fun applyImeLift(
+        view: View,
+        dispatched: WindowInsetsCompat?,
+        animated: Boolean = false,
+        scroll: Boolean = true,
+    ) {
         if (view.height == 0) {
+            return
+        }
+
+        // A layout pass that lands mid-animation reads the window insets, which already hold the end
+        // value, and would snap the page to the end position. The animation owns the translation while
+        // it runs; `onEnd` re-applies the settled value.
+        if (!animated && imeAnimating) {
             return
         }
 
@@ -199,7 +244,11 @@ class ChatFragment : Fragment() {
 
         // Read off the window as well: layouts on the way down consume the insets (`fitsSystemWindows`).
         val fromWindow = view.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
-        val ime = maxOf(imeBottom(dispatched), imeBottom(fromWindow))
+        val ime = if (animated) {
+            imeBottom(dispatched)
+        } else {
+            maxOf(imeBottom(dispatched), imeBottom(fromWindow))
+        }
 
         val page = IntArray(2)
         view.getLocationOnScreen(page)
@@ -212,14 +261,18 @@ class ChatFragment : Fragment() {
         val reservedBelow = (root[1] + view.rootView.height - restingBottom).coerceAtLeast(0)
 
         val lift = (ime - reservedBelow).coerceAtLeast(0)
-        if (lift in (lastImeLift - 1)..(lastImeLift + 1)) {
+        // Animation frames are applied as they come: the 1px dedup would swallow the small steps at the
+        // start of the keyboard animation and then release the whole backlog in one jump.
+        if (!animated && lift in (lastImeLift - 1)..(lastImeLift + 1)) {
             return
         }
 
         lastImeLift = lift
         view.translationY = -lift.toFloat()
 
-        if (lift > 0) {
+        // Only once the keyboard has settled: doing this on every animation frame restarts the list
+        // scroll each frame and is what made the movement stutter.
+        if (scroll && lift > 0) {
             val count = messageAdapter.itemCount
             if (count > 0) {
                 messageList.scrollToPosition(count - 1)
@@ -280,6 +333,7 @@ class ChatFragment : Fragment() {
             )
             setOnItemClickListener { _, _, position, _ ->
                 models.getOrNull(position)?.let { model -> switchToModel(providerId, model) }
+                dismissModelMenu()
             }
             setOnDismissListener { clearModelMenu() }
         }
@@ -644,6 +698,7 @@ class ChatFragment : Fragment() {
     override fun onDestroyView() {
         completionStateMonitorJob?.cancel()
         dismissModelMenu()
+        imeAnimating = false
         // Guarded because setupManagers() is not guaranteed to have run: when onViewCreated() throws
         // before reaching it, the view is still destroyed and this callback still fires, and reading
         // an uninitialized lateinit on the way out would replace the real error with a misleading

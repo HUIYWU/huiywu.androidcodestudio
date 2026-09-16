@@ -301,12 +301,19 @@ constructor(
     behavior.isGestureInsetBottomIgnored = isVisible
   }
 
-  fun setOffsetAnchor(view: View) {
+  fun setOffsetAnchor(view: View, excludedChild: View? = null) {
     val listener =
         object : ViewTreeObserver.OnGlobalLayoutListener {
           override fun onGlobalLayout() {
             view.viewTreeObserver.removeOnGlobalLayoutListener(this)
-            anchorOffset = view.height + SizeUtils.dp2px(1f)
+
+            val excludedHeight =
+                if (excludedChild != null && excludedChild.visibility != View.GONE) {
+                  excludedChild.height
+                } else {
+                  0
+                }
+            anchorOffset = (view.height - excludedHeight) + SizeUtils.dp2px(1f)
 
             behavior.peekHeight = collapsedHeight.roundToInt()
             behavior.expandedOffset = anchorOffset

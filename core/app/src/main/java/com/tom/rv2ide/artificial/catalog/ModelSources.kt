@@ -55,6 +55,14 @@ internal object ModelSources {
     operator fun get(providerId: String): ModelSource? = ALL[providerId]
 
     /**
+     * Name to show for [providerId], or the id itself when the catalogue does not know it.
+     *
+     * Lets callers that only hold an id — the settings screen and the agent manager both do — read
+     * the same string as the provider instances, without either side owning a copy.
+     */
+    fun providerName(providerId: String): String = ALL[providerId]?.providerName ?: providerId
+
+    /**
      * Fetches a Local LLM server's catalogue from an explicit endpoint.
      *
      * The settings dialog passes the URL the user just typed while the provider passes the stored
@@ -80,6 +88,7 @@ internal object ModelSources {
 
     private object OpenAiSource : ModelSource {
         override val providerId = "openai"
+        override val providerName = "OpenAI"
 
         override val fallbackModels = listOf(
             "gpt-5.1-codex-max",
@@ -125,6 +134,7 @@ internal object ModelSources {
 
     private object DeepSeekSource : ModelSource {
         override val providerId = "deepseek"
+        override val providerName = "DeepSeek"
 
         // "deepseek-chat" / "deepseek-reasoner" were retired; the API docs now name these two.
         override val fallbackModels = listOf(
@@ -160,6 +170,7 @@ internal object ModelSources {
 
     private object GrokSource : ModelSource {
         override val providerId = "grok"
+        override val providerName = "xAI Grok"
 
         override val fallbackModels = listOf(
             "grok-4.6",
@@ -193,6 +204,7 @@ internal object ModelSources {
 
     private object ClaudeSource : ModelSource {
         override val providerId = "claude"
+        override val providerName = "Anthropic Claude"
 
         override val fallbackModels = listOf(
             "claude-sonnet-4-5-20250929",
@@ -231,6 +243,7 @@ internal object ModelSources {
 
     private object GeminiSource : ModelSource {
         override val providerId = "gemini"
+        override val providerName = "Google Gemini"
 
         override val fallbackModels = listOf(
             "gemini-2.5-pro",
@@ -283,6 +296,7 @@ internal object ModelSources {
 
     private object LocalLlmSource : ModelSource {
         override val providerId = LocalLlmSettings.PROVIDER_ID
+        override val providerName = "Local LLM"
 
         // Whatever the server actually serves is discovered at runtime; there is no meaningful
         // offline answer, but the list must stay non-empty for the picker.

@@ -36,6 +36,8 @@ package com.tom.rv2ide.plugins.tasks;
 import com.tom.rv2ide.plugins.tasks.internal.WrapperDefaults;
 import com.tom.rv2ide.plugins.tasks.internal.WrapperGenerator;
 import java.io.File;
+import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
@@ -63,8 +65,6 @@ import org.gradle.api.tasks.wrapper.internal.DefaultWrapperVersionsResources;
 import org.gradle.util.GradleVersion;
 import org.gradle.util.internal.GUtil;
 import org.gradle.util.internal.WrapperDistributionUrlConverter;
-import org.gradle.wrapper.Download;
-import org.gradle.wrapper.Logger;
 import org.gradle.wrapper.WrapperExecutor;
 
 /**
@@ -124,6 +124,8 @@ public class IDEWrapperGenerator {
   }
 
   private static final String DISTRIBUTION_URL_EXCEPTION_MESSAGE = "Test of distribution url %s failed. Please check the values set with --gradle-distribution-url and --gradle-version.";
+  private static final int MAX_DISTRIBUTION_URL_REDIRECTS = 5;
+  private static final int DISTRIBUTION_URL_TIMEOUT_MS = 10000;
 
   private void validateDistributionUrl(File uriRoot, boolean isOffline) {
     if (distributionUrlConfigured && getValidateDistributionUrl()) {
@@ -135,12 +137,42 @@ public class IDEWrapperGenerator {
         }
       } else if (uri.getScheme().startsWith("http") && !isOffline) {
         try {
-          new Download(new Logger(true), "gradlew", Download.UNKNOWN_VERSION).sendHeadRequest(uri);
+          sendHeadRequest(uri);
         } catch (Exception e) {
           throw new UncheckedIOException(String.format(DISTRIBUTION_URL_EXCEPTION_MESSAGE, url), e);
         }
       }
     }
+  }
+
+  private static void sendHeadRequest(URI uri) throws IOException {
+    URI current = uri;
+    for (int redirects = 0; redirects <= MAX_DISTRIBUTION_URL_REDIRECTS; redirects++) {
+      HttpURLConnection connection = (HttpURLConnection) current.toURL().openConnection();
+      connection.setRequestMethod("HEAD");
+      connection.setInstanceFollowRedirects(false);
+      connection.setConnectTimeout(DISTRIBUTION_URL_TIMEOUT_MS);
+      connection.setReadTimeout(DISTRIBUTION_URL_TIMEOUT_MS);
+      try {
+        int code = connection.getResponseCode();
+        if (code >= 300 && code < 400) {
+          String location = connection.getHeaderField("Location");
+          if (location == null) {
+            throw new IOException("Redirect response without Location header: " + current);
+          }
+          current = current.resolve(location);
+          continue;
+        }
+        if (code < 200 || code >= 400) {
+          throw new IOException("Unexpected HTTP " + code + " response from " + current);
+        }
+        return;
+      } finally {
+        connection.disconnect();
+      }
+    }
+    throw new IOException(
+        "Too many redirects (more than " + MAX_DISTRIBUTION_URL_REDIRECTS + ") for " + uri);
   }
 
   private static URI getDistributionUri(File uriRoot, String url) {

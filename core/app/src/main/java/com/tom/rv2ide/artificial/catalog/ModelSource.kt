@@ -34,6 +34,14 @@ interface ModelSource {
 
     val providerId: String
 
+    /**
+     * Name shown to the user for this provider.
+     *
+     * Lives here for the same reason [defaultModel] does: the settings screen, the error dialogs and
+     * the provider itself all need it, and a literal per call site is how the six names drifted apart.
+     */
+    val providerName: String
+
     /** Offline / degraded-mode list. Must never be empty, otherwise the selection UI breaks. */
     val fallbackModels: List<String>
 

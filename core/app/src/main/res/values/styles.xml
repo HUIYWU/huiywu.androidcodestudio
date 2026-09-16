@@ -19,4 +19,9 @@
   <declare-styleable name="SwipeRevealLayout">
     <attr name="dragHandle" format="reference"/>
   </declare-styleable>
+
+  <style name="AppTheme.ShapeAppearance.Chip.Pill" parent="">
+    <item name="cornerFamily">rounded</item>
+    <item name="cornerSize">50%</item>
+  </style>
 </resources>

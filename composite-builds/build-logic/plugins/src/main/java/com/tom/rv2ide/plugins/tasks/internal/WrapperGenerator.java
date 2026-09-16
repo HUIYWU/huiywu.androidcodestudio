@@ -57,10 +57,8 @@ public class WrapperGenerator {
 
   public static String getDistributionUrl(GradleVersion gradleVersion, Wrapper.DistributionType distributionType) {
     String distType = distributionType.name().toLowerCase(Locale.ENGLISH);
-    String version = gradleVersion.getVersion();
 
     return new DistributionLocator().getDistributionFor(gradleVersion, distType).toASCIIString();
-    //return String.format("https://mirrors.aliyun.com/macports/distfiles/gradle/gradle-％s-％s.zip", version, distType);
   }
 
   public static void generate(

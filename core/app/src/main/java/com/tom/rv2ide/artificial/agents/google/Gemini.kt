@@ -23,6 +23,7 @@ import com.google.ai.client.generativeai.type.content
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
+import com.tom.rv2ide.artificial.catalog.ModelSources
 import com.tom.rv2ide.artificial.secrets.ApiKey
 import com.tom.rv2ide.artificial.rules.WritingRules
 import com.tom.rv2ide.artificial.project.awareness.ProjectTreeResult
@@ -49,7 +50,7 @@ class Gemini : AIAgent {
   private val maxRetryAttempts = 3
   private var agents: Agents? = null
   override val providerId = PROVIDER_ID
-  override val providerName = "Google Gemini"
+  override val providerName = ModelSources.providerName(PROVIDER_ID)
 
   companion object {
       /** Id shared by the registry, the catalogue and the persisted selection. */

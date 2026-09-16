@@ -23,6 +23,7 @@ import com.tom.rv2ide.artificial.agents.AIAgentRegistry
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
+import com.tom.rv2ide.artificial.catalog.ModelSources
 import com.tom.rv2ide.artificial.rules.WritingRules
 import com.tom.rv2ide.artificial.project.awareness.ProjectTreeResult
 import com.tom.rv2ide.artificial.file.AIFileWriter
@@ -55,12 +56,12 @@ class LocalLLM : AIAgent {
   private var currentAttemptCount = 0
   private val maxRetryAttempts = 3
   private var agents: Agents? = null
-  override val providerId = "localllm"
-  override val providerName = "Local LLM"
+  override val providerId = LocalLlmSettings.PROVIDER_ID
+  override val providerName = ModelSources.providerName(LocalLlmSettings.PROVIDER_ID)
 
   companion object {
       fun registerAgent() {
-          AIAgentRegistry.register("localllm", object : AIAgentRegistry.AgentFactory {
+          AIAgentRegistry.register(LocalLlmSettings.PROVIDER_ID, object : AIAgentRegistry.AgentFactory {
               override fun create(context: Context): AIAgent {
                   return LocalLLM()
               }

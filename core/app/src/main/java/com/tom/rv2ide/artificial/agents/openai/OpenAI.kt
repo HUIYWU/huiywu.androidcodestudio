@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
+import com.tom.rv2ide.artificial.catalog.ModelSources
 import org.json.JSONObject
 import org.json.JSONArray
 import java.net.HttpURLConnection
@@ -54,7 +55,7 @@ class OpenAI : AIAgent {
   private var agents: Agents? = null
   private var selectedModel: String = ModelRepository.getDefaultModel(PROVIDER_ID)
   override val providerId = PROVIDER_ID
-  override val providerName = "OpenAI"
+  override val providerName = ModelSources.providerName(PROVIDER_ID)
 
   companion object {
       /** Id shared by the registry, the catalogue and the persisted selection. */

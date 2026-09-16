@@ -3,9 +3,11 @@
   Chat page of the AI sidebar.
 
   Composer:
-  - The composer is a single rounded card (surfaceContainerHigh, 24dp corners, 3dp elevation) that
-    holds both the prompt field and the action row. The field itself paints nothing - it is
-    background=@null - so the card is the only surface and the block cannot read as two stacked panels.
+  - The composer is a single rounded card that holds both the prompt field and the action row. The
+    field itself paints nothing - it is background=@null - so the card is the only surface.
+  - The card carries its level with a tonal fill (surfaceContainerHigh) and a hairline outline, not
+    with a drop shadow: elevation is 0dp. Both a tonal fill and an elevation shadow state the same
+    thing twice, and the shadow reads as a stray dark band under the card rather than as depth.
   - The model chip shares the action row with the clear/send buttons. The buttons are icon-only - the
     text was removed, the buttons were not - and they are pinned to 48dp so the row cannot squeeze them
     off screen.
@@ -79,17 +81,18 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="12dp"
+        android:paddingHorizontal="8dp"
         android:paddingTop="8dp"
-        android:paddingBottom="16dp">
+        android:paddingBottom="8dp">
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
             app:cardCornerRadius="24dp"
-            app:cardElevation="3dp"
-            app:strokeWidth="0dp">
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -130,7 +133,8 @@
                         android:layout_height="wrap_content"
                         android:ellipsize="middle"
                         android:maxWidth="200dp"
-                        android:singleLine="true" />
+                        android:singleLine="true"
+                        app:shapeAppearanceOverlay="@style/AppTheme.ShapeAppearance.Chip.Pill" />
 
                     <Space
                         android:layout_width="0dp"

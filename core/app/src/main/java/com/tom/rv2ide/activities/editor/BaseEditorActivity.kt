@@ -1564,8 +1564,8 @@ override fun onApplySystemBarInsets(insets: Insets) {
         }
 
     content.apply {
+      bottomSheet.setOffsetAnchor(editorAppBarLayout, excludedChild = tabs)
       viewContainer.viewTreeObserver.addOnGlobalLayoutListener(observer)
-      bottomSheet.setOffsetAnchor(editorAppBarLayout)
     }
   }
 

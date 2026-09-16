@@ -87,18 +87,9 @@ class AIPreferencesFragment : Fragment() {
     }
 
     private fun setupProviderDropdown() {
-        val providerMap = mapOf(
-            "gemini" to "Google Gemini",
-            "openai" to "OpenAI",
-            "claude" to "Anthropic Claude",
-            "deepseek" to "DeepSeek",
-            "grok" to "xAI Grok",
-            "localllm" to "Local LLM"
-        )
-        
         // Single source of provider ids; the catalogue owns the canonical order.
         val allProviderIds = ModelSources.PROVIDER_IDS
-        val providerNames = allProviderIds.map { providerMap[it] ?: it }
+        val providerNames = allProviderIds.map { ModelSources.providerName(it) }
 
         val adapter = ArrayAdapter(requireContext(), R.layout.item_dropdown_single_line, providerNames)
         providerDropdown.setAdapter(adapter)
@@ -117,18 +108,8 @@ class AIPreferencesFragment : Fragment() {
     
     
     private fun updateProviderDropdownSelection() {
-        val providerMap = mapOf(
-            "gemini" to "Google Gemini",
-            "openai" to "OpenAI",
-            "claude" to "Anthropic Claude",
-            "deepseek" to "DeepSeek",
-            "grok" to "xAI Grok",
-            "localllm" to "Local LLM"
-        )
-
         val currentProviderId = agents.getProvider()
-        val currentProviderName = providerMap[currentProviderId] ?: currentProviderId
-        providerDropdown.setText(currentProviderName, false)
+        providerDropdown.setText(ModelSources.providerName(currentProviderId), false)
     }
 
     private fun updateCurrentStatus() {
@@ -139,18 +120,7 @@ class AIPreferencesFragment : Fragment() {
             log.debug("Current provider: {}, model: {}", currentProvider, currentModel)
         }
 
-        
-        val providerDisplayName = when(currentProvider) {
-            "gemini" -> "Google Gemini"
-            "openai" -> "OpenAI"
-            "claude" -> "Anthropic Claude"
-            "deepseek" -> "DeepSeek"
-            "grok" -> "xAI Grok"
-            "localllm" -> "Local LLM"
-            else -> currentProvider.uppercase()
-        }
-        
-        currentProviderText.text = providerDisplayName
+        currentProviderText.text = ModelSources.providerName(currentProvider)
         currentModelText.text = currentModel
     }
 

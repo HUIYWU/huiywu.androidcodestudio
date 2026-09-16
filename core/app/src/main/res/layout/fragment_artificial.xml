@@ -14,35 +14,18 @@
         android:layout_margin="6dp"
         android:elevation="4dp">
 
-        <LinearLayout
-            android:id="@+id/topBar"
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingVertical="8dp">
-
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/fabToggleRail"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_marginEnd="8dp"
-                android:src="@drawable/ic_menu"
-                app:fabCustomSize="32dp"
-                app:tint="?attr/colorOnSurface" />
-
-            <com.google.android.material.tabs.TabLayout
-                android:id="@+id/tabLayout"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:background="@android:color/transparent"
-                app:tabMode="fixed"
-                app:tabGravity="fill"
-                style="@style/Widget.Material3.TabLayout" />
-
-        </LinearLayout>
+            android:background="@android:color/transparent"
+            android:paddingVertical="8dp"
+            app:tabInlineLabel="true"
+            app:tabMode="fixed"
+            app:tabGravity="fill"
+            app:tabPaddingStart="4dp"
+            app:tabPaddingEnd="4dp"
+            style="@style/Widget.Material3.TabLayout" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -51,33 +34,5 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
-
-    <FrameLayout
-        android:id="@+id/contentContainer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior"
-        android:visibility="gone" />
-
-    <View
-        android:id="@+id/overlayView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#80000000"
-        android:visibility="gone"
-        android:clickable="true"
-        android:alpha="0"
-        android:elevation="20dp" />
-
-    <com.google.android.material.navigationrail.NavigationRailView
-        android:id="@+id/navigationRail"
-        android:layout_width="wrap_content"
-        android:layout_height="match_parent"
-        android:visibility="gone"
-        app:menu="@menu/chat_navigation_menu"
-        app:labelVisibilityMode="labeled"
-        android:elevation="24dp"
-        android:layout_gravity="start"
-        />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

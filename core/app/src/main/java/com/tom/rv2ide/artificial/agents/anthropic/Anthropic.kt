@@ -23,6 +23,7 @@ import com.tom.rv2ide.artificial.agents.AIAgentRegistry
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
+import com.tom.rv2ide.artificial.catalog.ModelSources
 import com.tom.rv2ide.artificial.rules.WritingRules
 import com.tom.rv2ide.artificial.secrets.ApiKey
 import com.tom.rv2ide.artificial.project.awareness.ProjectTreeResult
@@ -54,7 +55,7 @@ class Anthropic : AIAgent {
   private var agents: Agents? = null
   private var selectedModel: String = ModelRepository.getDefaultModel(PROVIDER_ID)
   override val providerId = PROVIDER_ID
-  override val providerName = "Anthropic Claude"
+  override val providerName = ModelSources.providerName(PROVIDER_ID)
 
   companion object {
       /** Id shared by the registry, the catalogue and the persisted selection. */
