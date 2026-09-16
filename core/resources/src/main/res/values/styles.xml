@@ -164,4 +164,23 @@
 
 </style>
 
+  <!--
+    Invisible dropdown field, used purely as the anchor of a menu that a chip triggers.
+
+    Only the exposed-dropdown *behaviour* is wanted here: the popup is the standard Material one, owned by
+    MaterialAutoCompleteTextView, which keeps its placement, width and up/down flip in the framework
+    instead of in application code. The parent style is the Material exposed-dropdown style, so the menu
+    keeps its standard appearance; only the field itself is neutralised - no box, no end-icon knob (the
+    chip is the control) and no hint, since the chip already shows the model name.
+  -->
+  <style name="AppTheme.TextInputLayout.Dropdown.MenuAnchor"
+      parent="Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
+    <item name="boxBackgroundMode">none</item>
+    <item name="endIconMode">none</item>
+    <item name="hintEnabled">false</item>
+    <item name="android:minHeight">0dp</item>
+    <item name="android:paddingTop">0dp</item>
+    <item name="android:paddingBottom">0dp</item>
+  </style>
+
 </resources>

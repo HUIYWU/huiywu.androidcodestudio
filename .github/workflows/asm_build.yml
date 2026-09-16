@@ -139,16 +139,39 @@ jobs:
           echo "=== cloud139 login ==="
           "$CLOUD139_BIN" login -t "$CLOUD139_TOKEN"
 
-          echo "=== ensure remote directory ==="
+          echo "=== ensure remote directory (逐级创建) ==="
+          # 实测：cloud139 mkdir 不递归创建父目录。当 /A 不存在时，mkdir /A/B 会报
+          # "File or directory not found: A"，且 upload 也不会自动建目录。
+          # 因此这里按层级逐段创建。
           # 不使用 -f：该选项在目录同名时会自动改名（生成 "(1)" 后缀），CI 中不应触发。
-          "$CLOUD139_BIN" mkdir "$REMOTE_DIR" || echo "mkdir: directory may already exist, continue"
+          cur=""
+          IFS='/' read -r -a DIR_PARTS <<< "$REMOTE_DIR"
+          for part in "${DIR_PARTS[@]}"; do
+            if [ -n "$part" ]; then
+              cur="$cur/$part"
+              echo "mkdir level: $cur"
+              "$CLOUD139_BIN" mkdir "$cur" || echo "  (may already exist, continue)"
+            fi
+          done
+
+          echo "=== check remote directory (informational) ==="
+          # 仅作信息输出：空目录的 ls 退出码语义未实测，不作为硬性失败条件。
+          # 目录若真的不可达，随后的 upload 会以非零退出码失败（已实测其可靠返回非零）。
+          "$CLOUD139_BIN" ls "$REMOTE_DIR" -s 10 || echo "::warning::ls on $REMOTE_DIR returned non-zero (may be empty or missing)"
 
           echo "=== upload APKs ==="
+          FAILED=0
           for apk in "${APKS[@]}"; do
             echo "--- uploading $(basename "$apk") ($(stat -c%s "$apk") bytes) ---"
-            # -f：云端存在同名文件时自动重命名，保证 CI 非交互下不阻塞。
-            "$CLOUD139_BIN" upload "$apk" "$REMOTE_DIR/" -f
+            if ! "$CLOUD139_BIN" upload "$apk" "$REMOTE_DIR/" -f; then
+              echo "::error::upload failed: $(basename "$apk")"
+              FAILED=$((FAILED + 1))
+            fi
           done
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::$FAILED APK upload(s) failed"
+            exit 1
+          fi
 
           echo "=== verify remote listing ==="
           "$CLOUD139_BIN" ls "$REMOTE_DIR" -s 50

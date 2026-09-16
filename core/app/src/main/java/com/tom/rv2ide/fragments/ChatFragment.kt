@@ -7,6 +7,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
@@ -20,12 +22,15 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.editor.EditorHandlerActivity
 import com.tom.rv2ide.adapters.ChatMessageAdapter
 import com.tom.rv2ide.artificial.agents.AIAgentManager
-import com.tom.rv2ide.artificial.selectors.ModelChooserPopup
+import com.tom.rv2ide.artificial.agents.Agents
+import com.tom.rv2ide.artificial.catalog.ModelSources
+import com.tom.rv2ide.artificial.catalog.ProviderLabels
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.handlers.AIRequestHandler
 import com.tom.rv2ide.managers.CodeCompletionManager
@@ -62,6 +67,17 @@ class ChatFragment : Fragment() {
     private lateinit var clearBtn: MaterialButton
     private lateinit var modelChip: Chip
     private lateinit var emptyModelChip: Chip
+
+    /**
+     * Invisible fields that own the model menus.
+     *
+     * Each chip is laid over one of these, and the chip's click opens the field's dropdown. Letting the
+     * `AutoCompleteTextView` own the popup is what keeps the menu a standard Material one — its
+     * placement, width and up/down flip stay in the framework rather than being computed here.
+     */
+    private lateinit var modelDropdown: MaterialAutoCompleteTextView
+    private lateinit var emptyModelDropdown: MaterialAutoCompleteTextView
+
     private lateinit var messageList: RecyclerView
     private lateinit var emptyState: View
     private lateinit var messageAdapter: ChatMessageAdapter
@@ -71,14 +87,6 @@ class ChatFragment : Fragment() {
 
     private var completionStateMonitorJob: Job? = null
     private var isSettingUpCompletion = false
-
-    /**
-     * Model dropdown, created on first use.
-     *
-     * Held so it can be dismissed with the view: the popup keeps a reference to the chip it is
-     * anchored to, which would otherwise outlive the chip.
-     */
-    private var modelChooser: ModelChooserPopup? = null
 
     /**
      * Project root of the editor.
@@ -142,7 +150,9 @@ class ChatFragment : Fragment() {
         sendBtn = view.findViewById(R.id.sendBtn)
         clearBtn = view.findViewById(R.id.clearBtn)
         modelChip = view.findViewById(R.id.modelChip)
+        modelDropdown = view.findViewById(R.id.modelDropdown)
         emptyModelChip = view.findViewById(R.id.emptyModelChip)
+        emptyModelDropdown = view.findViewById(R.id.emptyModelDropdown)
         messageList = view.findViewById(R.id.messageList)
         emptyState = view.findViewById(R.id.emptyState)
     }
@@ -205,11 +215,17 @@ class ChatFragment : Fragment() {
     /**
      * Wires the model chips and the IME action of the field.
      *
-     * The chip is a two-way control: it shows the active model and opens the provider/model dropdown
-     * when tapped, so the chat page no longer needs a detour through the settings screen. There are two
-     * chips (composer + empty state) and both are kept in sync.
+     * A chip is the control the user sees and taps; a transparent, exposed-dropdown field is laid
+     * under each of them, and tapping the chip opens that field's menu. Letting the
+     * `AutoCompleteTextView` own the popup is what makes the menu a standard Material dropdown — its
+     * placement, width and up/down flip stay in the framework rather than being recomputed here.
+     *
+     * There are two chips (composer + empty state) and both are kept in sync.
      */
     private fun setupComposer() {
+        populateModelMenu(modelDropdown)
+        populateModelMenu(emptyModelDropdown)
+
         modelChip.setOnClickListener { showModelChooser(modelChip) }
         emptyModelChip.setOnClickListener { showModelChooser(emptyModelChip) }
 
@@ -237,11 +253,50 @@ class ChatFragment : Fragment() {
     }
 
     /**
-     * Opens the model dropdown anchored to the chip that was tapped.
+     * Fills one menu with the provider catalogue.
      *
-     * A dropdown rather than a dialog: the chip is a control inside the composer, so its choices belong
-     * next to it instead of on top of the transcript. There are two chips (composer + empty state) and
-     * the list anchors to whichever was used.
+     * Each row reads `✓ Label — model`, the checkmark marking the provider currently in effect, and
+     * the provider id of the picked row is reported to [switchToProvider]. A provider whose key is
+     * missing stays in the list rather than being hidden: the provider does exist, it is only
+     * unconfigured, and picking it surfaces exactly that through [switchToProvider]'s warning.
+     */
+    private fun populateModelMenu(dropdown: MaterialAutoCompleteTextView) {
+        val agents = Agents(requireContext())
+        val activeProviderId = aiAgent.getCurrentProviderId()
+
+        val providerIds = ModelSources.PROVIDER_IDS
+        val labels = ArrayList<String>(providerIds.size)
+
+        providerIds.forEach { providerId ->
+            val model = agents.getModel(providerId)
+                ?: agents.getDefaultModelForProvider(providerId)
+            val checkmark = if (providerId == activeProviderId) "\u2713" else "\u00a0"
+            labels += "$checkmark ${ProviderLabels.of(providerId)} \u2014 $model"
+        }
+
+        dropdown.setAdapter(
+            ArrayAdapter(requireContext(), R.layout.item_dropdown_single_line, labels)
+        )
+
+        // A single line while the menu is what carries the choices: the field itself only anchors the
+        // popup (its text is transparent) and must never force the row it sits in to grow.
+        dropdown.setText("", false)
+
+        val onRowClick = AdapterView.OnItemClickListener { _, _, position, _ ->
+            val providerId = providerIds[position]
+            // The rows are the same in both menus, so either one reports the same id.
+            if (providerId != activeProviderId) {
+                switchToProvider(providerId)
+            }
+        }
+        dropdown.onItemClickListener = onRowClick
+    }
+
+    /**
+     * Opens the model menu that belongs to [anchor].
+     *
+     * A dropdown rather than a dialog: the chip is a control inside the composer, so its choices
+     * belong next to it instead of on top of the transcript.
      *
      * Refused while a request is in flight: switching provider mid-request would leave the answer being
      * written attributed to a provider that no longer matches it.
@@ -252,8 +307,13 @@ class ChatFragment : Fragment() {
             return
         }
 
-        val chooser = modelChooser ?: ModelChooserPopup(requireContext()).also { modelChooser = it }
-        chooser.show(anchor) { providerId -> switchToProvider(providerId) }
+        val dropdown = if (anchor === emptyModelChip) emptyModelDropdown else modelDropdown
+        // Rebuilt on every open: both the stored models and the active provider can have changed on
+        // the settings screen since this page was built.
+        populateModelMenu(dropdown)
+        // Posted, exactly like ProviderConfigDialog: the popup refuses to open while its adapter is
+        // still being replaced, and one frame later there is always something to show.
+        dropdown.post { dropdown.showDropDown() }
     }
 
     /**
@@ -348,6 +408,7 @@ class ChatFragment : Fragment() {
                         // stacked surfaces. The button stays disabled either way.
                         sendBtn.isEnabled = !processing
                         modelChip.isEnabled = !processing
+                        emptyModelChip.isEnabled = !processing
                         // Blocked rather than merely unsent: the provider keeps no queue, so a prompt
                         // typed while a request runs would be silently discarded on submit.
                         promptInput.isEnabled = !processing
@@ -579,10 +640,8 @@ class ChatFragment : Fragment() {
 
     override fun onDestroyView() {
         completionStateMonitorJob?.cancel()
-        // The popup holds the chip it is anchored to; left open across a view destruction it would
-        // keep that chip (and this fragment's view tree) alive.
-        modelChooser?.dismiss()
-        modelChooser = null
+        // No popup is dismissed here: the model menus belong to their AutoCompleteTextView, so the
+        // framework tears them down with the view tree.
         // Guarded because setupManagers() is not guaranteed to have run: when onViewCreated() throws
         // before reaching it, the view is still destroyed and this callback still fires, and reading
         // an uninitialized lateinit on the way out would replace the real error with a misleading

@@ -1,15 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Chat page of the AI sidebar.
+
   Composer design notes:
   - No line above the composer. The transcript scrolls behind a plain surface, and the field itself
     carries the only shape.
-  - The field has no box outline: it is a rounded filled shape (bg_chat_input) with a plain hint, so
-    there is exactly one edge on screen instead of a stroke inside a card border.
+  - The prompt field has no box outline: it is a rounded filled shape (bg_chat_input) with a plain hint,
+    so there is exactly one edge on screen instead of a stroke inside a card border.
   - The model chip sits below the field, with the clear/send actions; the buttons are icon-only.
-  - The bottom block is an elevated, stroked-free surface: elevation (rather than a divider line) is
-    what separates it from the transcript. `strokeWidth` is pinned to zero so the block cannot gain an
-    outline from whichever card style the theme resolves to.
+  - The bottom block is an elevated, stroked-free surface: elevation (rather than a divider line) is what
+    separates it from the transcript. `strokeWidth` is pinned to zero so the block cannot gain an outline
+    from whichever card style the theme resolves to.
+
+  Model picker:
+  - The visible control is a Chip (it shows the active model). Clicking it opens a standard Material
+    dropdown menu: each chip is backed by a transparent, exposed-dropdown field laid over it, and the
+    chip's click calls that field's showDropDown(). Letting MaterialAutoCompleteTextView own the popup is
+    what keeps the menu standard - its placement, width and up/down flip are the framework's business. The
+    backing field draws nothing (boxBackgroundMode none, no end icon) and is hidden from accessibility.
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -17,7 +25,6 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
-
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -58,14 +65,45 @@
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/emptyModelChip"
+            <!-- Chip + the transparent field that provides the standard dropdown menu -->
+            <FrameLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                app:chipIcon="@drawable/ic_ai"
-                app:chipIconVisible="true"
-                style="@style/Widget.Material3.Chip.Assist" />
+                android:layout_marginTop="16dp">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/emptyModelMenuAnchor"
+                    style="@style/AppTheme.TextInputLayout.Dropdown.MenuAnchor"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:importantForAccessibility="no">
+
+                    <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                        android:id="@+id/emptyModelDropdown"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:clickable="false"
+                        android:completionThreshold="0"
+                        android:dropDownWidth="wrap_content"
+                        android:focusable="false"
+                        android:inputType="none"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="@android:color/transparent" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/emptyModelChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="middle"
+                    android:maxWidth="240dp"
+                    android:singleLine="true"
+                    app:chipIcon="@drawable/ic_ai"
+                    app:chipIconVisible="true"
+                    style="@style/Widget.Material3.Chip.Assist" />
+
+            </FrameLayout>
 
         </LinearLayout>
 
@@ -109,16 +147,44 @@
                 android:orientation="horizontal"
                 android:paddingTop="4dp">
 
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/modelChip"
+                <!-- Chip + the transparent field that provides the standard dropdown menu -->
+                <FrameLayout
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="middle"
-                    android:maxWidth="200dp"
-                    android:singleLine="true"
-                    app:chipIcon="@drawable/ic_ai"
-                    app:chipIconVisible="true"
-                    style="@style/Widget.Material3.Chip.Assist" />
+                    android:layout_height="wrap_content">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/modelMenuAnchor"
+                        style="@style/AppTheme.TextInputLayout.Dropdown.MenuAnchor"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:importantForAccessibility="no">
+
+                        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                            android:id="@+id/modelDropdown"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:clickable="false"
+                            android:completionThreshold="0"
+                            android:dropDownWidth="wrap_content"
+                            android:focusable="false"
+                            android:inputType="none"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="@android:color/transparent" />
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/modelChip"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="middle"
+                        android:maxWidth="200dp"
+                        android:singleLine="true"
+                        app:chipIcon="@drawable/ic_ai"
+                        app:chipIconVisible="true"
+                        style="@style/Widget.Material3.Chip.Assist" />
+
+                </FrameLayout>
 
                 <View
                     android:layout_width="0dp"
