@@ -298,6 +298,12 @@ class ChatFragment : Fragment() {
     private fun menuWidth(dropdown: MaterialAutoCompleteTextView, models: List<String>): Int {
         val margin = (16 * resources.displayMetrics.density).toInt()
         val row = layoutInflater.inflate(R.layout.item_dropdown_single_line, null, false) as TextView
+        // Inflated without a parent, so it has no LayoutParams; TextView.setText() then throws in
+        // checkForRelayout() while reading getLayoutParams().width.
+        row.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
         val spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
 
         val widestRow = models.maxOfOrNull { model ->

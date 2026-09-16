@@ -3,9 +3,9 @@
   Chat page of the AI sidebar.
 
   Composer:
-  - The prompt field carries the only visible surface: a rounded filled shape (bg_chat_input) on top of
-    the page background. There is no card behind it and no divider above it, so the block does not read
-    as a second, darker panel stacked on the page.
+  - The composer is a single rounded card (surfaceContainerHigh, 24dp corners, 3dp elevation) that
+    holds both the prompt field and the action row. The field itself paints nothing - it is
+    background=@null - so the card is the only surface and the block cannot read as two stacked panels.
   - The model chip shares the action row with the clear/send buttons. The buttons are icon-only - the
     text was removed, the buttons were not - and they are pinned to 48dp so the row cannot squeeze them
     off screen.
@@ -84,87 +84,110 @@
         android:paddingTop="8dp"
         android:paddingBottom="8dp">
 
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/promptInput"
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_chat_input"
-            android:gravity="top|start"
-            android:hint="@string/ai_agent_prompt_hint"
-            android:inputType="textMultiLine|textCapSentences"
-            android:maxLines="6"
-            android:minHeight="48dp"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="12dp"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColorHint="?attr/colorOnSurfaceVariant" />
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="3dp"
+            app:strokeWidth="0dp">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingTop="4dp">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="4dp"
+                android:paddingBottom="4dp">
 
-            <!-- Chip + the transparent field that owns the menu, laid in the same cell. The field
-                 spans the row: the menu popup takes its width from that field (ChatFragment
-                 .menuWidth() overrides it with the widest row). layout_weight, not match_parent in a
-                 wrap_content parent, which is what pushed the buttons out. -->
-            <FrameLayout
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1">
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/modelMenuAnchor"
-                    style="@style/AppTheme.TextInputLayout.Dropdown.MenuAnchor"
+                <!-- The card is the only surface here, so the field carries no background of its own.
+                     @null rather than no attribute: the theme's editTextStyle would otherwise put its
+                     own box back. -->
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/promptInput"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:importantForAccessibility="no">
-
-                    <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                        android:id="@+id/modelDropdown"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:completionThreshold="0"
-                        android:dropDownWidth="wrap_content"
-                        android:inputType="none"
-                        android:popupBackground="@drawable/bg_atc_dropdown_popup"
-                        android:singleLine="true"
-                        android:textAppearance="?attr/textAppearanceBodyLarge" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/modelChip"
-                    style="@style/Widget.Material3.Chip.Assist"
-                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="start|center_vertical"
-                    android:ellipsize="middle"
-                    android:maxWidth="200dp"
-                    android:singleLine="true" />
+                    android:background="@null"
+                    android:gravity="top|start"
+                    android:hint="@string/ai_agent_prompt_hint"
+                    android:inputType="textMultiLine|textCapSentences"
+                    android:maxLines="6"
+                    android:minHeight="48dp"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp"
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    android:textColorHint="?attr/colorOnSurfaceVariant" />
 
-            </FrameLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingTop="4dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/clearBtn"
-                style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:contentDescription="@string/clear"
-                app:icon="@drawable/ic_clear" />
+                    <!-- Chip + the transparent field that owns the menu, laid in the same cell. The
+                         field spans the row: the menu popup takes its width from that field
+                         (ChatFragment.menuWidth() overrides it with the widest row). layout_weight,
+                         not match_parent in a wrap_content parent, which is what pushed the buttons
+                         out. -->
+                    <FrameLayout
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/sendBtn"
-                style="@style/Widget.Material3.Button.IconButton.Filled"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="4dp"
-                android:contentDescription="@string/send"
-                app:icon="@drawable/ic_send" />
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/modelMenuAnchor"
+                            style="@style/AppTheme.TextInputLayout.Dropdown.MenuAnchor"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:importantForAccessibility="no">
 
-        </LinearLayout>
+                            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                                android:id="@+id/modelDropdown"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:completionThreshold="0"
+                                android:dropDownWidth="wrap_content"
+                                android:inputType="none"
+                                android:popupBackground="@drawable/bg_atc_dropdown_popup"
+                                android:singleLine="true"
+                                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/modelChip"
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="start|center_vertical"
+                            android:ellipsize="middle"
+                            android:maxWidth="200dp"
+                            android:singleLine="true" />
+
+                    </FrameLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/clearBtn"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:contentDescription="@string/clear"
+                        app:icon="@drawable/ic_clear" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/sendBtn"
+                        style="@style/Widget.Material3.Button.IconButton.Filled"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="@string/send"
+                        app:icon="@drawable/ic_send" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
 
     </LinearLayout>
 
