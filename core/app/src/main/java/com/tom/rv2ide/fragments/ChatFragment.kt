@@ -6,12 +6,12 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.inputmethod.EditorInfo
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
@@ -29,8 +29,6 @@ import com.tom.rv2ide.activities.editor.EditorHandlerActivity
 import com.tom.rv2ide.adapters.ChatMessageAdapter
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.agents.Agents
-import com.tom.rv2ide.artificial.catalog.ModelSources
-import com.tom.rv2ide.artificial.catalog.ProviderLabels
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.handlers.AIRequestHandler
 import com.tom.rv2ide.managers.CodeCompletionManager
@@ -66,17 +64,15 @@ class ChatFragment : Fragment() {
     private lateinit var sendBtn: MaterialButton
     private lateinit var clearBtn: MaterialButton
     private lateinit var modelChip: Chip
-    private lateinit var emptyModelChip: Chip
 
     /**
-     * Invisible fields that own the model menus.
+     * Invisible field that owns the model menu.
      *
-     * Each chip is laid over one of these, and the chip's click opens the field's dropdown. Letting the
+     * The chip is laid over it and the chip's click opens this field's dropdown. Letting the
      * `AutoCompleteTextView` own the popup is what keeps the menu a standard Material one — its
      * placement, width and up/down flip stay in the framework rather than being computed here.
      */
     private lateinit var modelDropdown: MaterialAutoCompleteTextView
-    private lateinit var emptyModelDropdown: MaterialAutoCompleteTextView
 
     private lateinit var messageList: RecyclerView
     private lateinit var emptyState: View
@@ -87,6 +83,9 @@ class ChatFragment : Fragment() {
 
     private var completionStateMonitorJob: Job? = null
     private var isSettingUpCompletion = false
+
+    /** Last IME lift applied to the page, so a layout pass only reacts when it actually changes. */
+    private var lastImeLift = 0
 
     /**
      * Project root of the editor.
@@ -151,8 +150,6 @@ class ChatFragment : Fragment() {
         clearBtn = view.findViewById(R.id.clearBtn)
         modelChip = view.findViewById(R.id.modelChip)
         modelDropdown = view.findViewById(R.id.modelDropdown)
-        emptyModelChip = view.findViewById(R.id.emptyModelChip)
-        emptyModelDropdown = view.findViewById(R.id.emptyModelDropdown)
         messageList = view.findViewById(R.id.messageList)
         emptyState = view.findViewById(R.id.emptyState)
     }
@@ -165,20 +162,27 @@ class ChatFragment : Fragment() {
      * the field. `windowSoftInputMode` cannot fix that: once edge-to-edge is on, the insets have to be
      * consumed by the content.
      *
-     * The IME inset is applied as *bottom padding on the root*, not as a translation. The composer is
-     * the last child and the transcript above it is weighted, so padding shrinks the transcript and
-     * lifts the composer — which also keeps the newest message visible rather than hidden behind the
-     * keyboard.
-     *
-     * The navigation bar height is subtracted because the sidebar host already lifts this page by that
-     * amount (see [EditorSidebarFragment], which pads its container for the system bars). The IME inset
-     * covers the same strip of screen, so taking it whole would raise the composer twice.
+     * The sidebar host wraps this page in a `ScrollView`, so the lift cannot be bottom padding on the
+     * root: padding only makes the scrolling content taller, leaving the field exactly where it was.
+     * The whole page is translated up instead, which moves the composer clear of the keyboard.
      */
     private fun setupImmersiveInsets(view: View) {
         ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
-            applyImePadding(v, insets)
+            applyImeLift(v, insets)
             insets
         }
+
+        // Safety net. The activity's own layouts declare `fitsSystemWindows`, and a view that consumes
+        // the insets also stops dispatching them, so the listener above is not guaranteed to fire. A
+        // global layout pass always happens when the keyboard is shown or hidden, and the window's own
+        // insets (read inside applyImeLift) are correct regardless of what was dispatched here.
+        view.viewTreeObserver.addOnGlobalLayoutListener(
+            object : ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    applyImeLift(view, null)
+                }
+            }
+        )
     }
 
     /**
@@ -190,7 +194,7 @@ class ChatFragment : Fragment() {
      * The window's own insets are therefore read as well and the larger of the two is used. It is the
      * same fallback [getSystemBarInsets] uses for the system bars.
      */
-    private fun applyImePadding(view: View, dispatched: WindowInsetsCompat?) {
+    private fun applyImeLift(view: View, dispatched: WindowInsetsCompat?) {
         val fromWindow = view.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
 
         fun bottom(insets: WindowInsetsCompat?, type: Int): Int =
@@ -209,34 +213,46 @@ class ChatFragment : Fragment() {
             ?.bottom
             ?: bottom(dispatched, WindowInsetsCompat.Type.navigationBars())
 
-        view.updatePadding(bottom = (ime - hostLift).coerceAtLeast(0))
-    }
+        // The host already raised this page by the navigation bar's height; the IME inset covers the
+        // same strip of screen, so taking it whole would lift the composer one bar too far.
+        val lift = (ime - hostLift).coerceAtLeast(0)
 
-    /**
-     * Wires the model chips and the IME action of the field.
-     *
-     * A chip is the control the user sees and taps; a transparent, exposed-dropdown field is laid
-     * under each of them, and tapping the chip opens that field's menu. Letting the
-     * `AutoCompleteTextView` own the popup is what makes the menu a standard Material dropdown — its
-     * placement, width and up/down flip stay in the framework rather than being recomputed here.
-     *
-     * There are two chips (composer + empty state) and both are kept in sync.
-     */
-    private fun setupComposer() {
-        populateModelMenu(modelDropdown)
-        populateModelMenu(emptyModelDropdown)
+        if (lift != lastImeLift) {
+            lastImeLift = lift
+            view.translationY = -lift.toFloat()
 
-        modelChip.setOnClickListener { showModelChooser(modelChip) }
-        emptyModelChip.setOnClickListener { showModelChooser(emptyModelChip) }
-
-        // The model may change on the settings page; both chips follow it.
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                aiAgent.currentModelName.collect { model ->
-                    renderModelChips(model)
+            // Only on a change, so the repeated global-layout passes of a single keyboard animation do
+            // not keep re-scrolling the transcript. The list is clipped from the top, so this keeps the
+            // newest message in view rather than pushing it under the composer.
+            if (lift > 0) {
+                val count = messageAdapter.itemCount
+                if (count > 0) {
+                    messageList.scrollToPosition(count - 1)
                 }
             }
         }
+    }
+
+    /**
+     * Wires the model chip, the IME action of the field and the keyboard lift.
+     *
+     * The chip is the control the user sees and taps; a transparent, exposed-dropdown field is laid
+     * under it and the chip's click opens that field's menu. Letting the `AutoCompleteTextView` own the
+     * popup is what makes the menu a standard Material dropdown — its placement, width and up/down flip
+     * stay in the framework rather than being recomputed here.
+     */
+    private fun setupComposer() {
+        modelChip.setOnClickListener { toggleModelMenu() }
+
+        // The model may change on the settings page; the chip follows it.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                aiAgent.currentModelName.collect { model ->
+                    renderModelChip(model)
+                }
+            }
+        }
+
 
         // Enter sends; Shift+Enter still inserts a newline. The field is multi-line, so without this
         // the only way to send is the button, and the soft keyboard's action key does nothing useful.
@@ -253,97 +269,82 @@ class ChatFragment : Fragment() {
     }
 
     /**
-     * Fills one menu with the provider catalogue.
+     * Opens or closes the model menu.
      *
-     * Each row reads `✓ Label — model`, the checkmark marking the provider currently in effect, and
-     * the provider id of the picked row is reported to [switchToProvider]. A provider whose key is
-     * missing stays in the list rather than being hidden: the provider does exist, it is only
-     * unconfigured, and picking it surfaces exactly that through [switchToProvider]'s warning.
+     * A toggle rather than a plain `showDropDown()`: the menu drops *below* the composer, so the chip
+     * stays reachable while the menu is open and tapping it again is the natural way to close it. A
+     * plain open would stack a second menu every time the chip was tapped.
      */
-    private fun populateModelMenu(dropdown: MaterialAutoCompleteTextView) {
-        val agents = Agents(requireContext())
-        val activeProviderId = aiAgent.getCurrentProviderId()
-
-        val providerIds = ModelSources.PROVIDER_IDS
-        val labels = ArrayList<String>(providerIds.size)
-
-        providerIds.forEach { providerId ->
-            val model = agents.getModel(providerId)
-                ?: agents.getDefaultModelForProvider(providerId)
-            val checkmark = if (providerId == activeProviderId) "\u2713" else "\u00a0"
-            labels += "$checkmark ${ProviderLabels.of(providerId)} \u2014 $model"
+    private fun toggleModelMenu() {
+        if (modelDropdown.isPopupShowing) {
+            modelDropdown.dismissDropDown()
+            return
         }
 
-        dropdown.setAdapter(
-            ArrayAdapter(requireContext(), R.layout.item_dropdown_single_line, labels)
-        )
-
-        // A single line while the menu is what carries the choices: the field itself only anchors the
-        // popup (its text is transparent) and must never force the row it sits in to grow.
-        dropdown.setText("", false)
-
-        val onRowClick = AdapterView.OnItemClickListener { _, _, position, _ ->
-            val providerId = providerIds[position]
-            // The rows are the same in both menus, so either one reports the same id.
-            if (providerId != activeProviderId) {
-                switchToProvider(providerId)
-            }
-        }
-        dropdown.onItemClickListener = onRowClick
-    }
-
-    /**
-     * Opens the model menu that belongs to [anchor].
-     *
-     * A dropdown rather than a dialog: the chip is a control inside the composer, so its choices
-     * belong next to it instead of on top of the transcript.
-     *
-     * Refused while a request is in flight: switching provider mid-request would leave the answer being
-     * written attributed to a provider that no longer matches it.
-     */
-    private fun showModelChooser(anchor: View) {
         if (messages.isProcessing.value) {
             showSnackbar(getString(R.string.chat_switch_locked))
             return
         }
 
-        val dropdown = if (anchor === emptyModelChip) emptyModelDropdown else modelDropdown
-        // Rebuilt on every open: both the stored models and the active provider can have changed on
-        // the settings screen since this page was built.
-        populateModelMenu(dropdown)
+        // Rebuilt on every open: the catalogue of the active provider can have been refreshed on the
+        // settings page since this page was built, and so can the selected model.
+        populateModelMenu(modelDropdown)
         // Posted, exactly like ProviderConfigDialog: the popup refuses to open while its adapter is
         // still being replaced, and one frame later there is always something to show.
-        dropdown.post { dropdown.showDropDown() }
+        modelDropdown.post { modelDropdown.showDropDown() }
     }
 
     /**
-     * Activates the chosen provider.
+     * Fills the menu with the models of the provider that is currently in effect.
      *
-     * `setProvider` already creates the agent and initialises it, and every provider's `initialize()`
-     * adopts its own stored model through `Agents.resolveModel`, so the model needs no re-application
-     * here. Doing it anyway was actively harmful for Local LLM: `resolveModel` deliberately does not
-     * persist its fallback (the model name is chosen on the configuration page and may not appear in
-     * that provider's catalogue), so writing the resolved value back would overwrite the user's
-     * server-side model name with the default.
-     *
-     * A failed switch leaves the previous provider running, so the message is a warning rather than a
-     * generic error; the most likely cause is a missing API key, which the chooser also signals by
-     * refusing the row.
+     * The menu picks a *model*, not a provider — the provider is chosen on the settings page, and this
+     * is the same list that page offers for it. The stored model is checked; a model that was fetched
+     * from the provider but is not the selected one is still listed and still selectable.
      */
-    private fun switchToProvider(providerId: String) {
-        if (!aiAgent.setProvider(providerId)) {
-            showSnackbar(getString(R.string.chat_switch_failed))
-            return
+    private fun populateModelMenu(dropdown: MaterialAutoCompleteTextView) {
+        val agents = Agents(requireContext())
+        val providerId = agents.getProvider()
+        val currentModel = agents.getModel(providerId)
+
+        val models = agents.getModelsForProvider(providerId).distinct()
+
+        val labels = models.map { model ->
+            val checkmark = if (model == currentModel) "\u2713" else "\u00a0"
+            "$checkmark $model"
         }
 
-        // The assistant is already open on this provider; refresh what it knows about the project.
+        dropdown.setAdapter(
+            ArrayAdapter(requireContext(), R.layout.item_dropdown_single_line, labels)
+        )
+        // Without this the popup filters itself against the text in the field, which is one of the
+        // entries, leaving a single row to choose from.
+        dropdown.threshold = 0
+
+        // The click reports a row index, so the click listener is bound to the very list it was built
+        // from rather than re-reading it (which could have shifted underneath).
+        dropdown.onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
+            models.getOrNull(position)?.let { model -> switchToModel(providerId, model) }
+        }
+    }
+
+    /**
+     * Switches the model inside the provider that is already active.
+     *
+     * The provider is deliberately left alone: `Agents.setModel` writes the model under its own
+     * provider key without touching the selection, and `reinitializeWithSelectedModel` then
+     * re-initialises the running agent with it — the same path the settings page takes. Re-selecting
+     * the provider here instead would turn the chip into a second, competing provider selector.
+     */
+    private fun switchToModel(providerId: String, model: String) {
+        Agents(requireContext()).setModel(providerId, model)
+        aiAgent.reinitializeWithSelectedModel()
+
+        // The agent was re-initialised, so it no longer holds the project it was given.
         lifecycleScope.launch { aiAgent.setProjectRoot(userRootProject) }
     }
 
-    private fun renderModelChips(model: String) {
-        val text = model.ifBlank { getString(R.string.chat_model_unknown) }
-        modelChip.text = text
-        emptyModelChip.text = text
+    private fun renderModelChip(model: String) {
+        modelChip.text = model.ifBlank { getString(R.string.chat_model_unknown) }
     }
 
     private fun setupMessageList() {
@@ -408,7 +409,6 @@ class ChatFragment : Fragment() {
                         // stacked surfaces. The button stays disabled either way.
                         sendBtn.isEnabled = !processing
                         modelChip.isEnabled = !processing
-                        emptyModelChip.isEnabled = !processing
                         // Blocked rather than merely unsent: the provider keeps no queue, so a prompt
                         // typed while a request runs would be silently discarded on submit.
                         promptInput.isEnabled = !processing
