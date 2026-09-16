@@ -636,9 +636,8 @@
    <string name="chat_cleared">对话已清空</string>
    <string name="chat_project_load_failed">加载项目失败</string>
    <string name="chat_model_unknown">未设置模型</string>
-   <!-- Model chooser, opened from the chat composer chip. -->
+   <!-- Model menu, opened from the chat composer chip. -->
    <string name="chat_switch_locked">请先等待当前请求完成或清空对话</string>
-   <string name="chat_switch_failed">无法切换模型，请检查该供应商的 API 密钥。</string>
    <string name="ai_agent_enable">启用 AI 助手</string>
   <string name="ai_agent_enable_summary">启用 AI 驱动的代码生成</string>
   <string name="ai_agent_api_key">Gemini</string>

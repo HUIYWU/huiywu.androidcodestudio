@@ -7,9 +7,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
-import android.view.inputmethod.EditorInfo
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -65,13 +65,6 @@ class ChatFragment : Fragment() {
     private lateinit var clearBtn: MaterialButton
     private lateinit var modelChip: Chip
 
-    /**
-     * Invisible field that owns the model menu.
-     *
-     * The chip is laid over it and the chip's click opens this field's dropdown. Letting the
-     * `AutoCompleteTextView` own the popup is what keeps the menu a standard Material one — its
-     * placement, width and up/down flip stay in the framework rather than being computed here.
-     */
     private lateinit var modelDropdown: MaterialAutoCompleteTextView
 
     private lateinit var messageList: RecyclerView
@@ -186,84 +179,62 @@ class ChatFragment : Fragment() {
     }
 
     /**
-     * Applies the composer's IME lift, tolerating insets that were consumed upstream.
+     * Lifts the page so the composer clears the keyboard.
      *
-     * The editor activity's own layouts declare `fitsSystemWindows`, which consumes the system window
-     * insets (the IME included) on the way down, so the insets handed to this fragment are frequently
-     * zero even with the keyboard open — that is why the field used to stay put instead of rising.
-     * The window's own insets are therefore read as well and the larger of the two is used. It is the
-     * same fallback [getSystemBarInsets] uses for the system bars.
+     * The window is never resized for the IME (the activity is edge-to-edge), and the host wraps this
+     * page in a `ScrollView`, where bottom padding only makes the scrolling content taller. The page is
+     * translated instead.
+     *
+     * The lift is `ime - reservedBelow`, `reservedBelow` being the strip the sidebar keeps under this
+     * page (`fragment_editor_sidebar.xml` stacks a 72dp navigation row below the scroll area). The
+     * keyboard covers that strip first, so lifting by the whole inset leaves a gap.
      */
     private fun applyImeLift(view: View, dispatched: WindowInsetsCompat?) {
+        if (view.height == 0) {
+            return
+        }
+
+        fun imeBottom(insets: WindowInsetsCompat?): Int =
+            insets?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0
+
+        // Read off the window as well: layouts on the way down consume the insets (`fitsSystemWindows`).
         val fromWindow = view.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
+        val ime = maxOf(imeBottom(dispatched), imeBottom(fromWindow))
 
-        fun bottom(insets: WindowInsetsCompat?, type: Int): Int =
-            insets?.getInsets(type)?.bottom ?: 0
+        val page = IntArray(2)
+        view.getLocationOnScreen(page)
+        val root = IntArray(2)
+        view.rootView.getLocationOnScreen(root)
 
-        val ime = maxOf(
-            bottom(dispatched, WindowInsetsCompat.Type.ime()),
-            bottom(fromWindow, WindowInsetsCompat.Type.ime())
-        )
+        // getLocationOnScreen includes the translation applied below, so that translation is removed
+        // again to get the resting bottom the reserved strip is measured against.
+        val restingBottom = page[1] + view.height - view.translationY.toInt()
+        val reservedBelow = (root[1] + view.rootView.height - restingBottom).coerceAtLeast(0)
 
-        // Matches exactly how the host measured its own lift, so the two cannot disagree by a pixel.
-        val hostLift = fromWindow
-            ?.getInsetsIgnoringVisibility(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-            )
-            ?.bottom
-            ?: bottom(dispatched, WindowInsetsCompat.Type.navigationBars())
+        val lift = (ime - reservedBelow).coerceAtLeast(0)
+        if (lift in (lastImeLift - 1)..(lastImeLift + 1)) {
+            return
+        }
 
-        // The host already raised this page by the navigation bar's height; the IME inset covers the
-        // same strip of screen, so taking it whole would lift the composer one bar too far.
-        val lift = (ime - hostLift).coerceAtLeast(0)
+        lastImeLift = lift
+        view.translationY = -lift.toFloat()
 
-        if (lift != lastImeLift) {
-            lastImeLift = lift
-            view.translationY = -lift.toFloat()
-
-            // Only on a change, so the repeated global-layout passes of a single keyboard animation do
-            // not keep re-scrolling the transcript. The list is clipped from the top, so this keeps the
-            // newest message in view rather than pushing it under the composer.
-            if (lift > 0) {
-                val count = messageAdapter.itemCount
-                if (count > 0) {
-                    messageList.scrollToPosition(count - 1)
-                }
+        if (lift > 0) {
+            val count = messageAdapter.itemCount
+            if (count > 0) {
+                messageList.scrollToPosition(count - 1)
             }
         }
     }
 
-    /**
-     * Wires the model chip, the IME action of the field and the keyboard lift.
-     *
-     * The chip is the control the user sees and taps; a transparent, exposed-dropdown field is laid
-     * under it and the chip's click opens that field's menu. Letting the `AutoCompleteTextView` own the
-     * popup is what makes the menu a standard Material dropdown — its placement, width and up/down flip
-     * stay in the framework rather than being recomputed here.
-     */
     private fun setupComposer() {
         modelChip.setOnClickListener { toggleModelMenu() }
 
-        // The model may change on the settings page; the chip follows it.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 aiAgent.currentModelName.collect { model ->
                     renderModelChip(model)
                 }
-            }
-        }
-
-
-        // Enter sends; Shift+Enter still inserts a newline. The field is multi-line, so without this
-        // the only way to send is the button, and the soft keyboard's action key does nothing useful.
-        promptInput.setOnEditorActionListener { _, actionId, event ->
-            val isSend = actionId == EditorInfo.IME_ACTION_SEND ||
-                (event != null && event.keyCode == android.view.KeyEvent.KEYCODE_ENTER && !event.isShiftPressed)
-            if (isSend) {
-                submitPrompt()
-                true
-            } else {
-                false
             }
         }
     }
@@ -286,45 +257,60 @@ class ChatFragment : Fragment() {
             return
         }
 
-        // Rebuilt on every open: the catalogue of the active provider can have been refreshed on the
-        // settings page since this page was built, and so can the selected model.
         populateModelMenu(modelDropdown)
-        // Posted, exactly like ProviderConfigDialog: the popup refuses to open while its adapter is
-        // still being replaced, and one frame later there is always something to show.
         modelDropdown.post { modelDropdown.showDropDown() }
     }
 
     /**
      * Fills the menu with the models of the provider that is currently in effect.
      *
-     * The menu picks a *model*, not a provider — the provider is chosen on the settings page, and this
-     * is the same list that page offers for it. The stored model is checked; a model that was fetched
-     * from the provider but is not the selected one is still listed and still selectable.
+     * The menu picks a *model*, not a provider: the provider is chosen on the settings page, and this
+     * is the same catalogue that page offers for it.
      */
     private fun populateModelMenu(dropdown: MaterialAutoCompleteTextView) {
         val agents = Agents(requireContext())
         val providerId = agents.getProvider()
-        val currentModel = agents.getModel(providerId)
 
         val models = agents.getModelsForProvider(providerId).distinct()
 
-        val labels = models.map { model ->
-            val checkmark = if (model == currentModel) "\u2713" else "\u00a0"
-            "$checkmark $model"
-        }
-
         dropdown.setAdapter(
-            ArrayAdapter(requireContext(), R.layout.item_dropdown_single_line, labels)
+            ArrayAdapter(requireContext(), R.layout.item_dropdown_single_line, models)
         )
-        // Without this the popup filters itself against the text in the field, which is one of the
-        // entries, leaving a single row to choose from.
         dropdown.threshold = 0
+        dropdown.dropDownWidth = menuWidth(dropdown, models)
 
-        // The click reports a row index, so the click listener is bound to the very list it was built
-        // from rather than re-reading it (which could have shifted underneath).
         dropdown.onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
             models.getOrNull(position)?.let { model -> switchToModel(providerId, model) }
         }
+    }
+
+    /**
+     * Width of the model menu popup, in pixels.
+     *
+     * The popup does not size itself from its rows: `MaterialAutoCompleteTextView` only uses the
+     * content width to grow the *field* (`onMeasure`, AT_MOST), and an `AutoCompleteTextView` with no
+     * explicit width takes the popup width from its anchor — here the transparent field behind the
+     * chip, which is a few characters wide.
+     *
+     * So the widest row is measured instead, with the same item layout the adapter uses, and clamped
+     * to the window.
+     */
+    private fun menuWidth(dropdown: MaterialAutoCompleteTextView, models: List<String>): Int {
+        val margin = (16 * resources.displayMetrics.density).toInt()
+        val row = layoutInflater.inflate(R.layout.item_dropdown_single_line, null, false) as TextView
+        val spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+
+        val widestRow = models.maxOfOrNull { model ->
+            row.text = model
+            row.measure(spec, spec)
+            row.measuredWidth
+        } ?: 0
+
+        // coerceIn throws when min > max, and the field can be wider than the window less the margins.
+        val min = dropdown.width.coerceAtLeast(margin)
+        val max = (resources.displayMetrics.widthPixels - margin * 2).coerceAtLeast(min)
+
+        return widestRow.coerceIn(min, max)
     }
 
     /**
