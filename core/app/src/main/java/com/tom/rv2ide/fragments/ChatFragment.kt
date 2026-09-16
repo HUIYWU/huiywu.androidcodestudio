@@ -6,6 +6,10 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
@@ -14,14 +18,14 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.progressindicator.CircularProgressIndicator
+import com.google.android.material.chip.Chip
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.editor.EditorHandlerActivity
 import com.tom.rv2ide.adapters.ChatMessageAdapter
 import com.tom.rv2ide.artificial.agents.AIAgentManager
+import com.tom.rv2ide.artificial.selectors.ModelChooserPopup
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.handlers.AIRequestHandler
 import com.tom.rv2ide.managers.CodeCompletionManager
@@ -53,11 +57,11 @@ class ChatFragment : Fragment() {
         private const val KEY_COMPLETION_ENABLED = "code_completion_enabled"
     }
 
-    private lateinit var promptLayout: TextInputLayout
     private lateinit var promptInput: TextInputEditText
     private lateinit var sendBtn: MaterialButton
     private lateinit var clearBtn: MaterialButton
-    private lateinit var sendProgress: CircularProgressIndicator
+    private lateinit var modelChip: Chip
+    private lateinit var emptyModelChip: Chip
     private lateinit var messageList: RecyclerView
     private lateinit var emptyState: View
     private lateinit var messageAdapter: ChatMessageAdapter
@@ -67,6 +71,14 @@ class ChatFragment : Fragment() {
 
     private var completionStateMonitorJob: Job? = null
     private var isSettingUpCompletion = false
+
+    /**
+     * Model dropdown, created on first use.
+     *
+     * Held so it can be dismissed with the view: the popup keeps a reference to the chip it is
+     * anchored to, which would otherwise outlive the chip.
+     */
+    private var modelChooser: ModelChooserPopup? = null
 
     /**
      * Project root of the editor.
@@ -106,6 +118,8 @@ class ChatFragment : Fragment() {
 
         initializeViews(view)
         setupMessageList()
+        setupComposer()
+        setupImmersiveInsets(view)
         setupManagers()
         setupListeners()
         observeState()
@@ -124,13 +138,152 @@ class ChatFragment : Fragment() {
     }
 
     private fun initializeViews(view: View) {
-        promptLayout = view.findViewById(R.id.promptLayout)
         promptInput = view.findViewById(R.id.promptInput)
         sendBtn = view.findViewById(R.id.sendBtn)
         clearBtn = view.findViewById(R.id.clearBtn)
-        sendProgress = view.findViewById(R.id.sendProgress)
+        modelChip = view.findViewById(R.id.modelChip)
+        emptyModelChip = view.findViewById(R.id.emptyModelChip)
         messageList = view.findViewById(R.id.messageList)
         emptyState = view.findViewById(R.id.emptyState)
+    }
+
+    /**
+     * Keeps the composer above the on-screen keyboard.
+     *
+     * The host activity calls `enableEdgeToEdge()` + `setDecorFitsSystemWindows(window, false)`, so the
+     * window is never resized for the IME and nothing moves by default — the keyboard simply drew over
+     * the field. `windowSoftInputMode` cannot fix that: once edge-to-edge is on, the insets have to be
+     * consumed by the content.
+     *
+     * The IME inset is applied as *bottom padding on the root*, not as a translation. The composer is
+     * the last child and the transcript above it is weighted, so padding shrinks the transcript and
+     * lifts the composer — which also keeps the newest message visible rather than hidden behind the
+     * keyboard.
+     *
+     * The navigation bar height is subtracted because the sidebar host already lifts this page by that
+     * amount (see [EditorSidebarFragment], which pads its container for the system bars). The IME inset
+     * covers the same strip of screen, so taking it whole would raise the composer twice.
+     */
+    private fun setupImmersiveInsets(view: View) {
+        ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
+            applyImePadding(v, insets)
+            insets
+        }
+    }
+
+    /**
+     * Applies the composer's IME lift, tolerating insets that were consumed upstream.
+     *
+     * The editor activity's own layouts declare `fitsSystemWindows`, which consumes the system window
+     * insets (the IME included) on the way down, so the insets handed to this fragment are frequently
+     * zero even with the keyboard open — that is why the field used to stay put instead of rising.
+     * The window's own insets are therefore read as well and the larger of the two is used. It is the
+     * same fallback [getSystemBarInsets] uses for the system bars.
+     */
+    private fun applyImePadding(view: View, dispatched: WindowInsetsCompat?) {
+        val fromWindow = view.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
+
+        fun bottom(insets: WindowInsetsCompat?, type: Int): Int =
+            insets?.getInsets(type)?.bottom ?: 0
+
+        val ime = maxOf(
+            bottom(dispatched, WindowInsetsCompat.Type.ime()),
+            bottom(fromWindow, WindowInsetsCompat.Type.ime())
+        )
+
+        // Matches exactly how the host measured its own lift, so the two cannot disagree by a pixel.
+        val hostLift = fromWindow
+            ?.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            ?.bottom
+            ?: bottom(dispatched, WindowInsetsCompat.Type.navigationBars())
+
+        view.updatePadding(bottom = (ime - hostLift).coerceAtLeast(0))
+    }
+
+    /**
+     * Wires the model chips and the IME action of the field.
+     *
+     * The chip is a two-way control: it shows the active model and opens the provider/model dropdown
+     * when tapped, so the chat page no longer needs a detour through the settings screen. There are two
+     * chips (composer + empty state) and both are kept in sync.
+     */
+    private fun setupComposer() {
+        modelChip.setOnClickListener { showModelChooser(modelChip) }
+        emptyModelChip.setOnClickListener { showModelChooser(emptyModelChip) }
+
+        // The model may change on the settings page; both chips follow it.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                aiAgent.currentModelName.collect { model ->
+                    renderModelChips(model)
+                }
+            }
+        }
+
+        // Enter sends; Shift+Enter still inserts a newline. The field is multi-line, so without this
+        // the only way to send is the button, and the soft keyboard's action key does nothing useful.
+        promptInput.setOnEditorActionListener { _, actionId, event ->
+            val isSend = actionId == EditorInfo.IME_ACTION_SEND ||
+                (event != null && event.keyCode == android.view.KeyEvent.KEYCODE_ENTER && !event.isShiftPressed)
+            if (isSend) {
+                submitPrompt()
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    /**
+     * Opens the model dropdown anchored to the chip that was tapped.
+     *
+     * A dropdown rather than a dialog: the chip is a control inside the composer, so its choices belong
+     * next to it instead of on top of the transcript. There are two chips (composer + empty state) and
+     * the list anchors to whichever was used.
+     *
+     * Refused while a request is in flight: switching provider mid-request would leave the answer being
+     * written attributed to a provider that no longer matches it.
+     */
+    private fun showModelChooser(anchor: View) {
+        if (messages.isProcessing.value) {
+            showSnackbar(getString(R.string.chat_switch_locked))
+            return
+        }
+
+        val chooser = modelChooser ?: ModelChooserPopup(requireContext()).also { modelChooser = it }
+        chooser.show(anchor) { providerId -> switchToProvider(providerId) }
+    }
+
+    /**
+     * Activates the chosen provider.
+     *
+     * `setProvider` already creates the agent and initialises it, and every provider's `initialize()`
+     * adopts its own stored model through `Agents.resolveModel`, so the model needs no re-application
+     * here. Doing it anyway was actively harmful for Local LLM: `resolveModel` deliberately does not
+     * persist its fallback (the model name is chosen on the configuration page and may not appear in
+     * that provider's catalogue), so writing the resolved value back would overwrite the user's
+     * server-side model name with the default.
+     *
+     * A failed switch leaves the previous provider running, so the message is a warning rather than a
+     * generic error; the most likely cause is a missing API key, which the chooser also signals by
+     * refusing the row.
+     */
+    private fun switchToProvider(providerId: String) {
+        if (!aiAgent.setProvider(providerId)) {
+            showSnackbar(getString(R.string.chat_switch_failed))
+            return
+        }
+
+        // The assistant is already open on this provider; refresh what it knows about the project.
+        lifecycleScope.launch { aiAgent.setProjectRoot(userRootProject) }
+    }
+
+    private fun renderModelChips(model: String) {
+        val text = model.ifBlank { getString(R.string.chat_model_unknown) }
+        modelChip.text = text
+        emptyModelChip.text = text
     }
 
     private fun setupMessageList() {
@@ -189,11 +342,15 @@ class ChatFragment : Fragment() {
                 }
                 launch {
                     messages.isProcessing.collect { processing ->
+                        // No spinner in the composer any more: the transcript's own status row (see
+                        // item_chat_status.xml) already shows progress, and a second indicator inside
+                        // the field was one of the things that made the bottom block read as two
+                        // stacked surfaces. The button stays disabled either way.
                         sendBtn.isEnabled = !processing
-                        sendProgress.visibility = if (processing) View.VISIBLE else View.GONE
+                        modelChip.isEnabled = !processing
                         // Blocked rather than merely unsent: the provider keeps no queue, so a prompt
                         // typed while a request runs would be silently discarded on submit.
-                        promptLayout.isEnabled = !processing
+                        promptInput.isEnabled = !processing
                     }
                 }
             }
@@ -422,6 +579,10 @@ class ChatFragment : Fragment() {
 
     override fun onDestroyView() {
         completionStateMonitorJob?.cancel()
+        // The popup holds the chip it is anchored to; left open across a view destruction it would
+        // keep that chip (and this fragment's view tree) alive.
+        modelChooser?.dismiss()
+        modelChooser = null
         // Guarded because setupManagers() is not guaranteed to have run: when onViewCreated() throws
         // before reaching it, the view is still destroyed and this callback still fires, and reading
         // an uninitialized lateinit on the way out would replace the real error with a misleading

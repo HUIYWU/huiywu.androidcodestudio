@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Chat page of the AI sidebar.
-
-  Replaces the previous fixed top block (prompt + action buttons), a scrolling status/answer area and
-  a separate "Modification Summary" card plus file list. The answer used to share a single TextView
-  with the progress line, so a status update destroyed the answer and the next answer destroyed the
-  status; the transcript is now a list where each entry owns its own row, and the composer sits at
-  the bottom like a chat app.
-
-  The composer is declared here rather than as a list item on purpose: as a list item, every scroll
-  pass and every IME resize rebound the field and dropped the cursor mid-typing.
+  Composer design notes:
+  - No line above the composer. The transcript scrolls behind a plain surface, and the field itself
+    carries the only shape.
+  - The field has no box outline: it is a rounded filled shape (bg_chat_input) with a plain hint, so
+    there is exactly one edge on screen instead of a stroke inside a card border.
+  - The model chip sits below the field, with the clear/send actions; the buttons are icon-only.
+  - The bottom block is an elevated, stroked-free surface: elevation (rather than a divider line) is
+    what separates it from the transcript. `strokeWidth` is pinned to zero so the block cannot gain an
+    outline from whichever card style the theme resolves to.
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -17,6 +17,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
+
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -57,89 +58,96 @@
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
+            <com.google.android.material.chip.Chip
+                android:id="@+id/emptyModelChip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                app:chipIcon="@drawable/ic_ai"
+                app:chipIconVisible="true"
+                style="@style/Widget.Material3.Chip.Assist" />
+
         </LinearLayout>
 
     </FrameLayout>
 
-    <com.google.android.material.divider.MaterialDivider
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
-
-    <LinearLayout
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/composerContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="8dp"
-        android:paddingVertical="8dp">
-
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardElevation="0dp"
-            style="@style/Widget.Material3.CardView.Outlined">
-
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/promptLayout"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/ai_agent_prompt_hint"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/promptInput"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="top|start"
-                    android:inputType="textMultiLine|textCapSentences"
-                    android:maxLines="6"
-                    android:minLines="1"
-                    android:textAppearance="?attr/textAppearanceBodyLarge" />
-
-            </com.google.android.material.textfield.TextInputLayout>
-
-        </com.google.android.material.card.MaterialCardView>
+        app:cardCornerRadius="0dp"
+        app:cardElevation="8dp"
+        app:strokeWidth="0dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="end"
-            android:orientation="horizontal">
+            android:orientation="vertical"
+            android:paddingHorizontal="8dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/clearBtn"
-                android:layout_width="wrap_content"
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/promptInput"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:text="@string/clear"
-                app:icon="@drawable/ic_clear"
-                style="@style/Widget.Material3.Button.TextButton" />
+                android:background="@drawable/bg_chat_input"
+                android:gravity="top|start"
+                android:hint="@string/ai_agent_prompt_hint"
+                android:inputType="textMultiLine|textCapSentences"
+                android:maxLines="6"
+                android:minHeight="48dp"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textColorHint="?attr/colorOnSurfaceVariant" />
 
-            <FrameLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingTop="4dp">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/modelChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="middle"
+                    android:maxWidth="200dp"
+                    android:singleLine="true"
+                    app:chipIcon="@drawable/ic_ai"
+                    app:chipIconVisible="true"
+                    style="@style/Widget.Material3.Chip.Assist" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/clearBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/clear"
+                    app:icon="@drawable/ic_clear"
+                    app:iconPadding="0dp"
+                    style="@style/Widget.Material3.Button.IconButton" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/sendBtn"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/send"
-                    app:icon="@drawable/ic_send" />
+                    android:layout_marginStart="4dp"
+                    android:contentDescription="@string/send"
+                    app:icon="@drawable/ic_send"
+                    app:iconPadding="0dp"
+                    style="@style/Widget.Material3.Button.IconButton.Filled" />
 
-                <com.google.android.material.progressindicator.CircularProgressIndicator
-                    android:id="@+id/sendProgress"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:layout_gravity="center"
-                    android:indeterminate="true"
-                    android:visibility="gone"
-                    app:indicatorSize="20dp"
-                    style="@style/Widget.Material3.CircularProgressIndicator" />
-
-            </FrameLayout>
+            </LinearLayout>
 
         </LinearLayout>
 
-    </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
 </LinearLayout>

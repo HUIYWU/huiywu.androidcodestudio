@@ -64,6 +64,10 @@
    <string name="chat_empty_prompt">Please enter a request</string>
    <string name="chat_cleared">Conversation cleared</string>
    <string name="chat_project_load_failed">Failed to load project</string>
+   <string name="chat_model_unknown">Model not set</string>
+   <!-- Model chooser, opened from the chat composer chip. -->
+   <string name="chat_switch_locked">Finish or clear the current request first</string>
+   <string name="chat_switch_failed">Could not switch model. Check that provider\'s API key.</string>
    <string name="ai_agent_enable">Enable AI Agent</string>
   <string name="ai_agent_enable_summary">Enable AI-powered code generation</string>
   <string name="ai_agent_api_key">Gemini</string>

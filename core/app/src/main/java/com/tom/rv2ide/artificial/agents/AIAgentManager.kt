@@ -31,6 +31,9 @@ import com.tom.rv2ide.artificial.project.awareness.ProjectData
 import com.tom.rv2ide.artificial.secrets.ApiKey
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.tom.rv2ide.artificial.dialogs.ProviderSwitchDialog
 
 class AIAgentManager(private val context: Context) {
@@ -40,6 +43,19 @@ class AIAgentManager(private val context: Context) {
     private var currentProviderId: String = DEFAULT_PROVIDER_ID
     private var currentAgent: AIAgent? = null
     private val providerSwitchDialog = ProviderSwitchDialog(context)
+
+    private val _currentModelName = MutableStateFlow("")
+    private val _currentProviderName = MutableStateFlow("")
+
+    /**
+     * Provider/model currently in effect, for display.
+     *
+     * Observables rather than getters because the sidebar shows them in a chip that has to follow
+     * changes made elsewhere — the settings page, or an automatic provider switch during a request.
+     * [getCurrentModelName] / the provider remain available for one-off reads.
+     */
+    val currentModelName: StateFlow<String> = _currentModelName.asStateFlow()
+    val currentProviderName: StateFlow<String> = _currentProviderName.asStateFlow()
 
     init {
         Gemini.registerAgent()
@@ -104,6 +120,19 @@ class AIAgentManager(private val context: Context) {
         val initialized = currentAgent?.isInitialized() ?: false
         if (initialized) {
             Agents(context).setProvider(providerId)
+        }
+
+        // Publish for the sidebar's model chip. Cleared when the agent failed to initialise, so the
+        // chip cannot keep showing the previous provider's model as if it were still in effect.
+        _currentProviderName.value = if (initialized) {
+            currentAgent?.providerName ?: providerId
+        } else {
+            ""
+        }
+        _currentModelName.value = if (initialized) {
+            Agents(context).getAgent() ?: ""
+        } else {
+            ""
         }
 
         return initialized
@@ -536,6 +565,10 @@ class AIAgentManager(private val context: Context) {
         factory?.getApiKey()?.let { apiKey ->
             currentAgent?.reinitializeWithNewModel(apiKey, context)
         }
+        // The model may have changed (settings page), and may also have been switched to something
+        // else by the provider itself; republish so the chip stays truthful.
+        _currentModelName.value = Agents(context).getAgent() ?: ""
+        _currentProviderName.value = currentAgent?.providerName ?: _currentProviderName.value
     }
 
     fun getCurrentModelName(): String {

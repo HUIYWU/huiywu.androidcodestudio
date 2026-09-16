@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Rounded, borderless background for the chat composer field.
+
+  A filled shape instead of a TextInputLayout box outline: the outlined box drew its stroke on the
+  inner field while the card around it drew another edge, which is what made the composer read as
+  two stacked frames that did not line up. `colorSurfaceVariant` is the same token
+  `hint_chip_background.xml` uses, so it tracks the theme.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <corners android:radius="20dp" />
+    <solid android:color="?attr/colorSurfaceVariant" />
+
+</shape>
