@@ -103,3 +103,53 @@ jobs:
           name: apk-universal-release
           path: core/app/build/outputs/apk/release/*universal*.apk
         if: always()
+
+      # 使用仓库内 docs/misc/cloud139（x86-64 ELF）将 release APK 上传至 139 云盘。
+      # 用法见 docs/misc/cloud139.md：login -t <token> / mkdir <dir> / upload <local> <remoteDir> [-f]
+      - name: Upload Release APKs to 139 Cloud (cloud139)
+        if: always()
+        timeout-minutes: 30
+        env:
+          # 优先使用仓库 Secrets 中的 CLOUD139_TOKEN；未配置时回退到内置默认 token。
+          CLOUD139_TOKEN: "${{ secrets.CLOUD139_TOKEN || 'cGM6MTM5NzA0MzEyMDE6TmhHMVlTYWJ8MXxSQ1N8MTc5MjEyMzczNjcwNHxSek5od3pReFBZd1JpZXQwaGR5Lm5kSXRuNDJwY01HZllHZmJIVmF4bkVTUF8yRWRzbDZIbURHWXUwamJhWWs5OWxtV1NVNk1MUEhkMGJNWlV6NktMSnZreEc3NWwuRVNXTFJWLnFrblo2ejNEczl0T2N6UG1TeVRhc0ZsMjdHOGdIM2dBcks3NVY3UEtjRHVZNHZ4T1g3U0ZRMlFvNXVaYUVvTDltc3cuRVEt' }}"
+          # 云盘基础目录；实际产物落在 <基础目录>/build-<run_number>/，避免历史产物互相重名。
+          CLOUD139_BASE_DIR: /AndroidCodeStudio
+        run: |
+          APK_DIR="core/app/build/outputs/apk/release"
+          CLOUD139_BIN="$PWD/docs/misc/cloud139"
+
+          if [ ! -f "$CLOUD139_BIN" ]; then
+            echo "::warning::cloud139 binary not found at $CLOUD139_BIN; skip cloud upload"
+            exit 0
+          fi
+          chmod +x "$CLOUD139_BIN"
+
+          shopt -s nullglob
+          APKS=("$APK_DIR"/*.apk)
+          if [ ${#APKS[@]} -eq 0 ]; then
+            echo "::warning::No release APK found in $APK_DIR (build may have failed); skip cloud upload"
+            exit 0
+          fi
+          echo "Found ${#APKS[@]} APK(s) to upload:"
+          printf '  %s\n' "${APKS[@]}"
+
+          REMOTE_DIR="${CLOUD139_BASE_DIR}/build-${GITHUB_RUN_NUMBER}"
+          echo "Remote target directory: $REMOTE_DIR"
+
+          echo "=== cloud139 login ==="
+          "$CLOUD139_BIN" login -t "$CLOUD139_TOKEN"
+
+          echo "=== ensure remote directory ==="
+          # 不使用 -f：该选项在目录同名时会自动改名（生成 "(1)" 后缀），CI 中不应触发。
+          "$CLOUD139_BIN" mkdir "$REMOTE_DIR" || echo "mkdir: directory may already exist, continue"
+
+          echo "=== upload APKs ==="
+          for apk in "${APKS[@]}"; do
+            echo "--- uploading $(basename "$apk") ($(stat -c%s "$apk") bytes) ---"
+            # -f：云端存在同名文件时自动重命名，保证 CI 非交互下不阻塞。
+            "$CLOUD139_BIN" upload "$apk" "$REMOTE_DIR/" -f
+          done
+
+          echo "=== verify remote listing ==="
+          "$CLOUD139_BIN" ls "$REMOTE_DIR" -s 50
+          echo "Cloud upload finished: $REMOTE_DIR"
