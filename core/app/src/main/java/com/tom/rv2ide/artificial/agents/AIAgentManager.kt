@@ -41,22 +41,6 @@ class AIAgentManager(private val context: Context) {
     private val permissionManager = AIPermissionManager(context)
     private var currentProjectRoot: File? = null
 
-    /**
-     * Content each tracked file had when the project was opened, keyed by absolute path.
-     *
-     * Distinct from `ModificationAttempt.previousContent`, which is what undo restores and therefore
-     * has to be the state *immediately* before the last write. This one is never advanced during the
-     * conversation: the diff in the transcript answers "how does this differ from what I had when I
-     * started asking", so an edit that is later reverted still reads as a change instead of as nothing.
-     *
-     * A path missing from the map did not exist when the conversation started, which is exactly what
-     * `ChatBlock.FileChange.baselineContent == null` means.
-     */
-    private val sessionBaselines = mutableMapOf<String, String>()
-
-    /** Project the map was captured from; re-captured only when this changes. */
-    private var baselineRootPath: String? = null
-
     private var currentProviderId: String = DEFAULT_PROVIDER_ID
     private var currentAgent: AIAgent? = null
     private val providerSwitchDialog = ProviderSwitchDialog(context)
@@ -181,13 +165,6 @@ class AIAgentManager(private val context: Context) {
 
         currentProjectRoot = projectRoot
 
-        // Opening a project is what defines the baseline. `switchToModel` re-enters here after an agent
-        // is re-initialised, so this only re-captures when the path actually changed — otherwise every
-        // model switch would silently re-baseline and erase the diff of everything written so far.
-        if (baselineRootPath != projectRoot.absolutePath) {
-            captureSessionBaseline(projectRoot)
-        }
-
         val projectData = ProjectData(context)
         val projectTree = projectData.showProjectTree(projectRoot)
 
@@ -197,63 +174,7 @@ class AIAgentManager(private val context: Context) {
         return true
     }
 
-    /**
-     * Snapshots the files the agent is allowed to rewrite, as the comparison base for the conversation.
-     *
-     * Read eagerly rather than lazily: a file the agent is about to overwrite has to be captured
-     * *before* the write, and reading it at diff time would return the already-modified content.
-     *
-     * Restricted to text-ish extensions so a project's binaries, images and build outputs are not held
-     * in memory. A file outside that set that the agent does rewrite will read as a new file, which is
-     * the honest answer given nothing was captured for it.
-     *
-     * Keyed by canonical path so a project opened as `/sdcard/...` still matches the `/storage/...`
-     * paths the agent reports for the same file.
-     */
-    private fun captureSessionBaseline(projectRoot: File) {
-        baselineRootPath = projectRoot.absolutePath
-        sessionBaselines.clear()
-
-        projectRoot.walkTopDown()
-            .filter { it.isFile && it.extension in BASELINE_EXTENSIONS }
-            .filter { !it.path.contains("/build/") && !it.path.contains("/.gradle/") }
-            .forEach { file ->
-                val key = canonicalPathOf(file) ?: return@forEach
-                try {
-                    sessionBaselines[key] = file.readText()
-                } catch (e: Exception) {
-                    // Unreadable, so leave it out: an empty base would render the whole file as added.
-                }
-            }
-    }
-
-    /**
-     * Re-reads the baseline from the files as they stand now.
-     *
-     * Called when the conversation is cleared, so the next diff is measured from that point instead of
-     * from when the project was opened.
-     */
-    fun resetSessionBaseline() {
-        val root = currentProjectRoot ?: return
-        captureSessionBaseline(root)
-    }
-
-    private fun baselineContentOf(filePath: String): String? {
-        val file = File(filePath)
-        return sessionBaselines[canonicalPathOf(file) ?: file.absolutePath]
-    }
-
-    private fun canonicalPathOf(file: File): String? =
-        try {
-            file.canonicalPath
-        } catch (e: Exception) {
-            null
-        }
-
     fun clearConversation() {
-        // A cleared conversation gets a fresh baseline, so the next diff is measured from the files as
-        // they stand now rather than from when the project was opened.
-        resetSessionBaseline()
         currentAgent?.clearConversation()
     }
 
@@ -311,7 +232,7 @@ class AIAgentManager(private val context: Context) {
                                             success = true,
                                             message = "Modified successfully",
                                             isNewFile = isNewFile,
-                                            baselineContent = mod.baselineContent
+                                            previousContent = mod.previousContent
                                         )
                                     }
 
@@ -456,7 +377,7 @@ class AIAgentManager(private val context: Context) {
                             BaseFileModification(
                                 currentFile,
                                 cleanedContent,
-                                baselineContentOf(currentFile),
+                                previousContent,
                                 writeResult
                             )
                         )
@@ -491,7 +412,7 @@ class AIAgentManager(private val context: Context) {
                     BaseFileModification(
                         currentFile,
                         cleanedContent,
-                        baselineContentOf(currentFile),
+                        previousContent,
                         writeResult
                     )
                 )
@@ -502,7 +423,10 @@ class AIAgentManager(private val context: Context) {
     }
 
     /**
-     * Resolves the pre-write content that [AIAgent.recordModification] stores for undo.
+     * Resolves the content the file held immediately before this write.
+     *
+     * Serves both the diff shown in the transcript and the state [AIAgent.recordModification] stores
+     * for undo, which happen to want the same thing: whatever the file was just before the write.
      *
      * The captured snapshot only covers a subset of extensions (see [captureCurrentFileStates]),
      * yet the agent may legitimately rewrite files outside of it (e.g. `gradle.properties` or
@@ -701,7 +625,7 @@ class AIAgentManager(private val context: Context) {
         val success: Boolean,
         val message: String,
         val isNewFile: Boolean = false,
-        val baselineContent: String? = null
+        val previousContent: String? = null
     )
 
     data class ModificationSummary(
@@ -732,21 +656,13 @@ class AIAgentManager(private val context: Context) {
     companion object {
         /** Provider used for the very first launch, before the user picks one. */
         private const val DEFAULT_PROVIDER_ID = "gemini"
-
-        /**
-         * Extensions captured for the diff. Text files only: reading a project's binaries into memory
-         * to compare them would cost far more than it could ever show.
-         */
-        private val BASELINE_EXTENSIONS = listOf(
-            "kt", "kts", "java", "xml", "gradle", "properties", "toml", "json", "md", "txt", "pro", "cfg"
-        )
     }
 }
 
 data class BaseFileModification(
     val filePath: String,
     val content: String,
-    val baselineContent: String?,
+    val previousContent: String?,
     val writeResult: FileWriteResult
 )
 

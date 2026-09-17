@@ -106,7 +106,7 @@ class ChatMessageStore {
                     blocks = message.blocks + ChatBlock.FileChange(
                         filePath = filePath,
                         success = true,
-                        baselineContent = null,
+                        previousContent = null,
                         newContent = "",
                         pending = true
                     )

@@ -75,7 +75,7 @@ class ChatMessageAdapter(
 
         val rendered = FileDiffRenderer.shared().render(
             context,
-            block.baselineContent,
+            block.previousContent,
             block.newContent
         )
         diffCache[key] = rendered
@@ -202,7 +202,7 @@ class ChatMessageAdapter(
                 content.text = null
             } else {
                 val rendered = diffOf(row.context, block)
-                summary.text = if (block.baselineContent == null) {
+                summary.text = if (block.previousContent == null) {
                     row.context.getString(R.string.chat_diff_new_file)
                 } else {
                     row.context.getString(
@@ -276,12 +276,11 @@ class ChatMessageAdapter(
      * Key of the diff cached for [block].
      *
      * Content-addressed on purpose: unlike expansion, a rendered diff is a pure function of the
-     * three fields, so two rows with the same content legitimately share an entry. The baseline is
-     * part of it because the same content can be written against two different bases (two requests,
-     * or the same file touched before and after the conversation was cleared).
+     * three fields, so two rows with the same content legitimately share an entry. The previous
+     * content is part of it because the same new content can be written against two different bases.
      */
     private fun cacheKeyOf(block: ChatBlock.FileChange): String =
-        block.filePath + "|" + block.newContent.hashCode() + "|" + block.baselineContent.hashCode()
+        block.filePath + "|" + block.newContent.hashCode() + "|" + block.previousContent.hashCode()
 
     private companion object {
         const val TYPE_USER = 0

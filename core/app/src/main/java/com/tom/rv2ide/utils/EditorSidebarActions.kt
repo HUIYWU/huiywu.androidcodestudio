@@ -90,6 +90,7 @@ internal object EditorSidebarActions {
     data.put(Context::class.java, context)
 
     val titleRef = WeakReference(binding.title)
+    val titleContainerRef = WeakReference(binding.titleContainer)
     val subtitleRef = WeakReference(binding.subtitle)
 
     fun updateTitleVisibility(title: String?) {
@@ -101,6 +102,11 @@ internal object EditorSidebarActions {
           titleView.visibility = android.view.View.GONE
         }
       }
+      // The row fixes its height to `?attr/actionBarSize` so the title lines up with the editor
+      // toolbar. With no label to show, that height would be blank space — the file tree page
+      // brings its own header, and reserves this row itself.
+      titleContainerRef.get()?.visibility =
+          if (title.isNullOrEmpty()) android.view.View.GONE else android.view.View.VISIBLE
     }
 
     fun updateSubtitleVisibility(subtitle: String?) {

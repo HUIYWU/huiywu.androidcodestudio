@@ -93,7 +93,7 @@ class AIRequestHandler(
                         ChatBlock.FileChange(
                             filePath = modification.filePath,
                             success = modification.success,
-                            baselineContent = modification.baselineContent,
+                            previousContent = modification.previousContent,
                             newContent = modification.content
                         )
                     }

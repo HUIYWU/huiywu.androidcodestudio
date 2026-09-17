@@ -31,7 +31,7 @@ import org.eclipse.jgit.diff.RawText
 import org.eclipse.jgit.diff.RawTextComparator
 
 /**
- * Renders the difference between a file's session baseline and what the agent wrote.
+ * Renders the difference between a file's previous content and what the agent wrote.
  *
  * The line rendering is hand-rolled rather than delegated to JGit's `DiffFormatter`: that class writes
  * bare unified-diff text with no line numbers and a flat colour, and the hunk headers and
@@ -45,10 +45,10 @@ class FileDiffRenderer private constructor() {
 
     fun render(
         context: Context,
-        baselineContent: String?,
+        previousContent: String?,
         newContent: String
     ): Rendered {
-        val before = RawText((baselineContent ?: "").toByteArray(Charsets.UTF_8))
+        val before = RawText((previousContent ?: "").toByteArray(Charsets.UTF_8))
         val after = RawText(newContent.toByteArray(Charsets.UTF_8))
 
         val edits = DiffAlgorithm.getAlgorithm(DiffAlgorithm.SupportedAlgorithm.MYERS)
