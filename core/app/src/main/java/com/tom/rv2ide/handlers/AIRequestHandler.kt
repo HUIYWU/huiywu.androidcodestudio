@@ -12,13 +12,14 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+ *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.tom.rv2ide.handlers
 
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.tom.rv2ide.artificial.agents.AIAgentManager
+import com.tom.rv2ide.artificial.agents.AgentSegment
 import com.tom.rv2ide.artificial.chat.ChatBlock
 import com.tom.rv2ide.artificial.chat.ChatMessageStore
 import kotlinx.coroutines.Job
@@ -40,8 +41,8 @@ import kotlinx.coroutines.launch
  * - `onFileModifying` -> a pending file row appended to the answer.
  * - `onFileModified` -> ignored; the row is finalised in one step by `onSuccess`. Reporting each
  *   write twice is what used to produce duplicated rows.
- * - `onSuccess` -> the answer's file rows and the prose that precedes them.
- * - `onTextResponse` -> the answer's single prose block.
+ * - `onSuccess` -> the whole reply, prose and file rows in the order the agent produced them.
+ * - `onTextResponse` -> the same, for a reply that wrote no files.
  * - `onError` -> an error entry.
  */
 class AIRequestHandler(
@@ -84,28 +85,18 @@ class AIRequestHandler(
             }
 
             override fun onSuccess(
-                response: String,
-                modifications: List<AIAgentManager.ModificationResult>,
+                modifications: List<AgentSegment>,
+                results: List<AIAgentManager.ModificationResult>,
                 summary: AIAgentManager.ModificationSummary
             ) {
-                messages.completeFileChanges(
-                    modifications.map { modification ->
-                        ChatBlock.FileChange(
-                            filePath = modification.filePath,
-                            success = modification.success,
-                            previousContent = modification.previousContent,
-                            newContent = modification.content
-                        )
-                    }
-                )
-                messages.addTextBlock(proseOf(response))
+                messages.completeAnswer(modifications.map { it.toBlock() })
             }
 
             override fun onTextResponse(
-                response: String,
+                modifications: List<AgentSegment>,
                 summary: AIAgentManager.ModificationSummary
             ) {
-                messages.addTextBlock(response)
+                messages.completeAnswer(modifications.map { it.toBlock() })
             }
 
             override fun onError(message: String) {
@@ -119,13 +110,20 @@ class AIRequestHandler(
     }
 
     /**
-     * The agent protocol embeds whole file bodies in the reply, behind `FILE_TO_MODIFY:` markers. The
-     * answer to "what did you do" is the prose that precedes the first marker; everything from there
-     * on is represented by the file rows instead, so the raw bodies are dropped from the transcript.
+     * Projects one parsed segment onto the transcript.
+     *
+     * The agent emits a single ordered sequence — prose and file writes interleaved — and that
+     * order is what the user saw the agent produce, so the blocks are appended as they come rather
+     * than reordered into "files first, then prose".
      */
-    private fun proseOf(response: String): String {
-        val marker = response.indexOf("FILE_TO_MODIFY:")
-        return if (marker >= 0) response.substring(0, marker).trim() else response.trim()
+    private fun AgentSegment.toBlock(): ChatBlock = when (this) {
+        is AgentSegment.Text -> ChatBlock.Text(markdown)
+        is AgentSegment.FileChange -> ChatBlock.FileChange(
+            filePath = filePath,
+            success = writeResult is com.tom.rv2ide.artificial.file.FileWriteResult.Success,
+            previousContent = previousContent,
+            newContent = content
+        )
     }
 
     fun cancel() {

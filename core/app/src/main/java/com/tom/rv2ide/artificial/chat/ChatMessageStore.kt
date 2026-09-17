@@ -95,7 +95,7 @@ class ChatMessageStore {
      * Appends a placeholder row for a file that is about to be written.
      *
      * Printed as soon as the provider reports the file, so a long write is visible instead of the
-     * UI appearing frozen. [completeFileChanges] replaces these with the final content.
+     * UI appearing frozen. [completeAnswer] replaces these with the final, ordered blocks.
      */
     fun addPendingFileChange(filePath: String) {
         val id = currentAssistantId
@@ -118,31 +118,18 @@ class ChatMessageStore {
     }
 
     /**
-     * Replaces every pending file row with the final ones.
+     * Replaces the answer's blocks with the final ones, in the order the agent produced them.
      *
-     * Called from `onSuccess`, which is the first point where the written content and the pre-write
-     * content are both available.
+     * Called from `onSuccess` / `onTextResponse`, which is the first point where prose and file
+     * writes are both known. The whole list is set rather than appended to, because the pending
+     * rows added by [addPendingFileChange] carry no prose and so cannot represent that order.
      */
-    fun completeFileChanges(changes: List<ChatBlock.FileChange>) {
+    fun completeAnswer(blocks: List<ChatBlock>) {
         val id = currentAssistantId
         if (id == NO_ID) return
         _messages.value = _messages.value.map { message ->
             if (message is ChatMessage.Assistant && message.id == id) {
-                message.copy(blocks = message.blocks.filterNot { it is ChatBlock.FileChange } + changes)
-            } else {
-                message
-            }
-        }
-    }
-
-    /** Appends a prose block to the current answer. */
-    fun addTextBlock(markdown: String) {
-        if (markdown.isBlank()) return
-        val id = currentAssistantId
-        if (id == NO_ID) return
-        _messages.value = _messages.value.map { message ->
-            if (message is ChatMessage.Assistant && message.id == id) {
-                message.copy(blocks = message.blocks + ChatBlock.Text(markdown))
+                message.copy(blocks = blocks)
             } else {
                 message
             }

@@ -25,7 +25,6 @@ import com.tom.rv2ide.artificial.agents.grok.Grok
 import com.tom.rv2ide.artificial.agents.deepseek.DeepSeek
 import com.tom.rv2ide.artificial.agents.local.LocalLLM
 import com.tom.rv2ide.artificial.file.FileWriteResult
-import com.tom.rv2ide.artificial.parser.SnippetParser
 import com.tom.rv2ide.artificial.permissions.AIPermissionManager
 import com.tom.rv2ide.artificial.project.awareness.ProjectData
 import com.tom.rv2ide.artificial.secrets.ApiKey
@@ -215,44 +214,45 @@ class AIAgentManager(private val context: Context) {
 
                 result.fold(
                     onSuccess = { response ->
-                        
-                        if (response.contains("FILE_TO_MODIFY:")) {
+                        val modifications = processModifications(response, previousFileStates, callback)
+                        val fileChanges = modifications.filterIsInstance<AgentSegment.FileChange>()
+
+                        if (fileChanges.isNotEmpty()) {
                             callback.onProcessing("Modifying files...")
-                            val modifications = processModifications(response, previousFileStates, callback)
+                            val allSuccessful = fileChanges.all { it.writeResult is FileWriteResult.Success }
 
-                            if (modifications.isNotEmpty()) {
-                                val allSuccessful = modifications.all { it.writeResult is FileWriteResult.Success }
-
-                                if (allSuccessful) {
-                                    val results = modifications.map { mod ->
-                                        val isNewFile = !previousFileStates.containsKey(mod.filePath)
-                                        ModificationResult(
-                                            filePath = mod.filePath,
-                                            content = mod.content,
-                                            success = true,
-                                            message = "Modified successfully",
-                                            isNewFile = isNewFile,
-                                            previousContent = mod.previousContent
-                                        )
-                                    }
-
-                                    val summary = createSummary(results)
-                                    callback.onSuccess(response, results, summary)
-                                    success = true
-                                } else {
-                                    callback.onProcessing("Some files failed. Retrying...")
-                                    currentAgent?.incrementAttemptCount()
-                                    delay(1500)
+                            if (allSuccessful) {
+                                val results = fileChanges.map { mod ->
+                                    val isNewFile = !previousFileStates.containsKey(mod.filePath)
+                                    ModificationResult(
+                                        filePath = mod.filePath,
+                                        content = mod.content,
+                                        success = true,
+                                        message = "Modified successfully",
+                                        isNewFile = isNewFile,
+                                        previousContent = mod.previousContent
+                                    )
                                 }
+
+                                val summary = createSummary(results)
+                                callback.onSuccess(modifications, results, summary)
+                                success = true
                             } else {
-                                callback.onProcessing("No files were modified. Retrying...")
+                                callback.onProcessing("Some files failed. Retrying...")
                                 currentAgent?.incrementAttemptCount()
                                 delay(1500)
                             }
                         } else {
-                            val summary = ModificationSummary(0, 0, 0, 0, 0, emptyList())
-                            callback.onTextResponse(response, summary)
-                            success = true
+                            val relevant = modifications.filterIsInstance<AgentSegment.Text>()
+                            if (relevant.isEmpty()) {
+                                callback.onProcessing("No files were modified. Retrying...")
+                                currentAgent?.incrementAttemptCount()
+                                delay(1500)
+                            } else {
+                                val summary = ModificationSummary(0, 0, 0, 0, 0, emptyList())
+                                callback.onTextResponse(modifications, summary)
+                                success = true
+                            }
                         }
                     },
                   onFailure = { error ->
@@ -340,86 +340,97 @@ class AIAgentManager(private val context: Context) {
         return availableProviders.firstOrNull { it != currentProviderId }
     }
 
+    private fun isFileBlockStart(line: String): Boolean =
+        line.startsWith(FILE_BLOCK_PREFIX)
+
+    private fun isFileBlockEnd(line: String): Boolean =
+        line.trim() == FILE_BLOCK_END
+
+    /** A parsed block, before any file has been written. */
+    private sealed interface ParsedBlock {
+        data class Text(val markdown: String) : ParsedBlock
+
+        data class File(val filePath: String, val content: String) : ParsedBlock
+    }
+
+    /**
+     * Splits an agent reply into the ordered sequence of prose and file writes it describes.
+     *
+     * The reply is a plain document: prose may precede, separate and follow file blocks, and the
+     * order in which the agent wrote them is the order the transcript should show. A file block is
+     * opened by a line starting with [FILE_BLOCK_PREFIX] and closed by a line equal to
+     * [FILE_BLOCK_END], which makes a block's extent knowable the moment its closing line is read —
+     * a plain text body between two markers could only be delimited by the next marker.
+     *
+     * Text that is not inside a block is prose and is emitted verbatim; nothing is trimmed away.
+     */
+    private fun splitIntoSegments(response: String): List<ParsedBlock> {
+        val blocks = mutableListOf<ParsedBlock>()
+        val prose = StringBuilder()
+        var pendingPath: String? = null
+        val pendingContent = StringBuilder()
+
+        fun flushProse() {
+            val text = prose.toString().trim()
+            if (text.isNotEmpty()) blocks.add(ParsedBlock.Text(text))
+            prose.clear()
+        }
+
+        for (line in response.lines()) {
+            when {
+                isFileBlockStart(line) -> {
+                    flushProse()
+                    pendingPath = line.substringAfter(FILE_BLOCK_PREFIX).trim()
+                    pendingContent.clear()
+                }
+                isFileBlockEnd(line) -> {
+                    val path = pendingPath
+                    if (path != null) {
+                        blocks.add(ParsedBlock.File(path, pendingContent.toString().trim()))
+                        pendingContent.clear()
+                    }
+                    pendingPath = null
+                }
+                pendingPath != null -> pendingContent.append(line).append("\n")
+                else -> prose.append(line).append("\n")
+            }
+        }
+
+        flushProse()
+        return blocks
+    }
+
     private suspend fun processModifications(
         response: String,
         previousFileStates: Map<String, String>,
         callback: AIAgentCallback
-    ): List<BaseFileModification> {
-        val modifications = mutableListOf<BaseFileModification>()
-        val parser = SnippetParser()
-
-        if (response.contains("FILE_TO_MODIFY:")) {
-            val lines = response.lines()
-            var currentFile: String? = null
-            val contentBuilder = StringBuilder()
-            var inContent = false
-
-            for (line in lines) {
-                if (line.startsWith("FILE_TO_MODIFY:")) {
-                    if (currentFile != null && contentBuilder.isNotEmpty()) {
-                        val fileName = File(currentFile).name
-                        callback.onFileModifying(currentFile, fileName)
-
-                        val rawContent = contentBuilder.toString().trim()
-                        val cleanedContent = parser.cleanFileContent(rawContent)
-                        val previousContent = resolvePreviousContent(currentFile, previousFileStates)
-
-                        val writeResult = currentAgent?.writeFile(currentFile, cleanedContent)
-                            ?: FileWriteResult.Error("No agent initialized")
-
-                        val success = writeResult is FileWriteResult.Success
-                        currentAgent?.recordModification(currentFile, previousContent, cleanedContent, success)
-
-                        callback.onFileModified(currentFile, fileName, success)
-                        delay(300)
-
-                        modifications.add(
-                            BaseFileModification(
-                                currentFile,
-                                cleanedContent,
-                                previousContent,
-                                writeResult
-                            )
-                        )
-                    }
-
-                    currentFile = line.substringAfter("FILE_TO_MODIFY:").trim()
-                    contentBuilder.clear()
-                    inContent = true
-                } else if (inContent) {
-                    contentBuilder.append(line).append("\n")
-                }
-            }
-
-            if (currentFile != null && contentBuilder.isNotEmpty()) {
-                val fileName = File(currentFile).name
-                callback.onFileModifying(currentFile, fileName)
-
-                val rawContent = contentBuilder.toString().trim()
-                val cleanedContent = parser.cleanFileContent(rawContent)
-                val previousContent = resolvePreviousContent(currentFile, previousFileStates)
-
-                val writeResult = currentAgent?.writeFile(currentFile, cleanedContent)
-                    ?: FileWriteResult.Error("No agent initialized")
-
-                val success = writeResult is FileWriteResult.Success
-                currentAgent?.recordModification(currentFile, previousContent, cleanedContent, success)
-
-                callback.onFileModified(currentFile, fileName, success)
-                delay(300)
-
-                modifications.add(
-                    BaseFileModification(
-                        currentFile,
-                        cleanedContent,
-                        previousContent,
-                        writeResult
-                    )
-                )
-            }
+    ): List<AgentSegment> = splitIntoSegments(response).map { block ->
+        when (block) {
+            is ParsedBlock.Text -> AgentSegment.Text(block.markdown)
+            is ParsedBlock.File -> writeFileBlock(block, previousFileStates, callback)
         }
+    }
 
-        return modifications
+    private suspend fun writeFileBlock(
+        block: ParsedBlock.File,
+        previousFileStates: Map<String, String>,
+        callback: AIAgentCallback
+    ): AgentSegment.FileChange {
+        val filePath = block.filePath
+        val fileName = File(filePath).name
+        callback.onFileModifying(filePath, fileName)
+
+        val previousContent = resolvePreviousContent(filePath, previousFileStates)
+        val writeResult = currentAgent?.writeFile(filePath, block.content)
+            ?: FileWriteResult.Error("No agent initialized")
+
+        val success = writeResult is FileWriteResult.Success
+        currentAgent?.recordModification(filePath, previousContent, block.content, success)
+
+        callback.onFileModified(filePath, fileName, success)
+        delay(300)
+
+        return AgentSegment.FileChange(filePath, block.content, previousContent, writeResult)
     }
 
     /**
@@ -613,8 +624,19 @@ class AIAgentManager(private val context: Context) {
         fun onProcessing(message: String)
         fun onFileModifying(filePath: String, fileName: String)
         fun onFileModified(filePath: String, fileName: String, success: Boolean)
-        fun onSuccess(response: String, modifications: List<ModificationResult>, summary: ModificationSummary)
-        fun onTextResponse(response: String, summary: ModificationSummary)
+
+        /**
+         * The reply, in the order the agent produced it: prose and file writes interleaved.
+         *
+         * [modifications] is the full sequence, so a caller that renders the transcript preserves
+         * the agent's ordering; [results] and [summary] describe the writes alone.
+         */
+        fun onSuccess(
+            modifications: List<AgentSegment>,
+            results: List<ModificationResult>,
+            summary: ModificationSummary
+        )
+        fun onTextResponse(modifications: List<AgentSegment>, summary: ModificationSummary)
         fun onError(message: String)
         fun onRetry(attemptNumber: Int, message: String)
     }
@@ -656,15 +678,14 @@ class AIAgentManager(private val context: Context) {
     companion object {
         /** Provider used for the very first launch, before the user picks one. */
         private const val DEFAULT_PROVIDER_ID = "gemini"
+
+        /** Opens a file block: `@Anplatonc@file: /absolute/path`. */
+        private const val FILE_BLOCK_PREFIX = "@Anplatonc@file:"
+
+        /** Closes a file block; must appear alone at the start of its line. */
+        private const val FILE_BLOCK_END = "@Anplatonc@endfile"
     }
 }
-
-data class BaseFileModification(
-    val filePath: String,
-    val content: String,
-    val previousContent: String?,
-    val writeResult: FileWriteResult
-)
 
 data class UnifiedModificationAttempt(
     val timestamp: Long,
