@@ -20,6 +20,8 @@ package com.tom.rv2ide.artificial.agents.deepseek
 import android.content.Context
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
+import com.tom.rv2ide.artificial.agents.AgentStreamEvent
+import com.tom.rv2ide.artificial.agents.AgentStreamParser
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
@@ -180,173 +182,291 @@ class DeepSeek : AIAgent {
                   IllegalStateException("DeepSeek service not initialized")
               )
 
-          val fileContents = readRelevantFiles()
-          val needsCorrection = isUserRequestingCorrection(prompt)
-
-          val fullPrompt = buildString {
-            append("=== PROJECT STRUCTURE (THESE ARE THE EXACT PATHS YOU MUST USE) ===\n")
-            if (projectTreeResult != null) {
-              append(projectTreeResult!!.tree)
-              append("\n\n")
-              append("CRITICAL: Use ONLY the paths shown above. Do NOT make up fake paths like '/storage/emulated/0/project' or 'com.example.yourproject'.\n")
-              append("CRITICAL: Look at the actual paths above and use those EXACT paths.\n\n")
-            }
-            
-            if (fileContents.isNotEmpty()) {
-              append("=== CURRENT FILES CONTENT ===\n")
-              fileContents.forEach { (path, content) ->
-                append("FILE: $path\n")
-                append("CONTENT:\n")
-                append(content)
-                append("\n\n")
-              }
-            }
-            
-            if (context != null) {
-              append("=== ADDITIONAL CONTEXT ===\n")
-              append(context)
-              append("\n\n")
-            }
-            
-            if (conversationHistory.isNotEmpty()) {
-              append("=== CONVERSATION HISTORY ===\n")
-              conversationHistory.forEach { msg ->
-                append("${msg.role.uppercase()}: ${msg.content}\n\n")
-              }
-            }
-
-            if (needsCorrection && modificationHistory.isNotEmpty()) {
-              append("=== CORRECTION REQUIRED ===\n")
-              append("The user indicated the previous modification was WRONG.\n")
-              append("Previous failed attempts:\n")
-              modificationHistory.takeLast(3).forEach { attempt ->
-                append("Attempt ${attempt.attemptNumber}: ${attempt.filePath}\n")
-                append("Result: ${if (attempt.success) "Applied but user rejected" else "Failed"}\n\n")
-              }
-              append("You MUST try a DIFFERENT approach. Do NOT repeat the same solution.\n")
-              append("Analyze what went wrong and provide a better solution.\n\n")
-            }
-
-            if (currentAttemptCount > 0) {
-              append("=== RETRY ATTEMPT $currentAttemptCount/$maxRetryAttempts ===\n")
-              append("This is retry attempt number $currentAttemptCount.\n")
-              append("Previous attempts did not satisfy the user.\n")
-              append("Think carefully and provide a different solution.\n\n")
-            }
-            
-            append("=== USER REQUEST ===\n")
-            append(prompt)
-          }
-
+          val fullPrompt = buildFullPrompt(prompt, context)
           val response = callDeepSeekAPI(key, fullPrompt)
 
           if (response.isBlank()) {
             return@withContext Result.failure(Exception("Empty response from AI"))
           }
 
-          conversationHistory.add(ConversationMessage("user", prompt))
-          conversationHistory.add(ConversationMessage("assistant", response))
-
-          if (conversationHistory.size > 20) {
-            conversationHistory.removeAt(0)
-            conversationHistory.removeAt(0)
-          }
-
+          recordTurn(prompt, response)
           Result.success(response)
         } catch (e: Exception) {
           Result.failure(e)
         }
       }
 
-  private fun callDeepSeekAPI(apiKey: String, prompt: String): String {
-    android.util.Log.d("DeepSeek", "Starting API call to DeepSeek")
-    
-    val url = URL("https://api.deepseek.com/chat/completions")
-    val connection = url.openConnection() as HttpURLConnection
-    
+  override suspend fun generateCodeStreaming(
+      prompt: String,
+      context: String?,
+      language: String,
+      projectStructure: String?,
+      onEvent: (AgentStreamEvent) -> Unit,
+  ): Result<String> =
+      withContext(Dispatchers.IO) {
+        try {
+          val key = apiKey
+              ?: return@withContext Result.failure(
+                  IllegalStateException("DeepSeek service not initialized")
+              )
+
+          val fullPrompt = buildFullPrompt(prompt, context)
+          val parser = AgentStreamParser()
+          val streamed = StringBuilder()
+
+          streamDeepSeekAPI(key, fullPrompt) { delta ->
+            streamed.append(delta)
+            parser.accept(delta, onEvent)
+          }
+
+          parser.finish(onEvent)
+          val response = streamed.toString()
+
+          if (response.isBlank()) {
+            return@withContext Result.failure(Exception("Empty response from AI"))
+          }
+
+          recordTurn(prompt, response)
+          Result.success(response)
+        } catch (e: Exception) {
+          Result.failure(e)
+        }
+      }
+
+  /**
+   * The conversation history keeps the raw reply, file bodies included: the next request replays it,
+   * and the protocol is what tells the model where the blocks are.
+   */
+  private fun recordTurn(prompt: String, response: String) {
+    conversationHistory.add(ConversationMessage("user", prompt))
+    conversationHistory.add(ConversationMessage("assistant", response))
+
+    if (conversationHistory.size > 20) {
+      conversationHistory.removeAt(0)
+      conversationHistory.removeAt(0)
+    }
+  }
+
+  private fun buildFullPrompt(prompt: String, context: String?): String {
+    val fileContents = readRelevantFiles()
+    val needsCorrection = isUserRequestingCorrection(prompt)
+
+    return buildString {
+      append("=== PROJECT STRUCTURE (THESE ARE THE EXACT PATHS YOU MUST USE) ===\n")
+      if (projectTreeResult != null) {
+        append(projectTreeResult!!.tree)
+        append("\n\n")
+        append("CRITICAL: Use ONLY the paths shown above. Do NOT make up fake paths like '/storage/emulated/0/project' or 'com.example.yourproject'.\n")
+        append("CRITICAL: Look at the actual paths above and use those EXACT paths.\n\n")
+      }
+
+      if (fileContents.isNotEmpty()) {
+        append("=== CURRENT FILES CONTENT ===\n")
+        fileContents.forEach { (path, content) ->
+          append("FILE: $path\n")
+          append("CONTENT:\n")
+          append(content)
+          append("\n\n")
+        }
+      }
+
+      if (context != null) {
+        append("=== ADDITIONAL CONTEXT ===\n")
+        append(context)
+        append("\n\n")
+      }
+
+      if (conversationHistory.isNotEmpty()) {
+        append("=== CONVERSATION HISTORY ===\n")
+        conversationHistory.forEach { msg ->
+          append("${msg.role.uppercase()}: ${msg.content}\n\n")
+        }
+      }
+
+      if (needsCorrection && modificationHistory.isNotEmpty()) {
+        append("=== CORRECTION REQUIRED ===\n")
+        append("The user indicated the previous modification was WRONG.\n")
+        append("Previous failed attempts:\n")
+        modificationHistory.takeLast(3).forEach { attempt ->
+          append("Attempt ${attempt.attemptNumber}: ${attempt.filePath}\n")
+          append("Result: ${if (attempt.success) "Applied but user rejected" else "Failed"}\n\n")
+        }
+        append("You MUST try a DIFFERENT approach. Do NOT repeat the same solution.\n")
+        append("Analyze what went wrong and provide a better solution.\n\n")
+      }
+
+      if (currentAttemptCount > 0) {
+        append("=== RETRY ATTEMPT $currentAttemptCount/$maxRetryAttempts ===\n")
+        append("This is retry attempt number $currentAttemptCount.\n")
+        append("Previous attempts did not satisfy the user.\n")
+        append("Think carefully and provide a different solution.\n\n")
+      }
+
+      append("=== USER REQUEST ===\n")
+      append(prompt)
+    }
+  }
+
+  private fun buildMessages(fullPrompt: String, stream: Boolean): JSONObject {
+    val messages = JSONArray()
+
+    val systemMessage = JSONObject()
+    systemMessage.put("role", "system")
+    systemMessage.put("content", writingRules.useThis())
+    messages.put(systemMessage)
+
+    val userMessage = JSONObject()
+    userMessage.put("role", "user")
+    userMessage.put("content", fullPrompt)
+    messages.put(userMessage)
+
+    val requestBody = JSONObject()
+    requestBody.put("model", selectedModel)
+    requestBody.put("messages", messages)
+    requestBody.put("temperature", 0.7)
+    requestBody.put("max_tokens", 4096)
+    if (stream) requestBody.put("stream", true)
+
+    return requestBody
+  }
+
+  /**
+   * Reads the reply as it is produced, handing each content fragment to [onDelta].
+   *
+   * OpenAI-compatible SSE: one `data: {...}` line per chunk, each carrying
+   * `choices[0].delta.content`, terminated by `data: [DONE]`.
+   */
+  private fun streamDeepSeekAPI(apiKey: String, prompt: String, onDelta: (String) -> Unit) {
+    val connection = openConnection(apiKey)
+
     try {
-      connection.requestMethod = "POST"
-      connection.setRequestProperty("Content-Type", "application/json")
-      connection.setRequestProperty("Authorization", "Bearer $apiKey")
-      connection.doOutput = true
-      connection.connectTimeout = 30000
-      connection.readTimeout = 30000
-      
-      val messages = JSONArray()
-      
-      val systemMessage = JSONObject()
-      systemMessage.put("role", "system")
-      systemMessage.put("content", writingRules.useThis())
-      messages.put(systemMessage)
-      
-      val userMessage = JSONObject()
-      userMessage.put("role", "user")
-      userMessage.put("content", prompt)
-      messages.put(userMessage)
-      
-      val requestBody = JSONObject()
-      requestBody.put("model", selectedModel)
-      requestBody.put("messages", messages)
-      requestBody.put("temperature", 0.7)
-      requestBody.put("max_tokens", 4096)
-      
-      android.util.Log.d("DeepSeek", "Request body: ${requestBody.toString()}")
-      
+      val requestBody = buildMessages(prompt, stream = true)
       connection.outputStream.use { os ->
         os.write(requestBody.toString().toByteArray())
       }
-      
+
+      val responseCode = connection.responseCode
+      if (responseCode != HttpURLConnection.HTTP_OK) {
+        throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
+      }
+
+      connection.inputStream.bufferedReader().use { reader ->
+        while (true) {
+          val rawLine = reader.readLine() ?: break
+          if (!rawLine.startsWith("data:")) continue
+
+          val payload = rawLine.removePrefix("data:").trim()
+          if (payload.isEmpty() || payload == "[DONE]") continue
+
+          val delta = try {
+            JSONObject(payload)
+                .optJSONArray("choices")
+                ?.optJSONObject(0)
+                ?.optJSONObject("delta")
+                ?.optString("content")
+                .orEmpty()
+          } catch (e: Exception) {
+            ""
+          }
+
+          if (delta.isNotEmpty()) onDelta(delta)
+        }
+      }
+    } catch (e: RateLimitException) {
+      throw e
+    } catch (e: QuotaExceededException) {
+      throw e
+    } catch (e: InvalidApiKeyException) {
+      throw e
+    } catch (e: java.net.SocketTimeoutException) {
+      throw Exception("DeepSeek request timeout: ${e.message}")
+    } catch (e: java.net.UnknownHostException) {
+      throw Exception("Network error - cannot reach DeepSeek: ${e.message}")
+    } finally {
+      connection.disconnect()
+    }
+  }
+
+  private fun openConnection(apiKey: String): HttpURLConnection {
+    val connection = URL("https://api.deepseek.com/chat/completions").openConnection() as HttpURLConnection
+    connection.requestMethod = "POST"
+    connection.setRequestProperty("Content-Type", "application/json")
+    connection.setRequestProperty("Authorization", "Bearer $apiKey")
+    connection.setRequestProperty("Accept", "text/event-stream")
+    connection.doOutput = true
+    connection.connectTimeout = 30000
+    // A stream is idle between chunks, so the read timeout applies per chunk rather than to the
+    // whole reply; 30s of silence means the stream has stalled.
+    connection.readTimeout = 30000
+    return connection
+  }
+
+  private fun throwApiError(responseCode: Int, errorBody: String): Nothing {
+    try {
+      val errorJson = JSONObject(errorBody)
+      val errorObj = errorJson.optJSONObject("error")
+      val errorMessage = errorObj?.optString("message") ?: errorBody
+      val errorType = errorObj?.optString("type") ?: ""
+      val errorCode = errorObj?.optString("code") ?: ""
+
+      when {
+        responseCode == 429 || errorType.contains("rate_limit") || errorCode.contains("rate_limit") ->
+            throw RateLimitException("DeepSeek rate limit exceeded: $errorMessage")
+        errorType.contains("insufficient_quota") || errorMessage.contains("quota") || errorMessage.contains("billing") ->
+            throw QuotaExceededException("DeepSeek quota exceeded: $errorMessage")
+        errorType.contains("invalid_api_key") || errorCode.contains("invalid_api_key") ->
+            throw InvalidApiKeyException("Invalid DeepSeek API key: $errorMessage")
+        responseCode == 401 ->
+            throw InvalidApiKeyException("DeepSeek authentication failed: $errorMessage")
+        else ->
+            throw Exception("DeepSeek API error ($responseCode) - Type: $errorType, Code: $errorCode, Message: $errorMessage")
+      }
+    } catch (e: RateLimitException) {
+      throw e
+    } catch (e: QuotaExceededException) {
+      throw e
+    } catch (e: InvalidApiKeyException) {
+      throw e
+    } catch (e: Exception) {
+      throw Exception("DeepSeek API error ($responseCode): $errorBody")
+    }
+  }
+
+  private fun callDeepSeekAPI(apiKey: String, prompt: String): String {
+    android.util.Log.d("DeepSeek", "Starting API call to DeepSeek")
+
+    val connection = openConnection(apiKey)
+
+    try {
+      val requestBody = buildMessages(prompt, stream = false)
+
+      android.util.Log.d("DeepSeek", "Request body: ${requestBody.toString()}")
+
+      connection.outputStream.use { os ->
+        os.write(requestBody.toString().toByteArray())
+      }
+
       val responseCode = connection.responseCode
       android.util.Log.d("DeepSeek", "Response code: $responseCode")
-      
+
       if (responseCode != HttpURLConnection.HTTP_OK) {
         val errorStream = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
         android.util.Log.e("DeepSeek", "Error response: $errorStream")
-        
-        try {
-          val errorJson = JSONObject(errorStream)
-          val errorObj = errorJson.optJSONObject("error")
-          val errorMessage = errorObj?.optString("message") ?: errorStream
-          val errorType = errorObj?.optString("type") ?: ""
-          val errorCode = errorObj?.optString("code") ?: ""
-          
-          android.util.Log.e("DeepSeek", "Error type: $errorType, code: $errorCode, message: $errorMessage")
-          
-          when {
-            responseCode == 429 || errorType.contains("rate_limit") || errorCode.contains("rate_limit") -> 
-              throw RateLimitException("DeepSeek rate limit exceeded: $errorMessage")
-            errorType.contains("insufficient_quota") || errorMessage.contains("quota") || errorMessage.contains("billing") -> 
-              throw QuotaExceededException("DeepSeek quota exceeded: $errorMessage")
-            errorType.contains("invalid_api_key") || errorCode.contains("invalid_api_key") -> 
-              throw InvalidApiKeyException("Invalid DeepSeek API key: $errorMessage")
-            responseCode == 401 -> 
-              throw InvalidApiKeyException("DeepSeek authentication failed: $errorMessage")
-            else -> 
-              throw Exception("DeepSeek API error ($responseCode) - Type: $errorType, Code: $errorCode, Message: $errorMessage")
-          }
-        } catch (e: RateLimitException) {
-          throw e
-        } catch (e: QuotaExceededException) {
-          throw e
-        } catch (e: InvalidApiKeyException) {
-          throw e
-        } catch (e: Exception) {
-          throw Exception("DeepSeek API error ($responseCode): $errorStream")
-        }
+        throwApiError(responseCode, errorStream)
       }
-      
+
       val responseBody = connection.inputStream.bufferedReader().readText()
       android.util.Log.d("DeepSeek", "Success response received, length: ${responseBody.length}")
-      
+
       val jsonResponse = JSONObject(responseBody)
-      
+
       val choices = jsonResponse.getJSONArray("choices")
       if (choices.length() > 0) {
         val firstChoice = choices.getJSONObject(0)
         val message = firstChoice.getJSONObject("message")
         return message.getString("content")
       }
-      
+
       throw Exception("No response from DeepSeek API")
     } catch (e: RateLimitException) {
       android.util.Log.e("DeepSeek", "Rate limit exception", e)

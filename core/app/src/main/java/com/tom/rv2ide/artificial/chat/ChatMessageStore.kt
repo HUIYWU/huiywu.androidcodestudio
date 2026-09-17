@@ -118,6 +118,32 @@ class ChatMessageStore {
     }
 
     /**
+     * Appends streamed prose to the answer, growing the trailing text block.
+     *
+     * Deltas arrive far faster than the list can be rebuilt, so consecutive text lands in one block
+     * rather than one block per delta. [completeAnswer] later replaces the whole list with the final
+     * ordered blocks, so this is a live view and not the source of truth for ordering.
+     */
+    fun appendProse(text: String) {
+        if (text.isEmpty()) return
+        val id = currentAssistantId
+        if (id == NO_ID) return
+        _messages.value = _messages.value.map { message ->
+            if (message is ChatMessage.Assistant && message.id == id) {
+                val last = message.blocks.lastOrNull()
+                val blocks = if (last is ChatBlock.Text) {
+                    message.blocks.dropLast(1) + last.copy(markdown = last.markdown + text)
+                } else {
+                    message.blocks + ChatBlock.Text(text)
+                }
+                message.copy(blocks = blocks)
+            } else {
+                message
+            }
+        }
+    }
+
+    /**
      * Replaces the answer's blocks with the final ones, in the order the agent produced them.
      *
      * Called from `onSuccess` / `onTextResponse`, which is the first point where prose and file

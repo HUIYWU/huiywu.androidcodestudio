@@ -20,6 +20,7 @@ package com.tom.rv2ide.handlers
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.agents.AgentSegment
+import com.tom.rv2ide.artificial.agents.AgentStreamEvent
 import com.tom.rv2ide.artificial.chat.ChatBlock
 import com.tom.rv2ide.artificial.chat.ChatMessageStore
 import kotlinx.coroutines.Job
@@ -82,6 +83,12 @@ class AIRequestHandler(
 
             override fun onFileModified(filePath: String, fileName: String, success: Boolean) {
                 // Finalised by onSuccess, which also carries the written content.
+            }
+
+            override fun onStreamEvent(event: AgentStreamEvent) {
+                if (event is AgentStreamEvent.TextDelta) {
+                    messages.appendProse(event.text)
+                }
             }
 
             override fun onSuccess(

@@ -34,13 +34,38 @@ interface AIAgent {
     fun setContext(context: Context)
     fun setProjectData(projectTreeResult: ProjectTreeResult)
     fun clearConversation()
-    
     suspend fun generateCode(
         prompt: String,
         context: String?,
         language: String,
         projectStructure: String?
     ): Result<String>
+
+    /**
+     * Same request as [generateCode], but reports prose as it arrives.
+     *
+     * The returned text is the full reply, used for the conversation history and for the final
+     * parse, so a provider that cannot stream can answer by calling [generateCode] and replaying
+     * the result through the parser.
+     *
+     * Only [AgentStreamEvent.TextDelta] is guaranteed to arrive incrementally; a
+     * [AgentStreamEvent.FileCompleted] may be reported late, because a file block is not complete
+     * until its closing delimiter has been read.
+     */
+    suspend fun generateCodeStreaming(
+        prompt: String,
+        context: String?,
+        language: String,
+        projectStructure: String?,
+        onEvent: (AgentStreamEvent) -> Unit
+    ): Result<String> {
+        val result = generateCode(prompt, context, language, projectStructure)
+        result.getOrNull()?.let { reply ->
+            AgentStreamParser().parseAll(reply).forEach(onEvent)
+        }
+        return result
+    }
+    
     
     fun recordModification(filePath: String, oldContent: String?, newContent: String, success: Boolean)
     fun undoLastModification(): Boolean

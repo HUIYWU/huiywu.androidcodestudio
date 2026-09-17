@@ -205,11 +205,12 @@ class AIAgentManager(private val context: Context) {
 
                 val previousFileStates = captureCurrentFileStates()
 
-                val result = currentAgent?.generateCode(
+                val result = currentAgent?.generateCodeStreaming(
                     prompt = userRequest,
                     context = null,
                     language = "kotlin",
-                    projectStructure = null
+                    projectStructure = null,
+                    onEvent = callback::onStreamEvent
                 ) ?: Result.failure(Exception("No agent initialized"))
 
                 result.fold(
@@ -340,97 +341,53 @@ class AIAgentManager(private val context: Context) {
         return availableProviders.firstOrNull { it != currentProviderId }
     }
 
-    private fun isFileBlockStart(line: String): Boolean =
-        line.startsWith(FILE_BLOCK_PREFIX)
-
-    private fun isFileBlockEnd(line: String): Boolean =
-        line.trim() == FILE_BLOCK_END
-
-    /** A parsed block, before any file has been written. */
-    private sealed interface ParsedBlock {
-        data class Text(val markdown: String) : ParsedBlock
-
-        data class File(val filePath: String, val content: String) : ParsedBlock
-    }
-
-    /**
-     * Splits an agent reply into the ordered sequence of prose and file writes it describes.
-     *
-     * The reply is a plain document: prose may precede, separate and follow file blocks, and the
-     * order in which the agent wrote them is the order the transcript should show. A file block is
-     * opened by a line starting with [FILE_BLOCK_PREFIX] and closed by a line equal to
-     * [FILE_BLOCK_END], which makes a block's extent knowable the moment its closing line is read —
-     * a plain text body between two markers could only be delimited by the next marker.
-     *
-     * Text that is not inside a block is prose and is emitted verbatim; nothing is trimmed away.
-     */
-    private fun splitIntoSegments(response: String): List<ParsedBlock> {
-        val blocks = mutableListOf<ParsedBlock>()
-        val prose = StringBuilder()
-        var pendingPath: String? = null
-        val pendingContent = StringBuilder()
-
-        fun flushProse() {
-            val text = prose.toString().trim()
-            if (text.isNotEmpty()) blocks.add(ParsedBlock.Text(text))
-            prose.clear()
-        }
-
-        for (line in response.lines()) {
-            when {
-                isFileBlockStart(line) -> {
-                    flushProse()
-                    pendingPath = line.substringAfter(FILE_BLOCK_PREFIX).trim()
-                    pendingContent.clear()
-                }
-                isFileBlockEnd(line) -> {
-                    val path = pendingPath
-                    if (path != null) {
-                        blocks.add(ParsedBlock.File(path, pendingContent.toString().trim()))
-                        pendingContent.clear()
-                    }
-                    pendingPath = null
-                }
-                pendingPath != null -> pendingContent.append(line).append("\n")
-                else -> prose.append(line).append("\n")
-            }
-        }
-
-        flushProse()
-        return blocks
-    }
-
     private suspend fun processModifications(
         response: String,
         previousFileStates: Map<String, String>,
         callback: AIAgentCallback
-    ): List<AgentSegment> = splitIntoSegments(response).map { block ->
-        when (block) {
-            is ParsedBlock.Text -> AgentSegment.Text(block.markdown)
-            is ParsedBlock.File -> writeFileBlock(block, previousFileStates, callback)
+    ): List<AgentSegment> {
+        val segments = mutableListOf<AgentSegment>()
+        val prose = StringBuilder()
+
+        fun flushProse() {
+            if (prose.isNotBlank()) segments.add(AgentSegment.Text(prose.toString()))
+            prose.setLength(0)
         }
+
+        AgentStreamParser().parseAll(response).forEach { event ->
+            when (event) {
+                is AgentStreamEvent.TextDelta -> prose.append(event.text)
+                is AgentStreamEvent.FileCompleted -> {
+                    flushProse()
+                    segments.add(writeFileBlock(event.filePath, event.content, previousFileStates, callback))
+                }
+            }
+        }
+        flushProse()
+
+        return segments
     }
 
     private suspend fun writeFileBlock(
-        block: ParsedBlock.File,
+        filePath: String,
+        content: String,
         previousFileStates: Map<String, String>,
         callback: AIAgentCallback
     ): AgentSegment.FileChange {
-        val filePath = block.filePath
         val fileName = File(filePath).name
         callback.onFileModifying(filePath, fileName)
 
         val previousContent = resolvePreviousContent(filePath, previousFileStates)
-        val writeResult = currentAgent?.writeFile(filePath, block.content)
+        val writeResult = currentAgent?.writeFile(filePath, content)
             ?: FileWriteResult.Error("No agent initialized")
 
         val success = writeResult is FileWriteResult.Success
-        currentAgent?.recordModification(filePath, previousContent, block.content, success)
+        currentAgent?.recordModification(filePath, previousContent, content, success)
 
         callback.onFileModified(filePath, fileName, success)
         delay(300)
 
-        return AgentSegment.FileChange(filePath, block.content, previousContent, writeResult)
+        return AgentSegment.FileChange(filePath, content, previousContent, writeResult)
     }
 
     /**
@@ -626,6 +583,14 @@ class AIAgentManager(private val context: Context) {
         fun onFileModified(filePath: String, fileName: String, success: Boolean)
 
         /**
+         * Prose as the provider produces it, before the reply is complete.
+         *
+         * Only text is reported here: a file block is not delimited until its closing line has been
+         * read, and it is written (with its diff) only once the whole reply is available.
+         */
+        fun onStreamEvent(event: AgentStreamEvent) {}
+
+        /**
          * The reply, in the order the agent produced it: prose and file writes interleaved.
          *
          * [modifications] is the full sequence, so a caller that renders the transcript preserves
@@ -678,12 +643,6 @@ class AIAgentManager(private val context: Context) {
     companion object {
         /** Provider used for the very first launch, before the user picks one. */
         private const val DEFAULT_PROVIDER_ID = "gemini"
-
-        /** Opens a file block: `@Anplatonc@file: /absolute/path`. */
-        private const val FILE_BLOCK_PREFIX = "@Anplatonc@file:"
-
-        /** Closes a file block; must appear alone at the start of its line. */
-        private const val FILE_BLOCK_END = "@Anplatonc@endfile"
     }
 }
 
