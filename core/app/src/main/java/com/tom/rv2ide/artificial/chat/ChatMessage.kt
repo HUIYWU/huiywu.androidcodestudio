@@ -77,6 +77,13 @@ sealed interface ChatBlock {
     data class Text(val markdown: String) : ChatBlock
 
     /**
+     * The reasoning the model reported before answering, rendered as a collapsed block.
+     *
+     * Rendered in the muted colour so it reads as context for the answer rather than as the answer.
+     */
+    data class Thinking(val markdown: String) : ChatBlock
+
+    /**
      * A file the agent rewrote, rendered inline in the transcript as a collapsible row.
      *
      * This is what replaced the separate "Modification Summary" card plus file list: both described
@@ -99,4 +106,20 @@ sealed interface ChatBlock {
 
         val fileName: String get() = filePath.substringAfterLast('/')
     }
+
+    /**
+     * A tool call the agent made, rendered as a collapsed row.
+     *
+     * The header carries the tool name and [summary]; expanding shows the raw [arguments] and, once
+     * the call has finished, its [result]. [callId] ties the row to the call so the result can be
+     * filled in place when it arrives; [result] is null until then.
+     */
+    data class ToolCall(
+        val callId: String,
+        val toolName: String,
+        val summary: String,
+        val arguments: String,
+        val result: String? = null,
+        val isError: Boolean = false
+    ) : ChatBlock
 }

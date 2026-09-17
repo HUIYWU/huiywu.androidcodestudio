@@ -20,6 +20,7 @@ package com.tom.rv2ide.artificial.agents.deepseek
 import android.content.Context
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
+import com.tom.rv2ide.artificial.agents.AgentHistory
 import com.tom.rv2ide.artificial.agents.AgentStreamEvent
 import com.tom.rv2ide.artificial.agents.AgentStreamParser
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
@@ -46,7 +47,7 @@ class DeepSeek : AIAgent {
   private val writingRules = WritingRules.Instructions()
   private var projectTreeResult: ProjectTreeResult? = null
   private var fileWriter: AIFileWriter? = null
-  private val conversationHistory = mutableListOf<ConversationMessage>()
+  override val history = AgentHistory()
   private val modificationHistory = mutableListOf<ModificationAttempt>()
   private var currentAttemptCount = 0
   private val maxRetryAttempts = 3
@@ -103,7 +104,7 @@ class DeepSeek : AIAgent {
   }
 
   override fun clearConversation() {
-    conversationHistory.clear()
+    history.clear()
     modificationHistory.clear()
     currentAttemptCount = 0
   }
@@ -214,9 +215,13 @@ class DeepSeek : AIAgent {
           val parser = AgentStreamParser()
           val streamed = StringBuilder()
 
-          streamDeepSeekAPI(key, fullPrompt) { delta ->
-            streamed.append(delta)
-            parser.accept(delta, onEvent)
+          streamDeepSeekAPI(key, fullPrompt) { delta, isReasoning ->
+            if (isReasoning) {
+              onEvent(AgentStreamEvent.ThinkingDelta(delta))
+            } else {
+              streamed.append(delta)
+              parser.accept(delta, onEvent)
+            }
           }
 
           parser.finish(onEvent)
@@ -238,13 +243,7 @@ class DeepSeek : AIAgent {
    * and the protocol is what tells the model where the blocks are.
    */
   private fun recordTurn(prompt: String, response: String) {
-    conversationHistory.add(ConversationMessage("user", prompt))
-    conversationHistory.add(ConversationMessage("assistant", response))
-
-    if (conversationHistory.size > 20) {
-      conversationHistory.removeAt(0)
-      conversationHistory.removeAt(0)
-    }
+    history.recordTurn(prompt, response)
   }
 
   private fun buildFullPrompt(prompt: String, context: String?): String {
@@ -276,9 +275,10 @@ class DeepSeek : AIAgent {
         append("\n\n")
       }
 
-      if (conversationHistory.isNotEmpty()) {
+      val historyEntries = history.snapshot()
+      if (historyEntries.isNotEmpty()) {
         append("=== CONVERSATION HISTORY ===\n")
-        conversationHistory.forEach { msg ->
+        historyEntries.forEach { msg ->
           append("${msg.role.uppercase()}: ${msg.content}\n\n")
         }
       }
@@ -331,12 +331,15 @@ class DeepSeek : AIAgent {
   }
 
   /**
-   * Reads the reply as it is produced, handing each content fragment to [onDelta].
+   * Reads the reply as it is produced, handing each fragment to [onDelta] along with whether it is
+   * reasoning rather than answer text.
    *
-   * OpenAI-compatible SSE: one `data: {...}` line per chunk, each carrying
-   * `choices[0].delta.content`, terminated by `data: [DONE]`.
+   * The two arrive in separate fields of the same delta, so the distinction is made here and not by
+   * parsing: `content` is the reply, `reasoning_content` is what led to it.
+   *
+   * OpenAI-compatible SSE: one `data: {...}` line per chunk, terminated by `data: [DONE]`.
    */
-  private fun streamDeepSeekAPI(apiKey: String, prompt: String, onDelta: (String) -> Unit) {
+  private fun streamDeepSeekAPI(apiKey: String, prompt: String, onDelta: (String, Boolean) -> Unit) {
     val connection = openConnection(apiKey)
 
     try {
@@ -358,18 +361,28 @@ class DeepSeek : AIAgent {
           val payload = rawLine.removePrefix("data:").trim()
           if (payload.isEmpty() || payload == "[DONE]") continue
 
-          val delta = try {
+          val deltaNode = try {
             JSONObject(payload)
                 .optJSONArray("choices")
                 ?.optJSONObject(0)
                 ?.optJSONObject("delta")
-                ?.optString("content")
-                .orEmpty()
           } catch (e: Exception) {
-            ""
+            null
           }
 
-          if (delta.isNotEmpty()) onDelta(delta)
+          val rawContent = deltaNode?.opt("content")
+          val content =
+              if (rawContent == null || rawContent === JSONObject.NULL) "" else rawContent as? String ?: ""
+          if (content.isNotEmpty()) onDelta(content, false)
+
+          val rawReasoning = deltaNode?.opt("reasoning_content")
+          val reasoning =
+              if (rawReasoning == null || rawReasoning === JSONObject.NULL) {
+                ""
+              } else {
+                rawReasoning as? String ?: ""
+              }
+          if (reasoning.isNotEmpty()) onDelta(reasoning, true)
         }
       }
     } catch (e: RateLimitException) {
@@ -540,9 +553,3 @@ class DeepSeek : AIAgent {
 
   override fun isInitialized(): Boolean = apiKey != null
 }
-
-
-data class ConversationMessage(
-    val role: String,
-    val content: String
-)

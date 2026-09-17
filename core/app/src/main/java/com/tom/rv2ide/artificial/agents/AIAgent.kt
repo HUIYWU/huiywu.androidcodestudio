@@ -28,6 +28,9 @@ import com.tom.rv2ide.artificial.file.FileWriteResult
 interface AIAgent {
     val providerId: String
     val providerName: String
+
+    /** Cross-request conversation history; see [AgentHistory]. */
+    val history: AgentHistory
     
     fun initialize(apiKey: String, context: Context)
     fun reinitializeWithNewModel(apiKey: String, context: Context)
@@ -65,6 +68,24 @@ interface AIAgent {
         }
         return result
     }
+
+    /**
+     * One round of a tool-aware conversation.
+     *
+     * [messages] is the running conversation — system prompt, history and the user request, plus
+     * every tool round-trip of this request; [tools] are the tools the provider may call. The round's
+     * text and any tool calls the model asked for are returned together; the manager executes the
+     * calls and then requests the next round.
+     *
+     * The default marks the provider as not tool-aware: the request then falls back to the text
+     * protocol ([generateCodeStreaming]).
+     */
+    suspend fun generateTurn(
+        messages: List<AgentMessage>,
+        tools: List<AgentToolSpec>,
+        onEvent: (AgentStreamEvent) -> Unit
+    ): Result<AgentTurn> =
+        Result.failure(ToolsNotSupportedException("$providerName does not support tool calling"))
     
     
     fun recordModification(filePath: String, oldContent: String?, newContent: String, success: Boolean)
@@ -88,3 +109,9 @@ data class ModificationAttempt(
     val attemptNumber: Int = 0,
     val success: Boolean = false
 )
+
+/**
+ * Returned by the default [AIAgent.generateTurn]: the provider cannot call tools, so the request
+ * answers through the text protocol instead.
+ */
+class ToolsNotSupportedException(message: String) : UnsupportedOperationException(message)

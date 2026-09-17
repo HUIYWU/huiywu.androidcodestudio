@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicLong
  * recreation — a configuration change such as a theme switch no longer discards the conversation.
  *
  * Known limitation: nothing is persisted. Process death loses the transcript, exactly as the
- * providers' in-memory `conversationHistory` already did. Persisting it is a separate change.
+ * providers' in-memory history already did. Persisting it is a separate change.
  *
  * A request is assumed to be the only one in flight: `AIRequestHandler` cancels the previous job
  * before starting a new one, and `AIAgentCallback` carries no message identifier — so "the current
@@ -137,6 +137,117 @@ class ChatMessageStore {
                     message.blocks + ChatBlock.Text(text)
                 }
                 message.copy(blocks = blocks)
+            } else {
+                message
+            }
+        }
+    }
+
+    /**
+     * Appends streamed reasoning to the answer, growing the trailing thinking block.
+     *
+     * Grows in place for the same reason as [appendProse]: reasoning deltas are just as frequent, and
+     * one block per delta would rebuild the list on every one of them.
+     */
+    fun appendThinking(text: String) {
+        if (text.isEmpty()) return
+        val id = currentAssistantId
+        if (id == NO_ID) return
+        _messages.value = _messages.value.map { message ->
+            if (message is ChatMessage.Assistant && message.id == id) {
+                val last = message.blocks.lastOrNull()
+                val blocks = if (last is ChatBlock.Thinking) {
+                    message.blocks.dropLast(1) + last.copy(markdown = last.markdown + text)
+                } else {
+                    message.blocks + ChatBlock.Thinking(text)
+                }
+                message.copy(blocks = blocks)
+            } else {
+                message
+            }
+        }
+    }
+
+    /**
+     * Appends a pending row for a tool call the agent has started.
+     *
+     * The row is completed later by [completeToolCall], once the result is known.
+     */
+    fun addToolCall(callId: String, toolName: String, summary: String, arguments: String) {
+        val id = currentAssistantId
+        if (id == NO_ID) return
+        _messages.value = _messages.value.map { message ->
+            if (message is ChatMessage.Assistant && message.id == id) {
+                message.copy(
+                    blocks = message.blocks + ChatBlock.ToolCall(
+                        callId = callId,
+                        toolName = toolName,
+                        summary = summary,
+                        arguments = arguments
+                    )
+                )
+            } else {
+                message
+            }
+        }
+    }
+
+    /** Fills in the result of the row opened by [addToolCall]; a no-op if the row is gone. */
+    fun completeToolCall(callId: String, result: String, isError: Boolean) {
+        val id = currentAssistantId
+        if (id == NO_ID) return
+        _messages.value = _messages.value.map { message ->
+            if (message is ChatMessage.Assistant && message.id == id) {
+                message.copy(
+                    blocks = message.blocks.map { block ->
+                        if (block is ChatBlock.ToolCall && block.callId == callId &&
+                            block.result == null
+                        ) {
+                            block.copy(result = result, isError = isError)
+                        } else {
+                            block
+                        }
+                    }
+                )
+            } else {
+                message
+            }
+        }
+    }
+
+    /**
+     * Finalises the pending file row for [filePath] with what was actually written.
+     *
+     * Tool mode's counterpart of [completeAnswer] for a single write: the loop reports each write as
+     * it happens, long before the final answer, so the row cannot wait for the whole answer to be
+     * replaced.
+     */
+    fun completeFileChange(
+        filePath: String,
+        previousContent: String?,
+        newContent: String,
+        success: Boolean
+    ) {
+        val id = currentAssistantId
+        if (id == NO_ID) return
+        _messages.value = _messages.value.map { message ->
+            if (message is ChatMessage.Assistant && message.id == id) {
+                message.copy(
+                    blocks = message.blocks.map { block ->
+                        if (block is ChatBlock.FileChange && block.pending &&
+                            block.filePath == filePath
+                        ) {
+                            ChatBlock.FileChange(
+                                filePath = filePath,
+                                success = success,
+                                previousContent = previousContent,
+                                newContent = newContent
+                            )
+                        } else {
+                            block
+                        }
+                    }
+                )
             } else {
                 message
             }

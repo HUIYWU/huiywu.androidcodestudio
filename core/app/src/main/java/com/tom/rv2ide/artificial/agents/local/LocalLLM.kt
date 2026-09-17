@@ -13,13 +13,16 @@
  *
  *  You should have received a copy of the GNU General Public License
  *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
-*/
+ */
 
 package com.tom.rv2ide.artificial.agents.local
 
 import android.content.Context
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
+import com.tom.rv2ide.artificial.agents.AgentHistory
+import com.tom.rv2ide.artificial.agents.AgentStreamEvent
+import com.tom.rv2ide.artificial.agents.AgentStreamParser
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
@@ -51,7 +54,7 @@ class LocalLLM : AIAgent {
   private val writingRules = WritingRules.Instructions()
   private var projectTreeResult: ProjectTreeResult? = null
   private var fileWriter: AIFileWriter? = null
-  private val conversationHistory = mutableListOf<ConversationMessage>()
+  override val history = AgentHistory()
   private val modificationHistory = mutableListOf<ModificationAttempt>()
   private var currentAttemptCount = 0
   private val maxRetryAttempts = 3
@@ -71,7 +74,6 @@ class LocalLLM : AIAgent {
                   // endpoint (blank, or with stray whitespace) is not reported as valid.
                   val url = LocalLlmSettings.baseUrl()
                   val model = LocalLlmSettings.model()
-                  android.util.Log.d("LocalLLM", "hasValidApiKey check: url=$url, model=$model")
                   return url != null && model != null
               }
               
@@ -89,8 +91,6 @@ class LocalLLM : AIAgent {
           // there, so appending "/v1/chat/completions" cannot produce a double slash.
           baseUrl = LocalLlmSettings.baseUrl()
           modelName = LocalLlmSettings.model()
-
-          android.util.Log.d("LocalLLM", "Initialized with baseUrl=$baseUrl, model=$modelName")
 
           if (baseUrl == null || modelName == null) {
               throw IllegalStateException("Local LLM not configured. Please set base URL and model name.")
@@ -116,7 +116,7 @@ class LocalLLM : AIAgent {
   }
 
   override fun clearConversation() {
-    conversationHistory.clear()
+    history.clear()
     modificationHistory.clear()
     currentAttemptCount = 0
   }
@@ -196,135 +196,14 @@ class LocalLLM : AIAgent {
               )
           }
 
-          val fileContents = readRelevantFiles()
-          val needsCorrection = isUserRequestingCorrection(prompt)
-
-          val fullPrompt = buildString {
-            append("=== PROJECT STRUCTURE (THESE ARE THE EXACT PATHS YOU MUST USE) ===\n")
-            if (projectTreeResult != null) {
-              append(projectTreeResult!!.tree)
-              append("\n\n")
-              append("CRITICAL: Use ONLY the paths shown above. Do NOT make up fake paths like '/storage/emulated/0/project' or 'com.example.yourproject'.\n")
-              append("CRITICAL: Look at the actual paths above and use those EXACT paths.\n\n")
-            }
-            
-            if (fileContents.isNotEmpty()) {
-              append("=== CURRENT FILES CONTENT ===\n")
-              fileContents.forEach { (path, content) ->
-                append("FILE: $path\n")
-                append("CONTENT:\n")
-                append(content)
-                append("\n\n")
-              }
-            }
-            
-            if (context != null) {
-              append("=== ADDITIONAL CONTEXT ===\n")
-              append(context)
-              append("\n\n")
-            }
-            
-            if (conversationHistory.isNotEmpty()) {
-              append("=== CONVERSATION HISTORY ===\n")
-              conversationHistory.forEach { msg ->
-                append("${msg.role.uppercase()}: ${msg.content}\n\n")
-              }
-            }
-
-            if (needsCorrection && modificationHistory.isNotEmpty()) {
-              append("=== CORRECTION REQUIRED ===\n")
-              append("The user indicated the previous modification was WRONG.\n")
-              append("Previous failed attempts:\n")
-              modificationHistory.takeLast(3).forEach { attempt ->
-                append("Attempt ${attempt.attemptNumber}: ${attempt.filePath}\n")
-                append("Result: ${if (attempt.success) "Applied but user rejected" else "Failed"}\n\n")
-              }
-              append("You MUST try a DIFFERENT approach. Do NOT repeat the same solution.\n")
-              append("Analyze what went wrong and provide a better solution.\n\n")
-            }
-
-            if (currentAttemptCount > 0) {
-              append("=== RETRY ATTEMPT $currentAttemptCount/$maxRetryAttempts ===\n")
-              append("This is retry attempt number $currentAttemptCount.\n")
-              append("Previous attempts did not satisfy the user.\n")
-              append("Think carefully and provide a different solution.\n\n")
-            }
-            
-            append("=== USER REQUEST ===\n")
-            append(prompt)
-          }
-
-          val messages = JSONArray()
-          messages.put(JSONObject().apply {
-            put("role", "system")
-            put("content", writingRules.useThis())
-          })
-          messages.put(JSONObject().apply {
-            put("role", "user")
-            put("content", fullPrompt)
-          })
-
-          val requestBody = JSONObject().apply {
-            put("model", modelName)
-            put("messages", messages)
-            put("temperature", 0.7)
-            put("stream", false)
-          }
-
-          val request = Request.Builder()
-              .url("$baseUrl/v1/chat/completions")
-              .apply {
-                // Most local servers are unauthenticated, but the settings dialog allows a key for
-                // the ones that are; sending it here keeps the two consistent. It is read from the
-                // same source the dialog writes to, since initialize() does not retain its key.
-                LocalLlmSettings.apiKey()
-                  ?.let { header("Authorization", "Bearer $it") }
-              }
-              .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-              .build()
-
-          val response = try {
-            httpClient.newCall(request).execute()
-          } catch (e: Exception) {
-            val errorMessage = e.message ?: ""
-            when {
-              errorMessage.contains("timeout") ||
-              errorMessage.contains("connect") -> 
-                throw com.tom.rv2ide.artificial.exceptions.RateLimitException(
-                  "Connection timeout. Please check your local server."
-                )
-              else -> throw e
-            }
-          }
-
-          if (!response.isSuccessful) {
-            val errorBody = response.body?.string() ?: "Unknown error"
-            return@withContext Result.failure(
-              Exception("Local LLM error ${response.code}: $errorBody")
-            )
-          }
-
-          val responseBody = response.body?.string() ?: ""
-          val jsonResponse = JSONObject(responseBody)
-          
-          val generatedResponse = jsonResponse
-              .getJSONArray("choices")
-              .getJSONObject(0)
-              .getJSONObject("message")
-              .getString("content")
+          val fullPrompt = buildFullPrompt(prompt, context)
+          val generatedResponse = callLocalLlmApi(fullPrompt)
 
           if (generatedResponse.isBlank()) {
             return@withContext Result.failure(Exception("Empty response from Local LLM"))
           }
 
-          conversationHistory.add(ConversationMessage("user", prompt))
-          conversationHistory.add(ConversationMessage("assistant", generatedResponse))
-
-          if (conversationHistory.size > 20) {
-            conversationHistory.removeAt(0)
-            conversationHistory.removeAt(0)
-          }
-
+          recordTurn(prompt, generatedResponse)
           Result.success(generatedResponse)
         } catch (e: com.tom.rv2ide.artificial.exceptions.RateLimitException) {
           Result.failure(e)
@@ -336,6 +215,248 @@ class LocalLLM : AIAgent {
           Result.failure(e)
         }
       }
+
+  override suspend fun generateCodeStreaming(
+      prompt: String,
+      context: String?,
+      language: String,
+      projectStructure: String?,
+      onEvent: (AgentStreamEvent) -> Unit,
+  ): Result<String> =
+      withContext(Dispatchers.IO) {
+        try {
+          if (baseUrl.isNullOrEmpty() || modelName.isNullOrEmpty()) {
+              return@withContext Result.failure(
+                  IllegalStateException("Local LLM not configured")
+              )
+          }
+
+          val fullPrompt = buildFullPrompt(prompt, context)
+          val parser = AgentStreamParser()
+          val streamed = StringBuilder()
+
+          streamLocalLlmApi(fullPrompt) { delta, isReasoning ->
+            if (isReasoning) {
+              onEvent(AgentStreamEvent.ThinkingDelta(delta))
+            } else {
+              streamed.append(delta)
+              parser.accept(delta, onEvent)
+            }
+          }
+
+          parser.finish(onEvent)
+          val generatedResponse = streamed.toString()
+
+          if (generatedResponse.isBlank()) {
+            return@withContext Result.failure(Exception("Empty response from Local LLM"))
+          }
+
+          recordTurn(prompt, generatedResponse)
+          Result.success(generatedResponse)
+        } catch (e: com.tom.rv2ide.artificial.exceptions.RateLimitException) {
+          Result.failure(e)
+        } catch (e: com.tom.rv2ide.artificial.exceptions.QuotaExceededException) {
+          Result.failure(e)
+        } catch (e: com.tom.rv2ide.artificial.exceptions.InvalidApiKeyException) {
+          Result.failure(e)
+        } catch (e: Exception) {
+          Result.failure(e)
+        }
+      }
+
+  private fun buildFullPrompt(prompt: String, context: String?): String {
+    val fileContents = readRelevantFiles()
+    val needsCorrection = isUserRequestingCorrection(prompt)
+
+    return buildString {
+      append("=== PROJECT STRUCTURE (THESE ARE THE EXACT PATHS YOU MUST USE) ===\n")
+      if (projectTreeResult != null) {
+        append(projectTreeResult!!.tree)
+        append("\n\n")
+        append("CRITICAL: Use ONLY the paths shown above. Do NOT make up fake paths like '/storage/emulated/0/project' or 'com.example.yourproject'.\n")
+        append("CRITICAL: Look at the actual paths above and use those EXACT paths.\n\n")
+      }
+      
+      if (fileContents.isNotEmpty()) {
+        append("=== CURRENT FILES CONTENT ===\n")
+        fileContents.forEach { (path, content) ->
+          append("FILE: $path\n")
+          append("CONTENT:\n")
+          append(content)
+          append("\n\n")
+        }
+      }
+      
+      if (context != null) {
+        append("=== ADDITIONAL CONTEXT ===\n")
+        append(context)
+        append("\n\n")
+      }
+      
+      val historyEntries = history.snapshot()
+      if (historyEntries.isNotEmpty()) {
+        append("=== CONVERSATION HISTORY ===\n")
+        historyEntries.forEach { msg ->
+          append("${msg.role.uppercase()}: ${msg.content}\n\n")
+        }
+      }
+
+      if (needsCorrection && modificationHistory.isNotEmpty()) {
+        append("=== CORRECTION REQUIRED ===\n")
+        append("The user indicated the previous modification was WRONG.\n")
+        append("Previous failed attempts:\n")
+        modificationHistory.takeLast(3).forEach { attempt ->
+          append("Attempt ${attempt.attemptNumber}: ${attempt.filePath}\n")
+          append("Result: ${if (attempt.success) "Applied but user rejected" else "Failed"}\n\n")
+        }
+        append("You MUST try a DIFFERENT approach. Do NOT repeat the same solution.\n")
+        append("Analyze what went wrong and provide a better solution.\n\n")
+      }
+
+      if (currentAttemptCount > 0) {
+        append("=== RETRY ATTEMPT $currentAttemptCount/$maxRetryAttempts ===\n")
+        append("This is retry attempt number $currentAttemptCount.\n")
+        append("Previous attempts did not satisfy the user.\n")
+        append("Think carefully and provide a different solution.\n\n")
+      }
+      
+      append("=== USER REQUEST ===\n")
+      append(prompt)
+    }
+  }
+
+  private fun buildRequestBody(fullPrompt: String, stream: Boolean): JSONObject {
+    val messages = JSONArray()
+    messages.put(JSONObject().apply {
+      put("role", "system")
+      put("content", writingRules.useThis())
+    })
+    messages.put(JSONObject().apply {
+      put("role", "user")
+      put("content", fullPrompt)
+    })
+
+    return JSONObject().apply {
+      put("model", modelName)
+      put("messages", messages)
+      put("temperature", 0.7)
+      put("stream", stream)
+    }
+  }
+
+  private fun buildRequest(requestBody: JSONObject): Request =
+      Request.Builder()
+          .url("$baseUrl/v1/chat/completions")
+          .apply {
+            // Most local servers are unauthenticated, but the settings dialog allows a key for
+            // the ones that are; sending it here keeps the two consistent. It is read from the
+            // same source the dialog writes to, since initialize() does not retain its key.
+            LocalLlmSettings.apiKey()
+              ?.let { header("Authorization", "Bearer $it") }
+          }
+          .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+          .build()
+
+  private fun callLocalLlmApi(fullPrompt: String): String {
+    val requestBody = buildRequestBody(fullPrompt, stream = false)
+
+    val response = try {
+      httpClient.newCall(buildRequest(requestBody)).execute()
+    } catch (e: Exception) {
+      val errorMessage = e.message ?: ""
+      when {
+        errorMessage.contains("timeout") ||
+        errorMessage.contains("connect") ->
+          throw com.tom.rv2ide.artificial.exceptions.RateLimitException(
+            "Connection timeout. Please check your local server."
+          )
+        else -> throw e
+      }
+    }
+
+    if (!response.isSuccessful) {
+      val errorBody = response.body?.string() ?: "Unknown error"
+      throw Exception("Local LLM error ${response.code}: $errorBody")
+    }
+
+    val responseBody = response.body?.string() ?: ""
+    val jsonResponse = JSONObject(responseBody)
+
+    return jsonResponse
+        .getJSONArray("choices")
+        .getJSONObject(0)
+        .getJSONObject("message")
+        .getString("content")
+  }
+
+  /**
+   * Reads the reply as it is produced, handing each fragment to [onDelta] along with whether it is
+   * reasoning rather than answer text.
+   *
+   * The two arrive in separate fields of the same delta, so the distinction is made here and not by
+   * parsing: `content` is the reply, `reasoning_content` is what led to it.
+   *
+   * OpenAI-compatible SSE: one `data: {...}` line per chunk, terminated by `data: [DONE]`.
+   */
+  private fun streamLocalLlmApi(fullPrompt: String, onDelta: (String, Boolean) -> Unit) {
+    val requestBody = buildRequestBody(fullPrompt, stream = true)
+
+    val response = try {
+      httpClient.newCall(buildRequest(requestBody)).execute()
+    } catch (e: Exception) {
+      val errorMessage = e.message ?: ""
+      when {
+        errorMessage.contains("timeout") ||
+        errorMessage.contains("connect") ->
+          throw com.tom.rv2ide.artificial.exceptions.RateLimitException(
+            "Connection timeout. Please check your local server."
+          )
+        else -> throw e
+      }
+    }
+
+    if (!response.isSuccessful) {
+      val errorBody = response.body?.string() ?: "Unknown error"
+      throw Exception("Local LLM error ${response.code}: $errorBody")
+    }
+
+    response.body?.source()?.use { source ->
+      while (!source.exhausted()) {
+        val rawLine = source.readUtf8Line() ?: break
+        if (!rawLine.startsWith("data:")) continue
+
+        val payload = rawLine.removePrefix("data:").trim()
+        if (payload.isEmpty() || payload == "[DONE]") continue
+
+        val deltaNode = try {
+          JSONObject(payload)
+              .optJSONArray("choices")
+              ?.optJSONObject(0)
+              ?.optJSONObject("delta")
+        } catch (e: Exception) {
+          null
+        }
+
+        val rawContent = deltaNode?.opt("content")
+        val content =
+            if (rawContent == null || rawContent === JSONObject.NULL) "" else rawContent as? String ?: ""
+        if (content.isNotEmpty()) onDelta(content, false)
+
+        val rawReasoning = deltaNode?.opt("reasoning_content")
+        val reasoning =
+            if (rawReasoning == null || rawReasoning === JSONObject.NULL) {
+              ""
+            } else {
+              rawReasoning as? String ?: ""
+            }
+        if (reasoning.isNotEmpty()) onDelta(reasoning, true)
+      }
+    }
+  }
+
+  private fun recordTurn(prompt: String, response: String) {
+    history.recordTurn(prompt, response)
+  }
 
   private fun readRelevantFiles(): Map<String, String> {
     val filesContent = mutableMapOf<String, String>()
@@ -382,11 +503,4 @@ class LocalLLM : AIAgent {
     val writer = fileWriter ?: return FileWriteResult.Error("File writer not initialized")
     return writer.writeFile(filePath, content, createBackup = true)
   }
-  
-
 }
-
-data class ConversationMessage(
-    val role: String,
-    val content: String
-)

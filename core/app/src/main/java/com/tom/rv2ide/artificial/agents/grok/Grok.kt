@@ -20,6 +20,7 @@ package com.tom.rv2ide.artificial.agents.grok
 import android.content.Context
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
+import com.tom.rv2ide.artificial.agents.AgentHistory
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
@@ -44,7 +45,7 @@ class Grok : AIAgent {
   private val writingRules = WritingRules.Instructions()
   private var projectTreeResult: ProjectTreeResult? = null
   private var fileWriter: AIFileWriter? = null
-  private val conversationHistory = mutableListOf<ConversationMessage>()
+  override val history = AgentHistory()
   private val modificationHistory = mutableListOf<ModificationAttempt>()
   private var currentAttemptCount = 0
   private val maxRetryAttempts = 3
@@ -102,7 +103,7 @@ class Grok : AIAgent {
   }
 
   override fun clearConversation() {
-    conversationHistory.clear()
+    history.clear()
     modificationHistory.clear()
     currentAttemptCount = 0
   }
@@ -209,9 +210,10 @@ class Grok : AIAgent {
               append("\n\n")
             }
             
-            if (conversationHistory.isNotEmpty()) {
+            val historyEntries = history.snapshot()
+            if (historyEntries.isNotEmpty()) {
               append("=== CONVERSATION HISTORY ===\n")
-              conversationHistory.forEach { msg ->
+              historyEntries.forEach { msg ->
                 append("${msg.role.uppercase()}: ${msg.content}\n\n")
               }
             }
@@ -245,13 +247,7 @@ class Grok : AIAgent {
             return@withContext Result.failure(Exception("Empty response from AI"))
           }
 
-          conversationHistory.add(ConversationMessage("user", prompt))
-          conversationHistory.add(ConversationMessage("assistant", response))
-
-          if (conversationHistory.size > 20) {
-            conversationHistory.removeAt(0)
-            conversationHistory.removeAt(0)
-          }
+          history.recordTurn(prompt, response)
 
           Result.success(response)
         } catch (e: Exception) {
@@ -421,9 +417,3 @@ class Grok : AIAgent {
 
   override fun isInitialized(): Boolean = apiKey != null
 }
-
-
-data class ConversationMessage(
-    val role: String,
-    val content: String
-)

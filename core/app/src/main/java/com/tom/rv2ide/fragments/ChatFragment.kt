@@ -405,12 +405,7 @@ class ChatFragment : Fragment() {
     private fun setupMessageList() {
         messageAdapter = ChatMessageAdapter(onOpenFile = { filePath -> openFileInEditor(filePath) })
 
-        // `stackFromEnd` belongs to the LayoutManager, not to the RecyclerView. The transcript grows
-        // at the bottom, so without it the first message sits at the top of an otherwise empty
-        // viewport.
-        val listLayoutManager = LinearLayoutManager(requireContext()).apply {
-            stackFromEnd = true
-        }
+        val listLayoutManager = LinearLayoutManager(requireContext())
 
         messageList.apply {
             layoutManager = listLayoutManager
@@ -418,6 +413,22 @@ class ChatFragment : Fragment() {
             // The list is rebuilt wholesale on every update; the default cross-fade reads as flicker.
             itemAnimator = null
         }
+    }
+
+    /**
+     * Whether the transcript is scrolled to its end.
+     *
+     * The list only follows new output while it is already at the end: following unconditionally
+     * would drag the view back down every time a delta arrives, so a row the user had opened and
+     * scrolled away from would start moving under them.
+     */
+    private fun isListAtBottom(): Boolean {
+        val layoutManager = messageList.layoutManager ?: return true
+        if (messageList.childCount == 0) return true
+        val lastVisible = messageList.getChildAt(messageList.childCount - 1) ?: return true
+        val lastIndex = layoutManager.getPosition(lastVisible)
+        return lastIndex == messageAdapter.itemCount - 1 &&
+            lastVisible.bottom <= messageList.height - messageList.paddingBottom
     }
 
     private fun setupManagers() {
@@ -448,8 +459,9 @@ class ChatFragment : Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
                     messages.messages.collect { items ->
+                        val wasAtBottom = isListAtBottom()
                         messageAdapter.submitList(items) {
-                            if (items.isNotEmpty()) {
+                            if (wasAtBottom && items.isNotEmpty()) {
                                 messageList.scrollToPosition(items.size - 1)
                             }
                         }

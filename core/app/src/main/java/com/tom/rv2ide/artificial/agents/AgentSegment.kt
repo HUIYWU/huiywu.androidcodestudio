@@ -22,6 +22,14 @@ import com.tom.rv2ide.artificial.file.FileWriteResult
 sealed interface AgentSegment {
     data class Text(val markdown: String) : AgentSegment
 
+    /**
+     * Reasoning the provider reported alongside the reply.
+     *
+     * Always first: it is produced before the answer it led to, and the transcript renders it as a
+     * collapsed block above the prose.
+     */
+    data class Thinking(val markdown: String) : AgentSegment
+
     data class FileChange(
         val filePath: String,
         val content: String,

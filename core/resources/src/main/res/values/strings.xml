@@ -65,7 +65,13 @@
    <string name="chat_diff_summary">+%1$d −%2$d</string>
    <string name="chat_diff_truncated">@@ %1$d more lines not shown @@</string>
    <string name="chat_file_change_show">Show changes</string>
-   <string name="chat_file_change_hide">Hide changes</string>
+    <string name="chat_file_change_hide">Hide changes</string>
+    <string name="chat_thinking_title">Thinking</string>
+    <string name="chat_thinking_show">Show thinking</string>
+    <string name="chat_thinking_hide">Hide thinking</string>
+    <string name="chat_tool_call_show">Show tool call</string>
+    <string name="chat_tool_call_hide">Hide tool call</string>
+    <string name="chat_tool_call_failed">Tool call failed</string>
    <string name="chat_empty_prompt">Please enter a request</string>
    <string name="chat_cleared">Conversation cleared</string>
    <string name="chat_project_load_failed">Failed to load project</string>

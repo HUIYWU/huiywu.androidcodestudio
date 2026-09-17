@@ -42,6 +42,9 @@ import kotlinx.coroutines.launch
  * - `onFileModifying` -> a pending file row appended to the answer.
  * - `onFileModified` -> ignored; the row is finalised in one step by `onSuccess`. Reporting each
  *   write twice is what used to produce duplicated rows.
+ * - `onToolCallStarted` / `onToolCallFinished` -> a tool row, pending and then filled in.
+ * - `onFileChangeCompleted` -> finalises a single file row in tool mode; the fallback path still
+ *   finalises through `onSuccess`.
  * - `onSuccess` -> the whole reply, prose and file rows in the order the agent produced them.
  * - `onTextResponse` -> the same, for a reply that wrote no files.
  * - `onError` -> an error entry.
@@ -86,9 +89,33 @@ class AIRequestHandler(
             }
 
             override fun onStreamEvent(event: AgentStreamEvent) {
-                if (event is AgentStreamEvent.TextDelta) {
-                    messages.appendProse(event.text)
+                when (event) {
+                    is AgentStreamEvent.TextDelta -> messages.appendProse(event.text)
+                    is AgentStreamEvent.ThinkingDelta -> messages.appendThinking(event.text)
+                    is AgentStreamEvent.FileCompleted -> Unit
                 }
+            }
+
+            override fun onToolCallStarted(
+                callId: String,
+                toolName: String,
+                summary: String,
+                arguments: String
+            ) {
+                messages.addToolCall(callId, toolName, summary, arguments)
+            }
+
+            override fun onToolCallFinished(callId: String, result: String, isError: Boolean) {
+                messages.completeToolCall(callId, result, isError)
+            }
+
+            override fun onFileChangeCompleted(
+                filePath: String,
+                success: Boolean,
+                previousContent: String?,
+                newContent: String
+            ) {
+                messages.completeFileChange(filePath, previousContent, newContent, success)
             }
 
             override fun onSuccess(
@@ -125,6 +152,7 @@ class AIRequestHandler(
      */
     private fun AgentSegment.toBlock(): ChatBlock = when (this) {
         is AgentSegment.Text -> ChatBlock.Text(markdown)
+        is AgentSegment.Thinking -> ChatBlock.Thinking(markdown)
         is AgentSegment.FileChange -> ChatBlock.FileChange(
             filePath = filePath,
             success = writeResult is com.tom.rv2ide.artificial.file.FileWriteResult.Success,

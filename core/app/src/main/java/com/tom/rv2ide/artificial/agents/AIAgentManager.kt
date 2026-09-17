@@ -24,11 +24,23 @@ import com.tom.rv2ide.artificial.agents.anthropic.Anthropic
 import com.tom.rv2ide.artificial.agents.grok.Grok
 import com.tom.rv2ide.artificial.agents.deepseek.DeepSeek
 import com.tom.rv2ide.artificial.agents.local.LocalLLM
+import com.tom.rv2ide.artificial.agents.tools.ListFilesTool
+import com.tom.rv2ide.artificial.agents.tools.ReadFileTool
+import com.tom.rv2ide.artificial.agents.tools.SearchTool
+import com.tom.rv2ide.artificial.agents.tools.ToolExecutor
+import com.tom.rv2ide.artificial.agents.tools.WriteFileTool
+import com.tom.rv2ide.artificial.exceptions.InsufficientBalanceException
+import com.tom.rv2ide.artificial.exceptions.InvalidApiKeyException
+import com.tom.rv2ide.artificial.exceptions.QuotaExceededException
+import com.tom.rv2ide.artificial.exceptions.RateLimitException
 import com.tom.rv2ide.artificial.file.FileWriteResult
 import com.tom.rv2ide.artificial.permissions.AIPermissionManager
 import com.tom.rv2ide.artificial.project.awareness.ProjectData
+import com.tom.rv2ide.artificial.rules.WritingRules
 import com.tom.rv2ide.artificial.secrets.ApiKey
 import java.io.File
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +51,7 @@ class AIAgentManager(private val context: Context) {
 
     private val permissionManager = AIPermissionManager(context)
     private var currentProjectRoot: File? = null
+    private var currentProjectTree: String? = null
 
     private var currentProviderId: String = DEFAULT_PROVIDER_ID
     private var currentAgent: AIAgent? = null
@@ -107,6 +120,7 @@ class AIAgentManager(private val context: Context) {
             currentProjectRoot?.let { root ->
                 val projectData = ProjectData(context)
                 val projectTree = projectData.showProjectTree(root)
+                currentProjectTree = projectTree.tree
                 currentAgent?.setProjectData(projectTree)
             }
             
@@ -166,6 +180,7 @@ class AIAgentManager(private val context: Context) {
 
         val projectData = ProjectData(context)
         val projectTree = projectData.showProjectTree(projectRoot)
+        currentProjectTree = projectTree.tree
 
         currentAgent?.setProjectData(projectTree)
         permissionManager.addAllowedDirectory(projectRoot.absolutePath)
@@ -203,19 +218,32 @@ class AIAgentManager(private val context: Context) {
                     delay(1000)
                 }
 
+                val toolOutcome = runToolLoop(userRequest, callback)
+                if (toolOutcome != ToolLoopOutcome.UNSUPPORTED) {
+                    success = true
+                    continue
+                }
+
                 val previousFileStates = captureCurrentFileStates()
 
+                val reasoning = StringBuilder()
                 val result = currentAgent?.generateCodeStreaming(
                     prompt = userRequest,
                     context = null,
                     language = "kotlin",
                     projectStructure = null,
-                    onEvent = callback::onStreamEvent
+                    onEvent = { event ->
+                        if (event is AgentStreamEvent.ThinkingDelta) {
+                            reasoning.append(event.text)
+                        }
+                        callback.onStreamEvent(event)
+                    }
                 ) ?: Result.failure(Exception("No agent initialized"))
 
                 result.fold(
                     onSuccess = { response ->
-                        val modifications = processModifications(response, previousFileStates, callback)
+                        val modifications =
+                            processModifications(response, reasoning.toString(), previousFileStates, callback)
                         val fileChanges = modifications.filterIsInstance<AgentSegment.FileChange>()
 
                         if (fileChanges.isNotEmpty()) {
@@ -336,6 +364,191 @@ class AIAgentManager(private val context: Context) {
         }
     }
 
+    private enum class ToolLoopOutcome {
+        SUCCESS,
+        FAILURE,
+        /** The provider cannot call tools; answer through the text protocol instead. */
+        UNSUPPORTED
+    }
+
+    private sealed interface TurnRequestResult {
+        data class Success(val turn: AgentTurn) : TurnRequestResult
+        object Unsupported : TurnRequestResult
+        data class Failed(val error: Throwable) : TurnRequestResult
+    }
+
+    /**
+     * Answers one request through the provider's tool-calling API.
+     *
+     * Tool traffic stays inside the request: only the user message and the final answer are recorded
+     * to [AgentHistory], so a follow-up request does not replay every file that was read. Writes made
+     * before a failure are not rolled back — each one was a deliberate, visible step.
+     */
+    private suspend fun runToolLoop(
+        userRequest: String,
+        callback: AIAgentCallback
+    ): ToolLoopOutcome {
+        val agent = currentAgent ?: return ToolLoopOutcome.UNSUPPORTED
+        val toolExecutor = createToolExecutor(callback)
+
+        val messages = mutableListOf<AgentMessage>()
+        messages.add(AgentMessage.System(buildToolSystemPrompt()))
+        messages.addAll(agent.history.snapshot())
+        messages.add(AgentMessage.User(userRequest))
+
+        var round = 0
+        while (round < MAX_TOOL_ROUNDS) {
+            round++
+            when (val requested = requestToolTurn(agent, messages, toolExecutor.specs, callback)) {
+                is TurnRequestResult.Unsupported -> return ToolLoopOutcome.UNSUPPORTED
+                is TurnRequestResult.Failed -> {
+                    callback.onError(formatErrorMessage(requested.error))
+                    return ToolLoopOutcome.FAILURE
+                }
+                is TurnRequestResult.Success -> {
+                    val turn = requested.turn
+                    if (turn.toolCalls.isEmpty()) {
+                        agent.history.recordTurn(userRequest, turn.text)
+                        return ToolLoopOutcome.SUCCESS
+                    }
+
+                    messages.add(AgentMessage.Assistant(turn.text, turn.toolCalls))
+                    for (call in turn.toolCalls) {
+                        val showsRow = call.name != WriteFileTool.NAME
+                        if (showsRow) {
+                            callback.onToolCallStarted(
+                                call.id,
+                                call.name,
+                                toolExecutor.summarize(call),
+                                call.arguments
+                            )
+                        }
+                        val result = toolExecutor.execute(call)
+                        if (showsRow) {
+                            callback.onToolCallFinished(call.id, result.content, result.isError)
+                        }
+                        messages.add(AgentMessage.Tool(call.id, result.content, result.isError))
+                    }
+                }
+            }
+        }
+
+        callback.onError("The agent kept calling tools and never produced an answer; giving up.")
+        return ToolLoopOutcome.FAILURE
+    }
+
+    /**
+     * One round, with its own transient retry: [messages] are preserved, so a retry never repeats
+     * work the earlier attempt already did.
+     */
+    private suspend fun requestToolTurn(
+        agent: AIAgent,
+        messages: List<AgentMessage>,
+        tools: List<AgentToolSpec>,
+        callback: AIAgentCallback
+    ): TurnRequestResult {
+        var lastError: Throwable? = null
+        repeat(TOOL_TURN_ATTEMPTS) { attempt ->
+            val result = try {
+                agent.generateTurn(messages, tools) { event -> callback.onStreamEvent(event) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+
+            result.fold(
+                onSuccess = { return TurnRequestResult.Success(it) },
+                onFailure = { error ->
+                    if (error is ToolsNotSupportedException) {
+                        return TurnRequestResult.Unsupported
+                    }
+                    if (error is RateLimitException || error is QuotaExceededException ||
+                        error is InsufficientBalanceException || error is InvalidApiKeyException
+                    ) {
+                        return TurnRequestResult.Failed(error)
+                    }
+                    lastError = error
+                }
+            )
+
+            if (attempt < TOOL_TURN_ATTEMPTS - 1) {
+                delay(TOOL_RETRY_DELAY_MS)
+            }
+        }
+        return TurnRequestResult.Failed(lastError ?: Exception("Tool request failed"))
+    }
+
+    private fun createToolExecutor(callback: AIAgentCallback): ToolExecutor {
+        val allowedDirectories = permissionManager.getAllowedDirectories()
+        val isAllowed: (String) -> Boolean = { path ->
+            isPathWithinDirectories(path, allowedDirectories)
+        }
+
+        return ToolExecutor(
+            listOf(
+                ReadFileTool(isAllowed),
+                WriteFileTool(isAllowed) { path, content ->
+                    performToolWrite(path, content, callback)
+                },
+                ListFilesTool(isAllowed, currentProjectRoot),
+                SearchTool(isAllowed, currentProjectRoot)
+            )
+        )
+    }
+
+    /**
+     * Tool mode's counterpart of [writeFileBlock]: reports the row, resolves what the file held
+     * before this write, records the attempt for undo, and finalises the row as soon as the write
+     * finishes rather than at the end of the answer.
+     */
+    private suspend fun performToolWrite(
+        filePath: String,
+        content: String,
+        callback: AIAgentCallback
+    ): FileWriteResult {
+        val fileName = File(filePath).name
+        callback.onFileModifying(filePath, fileName)
+
+        val previousContent = readCurrentContent(filePath)
+        val writeResult = currentAgent?.writeFile(filePath, content)
+            ?: FileWriteResult.Error("No agent initialized")
+        val success = writeResult is FileWriteResult.Success
+        currentAgent?.recordModification(filePath, previousContent, content, success)
+
+        callback.onFileChangeCompleted(filePath, success, previousContent, content)
+        return writeResult
+    }
+
+    private fun buildToolSystemPrompt(): String {
+        val rules = WritingRules.Instructions().toolMode()
+        val tree = currentProjectTree ?: return rules
+        return buildString {
+            append(rules)
+            append("\n\n=== PROJECT STRUCTURE (THESE ARE THE EXACT PATHS YOU MUST USE) ===\n")
+            append(tree)
+        }
+    }
+
+    /**
+     * Canonical containment: the tools accept paths produced by a model, so a string prefix check
+     * alone would let `..` walk out of the project.
+     */
+    private fun isPathWithinDirectories(path: String, allowedDirectories: Set<String>): Boolean {
+        val candidate = canonicalPathOf(File(path))
+        return allowedDirectories.any { directory ->
+            val base = canonicalPathOf(File(directory))
+            candidate == base || candidate.startsWith(base.trimEnd('/') + "/")
+        }
+    }
+
+    private fun canonicalPathOf(file: File): String =
+        try {
+            file.canonicalPath
+        } catch (e: IOException) {
+            file.absolutePath
+        }
+
     private fun getAlternativeProvider(): String? {
         val availableProviders = AIAgentRegistry.getAvailableProviders()
         return availableProviders.firstOrNull { it != currentProviderId }
@@ -343,6 +556,7 @@ class AIAgentManager(private val context: Context) {
 
     private suspend fun processModifications(
         response: String,
+        reasoning: String,
         previousFileStates: Map<String, String>,
         callback: AIAgentCallback
     ): List<AgentSegment> {
@@ -354,9 +568,16 @@ class AIAgentManager(private val context: Context) {
             prose.setLength(0)
         }
 
+        if (reasoning.isNotBlank()) {
+            flushProse()
+            segments.add(AgentSegment.Thinking(reasoning))
+        }
+
         AgentStreamParser().parseAll(response).forEach { event ->
             when (event) {
                 is AgentStreamEvent.TextDelta -> prose.append(event.text)
+                // Reasoning arrives on its own event and was added above; parseAll never yields it.
+                is AgentStreamEvent.ThinkingDelta -> Unit
                 is AgentStreamEvent.FileCompleted -> {
                     flushProse()
                     segments.add(writeFileBlock(event.filePath, event.content, previousFileStates, callback))
@@ -410,7 +631,10 @@ class AIAgentManager(private val context: Context) {
         previousFileStates: Map<String, String>
     ): String? {
         previousFileStates[filePath]?.let { return it }
+        return readCurrentContent(filePath)
+    }
 
+    private fun readCurrentContent(filePath: String): String? {
         val file = File(filePath)
         if (!file.exists() || !file.isFile) return null
 
@@ -590,6 +814,23 @@ class AIAgentManager(private val context: Context) {
          */
         fun onStreamEvent(event: AgentStreamEvent) {}
 
+        /** A tool call is starting; [summary] is a short display form of [arguments]. */
+        fun onToolCallStarted(callId: String, toolName: String, summary: String, arguments: String) {}
+
+        /** The outcome of the call announced by [onToolCallStarted]; completes its pending row. */
+        fun onToolCallFinished(callId: String, result: String, isError: Boolean) {}
+
+        /**
+         * Tool mode's per-write finalisation: the row is completed as soon as the write finishes,
+         * instead of waiting for the whole answer. The fallback path finalises through [onSuccess].
+         */
+        fun onFileChangeCompleted(
+            filePath: String,
+            success: Boolean,
+            previousContent: String?,
+            newContent: String
+        ) {}
+
         /**
          * The reply, in the order the agent produced it: prose and file writes interleaved.
          *
@@ -643,6 +884,14 @@ class AIAgentManager(private val context: Context) {
     companion object {
         /** Provider used for the very first launch, before the user picks one. */
         private const val DEFAULT_PROVIDER_ID = "gemini"
+
+        /** Tool-calling rounds a single request may run before it is given up on. */
+        private const val MAX_TOOL_ROUNDS = 12
+
+        /** Attempts at a single round before its failure is surfaced. */
+        private const val TOOL_TURN_ATTEMPTS = 3
+
+        private const val TOOL_RETRY_DELAY_MS = 1000L
     }
 }
 

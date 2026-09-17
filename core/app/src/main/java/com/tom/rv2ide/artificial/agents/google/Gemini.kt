@@ -22,6 +22,7 @@ import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
+import com.tom.rv2ide.artificial.agents.AgentHistory
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.catalog.ModelSources
 import com.tom.rv2ide.artificial.secrets.ApiKey
@@ -44,7 +45,7 @@ class Gemini : AIAgent {
   private val writingRules = WritingRules.Instructions()
   private var projectTreeResult: ProjectTreeResult? = null
   private var fileWriter: AIFileWriter? = null
-  private val conversationHistory = mutableListOf<ConversationMessage>()
+  override val history = AgentHistory()
   private val modificationHistory = mutableListOf<ModificationAttempt>()
   private var currentAttemptCount = 0
   private val maxRetryAttempts = 3
@@ -109,7 +110,7 @@ class Gemini : AIAgent {
   }
 
   override fun clearConversation() {
-    conversationHistory.clear()
+    history.clear()
     modificationHistory.clear()
     currentAttemptCount = 0
   }
@@ -217,9 +218,10 @@ class Gemini : AIAgent {
               append("\n\n")
             }
             
-            if (conversationHistory.isNotEmpty()) {
+            val historyEntries = history.snapshot()
+            if (historyEntries.isNotEmpty()) {
               append("=== CONVERSATION HISTORY ===\n")
-              conversationHistory.forEach { msg ->
+              historyEntries.forEach { msg ->
                 append("${msg.role.uppercase()}: ${msg.content}\n\n")
               }
             }
@@ -278,13 +280,7 @@ class Gemini : AIAgent {
             return@withContext Result.failure(Exception("Empty response from AI"))
           }
 
-          conversationHistory.add(ConversationMessage("user", prompt))
-          conversationHistory.add(ConversationMessage("assistant", generatedResponse))
-
-          if (conversationHistory.size > 20) {
-            conversationHistory.removeAt(0)
-            conversationHistory.removeAt(0)
-          }
+          history.recordTurn(prompt, generatedResponse)
 
           Result.success(generatedResponse)
         } catch (e: com.tom.rv2ide.artificial.exceptions.RateLimitException) {
@@ -348,9 +344,3 @@ class Gemini : AIAgent {
 
   override fun isInitialized(): Boolean = generativeModel != null
 }
-
-
-data class ConversationMessage(
-    val role: String,
-    val content: String
-)
