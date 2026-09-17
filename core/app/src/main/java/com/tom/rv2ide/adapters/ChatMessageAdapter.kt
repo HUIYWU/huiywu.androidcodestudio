@@ -132,11 +132,9 @@ class ChatMessageAdapter(
 
     class StatusHolder(view: View) : RecyclerView.ViewHolder(view) {
         private val label: MaterialTextView = view.findViewById(R.id.statusLabel)
-        private val progress: CircularProgressIndicator = view.findViewById(R.id.statusProgress)
 
         fun bind(message: ChatMessage.Status) {
             label.text = message.text
-            progress.visibility = if (message.isBusy) View.VISIBLE else View.GONE
         }
     }
 
@@ -151,7 +149,6 @@ class ChatMessageAdapter(
     inner class AssistantHolder(view: View) : RecyclerView.ViewHolder(view) {
 
         private val container: LinearLayout = view.findViewById(R.id.blockContainer)
-        private val progress: CircularProgressIndicator = view.findViewById(R.id.answerProgress)
 
         fun bind(message: ChatMessage.Assistant) {
             container.removeAllViews()
@@ -175,8 +172,6 @@ class ChatMessageAdapter(
                     }
                 }
             }
-
-            progress.visibility = if (message.isBusy) View.VISIBLE else View.GONE
         }
 
         private fun inflateFileChange(

@@ -41,15 +41,11 @@ sealed interface ChatMessage {
     /**
      * One answer. [blocks] holds prose and file changes together so they keep the order the agent
      * produced them in.
-     *
-     * [isBusy] marks the answer as still being written; the item shows a progress affordance until
-     * the request finishes.
      */
     data class Assistant(
         override val id: Long,
         override val timestamp: Long,
-        val blocks: List<ChatBlock> = emptyList(),
-        val isBusy: Boolean = true
+        val blocks: List<ChatBlock> = emptyList()
     ) : ChatMessage
 
     /**
@@ -62,8 +58,7 @@ sealed interface ChatMessage {
     data class Status(
         override val id: Long,
         override val timestamp: Long,
-        val text: String,
-        val isBusy: Boolean = true
+        val text: String
     ) : ChatMessage
 
     data class Error(

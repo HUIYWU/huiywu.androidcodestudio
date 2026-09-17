@@ -59,21 +59,21 @@ class ChatMessageStore {
         val assistantId = nextId.getAndIncrement()
         currentAssistantId = assistantId
         _messages.value = _messages.value + message +
-            ChatMessage.Assistant(assistantId, now(), emptyList(), isBusy = true)
+            ChatMessage.Assistant(assistantId, now(), emptyList())
         _isProcessing.value = true
     }
 
     /** Shows/updates the single progress line, creating it on first use. */
-    fun setStatus(text: String, busy: Boolean = true) {
+    fun setStatus(text: String) {
         val id = currentStatusId
         if (id == NO_ID) {
             val statusId = nextId.getAndIncrement()
             currentStatusId = statusId
-            _messages.value = _messages.value + ChatMessage.Status(statusId, now(), text, busy)
+            _messages.value = _messages.value + ChatMessage.Status(statusId, now(), text)
         } else {
             _messages.value = _messages.value.map { message ->
                 if (message is ChatMessage.Status && message.id == id) {
-                    message.copy(text = text, isBusy = busy)
+                    message.copy(text = text)
                 } else {
                     message
                 }
@@ -88,19 +88,6 @@ class ChatMessageStore {
         currentStatusId = NO_ID
         _messages.value = _messages.value.filterNot {
             it is ChatMessage.Status && it.id == id
-        }
-    }
-
-    /** Replaces the current answer's blocks. No-op if no request is in flight. */
-    fun setAnswerBlocks(blocks: List<ChatBlock>) {
-        val id = currentAssistantId
-        if (id == NO_ID) return
-        _messages.value = _messages.value.map { message ->
-            if (message is ChatMessage.Assistant && message.id == id) {
-                message.copy(blocks = blocks)
-            } else {
-                message
-            }
         }
     }
 
@@ -163,8 +150,8 @@ class ChatMessageStore {
     }
 
     /**
-     * Closes the request: drops the progress line, clears the busy flag and discards the answer
-     * bubble if the agent produced nothing at all.
+     * Closes the request: drops the progress line and discards the answer bubble if the agent
+     * produced nothing at all.
      */
     fun finishRequest() {
         clearStatus()
@@ -173,7 +160,7 @@ class ChatMessageStore {
         _messages.value = _messages.value
             .mapNotNull { message ->
                 if (message is ChatMessage.Assistant && message.id == id) {
-                    if (message.blocks.isEmpty()) null else message.copy(isBusy = false)
+                    message.takeIf { it.blocks.isNotEmpty() }
                 } else {
                     message
                 }

@@ -148,8 +148,9 @@ class FileDiffRenderer private constructor() {
 
         // Gutter numbers and hunk headers follow the theme instead of carrying their own greys, so
         // they stay legible when the user switches between the light and dark IDE themes.
-        val gutter: Int = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, 0)
-        val header: Int = MaterialColors.getColor(context, com.google.android.material.R.attr.colorPrimary, 0)
+        val gutter: Int =
+            MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, 0)
+        val header: Int = MaterialColors.getColor(context, android.R.attr.colorPrimary, 0)
     }
 
     private class Emitter(
