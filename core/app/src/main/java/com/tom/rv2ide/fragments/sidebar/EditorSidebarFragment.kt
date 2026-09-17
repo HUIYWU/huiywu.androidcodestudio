@@ -19,14 +19,7 @@ package com.tom.rv2ide.fragments.sidebar
 
 import android.os.Bundle
 import android.view.View
-import android.view.ViewGroup.MarginLayoutParams
 import androidx.core.graphics.Insets
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.marginBottom
-import androidx.core.view.marginTop
-import androidx.core.view.updateLayoutParams
-import androidx.core.view.updateMarginsRelative
 import androidx.core.view.updatePadding
 import com.tom.rv2ide.databinding.FragmentEditorSidebarBinding
 import com.tom.rv2ide.fragments.FragmentWithBinding
@@ -42,33 +35,13 @@ class EditorSidebarFragment :
 
   internal fun onApplyWindowInsets(insets: Insets) {
     _binding?.apply {
-      title.updateLayoutParams<MarginLayoutParams> {
-        updateMarginsRelative(
-            top = title.marginTop + insets.top,
-        )
-      }
-      fragmentContainer.updateLayoutParams<MarginLayoutParams> {
-        updateMarginsRelative(
-            bottom = fragmentContainer.marginBottom + insets.bottom,
-        )
-      }
-      sidebarContainer.updatePadding(
-          top = sidebarContainer.paddingTop + insets.top,
-          bottom = sidebarContainer.paddingBottom + insets.bottom,
-          left = sidebarContainer.paddingLeft + insets.left,
-      )
+      sidebarContainer.updatePadding(top = insets.top, left = insets.left)
       navigation.updatePadding(bottom = insets.bottom)
     }
   }
 
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
-
-    ViewCompat.setOnApplyWindowInsetsListener(binding.navigation) { v, insets ->
-      val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-      v.updatePadding(bottom = systemBars.bottom)
-      insets
-    }
 
     EditorSidebarActions.setup(this)
   }

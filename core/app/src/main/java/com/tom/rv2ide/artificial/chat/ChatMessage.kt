@@ -87,7 +87,10 @@ sealed interface ChatBlock {
      * This is what replaced the separate "Modification Summary" card plus file list: both described
      * exactly this information, outside of the answer that produced it.
      *
-     * @param previousContent pre-write content, or `null` when the file did not exist (new file).
+     * @param baselineContent content of the file when the conversation started, or `null` when the
+     *   file did not exist then. The diff is always taken against this rather than against the state
+     *   left by the previous write: a file that gained a function, was edited, and then reverted to the
+     *   earlier text must still read as "this function is new" for as long as the conversation lasts.
      * @param newContent content as written.
      * @param pending true while the write is still in flight; the row shows a progress indicator and
      *   must not be expanded (there is no final content yet).
@@ -95,7 +98,7 @@ sealed interface ChatBlock {
     data class FileChange(
         val filePath: String,
         val success: Boolean,
-        val previousContent: String?,
+        val baselineContent: String?,
         val newContent: String,
         val pending: Boolean = false
     ) : ChatBlock {

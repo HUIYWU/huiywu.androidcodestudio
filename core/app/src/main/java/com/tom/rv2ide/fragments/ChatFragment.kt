@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
@@ -158,9 +159,9 @@ class ChatFragment : Fragment() {
      * the field. `windowSoftInputMode` cannot fix that: once edge-to-edge is on, the insets have to be
      * consumed by the content.
      *
-     * The sidebar host wraps this page in a `ScrollView`, so the lift cannot be bottom padding on the
-     * root: padding only makes the scrolling content taller, leaving the field exactly where it was.
-     * The whole page is translated up instead, which moves the composer clear of the keyboard.
+     * The page now fills the sidebar's scroll area directly, so the lift is bottom padding on the
+     * page root: padding shortens the transcript instead of growing a scrolled content, which is what
+     * it used to do while the host wrapped every page in its own `ScrollView`.
      */
     private fun setupImmersiveInsets(view: View) {
         ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
@@ -180,7 +181,7 @@ class ChatFragment : Fragment() {
             }
         )
 
-        // Follows the keyboard frame by frame. On the layout passes alone the translation lands one
+        // Follows the keyboard frame by frame. On the layout passes alone the padding lands one
         // frame late and the page visibly trails the keyboard.
         ViewCompat.setWindowInsetsAnimationCallback(
             view,
@@ -210,12 +211,11 @@ class ChatFragment : Fragment() {
     /**
      * Lifts the page so the composer clears the keyboard.
      *
-     * The window is never resized for the IME (the activity is edge-to-edge), and the host wraps this
-     * page in a `ScrollView`, where bottom padding only makes the scrolling content taller. The page is
-     * translated instead.
+     * The window is never resized for the IME (the activity is edge-to-edge), so the lift has to be
+     * applied by the content. The page root takes it as bottom padding.
      *
      * The lift is `ime - reservedBelow`, `reservedBelow` being the strip the sidebar keeps under this
-     * page (`fragment_editor_sidebar.xml` stacks a 72dp navigation row below the scroll area). The
+     * page (`fragment_editor_sidebar.xml` stacks a 72dp navigation row below the content area). The
      * keyboard covers that strip first, so lifting by the whole inset leaves a gap.
      *
      * [animated] marks a call from the insets animation, where [dispatched] carries the *current frame*
@@ -233,8 +233,8 @@ class ChatFragment : Fragment() {
         }
 
         // A layout pass that lands mid-animation reads the window insets, which already hold the end
-        // value, and would snap the page to the end position. The animation owns the translation while
-        // it runs; `onEnd` re-applies the settled value.
+        // value, and would snap the page to the end position. The animation owns the padding while it
+        // runs; `onEnd` re-applies the settled value.
         if (!animated && imeAnimating) {
             return
         }
@@ -255,9 +255,7 @@ class ChatFragment : Fragment() {
         val root = IntArray(2)
         view.rootView.getLocationOnScreen(root)
 
-        // getLocationOnScreen includes the translation applied below, so that translation is removed
-        // again to get the resting bottom the reserved strip is measured against.
-        val restingBottom = page[1] + view.height - view.translationY.toInt()
+        val restingBottom = page[1] + view.height
         val reservedBelow = (root[1] + view.rootView.height - restingBottom).coerceAtLeast(0)
 
         val lift = (ime - reservedBelow).coerceAtLeast(0)
@@ -268,7 +266,7 @@ class ChatFragment : Fragment() {
         }
 
         lastImeLift = lift
-        view.translationY = -lift.toFloat()
+        view.updatePadding(bottom = lift)
 
         // Only once the keyboard has settled: doing this on every animation frame restarts the list
         // scroll each frame and is what made the movement stutter.
@@ -647,6 +645,7 @@ class ChatFragment : Fragment() {
                 codeCompletionManager.clearSuggestion()
                 aiAgent.clearConversation()
                 messages.clear()
+                messageAdapter.resetRowState()
                 promptInput.text?.clear()
 
                 showSnackbar(getString(R.string.chat_cleared))

@@ -61,6 +61,11 @@
    <!-- Composer hint of the chat page (see fragment_chat.xml). -->
    <string name="ai_agent_prompt_hint">Describe what code you want to generate...</string>
     <string name="chat_block_open_file">Open file</string>
+   <string name="chat_diff_new_file">New file</string>
+   <string name="chat_diff_summary">+%1$d −%2$d</string>
+   <string name="chat_diff_truncated">@@ %1$d more lines not shown @@</string>
+   <string name="chat_file_change_show">Show changes</string>
+   <string name="chat_file_change_hide">Hide changes</string>
    <string name="chat_empty_prompt">Please enter a request</string>
    <string name="chat_cleared">Conversation cleared</string>
    <string name="chat_project_load_failed">Failed to load project</string>

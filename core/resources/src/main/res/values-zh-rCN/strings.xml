@@ -632,6 +632,11 @@
    <!-- Composer hint of the chat page (see fragment_chat.xml). -->
    <string name="ai_agent_prompt_hint">描述你想要生成的代码...</string>
     <string name="chat_block_open_file">打开文件</string>
+   <string name="chat_diff_new_file">新文件</string>
+   <string name="chat_diff_summary">+%1$d −%2$d</string>
+   <string name="chat_diff_truncated">@@ 还有 %1$d 行未显示 @@</string>
+   <string name="chat_file_change_show">显示变更</string>
+   <string name="chat_file_change_hide">隐藏变更</string>
    <string name="chat_empty_prompt">请输入请求内容</string>
    <string name="chat_cleared">对话已清空</string>
    <string name="chat_project_load_failed">加载项目失败</string>

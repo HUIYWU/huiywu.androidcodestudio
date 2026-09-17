@@ -5,8 +5,9 @@
   Replaces the old "Modification Summary" card plus its file list, both of which described this same
   information outside of the answer that produced them. The header is the tap target; the detail area
   is plain text rather than a CodeEditor — a sora-editor instance per row would be measured and
-  recycled inside the transcript's RecyclerView, and an inner scrollable would fight the list's own
-  scrolling. "Open" hands the file to the editor instead.
+  recycled inside the transcript's RecyclerView. The detail area scrolls horizontally because the
+  sidebar leaves roughly 31 monospace characters per line, which is narrower than most source lines;
+  that axis is orthogonal to the list's own scrolling. "Open" hands the file to the editor instead.
 -->
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -33,13 +34,13 @@
             android:paddingHorizontal="12dp"
             android:paddingVertical="10dp">
 
-            <com.google.android.material.textview.MaterialTextView
+            <ImageView
                 android:id="@+id/expandIndicator"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="▸"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="?attr/colorOnSurfaceVariant" />
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="@string/chat_file_change_show"
+                android:src="@drawable/ic_arrow_right"
+                app:tint="?attr/colorOnSurfaceVariant" />
 
             <ImageView
                 android:id="@+id/fileStatusIcon"
@@ -106,15 +107,20 @@
             android:paddingBottom="8dp"
             android:visibility="gone">
 
-            <com.google.android.material.textview.MaterialTextView
-                android:id="@+id/fileChangeContent"
+            <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="40"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textIsSelectable="true"
-                android:typeface="monospace" />
+                android:scrollbars="none">
+
+                <com.google.android.material.textview.MaterialTextView
+                    android:id="@+id/fileChangeContent"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textIsSelectable="true"
+                    android:typeface="monospace" />
+
+            </HorizontalScrollView>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/openFileBtn"

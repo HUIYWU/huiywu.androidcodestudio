@@ -93,10 +93,7 @@ class AIRequestHandler(
                         ChatBlock.FileChange(
                             filePath = modification.filePath,
                             success = modification.success,
-                            // The pre-write content is not carried out of AIAgentManager yet, so the
-                            // row can only show what was written. Comparing the two is the follow-up
-                            // change.
-                            previousContent = null,
+                            baselineContent = modification.baselineContent,
                             newContent = modification.content
                         )
                     }

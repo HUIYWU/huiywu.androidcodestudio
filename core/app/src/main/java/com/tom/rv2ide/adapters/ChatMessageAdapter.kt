@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.adapters
 
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -32,6 +33,7 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.artificial.chat.ChatBlock
 import com.tom.rv2ide.artificial.chat.ChatMessage
 import com.tom.rv2ide.artificial.render.AIMarkdownRenderer
+import com.tom.rv2ide.artificial.render.FileDiffRenderer
 
 /**
  * Renders the AI sidebar transcript.
@@ -44,13 +46,53 @@ class ChatMessageAdapter(
 ) : ListAdapter<ChatMessage, RecyclerView.ViewHolder>(DIFF) {
 
     /**
-     * Keys of the file rows the user expanded.
+     * File rows the user expanded, keyed by row identity.
      *
      * Held here rather than in the row view: the answer row is rebound whenever its blocks change
      * (a pending write finishing, for instance), which would otherwise collapse a row the user had
-     * just opened.
+     * just opened. Keyed by position rather than by content so that two rows carrying identical
+     * content — the same file written twice with the same bytes in one answer — still expand
+     * independently.
      */
-    private val expandedFileChanges = mutableSetOf<String>()
+    private val expandedFileChanges = mutableSetOf<RowId>()
+
+    /**
+     * Computed diffs, most recently used last.
+     *
+     * The summary is visible while the row is still collapsed, so the comparison cannot wait for the
+     * tap that expands it. Bounded because a long conversation can touch many files, and each entry
+     * holds a rendered diff.
+     */
+    private val diffCache = LinkedHashMap<String, FileDiffRenderer.Rendered>()
+
+    private fun diffOf(context: Context, block: ChatBlock.FileChange): FileDiffRenderer.Rendered {
+        val key = cacheKeyOf(block)
+        diffCache[key]?.let {
+            diffCache.remove(key)
+            diffCache[key] = it
+            return it
+        }
+
+        val rendered = FileDiffRenderer.shared().render(
+            context,
+            block.baselineContent,
+            block.newContent
+        )
+        diffCache[key] = rendered
+        if (diffCache.size > DIFF_CACHE_SIZE) {
+            diffCache.remove(diffCache.keys.first())
+        }
+        return rendered
+    }
+
+    /**
+     * Drops the per-row state. Called when the transcript is cleared, so a row that happens to carry
+     * the same content as one from the previous conversation does not inherit its expanded state.
+     */
+    fun resetRowState() {
+        expandedFileChanges.clear()
+        diffCache.clear()
+    }
 
     override fun getItemViewType(position: Int): Int = when (getItem(position)) {
         is ChatMessage.User -> TYPE_USER
@@ -119,7 +161,7 @@ class ChatMessageAdapter(
             // on every scroll.
             val renderer = AIMarkdownRenderer.shared(itemView.context)
 
-            message.blocks.forEach { block ->
+            message.blocks.forEachIndexed { index, block ->
                 when (block) {
                     is ChatBlock.Text -> {
                         val text = inflater.inflate(
@@ -129,7 +171,7 @@ class ChatMessageAdapter(
                         container.addView(text)
                     }
                     is ChatBlock.FileChange -> {
-                        container.addView(inflateFileChange(inflater, block))
+                        container.addView(inflateFileChange(inflater, block, message.id, index))
                     }
                 }
             }
@@ -139,12 +181,14 @@ class ChatMessageAdapter(
 
         private fun inflateFileChange(
             inflater: LayoutInflater,
-            block: ChatBlock.FileChange
+            block: ChatBlock.FileChange,
+            messageId: Long,
+            blockIndex: Int
         ): View {
             val row = inflater.inflate(R.layout.item_chat_file_change, container, false)
 
             val header: View = row.findViewById(R.id.fileChangeHeader)
-            val indicator: MaterialTextView = row.findViewById(R.id.expandIndicator)
+            val indicator: ImageView = row.findViewById(R.id.expandIndicator)
             val icon: ImageView = row.findViewById(R.id.fileStatusIcon)
             val name: MaterialTextView = row.findViewById(R.id.fileName)
             val path: MaterialTextView = row.findViewById(R.id.filePath)
@@ -152,17 +196,44 @@ class ChatMessageAdapter(
             val rowProgress: CircularProgressIndicator =
                 row.findViewById(R.id.fileChangeProgress)
             val detail: View = row.findViewById(R.id.fileChangeDetail)
+            val content: MaterialTextView = row.findViewById(R.id.fileChangeContent)
             val openButton: MaterialButton = row.findViewById(R.id.openFileBtn)
 
             name.text = block.fileName
             path.text = block.filePath
-            // Diff statistics and the diff itself are filled in by the follow-up change; until then
-            // the detail area offers the only truthful action, which is to open the file.
-            summary.visibility = View.GONE
 
-            val isExpanded = expandedFileChanges.contains(keyOf(block))
-            detail.visibility = if (isExpanded) View.VISIBLE else View.GONE
-            indicator.text = if (isExpanded) "▾" else "▸"
+            if (block.pending) {
+                summary.text = null
+                content.text = null
+            } else {
+                val rendered = diffOf(row.context, block)
+                summary.text = if (block.baselineContent == null) {
+                    row.context.getString(R.string.chat_diff_new_file)
+                } else {
+                    row.context.getString(
+                        R.string.chat_diff_summary,
+                        rendered.added,
+                        rendered.removed
+                    )
+                }
+                content.text = rendered.text
+            }
+
+            val rowId = RowId(messageId, blockIndex)
+
+            fun renderExpanded(expanded: Boolean) {
+                detail.visibility = if (expanded) View.VISIBLE else View.GONE
+                indicator.rotation = if (expanded) 90f else 0f
+                indicator.contentDescription = row.context.getString(
+                    if (expanded) {
+                        R.string.chat_file_change_hide
+                    } else {
+                        R.string.chat_file_change_show
+                    }
+                )
+            }
+
+            renderExpanded(expandedFileChanges.contains(rowId))
 
             if (block.pending) {
                 rowProgress.visibility = View.VISIBLE
@@ -187,10 +258,9 @@ class ChatMessageAdapter(
                 // Nothing to reveal while the write is still in flight.
                 if (block.pending) return@setOnClickListener
 
-                val expanding = expandedFileChanges.add(keyOf(block))
-                if (!expanding) expandedFileChanges.remove(keyOf(block))
-                detail.visibility = if (expanding) View.VISIBLE else View.GONE
-                indicator.text = if (expanding) "▾" else "▸"
+                val expanding = expandedFileChanges.add(rowId)
+                if (!expanding) expandedFileChanges.remove(rowId)
+                renderExpanded(expanding)
             }
 
             openButton.setOnClickListener { onOpenFile(block.filePath) }
@@ -199,15 +269,31 @@ class ChatMessageAdapter(
         }
     }
 
-    /** Key that survives rebinds and distinguishes repeated attempts at the same file. */
-    private fun keyOf(block: ChatBlock.FileChange): String =
-        block.filePath + "|" + block.newContent.hashCode()
+    /**
+     * Identity of one file row: which answer it belongs to, and which block within that answer.
+     *
+     * Stable across rebinds, and distinct even when two blocks of the same answer hold identical
+     * content.
+     */
+    private data class RowId(val messageId: Long, val blockIndex: Int)
+
+    /**
+     * Key of the diff cached for [block].
+     *
+     * Content-addressed on purpose: unlike expansion, a rendered diff is a pure function of the
+     * three fields, so two rows with the same content legitimately share an entry. The baseline is
+     * part of it because the same content can be written against two different bases (two requests,
+     * or the same file touched before and after the conversation was cleared).
+     */
+    private fun cacheKeyOf(block: ChatBlock.FileChange): String =
+        block.filePath + "|" + block.newContent.hashCode() + "|" + block.baselineContent.hashCode()
 
     private companion object {
         const val TYPE_USER = 0
         const val TYPE_ASSISTANT = 1
         const val TYPE_STATUS = 2
         const val TYPE_ERROR = 3
+        const val DIFF_CACHE_SIZE = 16
 
         val DIFF = object : DiffUtil.ItemCallback<ChatMessage>() {
             override fun areItemsTheSame(oldItem: ChatMessage, newItem: ChatMessage): Boolean =
