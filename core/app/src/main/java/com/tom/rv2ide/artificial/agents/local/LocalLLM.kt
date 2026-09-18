@@ -29,6 +29,7 @@ import com.tom.rv2ide.artificial.agents.AgentTurn
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.OpenAiCompat
 import com.tom.rv2ide.artificial.agents.ToolCallAccumulator
+import com.tom.rv2ide.artificial.agents.ToolsNotSupportedException
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
 import com.tom.rv2ide.artificial.catalog.ModelSources
@@ -532,6 +533,14 @@ class LocalLLM : AIAgent {
 
     if (!response.isSuccessful) {
       val errorBody = response.body?.string() ?: "Unknown error"
+      // A server that does not know the `tools` field rejects the request itself; the request then
+      // answers through the text protocol instead of failing.
+      if (response.code in 400..499 &&
+          (errorBody.contains("tool", ignoreCase = true) ||
+              errorBody.contains("function", ignoreCase = true))
+      ) {
+        throw ToolsNotSupportedException("Local LLM endpoint rejected tools: $errorBody")
+      }
       throw Exception("Local LLM error ${response.code}: $errorBody")
     }
 
