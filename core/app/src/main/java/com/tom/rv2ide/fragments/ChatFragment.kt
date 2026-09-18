@@ -20,7 +20,6 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
@@ -31,6 +30,7 @@ import com.tom.rv2ide.activities.editor.EditorHandlerActivity
 import com.tom.rv2ide.adapters.ChatMessageAdapter
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.agents.Agents
+import com.tom.rv2ide.artificial.chat.TranscriptLayoutManager
 import com.tom.rv2ide.common.logging.IdeLogConfig
 import com.tom.rv2ide.handlers.AIRequestHandler
 import com.tom.rv2ide.managers.CodeCompletionManager
@@ -405,7 +405,7 @@ class ChatFragment : Fragment() {
     private fun setupMessageList() {
         messageAdapter = ChatMessageAdapter(onOpenFile = { filePath -> openFileInEditor(filePath) })
 
-        val listLayoutManager = LinearLayoutManager(requireContext())
+        val listLayoutManager = TranscriptLayoutManager(requireContext())
 
         messageList.apply {
             layoutManager = listLayoutManager
