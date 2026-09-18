@@ -36,6 +36,12 @@ import com.tom.rv2ide.artificial.exceptions.*
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
 import com.tom.rv2ide.artificial.agents.AgentHistory
+import com.tom.rv2ide.artificial.agents.AgentMessage
+import com.tom.rv2ide.artificial.agents.AgentStreamEvent
+import com.tom.rv2ide.artificial.agents.AgentToolSpec
+import com.tom.rv2ide.artificial.agents.AgentTurn
+import com.tom.rv2ide.artificial.agents.OpenAiCompat
+import com.tom.rv2ide.artificial.agents.ToolCallAccumulator
 import com.tom.rv2ide.artificial.secrets.ApiKey
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 
@@ -189,7 +195,6 @@ class OpenAI : AIAgent {
                   IllegalStateException("OpenAI service not initialized")
               )
 
-          val fileContents = readRelevantFiles()
           val needsCorrection = isUserRequestingCorrection(prompt)
 
           val fullPrompt = buildString {
@@ -199,16 +204,6 @@ class OpenAI : AIAgent {
               append("\n\n")
               append("CRITICAL: Use ONLY the paths shown above. Do NOT make up fake paths like '/storage/emulated/0/project' or 'com.example.yourproject'.\n")
               append("CRITICAL: Look at the actual paths above and use those EXACT paths.\n\n")
-            }
-            
-            if (fileContents.isNotEmpty()) {
-              append("=== CURRENT FILES CONTENT ===\n")
-              fileContents.forEach { (path, content) ->
-                append("FILE: $path\n")
-                append("CONTENT:\n")
-                append(content)
-                append("\n\n")
-              }
             }
             
             if (context != null) {
@@ -255,6 +250,47 @@ class OpenAI : AIAgent {
           }
 
           Result.success(response)
+        } catch (e: Exception) {
+          Result.failure(e)
+        }
+      }
+
+  override suspend fun generateTurn(
+      messages: List<AgentMessage>,
+      tools: List<AgentToolSpec>,
+      onEvent: (AgentStreamEvent) -> Unit,
+  ): Result<AgentTurn> =
+      withContext(Dispatchers.IO) {
+        try {
+          val key = apiKey
+              ?: return@withContext Result.failure(
+                  IllegalStateException("OpenAI service not initialized")
+              )
+
+          val requestBody = buildToolRequestBody(messages, tools)
+          val text = StringBuilder()
+          val toolCalls = ToolCallAccumulator()
+
+          streamToolTurn(key, requestBody) { delta ->
+            val content = OpenAiCompat.contentOf(delta)
+            if (content.isNotEmpty()) {
+              text.append(content)
+              onEvent(AgentStreamEvent.TextDelta(content))
+            }
+
+            val reasoning = OpenAiCompat.reasoningOf(delta)
+            if (reasoning.isNotEmpty()) {
+              onEvent(AgentStreamEvent.ThinkingDelta(reasoning))
+            }
+
+            toolCalls.accept(delta.optJSONArray("tool_calls"))
+          }
+
+          if (text.isEmpty() && !toolCalls.hasCalls()) {
+            return@withContext Result.failure(Exception("Empty response from AI"))
+          }
+
+          Result.success(AgentTurn(text.toString(), toolCalls.finish()))
         } catch (e: Exception) {
           Result.failure(e)
         }
@@ -375,34 +411,110 @@ class OpenAI : AIAgent {
     }
   }
 
-  private fun readRelevantFiles(): Map<String, String> {
-    val filesContent = mutableMapOf<String, String>()
-    val tree = projectTreeResult?.tree ?: return filesContent
-    
-    val filePaths = tree.lines().filter { it.isNotBlank() }
-    
-    filePaths.forEach { filePath ->
-      val trimmedPath = filePath.trim()
-      val file = File(trimmedPath)
-      
-      if (file.isFile && 
-          (trimmedPath.endsWith(".kt") || 
-           trimmedPath.endsWith(".java") ||
-           trimmedPath.endsWith(".xml") ||
-           trimmedPath.endsWith(".gradle") ||
-           trimmedPath.endsWith(".gradle.kts")) &&
-          !trimmedPath.contains("/build/") && 
-          !trimmedPath.contains("/.gradle/")) {
-        try {
-          val content = file.readText()
-          filesContent[trimmedPath] = content
-        } catch (e: Exception) {
-          // Skip files that can't be read
+  private fun buildToolRequestBody(
+      messages: List<AgentMessage>,
+      tools: List<AgentToolSpec>,
+  ): JSONObject {
+    val requestBody = JSONObject()
+    requestBody.put("model", selectedModel)
+    requestBody.put("messages", OpenAiCompat.messagesJson(messages))
+    requestBody.put("tools", OpenAiCompat.toolsJson(tools))
+    requestBody.put("temperature", 0.7)
+    requestBody.put("max_tokens", 4096)
+    requestBody.put("stream", true)
+
+    return requestBody
+  }
+
+  /**
+   * Streams a tool-aware chat request, handing each whole delta to [onDelta].
+   *
+   * OpenAI-compatible SSE: one `data: {...}` line per chunk, terminated by `data: [DONE]`.
+   */
+  private fun streamToolTurn(
+      apiKey: String,
+      requestBody: JSONObject,
+      onDelta: (JSONObject) -> Unit,
+  ) {
+    val url = URL("https://api.openai.com/v1/chat/completions")
+    val connection = url.openConnection() as HttpURLConnection
+
+    try {
+      connection.requestMethod = "POST"
+      connection.setRequestProperty("Content-Type", "application/json")
+      connection.setRequestProperty("Authorization", "Bearer $apiKey")
+      connection.setRequestProperty("Accept", "text/event-stream")
+      connection.doOutput = true
+      connection.connectTimeout = 30000
+      // A stream is idle between chunks, so the read timeout applies per chunk rather than to the
+      // whole reply; 30s of silence means the stream has stalled.
+      connection.readTimeout = 30000
+
+      connection.outputStream.use { os ->
+        os.write(requestBody.toString().toByteArray())
+      }
+
+      val responseCode = connection.responseCode
+      if (responseCode != HttpURLConnection.HTTP_OK) {
+        throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
+      }
+
+      connection.inputStream.bufferedReader().use { reader ->
+        while (true) {
+          val rawLine = reader.readLine() ?: break
+          if (!rawLine.startsWith("data:")) continue
+
+          val payload = rawLine.removePrefix("data:").trim()
+          if (payload.isEmpty() || payload == "[DONE]") continue
+
+          val deltaNode = OpenAiCompat.deltaOf(payload) ?: continue
+          onDelta(deltaNode)
         }
       }
+    } catch (e: RateLimitException) {
+      throw e
+    } catch (e: QuotaExceededException) {
+      throw e
+    } catch (e: InvalidApiKeyException) {
+      throw e
+    } catch (e: java.net.SocketTimeoutException) {
+      throw Exception("OpenAI request timeout: ${e.message}")
+    } catch (e: java.net.UnknownHostException) {
+      throw Exception("Network error - cannot reach OpenAI: ${e.message}")
+    } finally {
+      connection.disconnect()
     }
-    
-    return filesContent
+  }
+
+  private fun throwApiError(responseCode: Int, errorBody: String): Nothing {
+    try {
+      val errorJson = JSONObject(errorBody)
+      val errorObj = errorJson.optJSONObject("error")
+      val errorMessage = errorObj?.optString("message") ?: errorBody
+      val errorType = errorObj?.optString("type") ?: ""
+      val errorCode = errorObj?.optString("code") ?: ""
+
+      when {
+        responseCode == 429 || errorType.contains("rate_limit") || errorCode.contains("rate_limit") ->
+            throw RateLimitException("OpenAI rate limit exceeded: $errorMessage")
+        errorType.contains("insufficient_quota") || errorMessage.contains("quota") || errorMessage.contains("billing") ->
+            throw QuotaExceededException("OpenAI quota exceeded: $errorMessage")
+        errorType.contains("invalid_api_key") || errorCode.contains("invalid_api_key") ->
+            throw InvalidApiKeyException("Invalid OpenAI API key: $errorMessage")
+        responseCode == 401 ->
+            throw InvalidApiKeyException("OpenAI authentication failed: $errorMessage")
+        else ->
+            throw Exception("OpenAI API error ($responseCode) - Type: $errorType, Code: $errorCode, Message: $errorMessage")
+      }
+    } catch (e: RateLimitException) {
+      throw e
+    } catch (e: QuotaExceededException) {
+      throw e
+    } catch (e: InvalidApiKeyException) {
+      throw e
+    } catch (e: Exception) {
+      throw Exception("OpenAI API error ($responseCode): $errorBody")
+    }
   }
 
   override fun writeFile(filePath: String, content: String): FileWriteResult {
