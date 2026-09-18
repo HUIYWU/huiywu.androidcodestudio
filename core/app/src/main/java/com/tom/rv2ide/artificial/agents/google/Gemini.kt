@@ -280,8 +280,6 @@ class Gemini : AIAgent {
             return@withContext Result.failure(Exception("Empty response from AI"))
           }
 
-          history.recordTurn(prompt, generatedResponse)
-
           Result.success(generatedResponse)
         } catch (e: com.tom.rv2ide.artificial.exceptions.RateLimitException) {
           Result.failure(e)
@@ -322,18 +320,6 @@ class Gemini : AIAgent {
     }
     
     return filesContent
-  }
-
-  fun readFile(filePath: String): String? {
-    return try {
-      if (File(filePath).exists()) {
-        File(filePath).readText()
-      } else {
-        projectTreeResult?.readFileContent(File(filePath).name)
-      }
-    } catch (e: Exception) {
-      null
-    }
   }
 
   override fun writeFile(filePath: String, content: String): FileWriteResult {

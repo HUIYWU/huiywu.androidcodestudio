@@ -100,7 +100,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent">
 
-                <com.google.android.material.textview.MaterialTextView
+                <com.tom.rv2ide.ui.ScrollFriendlySelectableTextView
                     android:id="@+id/toolCallContent"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

@@ -21,9 +21,14 @@ import android.content.Context
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
 import com.tom.rv2ide.artificial.agents.AgentHistory
+import com.tom.rv2ide.artificial.agents.AgentMessage
 import com.tom.rv2ide.artificial.agents.AgentStreamEvent
 import com.tom.rv2ide.artificial.agents.AgentStreamParser
+import com.tom.rv2ide.artificial.agents.AgentToolSpec
+import com.tom.rv2ide.artificial.agents.AgentTurn
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
+import com.tom.rv2ide.artificial.agents.OpenAiCompat
+import com.tom.rv2ide.artificial.agents.ToolCallAccumulator
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
 import com.tom.rv2ide.artificial.catalog.ModelSources
@@ -190,7 +195,6 @@ class DeepSeek : AIAgent {
             return@withContext Result.failure(Exception("Empty response from AI"))
           }
 
-          recordTurn(prompt, response)
           Result.success(response)
         } catch (e: Exception) {
           Result.failure(e)
@@ -231,23 +235,54 @@ class DeepSeek : AIAgent {
             return@withContext Result.failure(Exception("Empty response from AI"))
           }
 
-          recordTurn(prompt, response)
           Result.success(response)
         } catch (e: Exception) {
           Result.failure(e)
         }
       }
 
-  /**
-   * The conversation history keeps the raw reply, file bodies included: the next request replays it,
-   * and the protocol is what tells the model where the blocks are.
-   */
-  private fun recordTurn(prompt: String, response: String) {
-    history.recordTurn(prompt, response)
-  }
+  override suspend fun generateTurn(
+      messages: List<AgentMessage>,
+      tools: List<AgentToolSpec>,
+      onEvent: (AgentStreamEvent) -> Unit,
+  ): Result<AgentTurn> =
+      withContext(Dispatchers.IO) {
+        try {
+          val key = apiKey
+              ?: return@withContext Result.failure(
+                  IllegalStateException("DeepSeek service not initialized")
+              )
+
+          val requestBody = buildToolRequestBody(messages, tools)
+          val text = StringBuilder()
+          val toolCalls = ToolCallAccumulator()
+
+          streamToolTurn(key, requestBody) { delta ->
+            val content = OpenAiCompat.contentOf(delta)
+            if (content.isNotEmpty()) {
+              text.append(content)
+              onEvent(AgentStreamEvent.TextDelta(content))
+            }
+
+            val reasoning = OpenAiCompat.reasoningOf(delta)
+            if (reasoning.isNotEmpty()) {
+              onEvent(AgentStreamEvent.ThinkingDelta(reasoning))
+            }
+
+            toolCalls.accept(delta.optJSONArray("tool_calls"))
+          }
+
+          if (text.isEmpty() && !toolCalls.hasCalls()) {
+            return@withContext Result.failure(Exception("Empty response from AI"))
+          }
+
+          Result.success(AgentTurn(text.toString(), toolCalls.finish()))
+        } catch (e: Exception) {
+          Result.failure(e)
+        }
+      }
 
   private fun buildFullPrompt(prompt: String, context: String?): String {
-    val fileContents = readRelevantFiles()
     val needsCorrection = isUserRequestingCorrection(prompt)
 
     return buildString {
@@ -257,16 +292,6 @@ class DeepSeek : AIAgent {
         append("\n\n")
         append("CRITICAL: Use ONLY the paths shown above. Do NOT make up fake paths like '/storage/emulated/0/project' or 'com.example.yourproject'.\n")
         append("CRITICAL: Look at the actual paths above and use those EXACT paths.\n\n")
-      }
-
-      if (fileContents.isNotEmpty()) {
-        append("=== CURRENT FILES CONTENT ===\n")
-        fileContents.forEach { (path, content) ->
-          append("FILE: $path\n")
-          append("CONTENT:\n")
-          append(content)
-          append("\n\n")
-        }
       }
 
       if (context != null) {
@@ -330,6 +355,21 @@ class DeepSeek : AIAgent {
     return requestBody
   }
 
+  private fun buildToolRequestBody(
+      messages: List<AgentMessage>,
+      tools: List<AgentToolSpec>,
+  ): JSONObject {
+    val requestBody = JSONObject()
+    requestBody.put("model", selectedModel)
+    requestBody.put("messages", OpenAiCompat.messagesJson(messages))
+    requestBody.put("tools", OpenAiCompat.toolsJson(tools))
+    requestBody.put("temperature", 0.7)
+    requestBody.put("max_tokens", 4096)
+    requestBody.put("stream", true)
+
+    return requestBody
+  }
+
   /**
    * Reads the reply as it is produced, handing each fragment to [onDelta] along with whether it is
    * reasoning rather than answer text.
@@ -383,6 +423,54 @@ class DeepSeek : AIAgent {
                 rawReasoning as? String ?: ""
               }
           if (reasoning.isNotEmpty()) onDelta(reasoning, true)
+        }
+      }
+    } catch (e: RateLimitException) {
+      throw e
+    } catch (e: QuotaExceededException) {
+      throw e
+    } catch (e: InvalidApiKeyException) {
+      throw e
+    } catch (e: java.net.SocketTimeoutException) {
+      throw Exception("DeepSeek request timeout: ${e.message}")
+    } catch (e: java.net.UnknownHostException) {
+      throw Exception("Network error - cannot reach DeepSeek: ${e.message}")
+    } finally {
+      connection.disconnect()
+    }
+  }
+
+  /**
+   * Streams a prebuilt tool-aware request, handing each whole delta to [onDelta]. Separate from
+   * [streamDeepSeekAPI] because tool mode reads the same stream for three kinds of fragment.
+   */
+  private fun streamToolTurn(
+      apiKey: String,
+      requestBody: JSONObject,
+      onDelta: (JSONObject) -> Unit,
+  ) {
+    val connection = openConnection(apiKey)
+
+    try {
+      connection.outputStream.use { os ->
+        os.write(requestBody.toString().toByteArray())
+      }
+
+      val responseCode = connection.responseCode
+      if (responseCode != HttpURLConnection.HTTP_OK) {
+        throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
+      }
+
+      connection.inputStream.bufferedReader().use { reader ->
+        while (true) {
+          val rawLine = reader.readLine() ?: break
+          if (!rawLine.startsWith("data:")) continue
+
+          val payload = rawLine.removePrefix("data:").trim()
+          if (payload.isEmpty() || payload == "[DONE]") continue
+
+          val deltaNode = OpenAiCompat.deltaOf(payload) ?: continue
+          onDelta(deltaNode)
         }
       }
     } catch (e: RateLimitException) {
@@ -501,47 +589,6 @@ class DeepSeek : AIAgent {
       throw e
     } finally {
       connection.disconnect()
-    }
-  }
-
-  private fun readRelevantFiles(): Map<String, String> {
-    val filesContent = mutableMapOf<String, String>()
-    val tree = projectTreeResult?.tree ?: return filesContent
-    
-    val filePaths = tree.lines().filter { it.isNotBlank() }
-    
-    filePaths.forEach { filePath ->
-      val trimmedPath = filePath.trim()
-      val file = File(trimmedPath)
-      
-      if (file.isFile && 
-          (trimmedPath.endsWith(".kt") || 
-           trimmedPath.endsWith(".java") ||
-           trimmedPath.endsWith(".xml") ||
-           trimmedPath.endsWith(".gradle") ||
-           trimmedPath.endsWith(".gradle.kts")) &&
-          !trimmedPath.contains("/build/") && 
-          !trimmedPath.contains("/.gradle/")) {
-        try {
-          val content = file.readText()
-          filesContent[trimmedPath] = content
-        } catch (e: Exception) {
-        }
-      }
-    }
-    
-    return filesContent
-  }
-
-  fun readFile(filePath: String): String? {
-    return try {
-      if (File(filePath).exists()) {
-        File(filePath).readText()
-      } else {
-        projectTreeResult?.readFileContent(File(filePath).name)
-      }
-    } catch (e: Exception) {
-      null
     }
   }
 

@@ -37,6 +37,10 @@ interface AIAgent {
     fun setContext(context: Context)
     fun setProjectData(projectTreeResult: ProjectTreeResult)
     fun clearConversation()
+    /**
+     * A single-shot reply, used by editor code completion. It never records a turn: recording is
+     * owned by whoever drives the conversation, so a completion cannot leak into the chat history.
+     */
     suspend fun generateCode(
         prompt: String,
         context: String?,
@@ -47,8 +51,8 @@ interface AIAgent {
     /**
      * Same request as [generateCode], but reports prose as it arrives.
      *
-     * The returned text is the full reply, used for the conversation history and for the final
-     * parse, so a provider that cannot stream can answer by calling [generateCode] and replaying
+     * The returned text is the full reply, used by the request driver to record the turn and to
+     * parse it, so a provider that cannot stream can answer by calling [generateCode] and replaying
      * the result through the parser.
      *
      * Only [AgentStreamEvent.TextDelta] is guaranteed to arrive incrementally; a

@@ -240,6 +240,12 @@ class AIAgentManager(private val context: Context) {
                     }
                 ) ?: Result.failure(Exception("No agent initialized"))
 
+                // Recorded by the driver rather than by the provider: a code completion calls the
+                // provider directly and must not enter the conversation history.
+                result.onSuccess { response ->
+                    currentAgent?.history?.recordTurn(userRequest, response)
+                }
+
                 result.fold(
                     onSuccess = { response ->
                         val modifications =

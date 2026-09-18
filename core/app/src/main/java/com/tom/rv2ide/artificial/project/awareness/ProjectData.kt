@@ -40,34 +40,8 @@ class ProjectData(ctx: Context) {
     
         walk(proj)
     
-        return ProjectTreeResult(sb.toString(), proj)
+        return ProjectTreeResult(sb.toString())
     }
 }
 
-class ProjectTreeResult(
-    val tree: String,
-    private val root: File
-) {
-
-    fun getFileByName(filename: String): String? {
-
-        fun search(dir: File): File? {
-            dir.listFiles()?.forEach { file ->
-                if (file.isDirectory) {
-                    val found = search(file)
-                    if (found != null) return found
-                } else if (file.name == filename) {
-                    return file
-                }
-            }
-            return null
-        }
-
-        return search(root)?.canonicalPath
-    }
-
-    fun readFileContent(filename: String): String? {
-        val path = getFileByName(filename) ?: return null
-        return File(path).readText()
-    }
-}
+class ProjectTreeResult(val tree: String)

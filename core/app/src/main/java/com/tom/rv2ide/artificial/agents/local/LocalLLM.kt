@@ -21,9 +21,14 @@ import android.content.Context
 import com.tom.rv2ide.artificial.agents.AIAgent
 import com.tom.rv2ide.artificial.agents.AIAgentRegistry
 import com.tom.rv2ide.artificial.agents.AgentHistory
+import com.tom.rv2ide.artificial.agents.AgentMessage
 import com.tom.rv2ide.artificial.agents.AgentStreamEvent
 import com.tom.rv2ide.artificial.agents.AgentStreamParser
+import com.tom.rv2ide.artificial.agents.AgentToolSpec
+import com.tom.rv2ide.artificial.agents.AgentTurn
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
+import com.tom.rv2ide.artificial.agents.OpenAiCompat
+import com.tom.rv2ide.artificial.agents.ToolCallAccumulator
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
 import com.tom.rv2ide.artificial.catalog.ModelSources
@@ -203,7 +208,6 @@ class LocalLLM : AIAgent {
             return@withContext Result.failure(Exception("Empty response from Local LLM"))
           }
 
-          recordTurn(prompt, generatedResponse)
           Result.success(generatedResponse)
         } catch (e: com.tom.rv2ide.artificial.exceptions.RateLimitException) {
           Result.failure(e)
@@ -251,7 +255,6 @@ class LocalLLM : AIAgent {
             return@withContext Result.failure(Exception("Empty response from Local LLM"))
           }
 
-          recordTurn(prompt, generatedResponse)
           Result.success(generatedResponse)
         } catch (e: com.tom.rv2ide.artificial.exceptions.RateLimitException) {
           Result.failure(e)
@@ -264,8 +267,55 @@ class LocalLLM : AIAgent {
         }
       }
 
+  override suspend fun generateTurn(
+      messages: List<AgentMessage>,
+      tools: List<AgentToolSpec>,
+      onEvent: (AgentStreamEvent) -> Unit,
+  ): Result<AgentTurn> =
+      withContext(Dispatchers.IO) {
+        try {
+          if (baseUrl.isNullOrEmpty() || modelName.isNullOrEmpty()) {
+              return@withContext Result.failure(
+                  IllegalStateException("Local LLM not configured")
+              )
+          }
+
+          val requestBody = buildToolRequestBody(messages, tools)
+          val text = StringBuilder()
+          val toolCalls = ToolCallAccumulator()
+
+          streamToolTurn(requestBody) { delta ->
+            val content = OpenAiCompat.contentOf(delta)
+            if (content.isNotEmpty()) {
+              text.append(content)
+              onEvent(AgentStreamEvent.TextDelta(content))
+            }
+
+            val reasoning = OpenAiCompat.reasoningOf(delta)
+            if (reasoning.isNotEmpty()) {
+              onEvent(AgentStreamEvent.ThinkingDelta(reasoning))
+            }
+
+            toolCalls.accept(delta.optJSONArray("tool_calls"))
+          }
+
+          if (text.isEmpty() && !toolCalls.hasCalls()) {
+            return@withContext Result.failure(Exception("Empty response from Local LLM"))
+          }
+
+          Result.success(AgentTurn(text.toString(), toolCalls.finish()))
+        } catch (e: com.tom.rv2ide.artificial.exceptions.RateLimitException) {
+          Result.failure(e)
+        } catch (e: com.tom.rv2ide.artificial.exceptions.QuotaExceededException) {
+          Result.failure(e)
+        } catch (e: com.tom.rv2ide.artificial.exceptions.InvalidApiKeyException) {
+          Result.failure(e)
+        } catch (e: Exception) {
+          Result.failure(e)
+        }
+      }
+
   private fun buildFullPrompt(prompt: String, context: String?): String {
-    val fileContents = readRelevantFiles()
     val needsCorrection = isUserRequestingCorrection(prompt)
 
     return buildString {
@@ -275,16 +325,6 @@ class LocalLLM : AIAgent {
         append("\n\n")
         append("CRITICAL: Use ONLY the paths shown above. Do NOT make up fake paths like '/storage/emulated/0/project' or 'com.example.yourproject'.\n")
         append("CRITICAL: Look at the actual paths above and use those EXACT paths.\n\n")
-      }
-      
-      if (fileContents.isNotEmpty()) {
-        append("=== CURRENT FILES CONTENT ===\n")
-        fileContents.forEach { (path, content) ->
-          append("FILE: $path\n")
-          append("CONTENT:\n")
-          append(content)
-          append("\n\n")
-        }
       }
       
       if (context != null) {
@@ -342,6 +382,20 @@ class LocalLLM : AIAgent {
       put("temperature", 0.7)
       put("stream", stream)
     }
+  }
+
+  private fun buildToolRequestBody(
+      messages: List<AgentMessage>,
+      tools: List<AgentToolSpec>,
+  ): JSONObject {
+    val requestBody = JSONObject()
+    requestBody.put("model", modelName)
+    requestBody.put("messages", OpenAiCompat.messagesJson(messages))
+    requestBody.put("tools", OpenAiCompat.toolsJson(tools))
+    requestBody.put("temperature", 0.7)
+    requestBody.put("stream", true)
+
+    return requestBody
   }
 
   private fun buildRequest(requestBody: JSONObject): Request =
@@ -454,48 +508,44 @@ class LocalLLM : AIAgent {
     }
   }
 
-  private fun recordTurn(prompt: String, response: String) {
-    history.recordTurn(prompt, response)
-  }
-
-  private fun readRelevantFiles(): Map<String, String> {
-    val filesContent = mutableMapOf<String, String>()
-    val tree = projectTreeResult?.tree ?: return filesContent
-    
-    val filePaths = tree.lines().filter { it.isNotBlank() }
-    
-    filePaths.forEach { filePath ->
-      val trimmedPath = filePath.trim()
-      val file = File(trimmedPath)
-      
-      if (file.isFile && 
-          (trimmedPath.endsWith(".kt") || 
-           trimmedPath.endsWith(".java") ||
-           trimmedPath.endsWith(".xml") ||
-           trimmedPath.endsWith(".gradle") ||
-           trimmedPath.endsWith(".gradle.kts")) &&
-          !trimmedPath.contains("/build/") && 
-          !trimmedPath.contains("/.gradle/")) {
-        try {
-          val content = file.readText()
-          filesContent[trimmedPath] = content
-        } catch (e: Exception) {
-        }
+  /**
+   * Streams a prebuilt tool-aware request, handing each whole delta to [onDelta]. Separate from
+   * [streamLocalLlmApi] because tool mode reads the same stream for three kinds of fragment.
+   */
+  private fun streamToolTurn(
+      requestBody: JSONObject,
+      onDelta: (JSONObject) -> Unit,
+  ) {
+    val response = try {
+      httpClient.newCall(buildRequest(requestBody)).execute()
+    } catch (e: Exception) {
+      val errorMessage = e.message ?: ""
+      when {
+        errorMessage.contains("timeout") ||
+        errorMessage.contains("connect") ->
+          throw com.tom.rv2ide.artificial.exceptions.RateLimitException(
+            "Connection timeout. Please check your local server."
+          )
+        else -> throw e
       }
     }
-    
-    return filesContent
-  }
 
-  fun readFile(filePath: String): String? {
-    return try {
-      if (File(filePath).exists()) {
-        File(filePath).readText()
-      } else {
-        projectTreeResult?.readFileContent(File(filePath).name)
+    if (!response.isSuccessful) {
+      val errorBody = response.body?.string() ?: "Unknown error"
+      throw Exception("Local LLM error ${response.code}: $errorBody")
+    }
+
+    response.body?.source()?.use { source ->
+      while (!source.exhausted()) {
+        val rawLine = source.readUtf8Line() ?: break
+        if (!rawLine.startsWith("data:")) continue
+
+        val payload = rawLine.removePrefix("data:").trim()
+        if (payload.isEmpty() || payload == "[DONE]") continue
+
+        val deltaNode = OpenAiCompat.deltaOf(payload) ?: continue
+        onDelta(deltaNode)
       }
-    } catch (e: Exception) {
-      null
     }
   }
 
