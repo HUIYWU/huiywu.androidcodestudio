@@ -41,7 +41,9 @@ import com.tom.rv2ide.artificial.secrets.ApiKey
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +58,12 @@ class AIAgentManager(private val context: Context) {
     private var currentProviderId: String = DEFAULT_PROVIDER_ID
     private var currentAgent: AIAgent? = null
     private val providerSwitchDialog = ProviderSwitchDialog(context)
+
+    /** Prose streamed for the request in flight, so an interrupt can record what was shown. */
+    private val partialResponse = StringBuilder()
+
+    /** Whether the in-flight request's turn has already been recorded to the agent's history. */
+    private var turnRecorded = false
 
     private val _currentModelName = MutableStateFlow("")
     private val _currentProviderName = MutableStateFlow("")
@@ -189,6 +197,9 @@ class AIAgentManager(private val context: Context) {
     }
 
     fun clearConversation() {
+        // Dropped so an interrupt still in flight cannot write its partial answer back into
+        // the cleared history.
+        partialResponse.setLength(0)
         currentAgent?.clearConversation()
     }
 
@@ -208,6 +219,9 @@ class AIAgentManager(private val context: Context) {
 
         currentAgent?.resetAttemptCount()
         callback.onProcessing("Analyzing your request...")
+
+        partialResponse.setLength(0)
+        turnRecorded = false
 
         while (!success && (currentAgent?.canRetry() == true)) {
             try {
@@ -236,6 +250,10 @@ class AIAgentManager(private val context: Context) {
                         if (event is AgentStreamEvent.ThinkingDelta) {
                             reasoning.append(event.text)
                         }
+                        // Same as the tool loop: keep the prose so an interrupt can record it.
+                        if (event is AgentStreamEvent.TextDelta) {
+                            partialResponse.append(event.text)
+                        }
                         callback.onStreamEvent(event)
                     }
                 ) ?: Result.failure(Exception("No agent initialized"))
@@ -244,6 +262,7 @@ class AIAgentManager(private val context: Context) {
                 // provider directly and must not enter the conversation history.
                 result.onSuccess { response ->
                     currentAgent?.history?.recordTurn(userRequest, response)
+                    turnRecorded = true
                 }
 
                 result.fold(
@@ -344,6 +363,9 @@ class AIAgentManager(private val context: Context) {
                       }
                   }
                 )
+            } catch (e: CancellationException) {
+                recordInterruptedTurn(userRequest)
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("AIAgentManager", "Exception occurred: ${e.message}", e)
                 
@@ -353,7 +375,12 @@ class AIAgentManager(private val context: Context) {
                         "Exception: ${e.message?.take(50) ?: "Unknown"}. Trying again..."
                     )
                     currentAgent?.incrementAttemptCount()
-                    delay(1500)
+                    try {
+                        delay(1500)
+                    } catch (e: CancellationException) {
+                        recordInterruptedTurn(userRequest)
+                        throw e
+                    }
                 } else {
                     val errorDisplay = formatErrorMessage(e)
                     callback.onError(errorDisplay)
@@ -368,6 +395,18 @@ class AIAgentManager(private val context: Context) {
           callback.onError("Failed after $attemptCount attempts with $agentName.\n\nPlease check your API key and try again.")
           undoLastModification()
         }
+    }
+
+    /**
+     * Keeps the answer of a request that was interrupted mid-flight.
+     *
+     * Without this, an interrupt would drop the turn from history entirely: only a completed
+     * turn is recorded normally. The prose that was already shown is what the next message follows.
+     */
+    private fun recordInterruptedTurn(userRequest: String) {
+        if (turnRecorded || partialResponse.isEmpty()) return
+        currentAgent?.history?.recordTurn(userRequest, partialResponse.toString())
+        turnRecorded = true
     }
 
     private enum class ToolLoopOutcome {
@@ -415,11 +454,14 @@ class AIAgentManager(private val context: Context) {
                     val turn = requested.turn
                     if (turn.toolCalls.isEmpty()) {
                         agent.history.recordTurn(userRequest, turn.text)
+                        turnRecorded = true
                         return ToolLoopOutcome.SUCCESS
                     }
 
                     messages.add(AgentMessage.Assistant(turn.text, turn.toolCalls))
                     for (call in turn.toolCalls) {
+                        // An interrupt between calls stops the rest of the queue.
+                        currentCoroutineContext().ensureActive()
                         val showsRow = call.name != WriteFileTool.NAME
                         if (showsRow) {
                             callback.onToolCallStarted(
@@ -456,7 +498,13 @@ class AIAgentManager(private val context: Context) {
         var lastError: Throwable? = null
         repeat(TOOL_TURN_ATTEMPTS) { attempt ->
             val result = try {
-                agent.generateTurn(messages, tools) { event -> callback.onStreamEvent(event) }
+                agent.generateTurn(messages, tools) { event ->
+                    // Keep the prose so an interrupt can still record the half-finished turn.
+                    if (event is AgentStreamEvent.TextDelta) {
+                        partialResponse.append(event.text)
+                    }
+                    callback.onStreamEvent(event)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

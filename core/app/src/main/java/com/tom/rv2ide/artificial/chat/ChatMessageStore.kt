@@ -274,6 +274,35 @@ class ChatMessageStore {
     }
 
     /**
+     * Finalises rows that were still in flight as failed.
+     *
+     * Called when a request ends for any reason; rows that completed keep their result, and rows
+     * that never started have no row at all. A write cannot be cut short mid-file, so a pending row
+     * means the call was abandoned before it reported back.
+     */
+    fun failPendingBlocks(interruptedText: String) {
+        val id = currentAssistantId
+        if (id == NO_ID) return
+        _messages.value = _messages.value.map { message ->
+            if (message is ChatMessage.Assistant && message.id == id) {
+                message.copy(
+                    blocks = message.blocks.map { block ->
+                        when {
+                            block is ChatBlock.ToolCall && block.result == null ->
+                                block.copy(result = interruptedText, isError = true)
+                            block is ChatBlock.FileChange && block.pending ->
+                                block.copy(pending = false, success = false)
+                            else -> block
+                        }
+                    }
+                )
+            } else {
+                message
+            }
+        }
+    }
+
+    /**
      * Closes the request: drops the progress line and discards the answer bubble if the agent
      * produced nothing at all.
      */

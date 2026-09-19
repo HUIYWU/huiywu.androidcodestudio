@@ -441,12 +441,20 @@ class ChatFragment : Fragment() {
         aiRequestHandler = AIRequestHandler(
             lifecycleScope = lifecycleScope,
             aiAgent = aiAgent,
-            messages = messages
+            messages = messages,
+            interruptedText = getString(R.string.chat_tool_call_interrupted)
         )
     }
 
     private fun setupListeners() {
-        sendBtn.setOnClickListener { submitPrompt() }
+        // One slot, two modes: while a request runs the button interrupts it instead.
+        sendBtn.setOnClickListener {
+            if (messages.isProcessing.value) {
+                aiRequestHandler.cancel()
+            } else {
+                submitPrompt()
+            }
+        }
 
         clearBtn.setOnClickListener { clearConversation() }
     }
@@ -473,8 +481,15 @@ class ChatFragment : Fragment() {
                         // No spinner in the composer any more: the transcript's own status row (see
                         // item_chat_status.xml) already shows progress, and a second indicator inside
                         // the field was one of the things that made the bottom block read as two
-                        // stacked surfaces. The button stays disabled either way.
-                        sendBtn.isEnabled = !processing
+                        // stacked surfaces. The button itself stays tappable: while a request runs it
+                        // is the interrupt control.
+                        if (processing) {
+                            sendBtn.setIconResource(R.drawable.ic_disconnect)
+                            sendBtn.contentDescription = getString(R.string.chat_stop)
+                        } else {
+                            sendBtn.setIconResource(R.drawable.ic_send)
+                            sendBtn.contentDescription = getString(R.string.send)
+                        }
                         modelChip.isEnabled = !processing
                         // Blocked rather than merely unsent: the provider keeps no queue, so a prompt
                         // typed while a request runs would be silently discarded on submit.
@@ -652,6 +667,8 @@ class ChatFragment : Fragment() {
     }
 
     fun clearConversation() {
+        // Interrupt before wiping: a request left running would keep writing into the store.
+        aiRequestHandler.cancel()
         lifecycleScope.launch {
             try {
                 codeCompletionManager.clearSuggestion()

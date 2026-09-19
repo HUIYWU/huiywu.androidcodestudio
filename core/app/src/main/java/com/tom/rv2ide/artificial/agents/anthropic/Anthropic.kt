@@ -27,6 +27,7 @@ import com.tom.rv2ide.artificial.agents.AgentToolCall
 import com.tom.rv2ide.artificial.agents.AgentToolSpec
 import com.tom.rv2ide.artificial.agents.AgentTurn
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
+import com.tom.rv2ide.artificial.agents.runCancellable
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
 import com.tom.rv2ide.artificial.catalog.ModelSources
@@ -316,87 +317,89 @@ class Anthropic : AIAgent {
         }
       }
 
-  private fun callAnthropicAPI(apiKey: String, prompt: String): String {
+  private suspend fun callAnthropicAPI(apiKey: String, prompt: String): String {
     android.util.Log.d("Anthropic", "Starting API call to Anthropic")
     
     val url = URL("https://api.anthropic.com/v1/messages")
     val connection = url.openConnection() as HttpURLConnection
     
     try {
-      connection.requestMethod = "POST"
-      connection.setRequestProperty("Content-Type", "application/json")
-      connection.setRequestProperty("x-api-key", apiKey)
-      connection.setRequestProperty("anthropic-version", "2023-06-01")
-      connection.doOutput = true
-      connection.connectTimeout = 30000
-      connection.readTimeout = 30000
+      connection.runCancellable {
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("x-api-key", apiKey)
+        connection.setRequestProperty("anthropic-version", "2023-06-01")
+        connection.doOutput = true
+        connection.connectTimeout = 30000
+        connection.readTimeout = 30000
       
-      val messages = JSONArray()
-      val userMessage = JSONObject()
-      userMessage.put("role", "user")
-      userMessage.put("content", prompt)
-      messages.put(userMessage)
+        val messages = JSONArray()
+        val userMessage = JSONObject()
+        userMessage.put("role", "user")
+        userMessage.put("content", prompt)
+        messages.put(userMessage)
       
-      val requestBody = JSONObject()
-      requestBody.put("model", selectedModel)
-      requestBody.put("max_tokens", 4096)
-      requestBody.put("system", writingRules.useThis())
-      requestBody.put("messages", messages)
+        val requestBody = JSONObject()
+        requestBody.put("model", selectedModel)
+        requestBody.put("max_tokens", 4096)
+        requestBody.put("system", writingRules.useThis())
+        requestBody.put("messages", messages)
       
-      android.util.Log.d("Anthropic", "Request body: ${requestBody.toString()}")
+        android.util.Log.d("Anthropic", "Request body: ${requestBody.toString()}")
       
-      connection.outputStream.use { os ->
-        os.write(requestBody.toString().toByteArray())
-      }
-      
-      val responseCode = connection.responseCode
-      android.util.Log.d("Anthropic", "Response code: $responseCode")
-      
-      if (responseCode != HttpURLConnection.HTTP_OK) {
-        val errorStream = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
-        android.util.Log.e("Anthropic", "Error response: $errorStream")
-        
-        try {
-          val errorJson = JSONObject(errorStream)
-          val errorObj = errorJson.optJSONObject("error")
-          val errorMessage = errorObj?.optString("message") ?: errorStream
-          val errorType = errorObj?.optString("type") ?: ""
-          
-          android.util.Log.e("Anthropic", "Error type: $errorType, message: $errorMessage")
-          
-          when {
-            responseCode == 429 || errorType.contains("rate_limit") -> 
-              throw RateLimitException("Anthropic rate limit exceeded: $errorMessage")
-            errorType.contains("insufficient_quota") || errorMessage.contains("quota") -> 
-              throw QuotaExceededException("Anthropic quota exceeded: $errorMessage")
-            errorType.contains("authentication") || responseCode == 401 -> 
-              throw InvalidApiKeyException("Invalid Anthropic API key: $errorMessage")
-            else -> 
-              throw Exception("Anthropic API error ($responseCode) - Type: $errorType, Message: $errorMessage")
-          }
-        } catch (e: RateLimitException) {
-          throw e
-        } catch (e: QuotaExceededException) {
-          throw e
-        } catch (e: InvalidApiKeyException) {
-          throw e
-        } catch (e: Exception) {
-          throw Exception("Anthropic API error ($responseCode): $errorStream")
+        connection.outputStream.use { os ->
+          os.write(requestBody.toString().toByteArray())
         }
+      
+        val responseCode = connection.responseCode
+        android.util.Log.d("Anthropic", "Response code: $responseCode")
+      
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+          val errorStream = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+          android.util.Log.e("Anthropic", "Error response: $errorStream")
+        
+          try {
+            val errorJson = JSONObject(errorStream)
+            val errorObj = errorJson.optJSONObject("error")
+            val errorMessage = errorObj?.optString("message") ?: errorStream
+            val errorType = errorObj?.optString("type") ?: ""
+          
+            android.util.Log.e("Anthropic", "Error type: $errorType, message: $errorMessage")
+          
+            when {
+              responseCode == 429 || errorType.contains("rate_limit") -> 
+                throw RateLimitException("Anthropic rate limit exceeded: $errorMessage")
+              errorType.contains("insufficient_quota") || errorMessage.contains("quota") -> 
+                throw QuotaExceededException("Anthropic quota exceeded: $errorMessage")
+              errorType.contains("authentication") || responseCode == 401 -> 
+                throw InvalidApiKeyException("Invalid Anthropic API key: $errorMessage")
+              else -> 
+                throw Exception("Anthropic API error ($responseCode) - Type: $errorType, Message: $errorMessage")
+            }
+          } catch (e: RateLimitException) {
+            throw e
+          } catch (e: QuotaExceededException) {
+            throw e
+          } catch (e: InvalidApiKeyException) {
+            throw e
+          } catch (e: Exception) {
+            throw Exception("Anthropic API error ($responseCode): $errorStream")
+          }
+        }
+      
+        val responseBody = connection.inputStream.bufferedReader().readText()
+        android.util.Log.d("Anthropic", "Success response received, length: ${responseBody.length}")
+      
+        val jsonResponse = JSONObject(responseBody)
+        val content = jsonResponse.getJSONArray("content")
+      
+        if (content.length() > 0) {
+          val firstContent = content.getJSONObject(0)
+          return firstContent.getString("text")
+        }
+      
+        throw Exception("No response from Anthropic API")
       }
-      
-      val responseBody = connection.inputStream.bufferedReader().readText()
-      android.util.Log.d("Anthropic", "Success response received, length: ${responseBody.length}")
-      
-      val jsonResponse = JSONObject(responseBody)
-      val content = jsonResponse.getJSONArray("content")
-      
-      if (content.length() > 0) {
-        val firstContent = content.getJSONObject(0)
-        return firstContent.getString("text")
-      }
-      
-      throw Exception("No response from Anthropic API")
     } catch (e: RateLimitException) {
       android.util.Log.e("Anthropic", "Rate limit exception", e)
       throw e
@@ -524,7 +527,7 @@ class Anthropic : AIAgent {
    * Anthropic's stream mixes text, thinking and tool_use blocks on one channel; the payloads carry
    * their own `type`, so the `event:` lines are only framing.
    */
-  private fun streamToolTurn(
+  private suspend fun streamToolTurn(
       apiKey: String,
       requestBody: JSONObject,
       onPayload: (JSONObject) -> Unit,
@@ -533,40 +536,42 @@ class Anthropic : AIAgent {
     val connection = url.openConnection() as HttpURLConnection
 
     try {
-      connection.requestMethod = "POST"
-      connection.setRequestProperty("Content-Type", "application/json")
-      connection.setRequestProperty("x-api-key", apiKey)
-      connection.setRequestProperty("anthropic-version", "2023-06-01")
-      connection.setRequestProperty("Accept", "text/event-stream")
-      connection.doOutput = true
-      connection.connectTimeout = 30000
-      // A stream is idle between chunks, so the read timeout applies per chunk rather than to the
-      // whole reply; 30s of silence means the stream has stalled.
-      connection.readTimeout = 30000
+      connection.runCancellable {
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("x-api-key", apiKey)
+        connection.setRequestProperty("anthropic-version", "2023-06-01")
+        connection.setRequestProperty("Accept", "text/event-stream")
+        connection.doOutput = true
+        connection.connectTimeout = 30000
+        // A stream is idle between chunks, so the read timeout applies per chunk rather than to the
+        // whole reply; 30s of silence means the stream has stalled.
+        connection.readTimeout = 30000
 
-      connection.outputStream.use { os ->
-        os.write(requestBody.toString().toByteArray())
-      }
+        connection.outputStream.use { os ->
+          os.write(requestBody.toString().toByteArray())
+        }
 
-      val responseCode = connection.responseCode
-      if (responseCode != HttpURLConnection.HTTP_OK) {
-        throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
-      }
+        val responseCode = connection.responseCode
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+          throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
+        }
 
-      connection.inputStream.bufferedReader().use { reader ->
-        while (true) {
-          val rawLine = reader.readLine() ?: break
-          if (!rawLine.startsWith("data:")) continue
+        connection.inputStream.bufferedReader().use { reader ->
+          while (true) {
+            val rawLine = reader.readLine() ?: break
+            if (!rawLine.startsWith("data:")) continue
 
-          val payload = rawLine.removePrefix("data:").trim()
-          if (payload.isEmpty()) continue
+            val payload = rawLine.removePrefix("data:").trim()
+            if (payload.isEmpty()) continue
 
-          val node = try {
-            JSONObject(payload)
-          } catch (e: Exception) {
-            continue
+            val node = try {
+              JSONObject(payload)
+            } catch (e: Exception) {
+              continue
+            }
+            onPayload(node)
           }
-          onPayload(node)
         }
       }
     } catch (e: RateLimitException) {

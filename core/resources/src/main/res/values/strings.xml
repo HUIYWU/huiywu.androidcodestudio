@@ -72,7 +72,9 @@
     <string name="chat_tool_call_show">Show tool call</string>
     <string name="chat_tool_call_hide">Hide tool call</string>
     <string name="chat_tool_call_failed">Tool call failed</string>
-   <string name="chat_empty_prompt">Please enter a request</string>
+    <string name="chat_tool_call_interrupted">Interrupted by user</string>
+    <string name="chat_stop">Stop</string>
+    <string name="chat_empty_prompt">Please enter a request</string>
    <string name="chat_cleared">Conversation cleared</string>
    <string name="chat_project_load_failed">Failed to load project</string>
    <string name="chat_model_unknown">Model not set</string>

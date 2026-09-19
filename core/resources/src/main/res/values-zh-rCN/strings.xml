@@ -643,7 +643,9 @@
     <string name="chat_tool_call_show">显示工具调用</string>
     <string name="chat_tool_call_hide">隐藏工具调用</string>
     <string name="chat_tool_call_failed">工具调用失败</string>
-   <string name="chat_empty_prompt">请输入请求内容</string>
+    <string name="chat_tool_call_interrupted">已被用户中断</string>
+    <string name="chat_stop">停止</string>
+    <string name="chat_empty_prompt">请输入请求内容</string>
    <string name="chat_cleared">对话已清空</string>
    <string name="chat_project_load_failed">加载项目失败</string>
    <string name="chat_model_unknown">未设置模型</string>

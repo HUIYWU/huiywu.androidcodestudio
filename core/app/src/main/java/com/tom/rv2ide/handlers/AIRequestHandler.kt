@@ -23,6 +23,7 @@ import com.tom.rv2ide.artificial.agents.AgentSegment
 import com.tom.rv2ide.artificial.agents.AgentStreamEvent
 import com.tom.rv2ide.artificial.chat.ChatBlock
 import com.tom.rv2ide.artificial.chat.ChatMessageStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -52,7 +53,8 @@ import kotlinx.coroutines.launch
 class AIRequestHandler(
     private val lifecycleScope: LifecycleCoroutineScope,
     private val aiAgent: AIAgentManager,
-    private val messages: ChatMessageStore
+    private val messages: ChatMessageStore,
+    private val interruptedText: String
 ) {
     private var executionJob: Job? = null
 
@@ -63,11 +65,14 @@ class AIRequestHandler(
         executionJob = lifecycleScope.launch {
             try {
                 executeAIRequest(userRequest)
+            } catch (e: CancellationException) {
+                // A user interrupt: the transcript keeps what the model produced so far; no error row.
             } catch (e: Exception) {
                 messages.addError("❌ Error: ${e.message}")
             } finally {
                 // Also runs on cancellation, so an interrupted request cannot leave the progress line
-                // behind or keep the composer disabled.
+                // behind or keep the composer disabled. Rows still in flight count as failed.
+                messages.failPendingBlocks(interruptedText)
                 messages.finishRequest()
             }
         }

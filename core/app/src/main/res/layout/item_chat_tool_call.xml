@@ -65,7 +65,7 @@
                 android:layout_height="16dp"
                 android:layout_marginStart="8dp"
                 android:contentDescription="@string/chat_tool_call_failed"
-                android:src="@android:drawable/ic_dialog_alert"
+                android:src="@drawable/ic_disconnect"
                 android:visibility="gone" />
 
             <com.google.android.material.progressindicator.CircularProgressIndicator

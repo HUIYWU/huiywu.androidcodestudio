@@ -28,6 +28,7 @@ import com.tom.rv2ide.artificial.agents.AgentTurn
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.OpenAiCompat
 import com.tom.rv2ide.artificial.agents.ToolCallAccumulator
+import com.tom.rv2ide.artificial.agents.runCancellable
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
 import com.tom.rv2ide.artificial.catalog.ModelSources
@@ -289,96 +290,98 @@ class Grok : AIAgent {
         }
       }
 
-  private fun callGrokAPI(apiKey: String, prompt: String): String {
+  private suspend fun callGrokAPI(apiKey: String, prompt: String): String {
     android.util.Log.d("Grok", "Starting API call to Grok")
     
     val url = URL("https://api.x.ai/v1/chat/completions")
     val connection = url.openConnection() as HttpURLConnection
     
     try {
-      connection.requestMethod = "POST"
-      connection.setRequestProperty("Content-Type", "application/json")
-      connection.setRequestProperty("Authorization", "Bearer $apiKey")
-      connection.doOutput = true
-      connection.connectTimeout = 30000
-      connection.readTimeout = 30000
+      connection.runCancellable {
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("Authorization", "Bearer $apiKey")
+        connection.doOutput = true
+        connection.connectTimeout = 30000
+        connection.readTimeout = 30000
       
-      val messages = JSONArray()
+        val messages = JSONArray()
       
-      val systemMessage = JSONObject()
-      systemMessage.put("role", "system")
-      systemMessage.put("content", writingRules.useThis())
-      messages.put(systemMessage)
+        val systemMessage = JSONObject()
+        systemMessage.put("role", "system")
+        systemMessage.put("content", writingRules.useThis())
+        messages.put(systemMessage)
       
-      val userMessage = JSONObject()
-      userMessage.put("role", "user")
-      userMessage.put("content", prompt)
-      messages.put(userMessage)
+        val userMessage = JSONObject()
+        userMessage.put("role", "user")
+        userMessage.put("content", prompt)
+        messages.put(userMessage)
       
-      val requestBody = JSONObject()
-      requestBody.put("model", selectedModel)
-      requestBody.put("messages", messages)
-      requestBody.put("temperature", 0.7)
-      requestBody.put("max_tokens", 4096)
+        val requestBody = JSONObject()
+        requestBody.put("model", selectedModel)
+        requestBody.put("messages", messages)
+        requestBody.put("temperature", 0.7)
+        requestBody.put("max_tokens", 4096)
       
-      android.util.Log.d("Grok", "Request body: ${requestBody.toString()}")
+        android.util.Log.d("Grok", "Request body: ${requestBody.toString()}")
       
-      connection.outputStream.use { os ->
-        os.write(requestBody.toString().toByteArray())
-      }
-      
-      val responseCode = connection.responseCode
-      android.util.Log.d("Grok", "Response code: $responseCode")
-      
-      if (responseCode != HttpURLConnection.HTTP_OK) {
-        val errorStream = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
-        android.util.Log.e("Grok", "Error response: $errorStream")
-        
-        try {
-          val errorJson = JSONObject(errorStream)
-          val errorObj = errorJson.optJSONObject("error")
-          val errorMessage = errorObj?.optString("message") ?: errorStream
-          val errorType = errorObj?.optString("type") ?: ""
-          val errorCode = errorObj?.optString("code") ?: ""
-          
-          android.util.Log.e("Grok", "Error type: $errorType, code: $errorCode, message: $errorMessage")
-          
-          when {
-            responseCode == 429 || errorType.contains("rate_limit") || errorCode.contains("rate_limit") -> 
-              throw RateLimitException("Grok rate limit exceeded: $errorMessage")
-            errorType.contains("insufficient_quota") || errorMessage.contains("quota") || errorMessage.contains("billing") -> 
-              throw QuotaExceededException("Grok quota exceeded: $errorMessage")
-            errorType.contains("invalid_api_key") || errorCode.contains("invalid_api_key") -> 
-              throw InvalidApiKeyException("Invalid Grok API key: $errorMessage")
-            responseCode == 401 -> 
-              throw InvalidApiKeyException("Grok authentication failed: $errorMessage")
-            else -> 
-              throw Exception("Grok API error ($responseCode) - Type: $errorType, Code: $errorCode, Message: $errorMessage")
-          }
-        } catch (e: RateLimitException) {
-        throw e
-        } catch (e: QuotaExceededException) {
-          throw e
-        } catch (e: InvalidApiKeyException) {
-          throw e
-        } catch (e: Exception) {
-          throw Exception("Grok API error ($responseCode): $errorStream")
+        connection.outputStream.use { os ->
+          os.write(requestBody.toString().toByteArray())
         }
+      
+        val responseCode = connection.responseCode
+        android.util.Log.d("Grok", "Response code: $responseCode")
+      
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+          val errorStream = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+          android.util.Log.e("Grok", "Error response: $errorStream")
+        
+          try {
+            val errorJson = JSONObject(errorStream)
+            val errorObj = errorJson.optJSONObject("error")
+            val errorMessage = errorObj?.optString("message") ?: errorStream
+            val errorType = errorObj?.optString("type") ?: ""
+            val errorCode = errorObj?.optString("code") ?: ""
+          
+            android.util.Log.e("Grok", "Error type: $errorType, code: $errorCode, message: $errorMessage")
+          
+            when {
+              responseCode == 429 || errorType.contains("rate_limit") || errorCode.contains("rate_limit") -> 
+                throw RateLimitException("Grok rate limit exceeded: $errorMessage")
+              errorType.contains("insufficient_quota") || errorMessage.contains("quota") || errorMessage.contains("billing") -> 
+                throw QuotaExceededException("Grok quota exceeded: $errorMessage")
+              errorType.contains("invalid_api_key") || errorCode.contains("invalid_api_key") -> 
+                throw InvalidApiKeyException("Invalid Grok API key: $errorMessage")
+              responseCode == 401 -> 
+                throw InvalidApiKeyException("Grok authentication failed: $errorMessage")
+              else -> 
+                throw Exception("Grok API error ($responseCode) - Type: $errorType, Code: $errorCode, Message: $errorMessage")
+            }
+          } catch (e: RateLimitException) {
+          throw e
+          } catch (e: QuotaExceededException) {
+            throw e
+          } catch (e: InvalidApiKeyException) {
+            throw e
+          } catch (e: Exception) {
+            throw Exception("Grok API error ($responseCode): $errorStream")
+          }
+        }
+      
+        val responseBody = connection.inputStream.bufferedReader().readText()
+        android.util.Log.d("Grok", "Success response received, length: ${responseBody.length}")
+      
+        val jsonResponse = JSONObject(responseBody)
+      
+        val choices = jsonResponse.getJSONArray("choices")
+        if (choices.length() > 0) {
+          val firstChoice = choices.getJSONObject(0)
+          val message = firstChoice.getJSONObject("message")
+          return message.getString("content")
+        }
+      
+        throw Exception("No response from Grok API")
       }
-      
-      val responseBody = connection.inputStream.bufferedReader().readText()
-      android.util.Log.d("Grok", "Success response received, length: ${responseBody.length}")
-      
-      val jsonResponse = JSONObject(responseBody)
-      
-      val choices = jsonResponse.getJSONArray("choices")
-      if (choices.length() > 0) {
-        val firstChoice = choices.getJSONObject(0)
-        val message = firstChoice.getJSONObject("message")
-        return message.getString("content")
-      }
-      
-      throw Exception("No response from Grok API")
     } catch (e: RateLimitException) {
       android.util.Log.e("Grok", "Rate limit exception", e)
       throw e
@@ -422,7 +425,7 @@ class Grok : AIAgent {
    *
    * OpenAI-compatible SSE: one `data: {...}` line per chunk, terminated by `data: [DONE]`.
    */
-  private fun streamToolTurn(
+  private suspend fun streamToolTurn(
       apiKey: String,
       requestBody: JSONObject,
       onDelta: (JSONObject) -> Unit,
@@ -431,35 +434,37 @@ class Grok : AIAgent {
     val connection = url.openConnection() as HttpURLConnection
 
     try {
-      connection.requestMethod = "POST"
-      connection.setRequestProperty("Content-Type", "application/json")
-      connection.setRequestProperty("Authorization", "Bearer $apiKey")
-      connection.setRequestProperty("Accept", "text/event-stream")
-      connection.doOutput = true
-      connection.connectTimeout = 30000
-      // A stream is idle between chunks, so the read timeout applies per chunk rather than to the
-      // whole reply; 30s of silence means the stream has stalled.
-      connection.readTimeout = 30000
+      connection.runCancellable {
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("Authorization", "Bearer $apiKey")
+        connection.setRequestProperty("Accept", "text/event-stream")
+        connection.doOutput = true
+        connection.connectTimeout = 30000
+        // A stream is idle between chunks, so the read timeout applies per chunk rather than to the
+        // whole reply; 30s of silence means the stream has stalled.
+        connection.readTimeout = 30000
 
-      connection.outputStream.use { os ->
-        os.write(requestBody.toString().toByteArray())
-      }
+        connection.outputStream.use { os ->
+          os.write(requestBody.toString().toByteArray())
+        }
 
-      val responseCode = connection.responseCode
-      if (responseCode != HttpURLConnection.HTTP_OK) {
-        throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
-      }
+        val responseCode = connection.responseCode
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+          throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
+        }
 
-      connection.inputStream.bufferedReader().use { reader ->
-        while (true) {
-          val rawLine = reader.readLine() ?: break
-          if (!rawLine.startsWith("data:")) continue
+        connection.inputStream.bufferedReader().use { reader ->
+          while (true) {
+            val rawLine = reader.readLine() ?: break
+            if (!rawLine.startsWith("data:")) continue
 
-          val payload = rawLine.removePrefix("data:").trim()
-          if (payload.isEmpty() || payload == "[DONE]") continue
+            val payload = rawLine.removePrefix("data:").trim()
+            if (payload.isEmpty() || payload == "[DONE]") continue
 
-          val deltaNode = OpenAiCompat.deltaOf(payload) ?: continue
-          onDelta(deltaNode)
+            val deltaNode = OpenAiCompat.deltaOf(payload) ?: continue
+            onDelta(deltaNode)
+          }
         }
       }
     } catch (e: RateLimitException) {

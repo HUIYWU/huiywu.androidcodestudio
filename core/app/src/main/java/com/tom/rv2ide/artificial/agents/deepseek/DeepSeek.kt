@@ -29,6 +29,7 @@ import com.tom.rv2ide.artificial.agents.AgentTurn
 import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.OpenAiCompat
 import com.tom.rv2ide.artificial.agents.ToolCallAccumulator
+import com.tom.rv2ide.artificial.agents.runCancellable
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.ModelRepository
 import com.tom.rv2ide.artificial.catalog.ModelSources
@@ -379,50 +380,52 @@ class DeepSeek : AIAgent {
    *
    * OpenAI-compatible SSE: one `data: {...}` line per chunk, terminated by `data: [DONE]`.
    */
-  private fun streamDeepSeekAPI(apiKey: String, prompt: String, onDelta: (String, Boolean) -> Unit) {
+  private suspend fun streamDeepSeekAPI(apiKey: String, prompt: String, onDelta: (String, Boolean) -> Unit) {
     val connection = openConnection(apiKey)
 
     try {
-      val requestBody = buildMessages(prompt, stream = true)
-      connection.outputStream.use { os ->
-        os.write(requestBody.toString().toByteArray())
-      }
+      connection.runCancellable {
+        val requestBody = buildMessages(prompt, stream = true)
+        connection.outputStream.use { os ->
+          os.write(requestBody.toString().toByteArray())
+        }
 
-      val responseCode = connection.responseCode
-      if (responseCode != HttpURLConnection.HTTP_OK) {
-        throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
-      }
+        val responseCode = connection.responseCode
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+          throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
+        }
 
-      connection.inputStream.bufferedReader().use { reader ->
-        while (true) {
-          val rawLine = reader.readLine() ?: break
-          if (!rawLine.startsWith("data:")) continue
+        connection.inputStream.bufferedReader().use { reader ->
+          while (true) {
+            val rawLine = reader.readLine() ?: break
+            if (!rawLine.startsWith("data:")) continue
 
-          val payload = rawLine.removePrefix("data:").trim()
-          if (payload.isEmpty() || payload == "[DONE]") continue
+            val payload = rawLine.removePrefix("data:").trim()
+            if (payload.isEmpty() || payload == "[DONE]") continue
 
-          val deltaNode = try {
-            JSONObject(payload)
-                .optJSONArray("choices")
-                ?.optJSONObject(0)
-                ?.optJSONObject("delta")
-          } catch (e: Exception) {
-            null
+            val deltaNode = try {
+              JSONObject(payload)
+                  .optJSONArray("choices")
+                  ?.optJSONObject(0)
+                  ?.optJSONObject("delta")
+            } catch (e: Exception) {
+              null
+            }
+
+            val rawContent = deltaNode?.opt("content")
+            val content =
+                if (rawContent == null || rawContent === JSONObject.NULL) "" else rawContent as? String ?: ""
+            if (content.isNotEmpty()) onDelta(content, false)
+
+            val rawReasoning = deltaNode?.opt("reasoning_content")
+            val reasoning =
+                if (rawReasoning == null || rawReasoning === JSONObject.NULL) {
+                  ""
+                } else {
+                  rawReasoning as? String ?: ""
+                }
+            if (reasoning.isNotEmpty()) onDelta(reasoning, true)
           }
-
-          val rawContent = deltaNode?.opt("content")
-          val content =
-              if (rawContent == null || rawContent === JSONObject.NULL) "" else rawContent as? String ?: ""
-          if (content.isNotEmpty()) onDelta(content, false)
-
-          val rawReasoning = deltaNode?.opt("reasoning_content")
-          val reasoning =
-              if (rawReasoning == null || rawReasoning === JSONObject.NULL) {
-                ""
-              } else {
-                rawReasoning as? String ?: ""
-              }
-          if (reasoning.isNotEmpty()) onDelta(reasoning, true)
         }
       }
     } catch (e: RateLimitException) {
@@ -444,7 +447,7 @@ class DeepSeek : AIAgent {
    * Streams a prebuilt tool-aware request, handing each whole delta to [onDelta]. Separate from
    * [streamDeepSeekAPI] because tool mode reads the same stream for three kinds of fragment.
    */
-  private fun streamToolTurn(
+  private suspend fun streamToolTurn(
       apiKey: String,
       requestBody: JSONObject,
       onDelta: (JSONObject) -> Unit,
@@ -452,25 +455,27 @@ class DeepSeek : AIAgent {
     val connection = openConnection(apiKey)
 
     try {
-      connection.outputStream.use { os ->
-        os.write(requestBody.toString().toByteArray())
-      }
+      connection.runCancellable {
+        connection.outputStream.use { os ->
+          os.write(requestBody.toString().toByteArray())
+        }
 
-      val responseCode = connection.responseCode
-      if (responseCode != HttpURLConnection.HTTP_OK) {
-        throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
-      }
+        val responseCode = connection.responseCode
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+          throwApiError(responseCode, connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error")
+        }
 
-      connection.inputStream.bufferedReader().use { reader ->
-        while (true) {
-          val rawLine = reader.readLine() ?: break
-          if (!rawLine.startsWith("data:")) continue
+        connection.inputStream.bufferedReader().use { reader ->
+          while (true) {
+            val rawLine = reader.readLine() ?: break
+            if (!rawLine.startsWith("data:")) continue
 
-          val payload = rawLine.removePrefix("data:").trim()
-          if (payload.isEmpty() || payload == "[DONE]") continue
+            val payload = rawLine.removePrefix("data:").trim()
+            if (payload.isEmpty() || payload == "[DONE]") continue
 
-          val deltaNode = OpenAiCompat.deltaOf(payload) ?: continue
-          onDelta(deltaNode)
+            val deltaNode = OpenAiCompat.deltaOf(payload) ?: continue
+            onDelta(deltaNode)
+          }
         }
       }
     } catch (e: RateLimitException) {
@@ -533,42 +538,44 @@ class DeepSeek : AIAgent {
     }
   }
 
-  private fun callDeepSeekAPI(apiKey: String, prompt: String): String {
+  private suspend fun callDeepSeekAPI(apiKey: String, prompt: String): String {
     android.util.Log.d("DeepSeek", "Starting API call to DeepSeek")
 
     val connection = openConnection(apiKey)
 
     try {
-      val requestBody = buildMessages(prompt, stream = false)
+      connection.runCancellable {
+        val requestBody = buildMessages(prompt, stream = false)
 
-      android.util.Log.d("DeepSeek", "Request body: ${requestBody.toString()}")
+        android.util.Log.d("DeepSeek", "Request body: ${requestBody.toString()}")
 
-      connection.outputStream.use { os ->
-        os.write(requestBody.toString().toByteArray())
+        connection.outputStream.use { os ->
+          os.write(requestBody.toString().toByteArray())
+        }
+
+        val responseCode = connection.responseCode
+        android.util.Log.d("DeepSeek", "Response code: $responseCode")
+
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+          val errorStream = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+          android.util.Log.e("DeepSeek", "Error response: $errorStream")
+          throwApiError(responseCode, errorStream)
+        }
+
+        val responseBody = connection.inputStream.bufferedReader().readText()
+        android.util.Log.d("DeepSeek", "Success response received, length: ${responseBody.length}")
+
+        val jsonResponse = JSONObject(responseBody)
+
+        val choices = jsonResponse.getJSONArray("choices")
+        if (choices.length() > 0) {
+          val firstChoice = choices.getJSONObject(0)
+          val message = firstChoice.getJSONObject("message")
+          return message.getString("content")
+        }
+
+        throw Exception("No response from DeepSeek API")
       }
-
-      val responseCode = connection.responseCode
-      android.util.Log.d("DeepSeek", "Response code: $responseCode")
-
-      if (responseCode != HttpURLConnection.HTTP_OK) {
-        val errorStream = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
-        android.util.Log.e("DeepSeek", "Error response: $errorStream")
-        throwApiError(responseCode, errorStream)
-      }
-
-      val responseBody = connection.inputStream.bufferedReader().readText()
-      android.util.Log.d("DeepSeek", "Success response received, length: ${responseBody.length}")
-
-      val jsonResponse = JSONObject(responseBody)
-
-      val choices = jsonResponse.getJSONArray("choices")
-      if (choices.length() > 0) {
-        val firstChoice = choices.getJSONObject(0)
-        val message = firstChoice.getJSONObject("message")
-        return message.getString("content")
-      }
-
-      throw Exception("No response from DeepSeek API")
     } catch (e: RateLimitException) {
       android.util.Log.e("DeepSeek", "Rate limit exception", e)
       throw e

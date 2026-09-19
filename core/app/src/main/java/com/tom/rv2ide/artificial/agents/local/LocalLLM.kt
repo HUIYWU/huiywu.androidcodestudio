@@ -30,6 +30,7 @@ import com.tom.rv2ide.artificial.agents.ModificationAttempt
 import com.tom.rv2ide.artificial.agents.OpenAiCompat
 import com.tom.rv2ide.artificial.agents.ToolCallAccumulator
 import com.tom.rv2ide.artificial.agents.ToolsNotSupportedException
+import com.tom.rv2ide.artificial.agents.runCancellable
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.catalog.LocalLlmSettings
 import com.tom.rv2ide.artificial.catalog.ModelSources
@@ -412,11 +413,12 @@ class LocalLLM : AIAgent {
           .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
           .build()
 
-  private fun callLocalLlmApi(fullPrompt: String): String {
+  private suspend fun callLocalLlmApi(fullPrompt: String): String {
     val requestBody = buildRequestBody(fullPrompt, stream = false)
 
+    val call = httpClient.newCall(buildRequest(requestBody))
     val response = try {
-      httpClient.newCall(buildRequest(requestBody)).execute()
+      call.runCancellable { call.execute() }
     } catch (e: Exception) {
       val errorMessage = e.message ?: ""
       when {
@@ -434,7 +436,7 @@ class LocalLLM : AIAgent {
       throw Exception("Local LLM error ${response.code}: $errorBody")
     }
 
-    val responseBody = response.body?.string() ?: ""
+    val responseBody = call.runCancellable { response.body?.string() ?: "" }
     val jsonResponse = JSONObject(responseBody)
 
     return jsonResponse
@@ -453,11 +455,12 @@ class LocalLLM : AIAgent {
    *
    * OpenAI-compatible SSE: one `data: {...}` line per chunk, terminated by `data: [DONE]`.
    */
-  private fun streamLocalLlmApi(fullPrompt: String, onDelta: (String, Boolean) -> Unit) {
+  private suspend fun streamLocalLlmApi(fullPrompt: String, onDelta: (String, Boolean) -> Unit) {
     val requestBody = buildRequestBody(fullPrompt, stream = true)
 
+    val call = httpClient.newCall(buildRequest(requestBody))
     val response = try {
-      httpClient.newCall(buildRequest(requestBody)).execute()
+      call.runCancellable { call.execute() }
     } catch (e: Exception) {
       val errorMessage = e.message ?: ""
       when {
@@ -475,36 +478,38 @@ class LocalLLM : AIAgent {
       throw Exception("Local LLM error ${response.code}: $errorBody")
     }
 
-    response.body?.source()?.use { source ->
-      while (!source.exhausted()) {
-        val rawLine = source.readUtf8Line() ?: break
-        if (!rawLine.startsWith("data:")) continue
+    call.runCancellable {
+      response.body?.source()?.use { source ->
+        while (!source.exhausted()) {
+          val rawLine = source.readUtf8Line() ?: break
+          if (!rawLine.startsWith("data:")) continue
 
-        val payload = rawLine.removePrefix("data:").trim()
-        if (payload.isEmpty() || payload == "[DONE]") continue
+          val payload = rawLine.removePrefix("data:").trim()
+          if (payload.isEmpty() || payload == "[DONE]") continue
 
-        val deltaNode = try {
-          JSONObject(payload)
-              .optJSONArray("choices")
-              ?.optJSONObject(0)
-              ?.optJSONObject("delta")
-        } catch (e: Exception) {
-          null
+          val deltaNode = try {
+            JSONObject(payload)
+                .optJSONArray("choices")
+                ?.optJSONObject(0)
+                ?.optJSONObject("delta")
+          } catch (e: Exception) {
+            null
+          }
+
+          val rawContent = deltaNode?.opt("content")
+          val content =
+              if (rawContent == null || rawContent === JSONObject.NULL) "" else rawContent as? String ?: ""
+          if (content.isNotEmpty()) onDelta(content, false)
+
+          val rawReasoning = deltaNode?.opt("reasoning_content")
+          val reasoning =
+              if (rawReasoning == null || rawReasoning === JSONObject.NULL) {
+                ""
+              } else {
+                rawReasoning as? String ?: ""
+              }
+          if (reasoning.isNotEmpty()) onDelta(reasoning, true)
         }
-
-        val rawContent = deltaNode?.opt("content")
-        val content =
-            if (rawContent == null || rawContent === JSONObject.NULL) "" else rawContent as? String ?: ""
-        if (content.isNotEmpty()) onDelta(content, false)
-
-        val rawReasoning = deltaNode?.opt("reasoning_content")
-        val reasoning =
-            if (rawReasoning == null || rawReasoning === JSONObject.NULL) {
-              ""
-            } else {
-              rawReasoning as? String ?: ""
-            }
-        if (reasoning.isNotEmpty()) onDelta(reasoning, true)
       }
     }
   }
@@ -513,12 +518,13 @@ class LocalLLM : AIAgent {
    * Streams a prebuilt tool-aware request, handing each whole delta to [onDelta]. Separate from
    * [streamLocalLlmApi] because tool mode reads the same stream for three kinds of fragment.
    */
-  private fun streamToolTurn(
+  private suspend fun streamToolTurn(
       requestBody: JSONObject,
       onDelta: (JSONObject) -> Unit,
   ) {
+    val call = httpClient.newCall(buildRequest(requestBody))
     val response = try {
-      httpClient.newCall(buildRequest(requestBody)).execute()
+      call.runCancellable { call.execute() }
     } catch (e: Exception) {
       val errorMessage = e.message ?: ""
       when {
@@ -544,16 +550,18 @@ class LocalLLM : AIAgent {
       throw Exception("Local LLM error ${response.code}: $errorBody")
     }
 
-    response.body?.source()?.use { source ->
-      while (!source.exhausted()) {
-        val rawLine = source.readUtf8Line() ?: break
-        if (!rawLine.startsWith("data:")) continue
+    call.runCancellable {
+      response.body?.source()?.use { source ->
+        while (!source.exhausted()) {
+          val rawLine = source.readUtf8Line() ?: break
+          if (!rawLine.startsWith("data:")) continue
 
-        val payload = rawLine.removePrefix("data:").trim()
-        if (payload.isEmpty() || payload == "[DONE]") continue
+          val payload = rawLine.removePrefix("data:").trim()
+          if (payload.isEmpty() || payload == "[DONE]") continue
 
-        val deltaNode = OpenAiCompat.deltaOf(payload) ?: continue
-        onDelta(deltaNode)
+          val deltaNode = OpenAiCompat.deltaOf(payload) ?: continue
+          onDelta(deltaNode)
+        }
       }
     }
   }
