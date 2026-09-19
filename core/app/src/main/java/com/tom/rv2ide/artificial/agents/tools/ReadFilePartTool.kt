@@ -96,7 +96,7 @@ class ReadFilePartTool(private val isPathAllowed: (String) -> Boolean) : AgentTo
 
         return try {
             val window = file.useLines { lines ->
-                lines.drop(start.toLong() - 1).take(end.toLong() - start + 1).toList()
+                lines.drop(start - 1).take(end - start + 1).toList()
             }
             if (window.isEmpty()) {
                 return AgentToolResult(
@@ -112,7 +112,7 @@ class ReadFilePartTool(private val isPathAllowed: (String) -> Boolean) : AgentTo
             if (clipped.length < joined.length) {
                 body += "\n\n[Truncated at $limit characters; narrow the range.]"
             }
-            if (window.size.toLong() < end.toLong() - start + 1) {
+            if (window.size < end - start + 1) {
                 body += "\n\n[end of file reached]"
             }
             AgentToolResult(body)
