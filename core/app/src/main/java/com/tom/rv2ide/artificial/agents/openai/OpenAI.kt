@@ -304,7 +304,7 @@ class OpenAI : AIAgent {
     val connection = url.openConnection() as HttpURLConnection
     
     try {
-      connection.runCancellable {
+      return connection.runCancellable {
         connection.requestMethod = "POST"
         connection.setRequestProperty("Content-Type", "application/json")
         connection.setRequestProperty("Authorization", "Bearer $apiKey")
@@ -386,10 +386,11 @@ class OpenAI : AIAgent {
         if (choices.length() > 0) {
           val firstChoice = choices.getJSONObject(0)
           val message = firstChoice.getJSONObject("message")
-          return message.getString("content")
-        }
+          message.getString("content")
+        } else {
       
-        throw Exception("No response from OpenAI API")
+          throw Exception("No response from OpenAI API")
+        }
       }
     } catch (e: com.tom.rv2ide.artificial.exceptions.RateLimitException) {
       android.util.Log.e("OpenAI", "Rate limit exception", e)

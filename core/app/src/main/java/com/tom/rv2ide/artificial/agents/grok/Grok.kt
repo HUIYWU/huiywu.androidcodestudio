@@ -297,7 +297,7 @@ class Grok : AIAgent {
     val connection = url.openConnection() as HttpURLConnection
     
     try {
-      connection.runCancellable {
+      return connection.runCancellable {
         connection.requestMethod = "POST"
         connection.setRequestProperty("Content-Type", "application/json")
         connection.setRequestProperty("Authorization", "Bearer $apiKey")
@@ -377,10 +377,11 @@ class Grok : AIAgent {
         if (choices.length() > 0) {
           val firstChoice = choices.getJSONObject(0)
           val message = firstChoice.getJSONObject("message")
-          return message.getString("content")
-        }
+          message.getString("content")
+        } else {
       
-        throw Exception("No response from Grok API")
+          throw Exception("No response from Grok API")
+        }
       }
     } catch (e: RateLimitException) {
       android.util.Log.e("Grok", "Rate limit exception", e)

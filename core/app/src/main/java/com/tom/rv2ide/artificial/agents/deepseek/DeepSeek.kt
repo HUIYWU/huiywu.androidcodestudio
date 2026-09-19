@@ -544,7 +544,7 @@ class DeepSeek : AIAgent {
     val connection = openConnection(apiKey)
 
     try {
-      connection.runCancellable {
+      return connection.runCancellable {
         val requestBody = buildMessages(prompt, stream = false)
 
         android.util.Log.d("DeepSeek", "Request body: ${requestBody.toString()}")
@@ -571,10 +571,11 @@ class DeepSeek : AIAgent {
         if (choices.length() > 0) {
           val firstChoice = choices.getJSONObject(0)
           val message = firstChoice.getJSONObject("message")
-          return message.getString("content")
-        }
+          message.getString("content")
+        } else {
 
-        throw Exception("No response from DeepSeek API")
+          throw Exception("No response from DeepSeek API")
+        }
       }
     } catch (e: RateLimitException) {
       android.util.Log.e("DeepSeek", "Rate limit exception", e)

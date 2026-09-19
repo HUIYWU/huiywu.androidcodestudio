@@ -324,7 +324,7 @@ class Anthropic : AIAgent {
     val connection = url.openConnection() as HttpURLConnection
     
     try {
-      connection.runCancellable {
+      return connection.runCancellable {
         connection.requestMethod = "POST"
         connection.setRequestProperty("Content-Type", "application/json")
         connection.setRequestProperty("x-api-key", apiKey)
@@ -395,10 +395,11 @@ class Anthropic : AIAgent {
       
         if (content.length() > 0) {
           val firstContent = content.getJSONObject(0)
-          return firstContent.getString("text")
-        }
+          firstContent.getString("text")
+        } else {
       
-        throw Exception("No response from Anthropic API")
+          throw Exception("No response from Anthropic API")
+        }
       }
     } catch (e: RateLimitException) {
       android.util.Log.e("Anthropic", "Rate limit exception", e)
