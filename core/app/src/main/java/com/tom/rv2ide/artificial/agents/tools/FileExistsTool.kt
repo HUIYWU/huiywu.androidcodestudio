@@ -12,7 +12,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+ *  along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.tom.rv2ide.artificial.agents.tools
@@ -22,11 +22,11 @@ import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
-class ReadFileTool(private val isPathAllowed: (String) -> Boolean) : AgentTool {
+class FileExistsTool(private val isPathAllowed: (String) -> Boolean) : AgentTool {
 
     override val spec = AgentToolSpec(
         name = NAME,
-        description = "Read the beginning of a file, with line numbers. Long files are truncated; use read_file_part to read a specific line range. Read a file before you modify it.",
+        description = "Check whether a path exists, and whether it is a file or a directory.",
         parameters = JSONObject().apply {
             put("type", "object")
             put(
@@ -36,7 +36,7 @@ class ReadFileTool(private val isPathAllowed: (String) -> Boolean) : AgentTool {
                         "path",
                         JSONObject().apply {
                             put("type", "string")
-                            put("description", "Absolute path of the file to read.")
+                            put("description", "Absolute path to check.")
                         }
                     )
                 }
@@ -57,28 +57,10 @@ class ReadFileTool(private val isPathAllowed: (String) -> Boolean) : AgentTool {
         }
 
         val file = File(path)
-        if (!file.exists()) {
-            return AgentToolResult("File not found: $path", isError = true)
-        }
-        if (!file.isFile) {
-            return AgentToolResult(
-                "Not a file (use list_files for directories): $path",
-                isError = true
-            )
-        }
-
-        return try {
-            val text = file.readText()
-            val numbered = if (text.length <= ToolLimits.MAX_FILE_READ_CHARS) {
-                addLineNumbers(text)
-            } else {
-                addLineNumbers(text.take(ToolLimits.MAX_FILE_READ_CHARS)) +
-                    "\n\n[Truncated at ${ToolLimits.MAX_FILE_READ_CHARS} characters; the file has ${text.length}. " +
-                    "Use read_file_part with start_line/end_line to read further.]"
-            }
-            AgentToolResult(numbered)
-        } catch (e: Exception) {
-            AgentToolResult("Failed to read file: ${e.message}", isError = true)
+        return when {
+            !file.exists() -> AgentToolResult("exists: false")
+            file.isDirectory -> AgentToolResult("exists: true (directory)")
+            else -> AgentToolResult("exists: true (file)")
         }
     }
 
@@ -86,6 +68,6 @@ class ReadFileTool(private val isPathAllowed: (String) -> Boolean) : AgentTool {
         parseToolArguments(arguments)?.optString("path").orEmpty()
 
     private companion object {
-        const val NAME = "read_file"
+        const val NAME = "file_exists"
     }
 }

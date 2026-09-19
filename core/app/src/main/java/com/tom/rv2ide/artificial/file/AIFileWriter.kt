@@ -43,6 +43,7 @@ class AIFileWriter(private val context: Context) {
     fun writeFile(
         filePath: String,
         content: String,
+        append: Boolean = false,
         createBackup: Boolean = true
     ): FileWriteResult {
         if (!permissionManager.isFileWriteEnabled()) {
@@ -72,7 +73,11 @@ class AIFileWriter(private val context: Context) {
 
         // Write the file
         return try {
-            file.writeText(content)
+            if (append) {
+                file.appendText(content)
+            } else {
+                file.writeText(content)
+            }
             FileWriteResult.Success(filePath, backupCreated = createBackup && file.exists())
         } catch (e: IOException) {
             FileWriteResult.Error("Failed to write file: ${e.message}")

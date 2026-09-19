@@ -80,13 +80,18 @@ class ListFilesTool(
         val lines = sorted.take(MAX_ENTRIES).map { entry ->
             if (entry.isDirectory) entry.name + "/" else entry.name
         }
-        val body = if (lines.isEmpty()) "(empty directory)" else lines.joinToString("\n")
+        val header = if (lines.isEmpty()) "(empty directory)" else lines.joinToString("\n")
+        val withEntryNote = if (sorted.size > MAX_ENTRIES) {
+            header + "\n[Truncated: showing $MAX_ENTRIES of ${sorted.size} entries]"
+        } else {
+            header
+        }
         return AgentToolResult(
-            if (sorted.size > MAX_ENTRIES) {
-                body + "\n[Truncated: showing $MAX_ENTRIES of ${sorted.size} entries]"
-            } else {
-                body
-            }
+            truncateWithNote(
+                withEntryNote,
+                ToolLimits.MAX_TEXT_RESULT_LENGTH,
+                "Truncated at ${ToolLimits.MAX_TEXT_RESULT_LENGTH} characters"
+            )
         )
     }
 

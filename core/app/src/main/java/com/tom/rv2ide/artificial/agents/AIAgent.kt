@@ -101,7 +101,7 @@ interface AIAgent {
     fun getCurrentAttemptCount(): Int
     fun canRetry(): Boolean
     
-    fun writeFile(filePath: String, content: String): FileWriteResult
+    fun writeFile(filePath: String, content: String, append: Boolean = false): FileWriteResult
     fun isInitialized(): Boolean
 }
 

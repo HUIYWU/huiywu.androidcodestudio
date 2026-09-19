@@ -624,9 +624,9 @@ class Anthropic : AIAgent {
     return if (raw === JSONObject.NULL) "" else raw.toString()
   }
 
-  override fun writeFile(filePath: String, content: String): FileWriteResult {
+  override fun writeFile(filePath: String, content: String, append: Boolean): FileWriteResult {
     val writer = fileWriter ?: return FileWriteResult.Error("File writer not initialized")
-    return writer.writeFile(filePath, content, createBackup = true)
+    return writer.writeFile(filePath, content, append, createBackup = true)
   }
 
 

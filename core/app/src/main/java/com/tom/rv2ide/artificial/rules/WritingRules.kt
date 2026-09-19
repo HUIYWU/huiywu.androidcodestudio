@@ -192,17 +192,27 @@ object WritingRules {
 
         [ YOU WORK THROUGH TOOLS ]
         You have tools that operate directly on the project:
-        - read_file: get the exact content of a file.
-        - write_file: write a complete file (creates it when missing).
+        - read_file: read the beginning of a file, with line numbers.
+        - read_file_part: read a line range of a file, with line numbers.
+        - write_file: write a complete file (creates it when missing); append=true appends to the end instead.
+        - edit_file: replace an exact fragment of an existing file.
+        - create_file: create a new file; it fails when the file already exists.
+        - delete_file: delete a file or directory (recursive=true for a non-empty directory).
+        - move_file: move or rename a file or directory.
+        - copy_file: copy a file or directory.
+        - file_exists: check whether a path exists, and whether it is a file or a directory.
+        - make_directory: create a directory (create_parents=true to create missing parents).
+        - find_files: find files by name pattern, for example *.kt.
         - list_files: see what a directory contains.
         - search: find where text appears across the project.
 
         RULES:
         1. Read a file before you modify it; never guess its content.
-        2. When writing, pass the COMPLETE final file content — the previous content is replaced.
-        3. Do not put file contents or file blocks in your replies; write files with write_file.
-        4. Use the exact absolute paths shown in the project structure.
-        5. When the request is a question, answer with prose; do not write files.
+        2. Prefer edit_file for small changes: pass the exact fragment to replace, without the line numbers the read tools show. A fragment that matches several places is rejected — include more surrounding context.
+        3. Use write_file with the COMPLETE final content to replace a whole file; append=true adds to the end instead.
+        4. Do not put file contents or file blocks in your replies; write files with the tools.
+        5. Use the exact absolute paths shown in the project structure.
+        6. When the request is a question, answer with prose; do not write files.
 
         [ WHEN TO MODIFY FILES VS WHEN TO JUST ANSWER ]
         ONLY write files when the user explicitly asks to modify, change, create or implement something.

@@ -12,24 +12,24 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+ *  along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.tom.rv2ide.artificial.agents.tools
 
 import com.tom.rv2ide.artificial.agents.AgentToolSpec
-import com.tom.rv2ide.artificial.file.FileWriteResult
+import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
-class WriteFileTool(
+class DeleteFileTool(
     private val isPathAllowed: (String) -> Boolean,
-    private val writeFile: suspend (filePath: String, content: String, append: Boolean) -> FileWriteResult
+    private val canonicalAllowedRoots: Set<String>
 ) : AgentTool {
 
     override val spec = AgentToolSpec(
         name = NAME,
-        description = "Write the complete final content of a file. Missing parent directories are created; an existing file is replaced. Set append=true to add the content to the end of the file instead.",
+        description = "Delete a file or directory. A non-empty directory requires recursive=true.",
         parameters = JSONObject().apply {
             put("type", "object")
             put(
@@ -39,32 +39,22 @@ class WriteFileTool(
                         "path",
                         JSONObject().apply {
                             put("type", "string")
-                            put("description", "Absolute path of the file to write.")
+                            put("description", "Absolute path of the file or directory to delete.")
                         }
                     )
                     put(
-                        "content",
-                        JSONObject().apply {
-                            put("type", "string")
-                            put(
-                                "description",
-                                "The content to write: the complete final content, or the text to append when append=true."
-                            )
-                        }
-                    )
-                    put(
-                        "append",
+                        "recursive",
                         JSONObject().apply {
                             put("type", "boolean")
                             put(
                                 "description",
-                                "When true, the content is appended to the end of the file instead of replacing it. Defaults to false."
+                                "Required to be true to delete a non-empty directory. Defaults to false."
                             )
                         }
                     )
                 }
             )
-            put("required", JSONArray().put("path").put("content"))
+            put("required", JSONArray().put("path"))
         }
     )
 
@@ -75,32 +65,46 @@ class WriteFileTool(
         if (path.isBlank()) {
             return AgentToolResult("Missing required parameter: path", isError = true)
         }
-        if (!json.has("content")) {
-            return AgentToolResult("Missing required parameter: content", isError = true)
-        }
         if (!isPathAllowed(path)) {
             return AgentToolResult("Path is outside the project: $path", isError = true)
         }
 
-        val append = json.optBoolean("append", false)
-        return when (val result = writeFile(path, json.optString("content"), append)) {
-            is FileWriteResult.Success ->
-                AgentToolResult(if (append) "Content appended: $path" else "File written: $path")
-            is FileWriteResult.PermissionDenied ->
-                AgentToolResult("Write failed: ${result.reason}", isError = true)
-            is FileWriteResult.Error ->
-                AgentToolResult("Write failed: ${result.message}", isError = true)
+        val file = File(path)
+        val canonical = try {
+            file.canonicalPath
+        } catch (e: Exception) {
+            file.absolutePath
+        }
+        if (canonicalAllowedRoots.contains(canonical)) {
+            return AgentToolResult("Refusing to delete a project root directory: $path", isError = true)
+        }
+        if (!file.exists()) {
+            return AgentToolResult("File not found: $path", isError = true)
+        }
+
+        val recursive = json.optBoolean("recursive", false)
+        if (file.isDirectory && !recursive) {
+            val children = file.listFiles()
+            if (children?.isNotEmpty() == true) {
+                return AgentToolResult(
+                    "Directory is not empty: $path. Pass recursive=true to delete it and its contents.",
+                    isError = true
+                )
+            }
+        }
+
+        val deleted = if (recursive) file.deleteRecursively() else file.delete()
+        return if (deleted) {
+            AgentToolResult("Deleted: $path")
+        } else {
+            AgentToolResult("Failed to delete: $path", isError = true)
         }
     }
 
     override fun summarize(arguments: String): String =
         parseToolArguments(arguments)?.optString("path").orEmpty()
 
-    companion object {
-        /**
-         * Matched against by the request loop, which renders this tool's calls as file rows instead
-         * of tool rows.
-         */
-        const val NAME = "write_file"
+    private companion object {
+        const val NAME = "delete_file"
     }
 }

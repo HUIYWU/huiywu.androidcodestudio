@@ -12,7 +12,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+ *  along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.tom.rv2ide.artificial.agents.tools
@@ -22,26 +22,19 @@ import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
-class SearchTool(
+class FindFilesTool(
     private val isPathAllowed: (String) -> Boolean,
     private val projectRoot: File?
 ) : AgentTool {
 
     override val spec = AgentToolSpec(
         name = NAME,
-        description = "Search project files for a text fragment, case-insensitively. Kotlin, Java, XML, Gradle and script files are searched.",
+        description = "Find files by name pattern (for example *.kt) under a directory. Directories themselves are not returned.",
         parameters = JSONObject().apply {
             put("type", "object")
             put(
                 "properties",
                 JSONObject().apply {
-                    put(
-                        "query",
-                        JSONObject().apply {
-                            put("type", "string")
-                            put("description", "Text to look for.")
-                        }
-                    )
                     put(
                         "path",
                         JSONObject().apply {
@@ -52,18 +45,42 @@ class SearchTool(
                             )
                         }
                     )
+                    put(
+                        "pattern",
+                        JSONObject().apply {
+                            put("type", "string")
+                            put("description", "File name pattern with * and ? wildcards, for example *.kt.")
+                        }
+                    )
+                    put(
+                        "max_depth",
+                        JSONObject().apply {
+                            put("type", "integer")
+                            put(
+                                "description",
+                                "How many directory levels to search; -1 or omitted means unlimited."
+                            )
+                        }
+                    )
+                    put(
+                        "case_insensitive",
+                        JSONObject().apply {
+                            put("type", "boolean")
+                            put("description", "Match the pattern case-insensitively. Defaults to false.")
+                        }
+                    )
                 }
             )
-            put("required", JSONArray().put("query"))
+            put("required", JSONArray().put("pattern"))
         }
     )
 
     override suspend fun execute(arguments: String): AgentToolResult {
         val json = parseToolArguments(arguments)
             ?: return AgentToolResult("Invalid arguments: ${arguments.take(200)}", isError = true)
-        val query = json.optString("query")
-        if (query.isBlank()) {
-            return AgentToolResult("Missing required parameter: query", isError = true)
+        val pattern = json.optString("pattern")
+        if (pattern.isBlank()) {
+            return AgentToolResult("Missing required parameter: pattern", isError = true)
         }
         val rootPath = json.optString("path").takeIf { it.isNotBlank() }
             ?: projectRoot?.absolutePath
@@ -80,37 +97,33 @@ class SearchTool(
             return AgentToolResult("Not a directory: $rootPath", isError = true)
         }
 
+        val caseInsensitive = json.optBoolean("case_insensitive", false)
+        val maxDepth = json.optInt("max_depth", -1)
+        val regex = wildcardToRegex(pattern, caseInsensitive)
+
         val hits = mutableListOf<String>()
         var stopped = false
-        val files = root.walkTopDown()
-            .filter { it.isFile }
-            .filter { it.extension in EXTENSIONS }
-            .filter { !it.path.contains("/build/") && !it.path.contains("/.gradle/") }
+        val sequence = root.walkTopDown()
+            .onEnter { directory ->
+                if (maxDepth < 0 || depthOf(directory, root) <= maxDepth) true else false
+            }
+            .filter { it.isFile && regex.matches(it.name) }
             .sortedBy { it.absolutePath }
 
-        search@ for (file in files) {
-            val lines = try {
-                file.readLines()
-            } catch (e: Exception) {
-                continue
+        for (file in sequence) {
+            if (hits.size >= MAX_HITS) {
+                stopped = true
+                break
             }
-            for ((index, line) in lines.withIndex()) {
-                if (hits.size >= MAX_HITS) {
-                    stopped = true
-                    break@search
-                }
-                if (line.contains(query, ignoreCase = true)) {
-                    hits.add("${file.absolutePath}:${index + 1}: ${line.trim().take(300)}")
-                }
-            }
+            hits.add(file.absolutePath)
         }
 
         return if (hits.isEmpty()) {
-            AgentToolResult("No matches for \"$query\"")
+            AgentToolResult("No files match \"$pattern\"")
         } else {
             val body = hits.joinToString("\n")
             val withNote = if (stopped) {
-                "$body\n[Stopped at $MAX_HITS matches; narrow the query or the path]"
+                "$body\n[Stopped at $MAX_HITS files; narrow the pattern or the path]"
             } else {
                 body
             }
@@ -126,14 +139,41 @@ class SearchTool(
 
     override fun summarize(arguments: String): String {
         val json = parseToolArguments(arguments)
-        val query = json?.optString("query").orEmpty()
+        val pattern = json?.optString("pattern").orEmpty()
         val path = json?.optString("path").orEmpty()
-        return if (path.isBlank()) "\"$query\"" else "\"$query\" in $path"
+        return if (path.isBlank()) pattern else "$pattern in $path"
+    }
+
+    /** How many levels below [root] the [directory] sits; [root] itself is level 0. */
+    private fun depthOf(directory: File, root: File): Int {
+        var depth = 0
+        var current: File? = directory
+        while (current != null && current != root) {
+            depth++
+            current = current.parentFile
+        }
+        return depth
+    }
+
+    private fun wildcardToRegex(pattern: String, ignoreCase: Boolean): Regex {
+        val sb = StringBuilder("^")
+        for (ch in pattern) {
+            when (ch) {
+                '*' -> sb.append(".*")
+                '?' -> sb.append('.')
+                else -> sb.append(Regex.escape(ch.toString()))
+            }
+        }
+        sb.append('$')
+        return if (ignoreCase) {
+            Regex(sb.toString(), RegexOption.IGNORE_CASE)
+        } else {
+            Regex(sb.toString())
+        }
     }
 
     private companion object {
-        const val NAME = "search"
-        const val MAX_HITS = 50
-        val EXTENSIONS = setOf("kt", "java", "xml", "gradle", "kts")
+        const val NAME = "find_files"
+        const val MAX_HITS = 200
     }
 }

@@ -12,24 +12,21 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+ *  along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.tom.rv2ide.artificial.agents.tools
 
 import com.tom.rv2ide.artificial.agents.AgentToolSpec
-import com.tom.rv2ide.artificial.file.FileWriteResult
+import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
-class WriteFileTool(
-    private val isPathAllowed: (String) -> Boolean,
-    private val writeFile: suspend (filePath: String, content: String, append: Boolean) -> FileWriteResult
-) : AgentTool {
+class MakeDirectoryTool(private val isPathAllowed: (String) -> Boolean) : AgentTool {
 
     override val spec = AgentToolSpec(
         name = NAME,
-        description = "Write the complete final content of a file. Missing parent directories are created; an existing file is replaced. Set append=true to add the content to the end of the file instead.",
+        description = "Create a directory. Pass create_parents=true to also create missing parent directories.",
         parameters = JSONObject().apply {
             put("type", "object")
             put(
@@ -39,32 +36,22 @@ class WriteFileTool(
                         "path",
                         JSONObject().apply {
                             put("type", "string")
-                            put("description", "Absolute path of the file to write.")
+                            put("description", "Absolute path of the directory to create.")
                         }
                     )
                     put(
-                        "content",
-                        JSONObject().apply {
-                            put("type", "string")
-                            put(
-                                "description",
-                                "The content to write: the complete final content, or the text to append when append=true."
-                            )
-                        }
-                    )
-                    put(
-                        "append",
+                        "create_parents",
                         JSONObject().apply {
                             put("type", "boolean")
                             put(
                                 "description",
-                                "When true, the content is appended to the end of the file instead of replacing it. Defaults to false."
+                                "When true, missing parent directories are created as well. Defaults to false."
                             )
                         }
                     )
                 }
             )
-            put("required", JSONArray().put("path").put("content"))
+            put("required", JSONArray().put("path"))
         }
     )
 
@@ -75,32 +62,35 @@ class WriteFileTool(
         if (path.isBlank()) {
             return AgentToolResult("Missing required parameter: path", isError = true)
         }
-        if (!json.has("content")) {
-            return AgentToolResult("Missing required parameter: content", isError = true)
-        }
         if (!isPathAllowed(path)) {
             return AgentToolResult("Path is outside the project: $path", isError = true)
         }
 
-        val append = json.optBoolean("append", false)
-        return when (val result = writeFile(path, json.optString("content"), append)) {
-            is FileWriteResult.Success ->
-                AgentToolResult(if (append) "Content appended: $path" else "File written: $path")
-            is FileWriteResult.PermissionDenied ->
-                AgentToolResult("Write failed: ${result.reason}", isError = true)
-            is FileWriteResult.Error ->
-                AgentToolResult("Write failed: ${result.message}", isError = true)
+        val directory = File(path)
+        if (directory.exists()) {
+            return if (directory.isDirectory) {
+                AgentToolResult("Directory already exists: $path")
+            } else {
+                AgentToolResult("A file with that name exists: $path", isError = true)
+            }
+        }
+
+        val createParents = json.optBoolean("create_parents", false)
+        val created = if (createParents) directory.mkdirs() else directory.mkdir()
+        return if (created) {
+            AgentToolResult("Directory created: $path")
+        } else {
+            AgentToolResult(
+                "Failed to create directory: $path (pass create_parents=true if its parent is missing)",
+                isError = true
+            )
         }
     }
 
     override fun summarize(arguments: String): String =
         parseToolArguments(arguments)?.optString("path").orEmpty()
 
-    companion object {
-        /**
-         * Matched against by the request loop, which renders this tool's calls as file rows instead
-         * of tool rows.
-         */
-        const val NAME = "write_file"
+    private companion object {
+        const val NAME = "make_directory"
     }
 }

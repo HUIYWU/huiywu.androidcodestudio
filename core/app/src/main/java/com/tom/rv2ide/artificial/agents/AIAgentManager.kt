@@ -24,7 +24,16 @@ import com.tom.rv2ide.artificial.agents.anthropic.Anthropic
 import com.tom.rv2ide.artificial.agents.grok.Grok
 import com.tom.rv2ide.artificial.agents.deepseek.DeepSeek
 import com.tom.rv2ide.artificial.agents.local.LocalLLM
+import com.tom.rv2ide.artificial.agents.tools.CopyFileTool
+import com.tom.rv2ide.artificial.agents.tools.CreateFileTool
+import com.tom.rv2ide.artificial.agents.tools.DeleteFileTool
+import com.tom.rv2ide.artificial.agents.tools.EditFileTool
+import com.tom.rv2ide.artificial.agents.tools.FileExistsTool
+import com.tom.rv2ide.artificial.agents.tools.FindFilesTool
 import com.tom.rv2ide.artificial.agents.tools.ListFilesTool
+import com.tom.rv2ide.artificial.agents.tools.MakeDirectoryTool
+import com.tom.rv2ide.artificial.agents.tools.MoveFileTool
+import com.tom.rv2ide.artificial.agents.tools.ReadFilePartTool
 import com.tom.rv2ide.artificial.agents.tools.ReadFileTool
 import com.tom.rv2ide.artificial.agents.tools.SearchTool
 import com.tom.rv2ide.artificial.agents.tools.ToolExecutor
@@ -462,7 +471,7 @@ class AIAgentManager(private val context: Context) {
                     for (call in turn.toolCalls) {
                         // An interrupt between calls stops the rest of the queue.
                         currentCoroutineContext().ensureActive()
-                        val showsRow = call.name != WriteFileTool.NAME
+                        val showsRow = call.name !in FILE_ROW_TOOLS
                         if (showsRow) {
                             callback.onToolCallStarted(
                                 call.id,
@@ -539,12 +548,24 @@ class AIAgentManager(private val context: Context) {
             isPathWithinDirectories(path, allowedDirectories)
         }
 
+        val canonicalRoots = allowedDirectories.mapTo(mutableSetOf()) { canonicalPathOf(File(it)) }
+        val performWrite: suspend (String, String, Boolean) -> FileWriteResult = { path, content, append ->
+            performToolWrite(path, content, append, callback)
+        }
+
         return ToolExecutor(
             listOf(
                 ReadFileTool(isAllowed),
-                WriteFileTool(isAllowed) { path, content ->
-                    performToolWrite(path, content, callback)
-                },
+                ReadFilePartTool(isAllowed),
+                WriteFileTool(isAllowed, performWrite),
+                EditFileTool(isAllowed, performWrite),
+                CreateFileTool(isAllowed, performWrite),
+                DeleteFileTool(isAllowed, canonicalRoots),
+                MoveFileTool(isAllowed),
+                CopyFileTool(isAllowed),
+                FileExistsTool(isAllowed),
+                MakeDirectoryTool(isAllowed),
+                FindFilesTool(isAllowed, currentProjectRoot),
                 ListFilesTool(isAllowed, currentProjectRoot),
                 SearchTool(isAllowed, currentProjectRoot)
             )
@@ -559,18 +580,20 @@ class AIAgentManager(private val context: Context) {
     private suspend fun performToolWrite(
         filePath: String,
         content: String,
+        append: Boolean,
         callback: AIAgentCallback
     ): FileWriteResult {
         val fileName = File(filePath).name
         callback.onFileModifying(filePath, fileName)
 
         val previousContent = readCurrentContent(filePath)
-        val writeResult = currentAgent?.writeFile(filePath, content)
+        val writeResult = currentAgent?.writeFile(filePath, content, append)
             ?: FileWriteResult.Error("No agent initialized")
         val success = writeResult is FileWriteResult.Success
-        currentAgent?.recordModification(filePath, previousContent, content, success)
+        val newContent = if (append) (previousContent ?: "") + content else content
+        currentAgent?.recordModification(filePath, previousContent, newContent, success)
 
-        callback.onFileChangeCompleted(filePath, success, previousContent, content)
+        callback.onFileChangeCompleted(filePath, success, previousContent, newContent)
         return writeResult
     }
 
@@ -946,6 +969,9 @@ class AIAgentManager(private val context: Context) {
         private const val TOOL_TURN_ATTEMPTS = 3
 
         private const val TOOL_RETRY_DELAY_MS = 1000L
+
+        /** Tools whose calls are rendered as file rows, with a diff, instead of tool rows. */
+        private val FILE_ROW_TOOLS = setOf(WriteFileTool.NAME, EditFileTool.NAME, CreateFileTool.NAME)
     }
 }
 
