@@ -57,6 +57,9 @@
 
   <!-- AI Agent Gemini -->
   <string name="ai_agent_title">AI Agent</string>
+  <string name="ai_agent_tab_chat">Chat</string>
+  <string name="ai_agent_tab_history">History</string>
+  <string name="ai_agent_tab_settings">Settings</string>
    <string name="ai_agent_description">Get AI-powered code generation using AI Agent</string>
    <!-- Composer hint of the chat page (see fragment_chat.xml). -->
    <string name="ai_agent_prompt_hint">Describe what code you want to generate...</string>

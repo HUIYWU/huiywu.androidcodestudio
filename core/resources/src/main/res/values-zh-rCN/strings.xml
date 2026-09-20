@@ -627,8 +627,11 @@
   <string name="onboarding_subtitle_permissions">AndroidIDE 需要以下权限</string>
   <string name="msg_grant_permissions">请授予权限以继续。</string>
   <string name="msg_no_internet">您似乎已离线，检查您的互联网连接。</string>
-  <string name="ai_agent_title">AI 助手</string>
-   <string name="ai_agent_description">使用 AI 助手获取 AI 驱动的代码生成功能</string>
+   <string name="ai_agent_title">AI 助手</string>
+   <string name="ai_agent_tab_chat">聊天</string>
+   <string name="ai_agent_tab_history">历史</string>
+   <string name="ai_agent_tab_settings">设置</string>
+    <string name="ai_agent_description">使用 AI 助手获取 AI 驱动的代码生成功能</string>
    <!-- Composer hint of the chat page (see fragment_chat.xml). -->
    <string name="ai_agent_prompt_hint">描述你想要生成的代码...</string>
     <string name="chat_block_open_file">打开文件</string>
