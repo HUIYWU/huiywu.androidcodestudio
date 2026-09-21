@@ -514,7 +514,7 @@ class ChatFragment : Fragment() {
 
         promptInput.text?.clear()
         codeCompletionManager.clearSuggestion()
-        aiRequestHandler.execute(userRequest)
+        aiRequestHandler.execute(userRequest, getCurrentFile()?.absolutePath)
     }
 
     private fun registerPreferenceListener() {

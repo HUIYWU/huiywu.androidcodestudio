@@ -58,13 +58,13 @@ class AIRequestHandler(
 ) {
     private var executionJob: Job? = null
 
-    fun execute(userRequest: String) {
+    fun execute(userRequest: String, activeFile: String?) {
         executionJob?.cancel()
         messages.beginRequest(userRequest)
 
         executionJob = lifecycleScope.launch {
             try {
-                executeAIRequest(userRequest)
+                executeAIRequest(userRequest, activeFile)
             } catch (e: CancellationException) {
                 // A user interrupt: the transcript keeps what the model produced so far; no error row.
             } catch (e: Exception) {
@@ -78,8 +78,8 @@ class AIRequestHandler(
         }
     }
 
-    private suspend fun executeAIRequest(userRequest: String) {
-        aiAgent.executeRequest(userRequest, object : AIAgentManager.AIAgentCallback {
+    private suspend fun executeAIRequest(userRequest: String, activeFile: String?) {
+        aiAgent.executeRequest(userRequest, activeFile, object : AIAgentManager.AIAgentCallback {
 
             override fun onProcessing(message: String) {
                 messages.setStatus(message)

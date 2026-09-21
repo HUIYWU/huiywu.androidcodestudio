@@ -10,6 +10,7 @@ import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import com.tom.rv2ide.R
 import com.tom.rv2ide.adapters.ViewPagerAdapter
+import com.tom.rv2ide.resources.R as ResourcesR
 
 /**
  * AI assistant sidebar entry.
@@ -66,15 +67,15 @@ class ArtificialFragment : Fragment() {
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
             when (position) {
                 0 -> {
-                    tab.text = "Chat"
+                    tab.text = getString(ResourcesR.string.ai_agent_tab_chat)
                     tab.setIcon(R.drawable.ic_chat)
                 }
                 1 -> {
-                    tab.text = "History"
+                    tab.text = getString(ResourcesR.string.ai_agent_tab_history)
                     tab.setIcon(R.drawable.ic_history)
                 }
                 2 -> {
-                    tab.text = "Settings"
+                    tab.text = getString(ResourcesR.string.ai_agent_tab_settings)
                     tab.setIcon(R.drawable.ic_settings)
                 }
             }

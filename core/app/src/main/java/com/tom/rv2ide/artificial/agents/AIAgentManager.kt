@@ -133,13 +133,7 @@ class AIAgentManager(private val context: Context) {
             android.util.Log.d("AIAgentManager", "Initializing agent with API key")
             currentAgent?.initialize(apiKey, context)
             currentAgent?.setContext(context)
-            
-            currentProjectRoot?.let { root ->
-                val projectData = ProjectData(context)
-                val projectTree = projectData.showProjectTree(root)
-                currentProjectTree = projectTree.tree
-                currentAgent?.setProjectData(projectTree)
-            }
+
             
             android.util.Log.d("AIAgentManager", "Agent initialized: ${currentAgent?.isInitialized()}")
         }
@@ -194,12 +188,6 @@ class AIAgentManager(private val context: Context) {
         if (!projectRoot.exists()) return false
 
         currentProjectRoot = projectRoot
-
-        val projectData = ProjectData(context)
-        val projectTree = projectData.showProjectTree(projectRoot)
-        currentProjectTree = projectTree.tree
-
-        currentAgent?.setProjectData(projectTree)
         permissionManager.addAllowedDirectory(projectRoot.absolutePath)
 
         return true
@@ -212,7 +200,7 @@ class AIAgentManager(private val context: Context) {
         currentAgent?.clearConversation()
     }
 
-    suspend fun executeRequest(userRequest: String, callback: AIAgentCallback) {
+    suspend fun executeRequest(userRequest: String, activeFile: String?, callback: AIAgentCallback) {
         // Master switch. The AI Agent must be explicitly enabled before anything is sent to a
         // provider; previously the "ai_agent_enabled" preference only disabled the API key fields
         // in the settings screen and had no effect on the actual request path.
@@ -231,6 +219,12 @@ class AIAgentManager(private val context: Context) {
 
         partialResponse.setLength(0)
         turnRecorded = false
+
+        currentProjectRoot?.let { root ->
+            val projectTree = ProjectData().showProjectTree(root, activeFile)
+            currentProjectTree = projectTree.tree
+            currentAgent?.setProjectData(projectTree)
+        }
 
         while (!success && (currentAgent?.canRetry() == true)) {
             try {
