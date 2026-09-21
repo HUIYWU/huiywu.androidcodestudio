@@ -81,6 +81,8 @@
     <item name="tabMaxWidth">0px</item>
     <!-- Make icons appear inline with tab's title -->
     <item name="tabInlineLabel">true</item>
+    <item name="tabTextAppearance">@style/AppTheme.StableTabText</item>
+    <item name="tabSelectedTextAppearance">@style/AppTheme.StableTabText</item>
   </style>
 
   <!--
