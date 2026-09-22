@@ -21,19 +21,16 @@ import com.tom.rv2ide.projects.IProjectManager
 import java.io.File
 
 /**
- * Project context for the agent: the root path, the file open in the editor,
- * the modules the build includes and one hint line. Anything deeper is
- * fetched through the file tools instead of being preloaded.
+ * Project context for the agent: the root path, the modules the build
+ * includes and one hint line. Anything deeper is fetched through the
+ * file tools instead of being preloaded.
  */
 class ProjectData {
 
-    fun showProjectTree(proj: File, openFile: String?): ProjectTreeResult {
+    fun showProjectTree(proj: File): ProjectTreeResult {
         val root = proj.absolutePath
         val sb = StringBuilder()
         sb.appendLine(root)
-        if (openFile != null) {
-            sb.appendLine("Open: $openFile")
-        }
         val modules = IProjectManager.getInstance().getWorkspace()
             ?.getSubProjects().orEmpty()
         for (module in modules.sortedBy { it.path }) {

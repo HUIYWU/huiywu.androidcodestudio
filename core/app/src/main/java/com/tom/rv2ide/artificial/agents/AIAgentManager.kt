@@ -221,7 +221,7 @@ class AIAgentManager(private val context: Context) {
         turnRecorded = false
 
         currentProjectRoot?.let { root ->
-            val projectTree = ProjectData().showProjectTree(root, activeFile)
+            val projectTree = ProjectData().showProjectTree(root)
             currentProjectTree = projectTree.tree
             currentAgent?.setProjectData(projectTree)
         }
@@ -235,7 +235,7 @@ class AIAgentManager(private val context: Context) {
                     delay(1000)
                 }
 
-                val toolOutcome = runToolLoop(userRequest, callback)
+                val toolOutcome = runToolLoop(userRequest, activeFile, callback)
                 if (toolOutcome != ToolLoopOutcome.UNSUPPORTED) {
                     success = true
                     continue
@@ -245,7 +245,7 @@ class AIAgentManager(private val context: Context) {
 
                 val reasoning = StringBuilder()
                 val result = currentAgent?.generateCodeStreaming(
-                    prompt = userRequest,
+                    prompt = annotateOpenFile(userRequest, activeFile),
                     context = null,
                     language = "kotlin",
                     projectStructure = null,
@@ -264,7 +264,7 @@ class AIAgentManager(private val context: Context) {
                 // Recorded by the driver rather than by the provider: a code completion calls the
                 // provider directly and must not enter the conversation history.
                 result.onSuccess { response ->
-                    currentAgent?.history?.recordTurn(userRequest, response)
+                    currentAgent?.history?.recordTurn(userRequest, response, activeFile)
                     turnRecorded = true
                 }
 
@@ -367,7 +367,7 @@ class AIAgentManager(private val context: Context) {
                   }
                 )
             } catch (e: CancellationException) {
-                recordInterruptedTurn(userRequest)
+                recordInterruptedTurn(userRequest, activeFile)
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("AIAgentManager", "Exception occurred: ${e.message}", e)
@@ -381,7 +381,7 @@ class AIAgentManager(private val context: Context) {
                     try {
                         delay(1500)
                     } catch (e: CancellationException) {
-                        recordInterruptedTurn(userRequest)
+                        recordInterruptedTurn(userRequest, activeFile)
                         throw e
                     }
                 } else {
@@ -406,9 +406,9 @@ class AIAgentManager(private val context: Context) {
      * Without this, an interrupt would drop the turn from history entirely: only a completed
      * turn is recorded normally. The prose that was already shown is what the next message follows.
      */
-    private fun recordInterruptedTurn(userRequest: String) {
+    private fun recordInterruptedTurn(userRequest: String, activeFile: String?) {
         if (turnRecorded || partialResponse.isEmpty()) return
-        currentAgent?.history?.recordTurn(userRequest, partialResponse.toString())
+        currentAgent?.history?.recordTurn(userRequest, partialResponse.toString(), activeFile)
         turnRecorded = true
     }
 
@@ -434,6 +434,7 @@ class AIAgentManager(private val context: Context) {
      */
     private suspend fun runToolLoop(
         userRequest: String,
+        activeFile: String?,
         callback: AIAgentCallback
     ): ToolLoopOutcome {
         val agent = currentAgent ?: return ToolLoopOutcome.UNSUPPORTED
@@ -442,7 +443,7 @@ class AIAgentManager(private val context: Context) {
         val messages = mutableListOf<AgentMessage>()
         messages.add(AgentMessage.System(buildToolSystemPrompt()))
         messages.addAll(agent.history.snapshot())
-        messages.add(AgentMessage.User(userRequest))
+        messages.add(AgentMessage.User(annotateOpenFile(userRequest, activeFile)))
 
         var round = 0
         while (round < MAX_TOOL_ROUNDS) {
@@ -456,7 +457,7 @@ class AIAgentManager(private val context: Context) {
                 is TurnRequestResult.Success -> {
                     val turn = requested.turn
                     if (turn.toolCalls.isEmpty()) {
-                        agent.history.recordTurn(userRequest, turn.text)
+                        agent.history.recordTurn(userRequest, turn.text, activeFile)
                         turnRecorded = true
                         return ToolLoopOutcome.SUCCESS
                     }

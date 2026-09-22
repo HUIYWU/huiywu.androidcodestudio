@@ -20,30 +20,45 @@ package com.tom.rv2ide.artificial.agents
 /**
  * Cross-request conversation history in the neutral [AgentMessage] form.
  *
- * Only completed turns are kept — the user message and the assistant's final answer — never the
- * tool traffic in between, so a follow-up request does not replay every file that was read. The cap
- * is what the providers' previous per-provider lists used.
+ * Only completed turns are kept — the user message and the assistant's final answer — never
+ * the tool traffic in between, so a follow-up request does not replay every file that was read.
+ * Each turn also remembers the editor tab it was written with, and [snapshot] annotates that onto
+ * the user message, so the model can tell which file an earlier message belonged to even after
+ * the tab has changed. The cap is what the providers' previous per-provider lists used.
  */
 class AgentHistory {
-    private val entries = mutableListOf<AgentMessage>()
+    private data class Turn(
+        val user: String,
+        val assistant: String,
+        val openFile: String?
+    )
+
+    private val turns = mutableListOf<Turn>()
 
     fun clear() {
-        entries.clear()
+        turns.clear()
     }
 
     /** A copy, so callers cannot mutate the history by holding on to the list. */
-    fun snapshot(): List<AgentMessage> = entries.toList()
+    fun snapshot(): List<AgentMessage> = turns.flatMap { turn ->
+        listOf(
+            AgentMessage.User(annotateOpenFile(turn.user, turn.openFile)),
+            AgentMessage.Assistant(turn.assistant)
+        )
+    }
 
-    fun recordTurn(user: String, assistant: String) {
-        entries.add(AgentMessage.User(user))
-        entries.add(AgentMessage.Assistant(assistant))
-        if (entries.size > MAX_ENTRIES) {
-            entries.removeAt(0)
-            entries.removeAt(0)
+    fun recordTurn(user: String, assistant: String, openFile: String?) {
+        turns.add(Turn(user, assistant, openFile))
+        if (turns.size > MAX_TURNS) {
+            turns.removeAt(0)
         }
     }
 
     private companion object {
-        const val MAX_ENTRIES = 20
+        const val MAX_TURNS = 10
     }
 }
+
+/** Prefixes a user message with the editor tab it was written with, when one was open. */
+fun annotateOpenFile(user: String, openFile: String?): String =
+    if (openFile == null) user else "[Open in editor: $openFile]\n\n$user"
