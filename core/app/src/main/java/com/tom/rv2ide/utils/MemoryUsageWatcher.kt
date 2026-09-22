@@ -25,13 +25,14 @@ import androidx.collection.MutableIntObjectMap
 import androidx.core.content.getSystemService
 import com.termux.shared.reflection.ReflectionUtils
 import com.tom.rv2ide.app.BaseApplication
-import com.tom.rv2ide.tasks.cancelIfActive
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -52,6 +53,7 @@ class MemoryUsageWatcher(private val updateInterval: Long = DEFAULT_UPDATE_INTER
   private val coroutineScope = CoroutineScope(coroutineDispatcher)
   private val memoryUsage = ConcurrentHashMap<Int, ProcessMemoryInfo>()
   private val watching = AtomicBoolean(false)
+  private var watcherJob: Job? = null
 
   /** Whether the memory usage watcher is watching processes for their memory usage. */
   val isWatching: Boolean
@@ -90,7 +92,7 @@ class MemoryUsageWatcher(private val updateInterval: Long = DEFAULT_UPDATE_INTER
 
     watching.set(true)
 
-    coroutineScope.launch(context = SupervisorJob() + coroutineDispatcher) {
+    watcherJob = coroutineScope.launch(context = SupervisorJob() + coroutineDispatcher) {
       while (isWatching) {
         readUsages()
 
@@ -103,7 +105,7 @@ class MemoryUsageWatcher(private val updateInterval: Long = DEFAULT_UPDATE_INTER
           withContext(Dispatchers.Main.immediate) { listener.onMemoryUsageChanged(usages) }
         }
 
-        delay(1000)
+        delay(updateInterval)
       }
     }
   }
@@ -144,7 +146,12 @@ class MemoryUsageWatcher(private val updateInterval: Long = DEFAULT_UPDATE_INTER
                 return@forEach
               }
 
-      ReflectionUtils.invokeMethod(android_os_Debug_getMemoryInfo, null, pid, proc.memInfo)
+      val invokeResult =
+          ReflectionUtils.invokeMethod(android_os_Debug_getMemoryInfo, null, pid, proc.memInfo)
+      if (!invokeResult.success || invokeResult.value == false) {
+        log.warn("Failed to read memory info for process {} ({})", pid, proc.pname)
+        return@forEach
+      }
 
       // From https://developer.android.com/tools/dumpsys#meminfo
       // "PSS is a good measure for the actual RAM weight of a process and for comparison against
@@ -228,7 +235,8 @@ class MemoryUsageWatcher(private val updateInterval: Long = DEFAULT_UPDATE_INTER
       unwatchAll()
     }
     watching.set(false)
-    coroutineScope.cancelIfActive("Cancellation requested")
+    watcherJob?.cancel(CancellationException("Cancellation requested"))
+    watcherJob = null
   }
 
   /** Registers a listener to be notified when the memory usage of a process changes. */
