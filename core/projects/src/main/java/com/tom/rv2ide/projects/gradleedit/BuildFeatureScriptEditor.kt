@@ -5,7 +5,7 @@ package com.tom.rv2ide.projects.gradleedit
  * Only literal boolean values are rewritten; dynamic values and missing blocks fail closed.
  */
 object BuildFeatureScriptEditor {
-  private val supportedFeatures = setOf("viewBinding", "compose", "dataBinding", "mlModelBinding")
+  private val supportedFeatures = setOf("viewBinding", "compose", "dataBinding", "mlModelBinding", "aidl")
 
   /** Reads the literal boolean assigned to [feature] in the android buildFeatures block, or null when unknown. */
   fun findEnabled(source: String, feature: String, dsl: GradleDsl): Boolean? {

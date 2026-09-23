@@ -88,6 +88,14 @@ class ModuleManagerFragment : Fragment() {
         "compose" to "Compose",
         "dataBinding" to "Data binding",
         "mlModelBinding" to "ML model binding",
+        "aidl" to "AIDL",
+    )
+    private val buildFeatureDescriptions = mapOf(
+        "viewBinding" to "Generate binding classes for views in XML layouts.",
+        "compose" to "Enable Jetpack Compose support for this module.",
+        "dataBinding" to "Generate binding classes for data-bound XML layouts.",
+        "mlModelBinding" to "Generate binding classes for machine learning models.",
+        "aidl" to "Enable Android Interface Definition Language compilation.",
     )
   }
 
@@ -592,13 +600,15 @@ class ModuleManagerFragment : Fragment() {
     ).apply {
       bottomMargin = dp(12)
     }
-    val rows = LinearLayout(requireContext()).apply {
+    val content = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.VERTICAL
-      buildFeatureLabels.forEach { (feature, label) ->
+      addView(sectionTitle("Build Features", topPadding = 0))
+      buildFeatureLabels.entries.forEachIndexed { index, (feature, label) ->
         addView(buildFeatureRow(module, feature, label))
+        if (index < buildFeatureLabels.size - 1) addView(buildFeatureDivider())
       }
     }
-    addView(rows, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    addView(content, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
   }
 
   /** Reads the effective value reported by the synchronized Gradle/AGP model. */
@@ -607,6 +617,7 @@ class ModuleManagerFragment : Fragment() {
     "compose" -> module.flags.getFlagValue("JETPACK_COMPOSE")
     "dataBinding" -> module.flags.getFlagValue("DATA_BINDING_ENABLED")
     "mlModelBinding" -> module.flags.getFlagValue("ML_MODEL_BINDING")
+    "aidl" -> module.mainSourceSet?.sourceProvider?.aidlDirectories?.let { true }
     else -> null
   }
 
@@ -615,9 +626,16 @@ class ModuleManagerFragment : Fragment() {
     val row = LinearLayout(requireContext()).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(0, dp(4), 0, dp(4))
+      setPadding(0, dp(12), 0, dp(12))
     }
-    row.addView(text(label, 13f, secondary = true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    val labels = LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.VERTICAL
+      addView(text(label, 15f))
+      addView(text(buildFeatureDescriptions[feature].orEmpty(), 13f, secondary = true).apply {
+        setPadding(0, dp(3), 0, 0)
+      })
+    }
+    row.addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
     val toggle = MaterialSwitch(requireContext()).apply {
       isChecked = pendingBuildFeatures[module.path]?.get(feature) ?: baseline
       isEnabled = !creatingModule && !editorViewModel.isInitializing && !applyingBuildFeatures
@@ -1530,6 +1548,17 @@ class ModuleManagerFragment : Fragment() {
 
   private fun showModuleOperationUnavailable(message: String) {
     Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+  }
+
+  private fun buildFeatureDivider(): View = View(requireContext()).apply {
+    setBackgroundColor(themeColor(com.google.android.material.R.attr.colorOutlineVariant))
+    layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        dp(1),
+    ).apply {
+      leftMargin = dp(4)
+      rightMargin = dp(4)
+    }
   }
 
   private fun text(value: String, size: Float, secondary: Boolean = false) = TextView(requireContext()).apply {

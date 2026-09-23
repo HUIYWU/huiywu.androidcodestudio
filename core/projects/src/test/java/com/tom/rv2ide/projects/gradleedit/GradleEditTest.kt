@@ -327,12 +327,14 @@ dependencies {
     buildFeatures {
         viewBinding = true
         compose = false
+        aidl = true
     }
 }
 """
     assertThat(BuildFeatureScriptEditor.findEnabled(source, "viewBinding", GradleDsl.KOTLIN)).isTrue()
     assertThat(BuildFeatureScriptEditor.findEnabled(source, "compose", GradleDsl.KOTLIN)).isFalse()
     assertThat(BuildFeatureScriptEditor.findEnabled(source, "dataBinding", GradleDsl.KOTLIN)).isNull()
+    assertThat(BuildFeatureScriptEditor.findEnabled(source, "aidl", GradleDsl.KOTLIN)).isTrue()
   }
 
   @Test fun groovyBuildFeaturesAreRead() {
@@ -340,12 +342,14 @@ dependencies {
     buildFeatures {
         viewBinding true
         compose false
+        aidl true
     }
 }
 """
     assertThat(BuildFeatureScriptEditor.findEnabled(source, "viewBinding", GradleDsl.GROOVY)).isTrue()
     assertThat(BuildFeatureScriptEditor.findEnabled(source, "compose", GradleDsl.GROOVY)).isFalse()
     assertThat(BuildFeatureScriptEditor.findEnabled(source, "mlModelBinding", GradleDsl.GROOVY)).isNull()
+    assertThat(BuildFeatureScriptEditor.findEnabled(source, "aidl", GradleDsl.GROOVY)).isTrue()
   }
 
   @Test fun kotlinBuildFeatureValueIsRewrittenInPlace() {
@@ -393,8 +397,9 @@ dependencies {
         .isInstanceOf(GradleEditResult.Unsupported::class.java)
     assertThat(BuildFeatureScriptEditor.setBuildFeature("android {}\nandroid {}\n", "viewBinding", true, GradleDsl.KOTLIN))
         .isInstanceOf(GradleEditResult.Ambiguous::class.java)
-    assertThat(BuildFeatureScriptEditor.setBuildFeature("android {}\n", "aidl", true, GradleDsl.KOTLIN))
-        .isInstanceOf(GradleEditResult.Invalid::class.java)
+    val aidlSource = "android {}\n"
+    val aidlOutput = apply(aidlSource, BuildFeatureScriptEditor.setBuildFeature(aidlSource, "aidl", true, GradleDsl.KOTLIN))
+    assertThat(aidlOutput).isEqualTo("android {\n    buildFeatures {\n        aidl = true\n    }\n}\n")
 
     val dynamic = "android {\n    buildFeatures {\n        viewBinding = someFlag\n    }\n}\n"
     assertThat(BuildFeatureScriptEditor.setBuildFeature(dynamic, "viewBinding", true, GradleDsl.KOTLIN))
