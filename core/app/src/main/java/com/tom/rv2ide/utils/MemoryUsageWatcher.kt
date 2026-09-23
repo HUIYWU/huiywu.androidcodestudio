@@ -18,12 +18,10 @@
 package com.tom.rv2ide.utils
 
 import android.app.ActivityManager
-import android.os.Debug
 import android.os.Debug.MemoryInfo
 import androidx.collection.IntObjectMap
 import androidx.collection.MutableIntObjectMap
 import androidx.core.content.getSystemService
-import com.termux.shared.reflection.ReflectionUtils
 import com.tom.rv2ide.app.BaseApplication
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -63,19 +61,6 @@ class MemoryUsageWatcher(private val updateInterval: Long = DEFAULT_UPDATE_INTER
   var listener: MemoryUsageListener? = null
 
   companion object {
-
-    private val android_os_Debug_getMemoryInfo by lazy {
-      checkNotNull(
-          ReflectionUtils.getDeclaredMethod(
-              Debug::class.java,
-              "getMemoryInfo",
-              Int::class.javaPrimitiveType,
-              MemoryInfo::class.java,
-          )
-      ) {
-        "Unable to find getMemoryInfo method in android.os.Debug class"
-      }
-    }
 
     const val MAX_USAGE_ENTRIES = 30
     const val DEFAULT_UPDATE_INTERVAL = 1000L
@@ -131,51 +116,19 @@ class MemoryUsageWatcher(private val updateInterval: Long = DEFAULT_UPDATE_INTER
     }
 
     val pids = memoryUsage.keys.toIntArray()
-    pids.forEach { pid ->
+    if (pids.isEmpty()) {
+      return
+    }
 
-      // ActivityManager.getProcessMemoryInfo is rate-limited
-      // but it internally uses Debug.getMemoryInfo to get the memory info
-      // we use it directly using reflection to bypass the rate limit
-      val proc =
-          memoryUsage[pid]
-              ?: run {
-                log.warn(
-                    "Process {} is not being watched, but readUsages() was called for the process",
-                    pid,
-                )
-                return@forEach
-              }
+    val processInfos = activityManager.getProcessMemoryInfo(pids)
+    processInfos.forEachIndexed { index, memInfo ->
+      val pid = pids[index]
+      val proc = memoryUsage[pid] ?: return@forEachIndexed
 
-      val invokeResult =
-          ReflectionUtils.invokeMethod(android_os_Debug_getMemoryInfo, null, pid, proc.memInfo)
-      if (!invokeResult.success || invokeResult.value == false) {
-        log.warn("Failed to read memory info for process {} ({})", pid, proc.pname)
-        return@forEach
-      }
-
-      // From https://developer.android.com/tools/dumpsys#meminfo
-      // "PSS is a good measure for the actual RAM weight of a process and for comparison against
-      // the RAM use of other processes and the total available RAM."
-      val usage = proc.memInfo.totalPss
-
-      // values are in kB, convert to bytes
-      val usageBytes = usage * 1024L
-      memoryUsage[pid]!!.apply {
-        // we insert the usage entry at the start of the array, then increment the shift amount by 1
-        // this makes the newly inserted usage entry the last element in the array
-        // and the oldest usage entry the first element in the array
-
-        // this means that _history[_history.size - 1] will be the newest usage entry
-
-        // the "shift" amount basically indicates what is the start index of the array
-        // for example, if shift is 1, then _history[0] will actually return _history[1] (index
-        // shifted by 1 to the right)
-        // when the shift amount exceeds the size of the array, it will be reset to 0 (wrapped
-        // around)
-
-        _history[0] = usageBytes
-        _history.shift(1)
-      }
+      // Values are in kB. PSS is a useful approximation of the process RAM weight.
+      val usageBytes = memInfo.totalPss * 1024L
+      proc._history[0] = usageBytes
+      proc._history.shift(1)
     }
   }
 
