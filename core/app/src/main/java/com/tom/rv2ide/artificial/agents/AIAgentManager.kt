@@ -405,6 +405,8 @@ class AIAgentManager(private val context: Context) {
             }
         }
 
+        refreshContextUsage()
+
         if (!success) {
           val attemptCount = currentAgent?.getCurrentAttemptCount() ?: 0
           val agentName = currentAgent?.providerName ?: "No agent initialized"
