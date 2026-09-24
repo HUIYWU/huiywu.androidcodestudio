@@ -23,6 +23,7 @@ import android.graphics.PorterDuff
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.text.Spanned
+import android.view.ViewGroup
 import android.widget.ImageView.ScaleType
 import android.widget.ImageView.ScaleType.CENTER_CROP
 import androidx.annotation.ColorInt
@@ -51,7 +52,7 @@ class Flashbar private constructor(private var builder: Builder) {
 
   /** Shows a flashbar */
   fun show() {
-    flashbarContainerView.show(builder.activity)
+    flashbarContainerView.show(builder.activity, builder.parentView)
   }
 
   /** Dismisses a flashbar */
@@ -171,6 +172,7 @@ class Flashbar private constructor(private var builder: Builder) {
   }
 
   class Builder(internal var activity: Activity) {
+    internal var parentView: ViewGroup? = null
     internal var gravity: Gravity = BOTTOM
     internal var backgroundColor: Int? = null
     internal var backgroundDrawable: Drawable? = null
@@ -245,8 +247,9 @@ class Flashbar private constructor(private var builder: Builder) {
     internal var enterAnimBuilder: FlashAnimBarBuilder? = null
     internal var exitAnimBuilder: FlashAnimBarBuilder? = null
 
-    /**
-     * Specifies the gravity from where the flashbar will be shown (top/bottom) Default gravity is
+    fun parentView(parentView: ViewGroup) = apply { this.parentView = parentView }
+
+    /** Specifies the gravity from where the flashbar will be shown (top/bottom) Default gravity is
      * TOP
      */
     fun gravity(gravity: Gravity) = apply { this.gravity = gravity }

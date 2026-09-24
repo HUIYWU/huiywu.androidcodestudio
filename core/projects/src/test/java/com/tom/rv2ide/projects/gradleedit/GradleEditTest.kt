@@ -399,7 +399,7 @@ dependencies {
         .isInstanceOf(GradleEditResult.Ambiguous::class.java)
     val aidlSource = "android {}\n"
     val aidlOutput = apply(aidlSource, BuildFeatureScriptEditor.setBuildFeature(aidlSource, "aidl", true, GradleDsl.KOTLIN))
-    assertThat(aidlOutput).isEqualTo("android {\n    buildFeatures {\n        aidl = true\n    }\n}\n")
+    assertThat(aidlOutput).isEqualTo("android {\n  buildFeatures {\n    aidl = true\n  }\n}\n")
 
     val dynamic = "android {\n    buildFeatures {\n        viewBinding = someFlag\n    }\n}\n"
     assertThat(BuildFeatureScriptEditor.setBuildFeature(dynamic, "viewBinding", true, GradleDsl.KOTLIN))

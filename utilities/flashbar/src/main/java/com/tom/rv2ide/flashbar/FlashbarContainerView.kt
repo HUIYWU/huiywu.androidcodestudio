@@ -172,10 +172,10 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
     layoutParams = flashbarContainerViewLp
   }
 
-  internal fun show(activity: Activity) {
+  internal fun show(activity: Activity, parentView: ViewGroup? = null) {
     if (isBarShowing || isBarShown) return
 
-    val activityRootView = activity.getRootView() ?: return
+    val activityRootView = parentView ?: activity.getRootView() ?: return
 
     // Only add the withView to the parent once
     if (this.parent == null) activityRootView.addView(this)

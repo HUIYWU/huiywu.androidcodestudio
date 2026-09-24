@@ -25,12 +25,6 @@ import android.util.DisplayMetrics
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewGroup.MarginLayoutParams
-import androidx.core.view.WindowInsetsCompat.Type.navigationBars
-import androidx.core.view.WindowInsetsCompat.Type.statusBars
-import androidx.core.view.updateLayoutParams
-import androidx.core.view.updateMargins
-import androidx.core.view.updatePadding
 import androidx.fragment.app.viewModels
 import androidx.transition.TransitionManager
 import com.blankj.utilcode.util.ThreadUtils
@@ -50,9 +44,10 @@ import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.tasks.executeAsync
 import com.tom.rv2ide.tooling.api.models.GradleTask
 import com.tom.rv2ide.utils.SingleTextWatcher
-import com.tom.rv2ide.utils.doOnApplyWindowInsets
 import com.tom.rv2ide.utils.flashError
-import com.tom.rv2ide.utils.flashInfo
+import com.tom.rv2ide.utils.flashbarBuilder
+import com.tom.rv2ide.utils.infoIcon
+import com.tom.rv2ide.utils.showOnUiThread
 import com.tom.rv2ide.viewmodel.RunTasksViewModel
 import org.slf4j.LoggerFactory
 
@@ -83,27 +78,20 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
   }
 
   override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-    val dialog =
-        object : BottomSheetDialog(requireContext(), theme) {
-          override fun onAttachedToWindow() {
-            super.onAttachedToWindow()
-            findViewById<View>(com.google.android.material.R.id.container)?.apply {
-              doOnApplyWindowInsets { view, insets, _, margins ->
-                insets.getInsets(statusBars() or navigationBars()).apply {
-                  view.updateLayoutParams<MarginLayoutParams> {
-                    updateMargins(top = margins.top + top)
-                  }
-                  run.tasks.apply {
-                    updatePadding(bottom = bottom)
-                    clipToPadding = false
-                    clipChildren = false
-                  }
-                }
-              }
-            }
+    val dialog = BottomSheetDialog(requireContext(), theme)
+    dialog.behavior.apply {
+      peekHeight = (getWindowHeight() * 0.7).toInt()
+      isFitToContents = false
+      expandedOffset = 0
+    }
+    dialog.setOnShowListener {
+      val bottomSheet =
+          dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) ?: return@setOnShowListener
+      bottomSheet.layoutParams =
+          bottomSheet.layoutParams.apply {
+            height = ViewGroup.LayoutParams.MATCH_PARENT
           }
-        }
-    dialog.behavior.peekHeight = (getWindowHeight() * 0.7).toInt()
+    }
     return dialog
   }
 
@@ -146,7 +134,12 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
 
     binding.exec.setOnClickListener {
       if (viewModel.selected.isEmpty()) {
-        requireActivity().flashInfo(getString(string.msg_err_select_tasks))
+        requireActivity()
+            .flashbarBuilder()
+            .parentView(binding.root)
+            .infoIcon()
+            .message(getString(string.msg_err_select_tasks))
+            .showOnUiThread()
         return@setOnClickListener
       }
 
