@@ -444,11 +444,7 @@ class ChatFragment : Fragment() {
         contextProgress.setIndicatorColor(
             MaterialColors.getColor(
                 contextIndicator,
-                if (usage.usedChars > usage.limitChars) {
-                    com.google.android.material.R.attr.colorError
-                } else {
-                    com.google.android.material.R.attr.colorPrimary
-                }
+                if (usage.usedChars > usage.limitChars) R.attr.colorError else R.attr.colorPrimary
             )
         )
     }
