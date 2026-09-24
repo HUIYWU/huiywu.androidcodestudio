@@ -134,12 +134,15 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
 
     binding.exec.setOnClickListener {
       if (viewModel.selected.isEmpty()) {
-        requireActivity()
-            .flashbarBuilder()
-            .parentView(binding.root)
-            .infoIcon()
-            .message(getString(string.msg_err_select_tasks))
-            .showOnUiThread()
+        val dialogDecor = dialog?.window?.decorView as? ViewGroup
+        if (dialogDecor != null) {
+          requireActivity()
+              .flashbarBuilder()
+              .parentView(dialogDecor)
+              .infoIcon()
+              .message(getString(string.msg_err_select_tasks))
+              .showOnUiThread()
+        }
         return@setOnClickListener
       }
 
