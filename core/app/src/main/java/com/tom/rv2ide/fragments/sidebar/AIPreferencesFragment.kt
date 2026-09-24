@@ -240,6 +240,9 @@ class AIPreferencesFragment : Fragment() {
      * running manager is told so that its usage ring reflects the new limit straight away.
      */
     private fun setupContextLimitSlider() {
+        contextLimitSlider.valueFrom = Agents.CONTEXT_CHAR_LIMIT_MIN.toFloat()
+        contextLimitSlider.valueTo = Agents.CONTEXT_CHAR_LIMIT_MAX.toFloat()
+        contextLimitSlider.stepSize = Agents.CONTEXT_CHAR_LIMIT_STEP.toFloat()
         contextLimitSlider.value = agents.getContextCharLimit().toFloat()
         contextLimitSlider.setLabelFormatter { value -> "${value.toInt() / 1000}K" }
         contextLimitSlider.addOnChangeListener { _, value, fromUser ->

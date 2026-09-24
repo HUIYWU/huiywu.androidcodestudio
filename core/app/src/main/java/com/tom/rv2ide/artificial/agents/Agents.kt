@@ -178,9 +178,10 @@ class Agents(ctx: Context) {
     /** Threshold the compression uses until the user picks another one. */
     const val CONTEXT_CHAR_LIMIT_DEFAULT = 24_000
 
-    /** Bounds the settings slider and any stored value. */
+    /** Bounds the settings slider and any stored value; the slider moves by [CONTEXT_CHAR_LIMIT_STEP]. */
     const val CONTEXT_CHAR_LIMIT_MIN = 8_000
     const val CONTEXT_CHAR_LIMIT_MAX = 64_000
+    const val CONTEXT_CHAR_LIMIT_STEP = 4_000
 
     private const val CONTEXT_CHAR_LIMIT_KEY = "ai_context_char_limit"
   }

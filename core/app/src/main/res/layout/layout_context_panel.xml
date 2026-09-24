@@ -39,10 +39,7 @@
     <com.google.android.material.slider.Slider
         android:id="@+id/contextPanelSlider"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:stepSize="4000"
-        android:valueFrom="8000"
-        android:valueTo="64000" />
+        android:layout_height="wrap_content" />
 
     <com.google.android.material.textview.MaterialTextView
         android:id="@+id/contextPanelLimitSummary"

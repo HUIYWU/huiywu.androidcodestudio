@@ -520,6 +520,9 @@ class ChatFragment : Fragment() {
 
         renderUsage()
 
+        slider.valueFrom = Agents.CONTEXT_CHAR_LIMIT_MIN.toFloat()
+        slider.valueTo = Agents.CONTEXT_CHAR_LIMIT_MAX.toFloat()
+        slider.stepSize = Agents.CONTEXT_CHAR_LIMIT_STEP.toFloat()
         slider.value = agents.getContextCharLimit().toFloat()
         slider.setLabelFormatter { value -> formatChars(value.toInt()) }
         slider.addOnChangeListener { _, value, fromUser ->
