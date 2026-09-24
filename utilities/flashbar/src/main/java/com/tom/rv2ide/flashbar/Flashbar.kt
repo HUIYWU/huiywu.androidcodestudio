@@ -75,6 +75,7 @@ class Flashbar private constructor(private var builder: Builder) {
   private fun construct() {
     flashbarContainerView = FlashbarContainerView(builder.activity)
     flashbarContainerView.setGravity(builder.gravity)
+    flashbarContainerView.setIgnoreTopInsets(builder.parentView != null)
     flashbarContainerView.adjustOrientation(builder.activity)
     flashbarContainerView.addParent(this)
     flashbarContainerView.fitsSystemWindows = false

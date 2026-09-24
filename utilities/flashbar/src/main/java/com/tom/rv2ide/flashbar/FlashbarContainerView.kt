@@ -65,6 +65,7 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
   private var earlyDismissalRequested = false
   private var showOverlay: Boolean = false
   private var overlayBlockable: Boolean = false
+  private var ignoreTopInsets = false
 
   init {
     ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
@@ -75,13 +76,17 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
       // Apply padding based on gravity
       v.setPadding(
           systemBars.left,
-          if (gravity == TOP) statusBarHeight else 0,
+          if (gravity == TOP && !ignoreTopInsets) statusBarHeight else 0,
           systemBars.right,
           if (gravity == BOTTOM) navBarHeight else 0,
       )
 
       insets
     }
+  }
+
+  internal fun setIgnoreTopInsets(ignore: Boolean) {
+    ignoreTopInsets = ignore
   }
 
   override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
