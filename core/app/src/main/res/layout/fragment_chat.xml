@@ -135,13 +135,13 @@
 
                         <com.google.android.material.progressindicator.CircularProgressIndicator
                             android:id="@+id/contextProgress"
-                            android:layout_width="36dp"
-                            android:layout_height="36dp"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
                             android:layout_gravity="center"
                             android:indeterminate="false"
                             android:max="100"
-                            app:indicatorSize="36dp"
-                            app:trackThickness="3dp"
+                            app:indicatorSize="32dp"
+                            app:trackThickness="4dp"
                             style="@style/Widget.Material3.CircularProgressIndicator" />
 
                         <com.google.android.material.textview.MaterialTextView
@@ -161,7 +161,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:ellipsize="middle"
-                        android:maxWidth="200dp"
+                        android:maxWidth="144dp"
                         android:singleLine="true"
                         app:shapeAppearanceOverlay="@style/AppTheme.ShapeAppearance.Chip.Pill" />
 
