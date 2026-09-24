@@ -126,6 +126,35 @@
                     android:orientation="horizontal"
                     android:paddingTop="4dp">
 
+                    <FrameLayout
+                        android:id="@+id/contextIndicator"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/chat_context_usage_show">
+
+                        <com.google.android.material.progressindicator.CircularProgressIndicator
+                            android:id="@+id/contextProgress"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:layout_gravity="center"
+                            android:indeterminate="false"
+                            android:max="100"
+                            app:indicatorSize="36dp"
+                            app:trackThickness="3dp"
+                            style="@style/Widget.Material3.CircularProgressIndicator" />
+
+                        <com.google.android.material.textview.MaterialTextView
+                            android:id="@+id/contextPercent"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:importantForAccessibility="no"
+                            android:textAppearance="?attr/textAppearanceLabelSmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    </FrameLayout>
+
                     <com.google.android.material.chip.Chip
                         android:id="@+id/modelChip"
                         style="@style/Widget.Material3.Chip.Assist"

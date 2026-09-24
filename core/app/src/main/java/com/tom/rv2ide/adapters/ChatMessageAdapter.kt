@@ -97,9 +97,30 @@ class ChatMessageAdapter(
         diffCache.clear()
     }
 
+    /**
+     * Lets a detail area inside a row keep the drag.
+     *
+     * The enclosing RecyclerView scrolls on the same axis and would take the drag first, leaving the
+     * detail area scrollable only when it was already at its end. The area claims the gesture for as
+     * long as the finger is down; scrolling the rest of the answer past either end takes a second
+     * drag on the list itself.
+     */
+    private fun ownVerticalGestures(scroll: ScrollView) {
+        scroll.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE ->
+                    scroll.parent.requestDisallowInterceptTouchEvent(true)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                    scroll.parent.requestDisallowInterceptTouchEvent(false)
+            }
+            false
+        }
+    }
+
     override fun getItemViewType(position: Int): Int = when (getItem(position)) {
         is ChatMessage.User -> TYPE_USER
         is ChatMessage.Assistant -> TYPE_ASSISTANT
+        is ChatMessage.ContextSummary -> TYPE_SUMMARY
         is ChatMessage.Status -> TYPE_STATUS
         is ChatMessage.Error -> TYPE_ERROR
     }
@@ -111,6 +132,7 @@ class ChatMessageAdapter(
             TYPE_ASSISTANT -> AssistantHolder(
                 inflater.inflate(R.layout.item_chat_assistant, parent, false)
             )
+            TYPE_SUMMARY -> SummaryHolder(inflater.inflate(R.layout.item_chat_summary, parent, false))
             TYPE_STATUS -> StatusHolder(inflater.inflate(R.layout.item_chat_status, parent, false))
             else -> ErrorHolder(inflater.inflate(R.layout.item_chat_error, parent, false))
         }
@@ -120,6 +142,7 @@ class ChatMessageAdapter(
         when (val message = getItem(position)) {
             is ChatMessage.User -> (holder as UserHolder).bind(message)
             is ChatMessage.Assistant -> (holder as AssistantHolder).bind(message)
+            is ChatMessage.ContextSummary -> (holder as SummaryHolder).bind(message)
             is ChatMessage.Status -> (holder as StatusHolder).bind(message)
             is ChatMessage.Error -> (holder as ErrorHolder).bind(message)
         }
@@ -146,6 +169,48 @@ class ChatMessageAdapter(
 
         fun bind(message: ChatMessage.Error) {
             text.text = message.text
+        }
+    }
+
+    inner class SummaryHolder(view: View) : RecyclerView.ViewHolder(view) {
+
+        private val header: View = view.findViewById(R.id.summaryHeader)
+        private val indicator: ImageView = view.findViewById(R.id.summaryIndicator)
+        private val detail: View = view.findViewById(R.id.summaryDetail)
+        private val scroll: ScrollView = view.findViewById(R.id.summaryScroll)
+        private val content: MaterialTextView = view.findViewById(R.id.summaryContent)
+
+        fun bind(message: ChatMessage.ContextSummary) {
+            ownVerticalGestures(scroll)
+
+            val rowId = RowId(message.id, SUMMARY_ROW)
+
+            fun renderExpanded(expanded: Boolean) {
+                detail.visibility = if (expanded) View.VISIBLE else View.GONE
+                indicator.rotation = if (expanded) 90f else 0f
+                indicator.contentDescription = itemView.context.getString(
+                    if (expanded) {
+                        R.string.chat_context_compressed_hide
+                    } else {
+                        R.string.chat_context_compressed_show
+                    }
+                )
+            }
+
+            header.setOnClickListener {
+                val expanding = expandedBlocks.add(rowId)
+                if (!expanding) expandedBlocks.remove(rowId)
+                renderExpanded(expanding)
+                if (expanding) renderContent(message)
+            }
+
+            val expanded = expandedBlocks.contains(rowId)
+            renderExpanded(expanded)
+            if (expanded) renderContent(message)
+        }
+
+        private fun renderContent(message: ChatMessage.ContextSummary) {
+            content.text = AIMarkdownRenderer.shared(itemView.context).render(message.text)
         }
     }
 
@@ -207,22 +272,6 @@ class ChatMessageAdapter(
                 is ChatBlock.Thinking -> bindThinking(row, block, messageId, blockIndex, renderer)
                 is ChatBlock.FileChange -> bindFileChange(row, block, messageId, blockIndex)
                 is ChatBlock.ToolCall -> bindToolCall(row, block, messageId, blockIndex)
-            }
-        }
-
-        // The enclosing RecyclerView scrolls on the same axis and would take the drag first, leaving the
-        // detail area scrollable only when it was already at its end. The area claims the gesture for as
-        // long as the finger is down; scrolling the rest of the answer past either end takes a second
-        // drag on the list itself.
-        private fun ownVerticalGestures(scroll: ScrollView) {
-            scroll.setOnTouchListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE ->
-                        scroll.parent.requestDisallowInterceptTouchEvent(true)
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
-                        scroll.parent.requestDisallowInterceptTouchEvent(false)
-                }
-                false
             }
         }
 
@@ -464,7 +513,11 @@ class ChatMessageAdapter(
         const val TYPE_ASSISTANT = 1
         const val TYPE_STATUS = 2
         const val TYPE_ERROR = 3
+        const val TYPE_SUMMARY = 4
         const val DIFF_CACHE_SIZE = 16
+
+        /** Block index used for a top-level row, which has no blocks of its own. */
+        const val SUMMARY_ROW = -1
 
         val DIFF = object : DiffUtil.ItemCallback<ChatMessage>() {
             override fun areItemsTheSame(oldItem: ChatMessage, newItem: ChatMessage): Boolean =

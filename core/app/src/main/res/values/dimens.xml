@@ -23,4 +23,5 @@
   <dimen name="navigation_rail_width">80dp</dimen>
   <dimen name="chat_thinking_max_height">240dp</dimen>
   <dimen name="chat_tool_call_max_height">240dp</dimen>
+  <dimen name="chat_context_summary_max_height">240dp</dimen>
 </resources>

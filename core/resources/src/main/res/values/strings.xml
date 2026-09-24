@@ -78,7 +78,17 @@
     <string name="chat_tool_call_interrupted">Interrupted by user</string>
     <string name="chat_stop">Stop</string>
     <string name="chat_empty_prompt">Please enter a request</string>
-   <string name="chat_cleared">Conversation cleared</string>
+    <string name="chat_cleared">Conversation cleared</string>
+    <string name="chat_context_usage_show">Context usage</string>
+    <string name="chat_context_compressed_title">Context compressed</string>
+    <string name="chat_context_compressed_show">Show summary</string>
+    <string name="chat_context_compressed_hide">Hide summary</string>
+    <string name="chat_context_panel_title">Context</string>
+    <string name="chat_context_usage_format">%1$s / %2$s characters</string>
+    <string name="chat_context_compress_now">Compress now</string>
+    <string name="chat_context_nothing_to_compress">Nothing to compress yet</string>
+    <string name="chat_context_limit_label">Compression threshold</string>
+    <string name="chat_context_limit_summary">Earlier turns are summarized once the history exceeds this limit.</string>
    <string name="chat_project_load_failed">Failed to load project</string>
    <string name="chat_model_unknown">Model not set</string>
    <!-- Model menu, opened from the chat composer chip. -->
@@ -1358,7 +1368,9 @@ Add a remote to push/pull changes</string>
   <string name="ai_preferences_auto_switch_provider_title">Auto-Switch Provider</string>
   <string name="ai_preferences_auto_switch_provider_summary">Automatically switch provider on errors</string>
   <string name="ai_preferences_code_completion_title">Code Completion</string>
-  <string name="ai_preferences_code_completion_summary">Enable AI-powered code suggestions</string>
+   <string name="ai_preferences_code_completion_summary">Enable AI-powered code suggestions</string>
+   <string name="ai_preferences_context_limit_title">Context Compression Threshold</string>
+   <string name="ai_preferences_context_limit_summary">History beyond this size is summarized before a request</string>
   <string name="ai_preferences_provider_label">Provider:</string>
   <string name="ai_preferences_model_label">Model:</string>
   <string name="ai_preferences_not_set">Not set</string>

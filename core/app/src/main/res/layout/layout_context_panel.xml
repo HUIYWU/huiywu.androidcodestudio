@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Contents of the context panel, shown above the composer when the usage indicator is tapped.
+
+  The surface itself comes from the popup's background (bg_atc_dropdown_popup, the same one the model
+  menu uses), so this layout is content only.
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="16dp"
+    android:paddingVertical="12dp">
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/contextPanelTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/chat_context_panel_title"
+        android:textAppearance="?attr/textAppearanceTitleSmall" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/contextPanelUsage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/contextPanelLimitLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/chat_context_limit_label"
+        android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+    <com.google.android.material.slider.Slider
+        android:id="@+id/contextPanelSlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:stepSize="4000"
+        android:valueFrom="8000"
+        android:valueTo="64000" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/contextPanelLimitSummary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/chat_context_limit_summary"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/contextPanelCompress"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/chat_context_compress_now" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/contextPanelHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/chat_context_nothing_to_compress"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone" />
+
+</LinearLayout>

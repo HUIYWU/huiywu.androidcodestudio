@@ -11,6 +11,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.slider.Slider
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
@@ -44,6 +45,7 @@ class AIPreferencesFragment : Fragment() {
     private lateinit var modelDropdown: AutoCompleteTextView
     private lateinit var autoSwitchToggle: MaterialSwitch
     private lateinit var codeCompletionToggle: MaterialSwitch
+    private lateinit var contextLimitSlider: Slider
     private lateinit var currentProviderText: MaterialTextView
     private lateinit var currentModelText: MaterialTextView
     
@@ -66,6 +68,7 @@ class AIPreferencesFragment : Fragment() {
         setupProviderDropdown()
         setupModelDropdown()
         setupToggles()
+        setupContextLimitSlider()
         updateCurrentStatus()
     }
 
@@ -75,6 +78,7 @@ class AIPreferencesFragment : Fragment() {
         updateProviderDropdownSelection()
         updateModelDropdown()
         syncCodeCompletionToggle()
+        syncContextLimitSlider()
     }
 
     private fun initializeViews(view: View) {
@@ -82,6 +86,7 @@ class AIPreferencesFragment : Fragment() {
         modelDropdown = view.findViewById(R.id.modelDropdown)
         autoSwitchToggle = view.findViewById(R.id.autoSwitchToggle)
         codeCompletionToggle = view.findViewById(R.id.codeCompletionToggle)
+        contextLimitSlider = view.findViewById(R.id.contextLimitSlider)
         currentProviderText = view.findViewById(R.id.currentProviderText)
         currentModelText = view.findViewById(R.id.currentModelText)
     }
@@ -226,6 +231,30 @@ class AIPreferencesFragment : Fragment() {
 
         isCompletionEnabled = savedState
         codeCompletionToggle.isChecked = savedState
+    }
+
+    /**
+     * Wires the compression threshold.
+     *
+     * This is the same control the context panel offers, and both write the one stored value; the
+     * running manager is told so that its usage ring reflects the new limit straight away.
+     */
+    private fun setupContextLimitSlider() {
+        contextLimitSlider.value = agents.getContextCharLimit().toFloat()
+        contextLimitSlider.setLabelFormatter { value -> "${value.toInt() / 1000}K" }
+        contextLimitSlider.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            agents.setContextCharLimit(value.toInt())
+            aiAgent.refreshContextUsage()
+        }
+    }
+
+    /** Re-reads the stored threshold: the context panel can change it behind this page's back. */
+    private fun syncContextLimitSlider() {
+        val limit = agents.getContextCharLimit().toFloat()
+        if (contextLimitSlider.value != limit) {
+            contextLimitSlider.value = limit
+        }
     }
 
     private fun handleProviderChange(providerId: String, providerName: String) {

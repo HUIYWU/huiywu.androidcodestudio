@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
  * - `onFileModified` -> ignored; the row is finalised in one step by `onSuccess`. Reporting each
  *   write twice is what used to produce duplicated rows.
  * - `onToolCallStarted` / `onToolCallFinished` -> a tool row, pending and then filled in.
+ * - `onContextCompressed` -> a compression row, above the answer that triggered it.
  * - `onFileChangeCompleted` -> finalises a single file row in tool mode; the fallback path still
  *   finalises through `onSuccess`.
  * - `onSuccess` -> the whole reply, prose and file rows in the order the agent produced them.
@@ -74,6 +75,29 @@ class AIRequestHandler(
                 // behind or keep the composer disabled. Rows still in flight count as failed.
                 messages.failPendingBlocks(interruptedText)
                 messages.finishRequest()
+            }
+        }
+    }
+
+    /**
+     * Runs the manual compression as its own job, so the stop button cancels it and the transcript
+     * shows the same progress line a request would.
+     */
+    fun compressNow() {
+        executionJob?.cancel()
+
+        executionJob = lifecycleScope.launch {
+            messages.beginStandaloneWork()
+            try {
+                messages.setStatus(AIAgentManager.COMPRESSING_STATUS)
+                aiAgent.compressContextNow()?.let { summary -> messages.addContextSummary(summary) }
+            } catch (e: CancellationException) {
+                // A user interrupt: nothing was folded, so nothing is reported.
+            } catch (e: Exception) {
+                messages.addError("❌ Error: ${e.message}")
+            } finally {
+                messages.clearStatus()
+                messages.endStandaloneWork()
             }
         }
     }
@@ -112,6 +136,10 @@ class AIRequestHandler(
 
             override fun onToolCallFinished(callId: String, result: String, isError: Boolean) {
                 messages.completeToolCall(callId, result, isError)
+            }
+
+            override fun onContextCompressed(summary: String) {
+                messages.addContextSummary(summary)
             }
 
             override fun onFileChangeCompleted(

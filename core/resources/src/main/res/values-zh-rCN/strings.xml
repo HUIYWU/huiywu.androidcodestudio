@@ -650,6 +650,16 @@
     <string name="chat_stop">停止</string>
     <string name="chat_empty_prompt">请输入请求内容</string>
    <string name="chat_cleared">对话已清空</string>
+    <string name="chat_context_usage_show">上下文用量</string>
+    <string name="chat_context_compressed_title">上下文已压缩</string>
+    <string name="chat_context_compressed_show">显示摘要</string>
+    <string name="chat_context_compressed_hide">隐藏摘要</string>
+    <string name="chat_context_panel_title">上下文</string>
+    <string name="chat_context_usage_format">%1$s / %2$s 字符</string>
+    <string name="chat_context_compress_now">立即压缩</string>
+    <string name="chat_context_nothing_to_compress">暂无可压缩内容</string>
+    <string name="chat_context_limit_label">压缩阈值</string>
+    <string name="chat_context_limit_summary">历史超过该上限后，较早的回合会被总结。</string>
    <string name="chat_project_load_failed">加载项目失败</string>
    <string name="chat_model_unknown">未设置模型</string>
    <!-- Model menu, opened from the chat composer chip. -->
@@ -963,6 +973,8 @@
   <string name="ai_preferences_auto_switch_provider_summary">发生错误时自动切换提供商</string>
   <string name="ai_preferences_code_completion_title">代码补全</string>
   <string name="ai_preferences_code_completion_summary">启用 AI 驱动的代码建议</string>
+   <string name="ai_preferences_context_limit_title">上下文压缩阈值</string>
+   <string name="ai_preferences_context_limit_summary">历史超过该字符数后，会在请求前被总结</string>
   <string name="ai_preferences_provider_label">提供商：</string>
   <string name="ai_preferences_model_label">模型：</string>
   <string name="ai_preferences_not_set">未设置</string>

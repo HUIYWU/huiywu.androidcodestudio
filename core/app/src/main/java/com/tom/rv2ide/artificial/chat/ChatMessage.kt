@@ -49,6 +49,16 @@ sealed interface ChatMessage {
     ) : ChatMessage
 
     /**
+     * A compression event: the older turns were folded into [text], and the model now receives that
+     * summary instead of them. Rendered as a collapsed row, so the user can read what it was told.
+     */
+    data class ContextSummary(
+        override val id: Long,
+        override val timestamp: Long,
+        val text: String
+    ) : ChatMessage
+
+    /**
      * Progress line ("Analyzing your request...", "Retry #2...").
      *
      * Updated in place (same [id]) rather than appended, so a single request produces at most one

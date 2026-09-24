@@ -433,12 +433,15 @@ class Anthropic : AIAgent {
     requestBody.put("max_tokens", 4096)
     requestBody.put("stream", true)
 
-    messages.filterIsInstance<AgentMessage.System>().firstOrNull()?.let { system ->
-      requestBody.put("system", system.content)
-    }
+    messages.filterIsInstance<AgentMessage.System>()
+        .joinToString("\n\n") { it.content }
+        .takeIf { it.isNotEmpty() }
+        ?.let { system -> requestBody.put("system", system) }
 
     requestBody.put("messages", anthropicMessages(messages))
-    requestBody.put("tools", anthropicTools(tools))
+    if (tools.isNotEmpty()) {
+      requestBody.put("tools", anthropicTools(tools))
+    }
 
     return requestBody
   }

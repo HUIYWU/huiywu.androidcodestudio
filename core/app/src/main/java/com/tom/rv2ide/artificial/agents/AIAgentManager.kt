@@ -77,6 +77,11 @@ class AIAgentManager(private val context: Context) {
     private val _currentModelName = MutableStateFlow("")
     private val _currentProviderName = MutableStateFlow("")
 
+    private val _contextUsage = MutableStateFlow(ContextUsage(0, 0))
+
+    /** History size against the compression limit, for the composer's usage indicator. */
+    val contextUsage: StateFlow<ContextUsage> = _contextUsage.asStateFlow()
+
     /**
      * Provider/model currently in effect, for display.
      *
@@ -160,6 +165,8 @@ class AIAgentManager(private val context: Context) {
             ""
         }
 
+        refreshContextUsage()
+
         return initialized
     }
 
@@ -198,6 +205,7 @@ class AIAgentManager(private val context: Context) {
         // the cleared history.
         partialResponse.setLength(0)
         currentAgent?.clearConversation()
+        refreshContextUsage()
     }
 
     suspend fun executeRequest(userRequest: String, activeFile: String?, callback: AIAgentCallback) {
@@ -215,10 +223,15 @@ class AIAgentManager(private val context: Context) {
         var providerSwitched = false
 
         currentAgent?.resetAttemptCount()
-        callback.onProcessing("Analyzing your request...")
 
         partialResponse.setLength(0)
         turnRecorded = false
+
+        // Before the request, not after: the provider is about to be handed the messages, and an
+        // interrupt while the summary is produced then cancels the whole request.
+        maybeCompressContext(callback)
+
+        callback.onProcessing("Analyzing your request...")
 
         currentProjectRoot?.let { root ->
             val projectTree = ProjectData().showProjectTree(root)
@@ -410,6 +423,65 @@ class AIAgentManager(private val context: Context) {
         if (turnRecorded || partialResponse.isEmpty()) return
         currentAgent?.history?.recordTurn(userRequest, partialResponse.toString(), activeFile)
         turnRecorded = true
+        refreshContextUsage()
+    }
+
+    /**
+     * Folds the older turns into a summary once the history has outgrown its limit.
+     *
+     * A failure is silent: the request then runs with the full history, exactly as it did before
+     * compression existed, and a provider problem is reported by the request itself.
+     */
+    private suspend fun maybeCompressContext(callback: AIAgentCallback) {
+        val agent = currentAgent ?: return
+        val plan = agent.history.compressionPlan(Agents(context).getContextCharLimit()) ?: return
+
+        callback.onProcessing(COMPRESSING_STATUS)
+        val summary = agent.summarize(plan.text)
+        // A cancelled job must not read as a failed summary: the interrupt has to reach the request,
+        // and nothing may be folded into a history the user just stopped.
+        currentCoroutineContext().ensureActive()
+        val folded = summary.getOrNull()?.trim().orEmpty()
+        if (folded.isEmpty()) return
+
+        agent.history.applyCompression(folded, plan.foldedTurns)
+        refreshContextUsage()
+        callback.onContextCompressed(folded)
+    }
+
+    /**
+     * Compresses the history on the user's request, whatever its size.
+     *
+     * Returns the summary that was stored, or null when there was nothing to fold or the summary
+     * could not be produced. Nothing is reported to the transcript from here: the caller drives the
+     * UI for it, unlike the automatic path.
+     */
+    suspend fun compressContextNow(): String? {
+        val agent = currentAgent ?: return null
+        val plan = agent.history.compressionPlan(
+            limitChars = Agents(context).getContextCharLimit(),
+            force = true
+        ) ?: return null
+
+        val summary = agent.summarize(plan.text)
+        currentCoroutineContext().ensureActive()
+        val folded = summary.getOrNull()?.trim().orEmpty()
+        if (folded.isEmpty()) return null
+
+        agent.history.applyCompression(folded, plan.foldedTurns)
+        refreshContextUsage()
+        return folded
+    }
+
+    /** Whether the history holds turns old enough to be folded by the manual trigger. */
+    fun canCompressContext(): Boolean = (currentAgent?.history?.foldableTurns() ?: 0) > 0
+
+    /** Republished after every history change; the settings also call it when the limit is edited. */
+    fun refreshContextUsage() {
+        _contextUsage.value = ContextUsage(
+            usedChars = currentAgent?.history?.usedChars() ?: 0,
+            limitChars = Agents(context).getContextCharLimit()
+        )
     }
 
     private enum class ToolLoopOutcome {
@@ -853,6 +925,7 @@ class AIAgentManager(private val context: Context) {
         // else by the provider itself; republish so the chip stays truthful.
         _currentModelName.value = Agents(context).getAgent() ?: ""
         _currentProviderName.value = currentAgent?.providerName ?: _currentProviderName.value
+        refreshContextUsage()
     }
 
     fun getCurrentModelName(): String {
@@ -891,6 +964,12 @@ class AIAgentManager(private val context: Context) {
 
         /** The outcome of the call announced by [onToolCallStarted]; completes its pending row. */
         fun onToolCallFinished(callId: String, result: String, isError: Boolean) {}
+
+        /**
+         * The history was folded into [summary]; the model now receives the summary instead of the
+         * turns it replaced, and the transcript shows it as its own entry.
+         */
+        fun onContextCompressed(summary: String) {}
 
         /**
          * Tool mode's per-write finalisation: the row is completed as soon as the write finishes,
@@ -953,6 +1032,9 @@ class AIAgentManager(private val context: Context) {
         val isAvailable: Boolean
     )
 
+    /** History size against the compression limit, for the composer's usage indicator. */
+    data class ContextUsage(val usedChars: Int, val limitChars: Int)
+
     companion object {
         /** Provider used for the very first launch, before the user picks one. */
         private const val DEFAULT_PROVIDER_ID = "gemini"
@@ -964,6 +1046,9 @@ class AIAgentManager(private val context: Context) {
         private const val TOOL_TURN_ATTEMPTS = 3
 
         private const val TOOL_RETRY_DELAY_MS = 1000L
+
+        /** Progress line shown while the older turns are being folded into a summary. */
+        const val COMPRESSING_STATUS = "Compressing context..."
 
         /** Tools whose calls are rendered as file rows, with a diff, instead of tool rows. */
         private val FILE_ROW_TOOLS = setOf(WriteFileTool.NAME, EditFileTool.NAME, CreateFileTool.NAME)

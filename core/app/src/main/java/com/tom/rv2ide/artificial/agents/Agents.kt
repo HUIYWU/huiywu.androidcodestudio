@@ -128,6 +128,20 @@ class Agents(ctx: Context) {
     return sp.getString(PROVIDER_KEY, "gemini") ?: "gemini"
   }
 
+  /** History size, in characters, beyond which the older turns are summarized. */
+  fun getContextCharLimit(): Int =
+    sp.getInt(CONTEXT_CHAR_LIMIT_KEY, CONTEXT_CHAR_LIMIT_DEFAULT)
+      .coerceIn(CONTEXT_CHAR_LIMIT_MIN, CONTEXT_CHAR_LIMIT_MAX)
+
+  fun setContextCharLimit(limitChars: Int) {
+    sp.edit()
+      .putInt(
+        CONTEXT_CHAR_LIMIT_KEY,
+        limitChars.coerceIn(CONTEXT_CHAR_LIMIT_MIN, CONTEXT_CHAR_LIMIT_MAX)
+      )
+      .apply()
+  }
+
   /**
    * Whether [modelName] is currently offered by [providerId].
    *
@@ -158,5 +172,16 @@ class Agents(ctx: Context) {
       setModel(providerId, fallback)
     }
     return fallback
+  }
+
+  companion object {
+    /** Threshold the compression uses until the user picks another one. */
+    const val CONTEXT_CHAR_LIMIT_DEFAULT = 24_000
+
+    /** Bounds the settings slider and any stored value. */
+    const val CONTEXT_CHAR_LIMIT_MIN = 8_000
+    const val CONTEXT_CHAR_LIMIT_MAX = 64_000
+
+    private const val CONTEXT_CHAR_LIMIT_KEY = "ai_context_char_limit"
   }
 }

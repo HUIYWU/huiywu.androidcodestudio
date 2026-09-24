@@ -413,7 +413,9 @@ class Grok : AIAgent {
     val requestBody = JSONObject()
     requestBody.put("model", selectedModel)
     requestBody.put("messages", OpenAiCompat.messagesJson(messages))
-    requestBody.put("tools", OpenAiCompat.toolsJson(tools))
+    if (tools.isNotEmpty()) {
+      requestBody.put("tools", OpenAiCompat.toolsJson(tools))
+    }
     requestBody.put("temperature", 0.7)
     requestBody.put("max_tokens", 4096)
     requestBody.put("stream", true)

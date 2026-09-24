@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.ArrayAdapter
 import android.widget.ListPopupWindow
+import android.widget.PopupWindow
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -23,8 +24,12 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.progressindicator.CircularProgressIndicator
+import com.google.android.material.slider.Slider
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textview.MaterialTextView
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.editor.EditorHandlerActivity
 import com.tom.rv2ide.adapters.ChatMessageAdapter
@@ -40,6 +45,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.util.Locale
 
 /**
  * Chat page of the AI sidebar.
@@ -60,15 +66,24 @@ class ChatFragment : Fragment() {
 
         private const val PREFS_NAME = "ai_preferences"
         private const val KEY_COMPLETION_ENABLED = "code_completion_enabled"
+
+        /** Elevation of the context panel above the composer, and the gap left under it, in dp. */
+        private const val CONTEXT_PANEL_ELEVATION_DP = 4
+        private const val CONTEXT_PANEL_GAP_DP = 4
     }
 
     private lateinit var promptInput: TextInputEditText
     private lateinit var sendBtn: MaterialButton
     private lateinit var clearBtn: MaterialButton
     private lateinit var modelChip: Chip
+    private lateinit var composerContainer: View
+    private lateinit var contextIndicator: View
+    private lateinit var contextProgress: CircularProgressIndicator
+    private lateinit var contextPercent: MaterialTextView
 
     private var modelMenu: ListPopupWindow? = null
     private var modelMenuOpen = false
+    private var contextPanel: PopupWindow? = null
 
     private lateinit var messageList: RecyclerView
     private lateinit var emptyState: View
@@ -147,6 +162,10 @@ class ChatFragment : Fragment() {
         sendBtn = view.findViewById(R.id.sendBtn)
         clearBtn = view.findViewById(R.id.clearBtn)
         modelChip = view.findViewById(R.id.modelChip)
+        composerContainer = view.findViewById(R.id.composerContainer)
+        contextIndicator = view.findViewById(R.id.contextIndicator)
+        contextProgress = view.findViewById(R.id.contextProgress)
+        contextPercent = view.findViewById(R.id.contextPercent)
         messageList = view.findViewById(R.id.messageList)
         emptyState = view.findViewById(R.id.emptyState)
     }
@@ -280,12 +299,19 @@ class ChatFragment : Fragment() {
 
     private fun setupComposer() {
         modelChip.setOnClickListener { toggleModelMenu() }
+        contextIndicator.setOnClickListener { toggleContextPanel() }
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 aiAgent.currentModelName.collect { model ->
                     renderModelChip(model)
                 }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                aiAgent.contextUsage.collect { usage -> renderContextUsage(usage) }
             }
         }
     }
@@ -400,6 +426,120 @@ class ChatFragment : Fragment() {
 
     private fun renderModelChip(model: String) {
         modelChip.text = model.ifBlank { getString(R.string.chat_model_unknown) }
+    }
+
+    /**
+     * Draws the usage ring: how much of the compression limit the history currently holds.
+     *
+     * The ring carries the whole number only — the panel carries the sizes — and it turns to the
+     * error colour once the history is at or past the limit, the state that makes the next request
+     * compress before it runs.
+     */
+    private fun renderContextUsage(usage: AIAgentManager.ContextUsage) {
+        val ratio = if (usage.limitChars <= 0) 0f else usage.usedChars.toFloat() / usage.limitChars
+        val percent = (ratio * 100).toInt().coerceAtLeast(0)
+
+        contextProgress.setProgressCompat(percent.coerceAtMost(100), false)
+        contextPercent.text = percent.toString()
+        contextProgress.setIndicatorColor(
+            MaterialColors.getColor(
+                contextIndicator,
+                if (usage.usedChars > usage.limitChars) {
+                    com.google.android.material.R.attr.colorError
+                } else {
+                    com.google.android.material.R.attr.colorPrimary
+                }
+            )
+        )
+    }
+
+    /** "24K" for a round thousand, "12.3K" otherwise; the ring shows a percentage instead. */
+    private fun formatChars(chars: Int): String = when {
+        chars < 1000 -> chars.toString()
+        chars % 1000 == 0 -> "${chars / 1000}K"
+        else -> String.format(Locale.US, "%.1fK", chars / 1000f)
+    }
+
+    /**
+     * Opens the context panel above the composer, or closes it when it is already open.
+     *
+     * The panel hangs from the composer rather than from the indicator: the composer is the page's
+     * bottom edge, so the panel always opens upwards and never has to be flipped.
+     */
+    private fun toggleContextPanel() {
+        if (contextPanel != null) {
+            dismissContextPanel()
+            return
+        }
+
+        val width = composerContainer.width
+        if (width == 0) return
+
+        val panelView = layoutInflater.inflate(R.layout.layout_context_panel, null)
+        val popup = PopupWindow(panelView, width, ViewGroup.LayoutParams.WRAP_CONTENT, true).apply {
+            setBackgroundDrawable(
+                ContextCompat.getDrawable(requireContext(), R.drawable.bg_atc_dropdown_popup)
+            )
+            isOutsideTouchable = true
+            elevation = CONTEXT_PANEL_ELEVATION_DP * resources.displayMetrics.density
+            setOnDismissListener { contextPanel = null }
+        }
+
+        bindContextPanel(panelView)
+
+        // Measured before showing: the panel is placed entirely above the composer, and that offset
+        // needs its height, which a wrap_content popup only reports once it has been laid out.
+        panelView.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val gap = (CONTEXT_PANEL_GAP_DP * resources.displayMetrics.density).toInt()
+        popup.height = panelView.measuredHeight
+        popup.showAsDropDown(composerContainer, 0, -(panelView.measuredHeight + gap))
+        contextPanel = popup
+    }
+
+    private fun dismissContextPanel() {
+        val popup = contextPanel
+        contextPanel = null
+        popup?.dismiss()
+    }
+
+    /** Fills the panel: the current usage, the threshold slider, and the manual compression action. */
+    private fun bindContextPanel(panelView: View) {
+        val agents = Agents(requireContext())
+        val usageText: MaterialTextView = panelView.findViewById(R.id.contextPanelUsage)
+        val slider: Slider = panelView.findViewById(R.id.contextPanelSlider)
+        val compress: MaterialButton = panelView.findViewById(R.id.contextPanelCompress)
+        val hint: View = panelView.findViewById(R.id.contextPanelHint)
+
+        fun renderUsage() {
+            val usage = aiAgent.contextUsage.value
+            usageText.text = getString(
+                R.string.chat_context_usage_format,
+                formatChars(usage.usedChars),
+                formatChars(usage.limitChars)
+            )
+        }
+
+        renderUsage()
+
+        slider.value = agents.getContextCharLimit().toFloat()
+        slider.setLabelFormatter { value -> formatChars(value.toInt()) }
+        slider.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            agents.setContextCharLimit(value.toInt())
+            aiAgent.refreshContextUsage()
+            renderUsage()
+        }
+
+        val canCompress = aiAgent.canCompressContext()
+        compress.isEnabled = canCompress
+        hint.visibility = if (canCompress) View.GONE else View.VISIBLE
+        compress.setOnClickListener {
+            dismissContextPanel()
+            aiRequestHandler.compressNow()
+        }
     }
 
     private fun setupMessageList() {
@@ -726,6 +866,7 @@ class ChatFragment : Fragment() {
     override fun onDestroyView() {
         completionStateMonitorJob?.cancel()
         dismissModelMenu()
+        dismissContextPanel()
         imeAnimating = false
         // Guarded because setupManagers() is not guaranteed to have run: when onViewCreated() throws
         // before reaching it, the view is still destroyed and this callback still fires, and reading

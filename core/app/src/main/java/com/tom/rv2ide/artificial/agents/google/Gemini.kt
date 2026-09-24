@@ -316,14 +316,17 @@ class Gemini : AIAgent {
               )
 
           // Built per request rather than reusing the text model: the SDK fixes its tool set at
-          // construction time, and the tool set belongs to the request.
+          // construction time, and the tool set belongs to the request. No tools at all for the
+          // summarization round, which must not be offered the file tools.
           val requestModel = GenerativeModel(
               modelName = selectedModel,
               apiKey = key,
-              tools = listOf(Tool(functionDeclarations = geminiFunctionDeclarations(tools))),
+              tools = tools.takeIf { it.isNotEmpty() }
+                  ?.let { listOf(Tool(functionDeclarations = geminiFunctionDeclarations(it))) },
               systemInstruction = messages.filterIsInstance<AgentMessage.System>()
-                  .firstOrNull()
-                  ?.let { content { text(it.content) } }
+                  .joinToString("\n\n") { it.content }
+                  .takeIf { it.isNotEmpty() }
+                  ?.let { content { text(it) } }
           )
 
           val text = StringBuilder()

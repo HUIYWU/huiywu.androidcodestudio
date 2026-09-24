@@ -21,15 +21,37 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Wire helpers for the OpenAI-compatible chat format, shared by the providers that speak it:
- * DeepSeek and LocalLLM so far, OpenAI and Grok once they gain tool support.
+ * Wire helpers for the OpenAI-compatible chat format, shared by every provider that speaks it:
+ * DeepSeek, LocalLLM, OpenAI and Grok.
  */
 internal object OpenAiCompat {
 
-    fun messagesJson(messages: List<AgentMessage>): JSONArray =
-        JSONArray().apply {
-            messages.forEach { message -> put(messageJson(message)) }
+    /**
+     * The request's messages, with every system message merged into one.
+     *
+     * A request carries the tool prompt and, once the history has been compressed, a summary of the
+     * earlier turns — both as [AgentMessage.System]. Providers that accept a single system prompt
+     * drop the rest, so several system messages are defined here as their join, and every provider
+     * then sees the same one.
+     */
+    fun messagesJson(messages: List<AgentMessage>): JSONArray {
+        val system = messages.filterIsInstance<AgentMessage.System>()
+            .joinToString("\n\n") { it.content }
+
+        return JSONArray().apply {
+            var systemWritten = false
+            messages.forEach { message ->
+                if (message is AgentMessage.System) {
+                    if (!systemWritten) {
+                        systemWritten = true
+                        put(messageJson(AgentMessage.System(system)))
+                    }
+                } else {
+                    put(messageJson(message))
+                }
+            }
         }
+    }
 
     fun toolsJson(tools: List<AgentToolSpec>): JSONArray =
         JSONArray().apply {

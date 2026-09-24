@@ -92,6 +92,22 @@ interface AIAgent {
         Result.failure(ToolsNotSupportedException("$providerName does not support tool calling"))
     
     
+    /**
+     * Compresses [conversation] into a short summary; used when the history outgrows its limit.
+     *
+     * One round with no tools: the request body is built from the messages alone, so summarizing
+     * does not pull the history or the project structure back in. A provider that cannot call tools
+     * inherits the default, which fails, and the caller then skips the compression.
+     */
+    suspend fun summarize(conversation: String): Result<String> =
+        generateTurn(
+            messages = listOf(
+                AgentMessage.System(AgentHistory.COMPRESSION_PROMPT),
+                AgentMessage.User(conversation)
+            ),
+            tools = emptyList()
+        ) { }.map { it.text }
+
     fun recordModification(filePath: String, oldContent: String?, newContent: String, success: Boolean)
     fun undoLastModification(): Boolean
     fun getModificationHistory(): List<ModificationAttempt>

@@ -274,6 +274,28 @@ class ChatMessageStore {
     }
 
     /**
+     * Appends a compression event.
+     *
+     * Placed above the answer of the request that triggered it, so the transcript keeps the order
+     * the work happened in; outside a request — the manual trigger — it goes to the end.
+     */
+    fun addContextSummary(text: String) {
+        val message = ChatMessage.ContextSummary(nextId.getAndIncrement(), now(), text)
+        val assistantId = currentAssistantId
+        val index = if (assistantId == NO_ID) {
+            -1
+        } else {
+            _messages.value.indexOfFirst { it is ChatMessage.Assistant && it.id == assistantId }
+        }
+
+        _messages.value = if (index < 0) {
+            _messages.value + message
+        } else {
+            _messages.value.toMutableList().apply { add(index, message) }
+        }
+    }
+
+    /**
      * Finalises rows that were still in flight as failed.
      *
      * Called when a request ends for any reason; rows that completed keep their result, and rows
@@ -324,6 +346,20 @@ class ChatMessageStore {
     fun addError(text: String) {
         clearStatus()
         _messages.value = _messages.value + ChatMessage.Error(nextId.getAndIncrement(), now(), text)
+        _isProcessing.value = false
+    }
+
+    /**
+     * Marks the store busy for work that is not a request — the manual context compression.
+     *
+     * The composer reads the same flag, so the field locks and the send button becomes the interrupt
+     * control while the summary is produced, exactly as it does during a request.
+     */
+    fun beginStandaloneWork() {
+        _isProcessing.value = true
+    }
+
+    fun endStandaloneWork() {
         _isProcessing.value = false
     }
 
