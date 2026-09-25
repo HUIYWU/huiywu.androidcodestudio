@@ -327,16 +327,10 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
               flashbarView.getLocationOnScreen(viewLocation)
               android.util.Log.w(
                   "FlashbarTrace",
-                  "exit progress={} container=({}, {}) view=({}, {}) containerTY={} viewTY={} viewAlpha={} viewSY={}",
-                  progress,
-                  containerLocation[0],
-                  containerLocation[1],
-                  viewLocation[0],
-                  viewLocation[1],
-                  translationY,
-                  flashbarView.translationY,
-                  flashbarView.alpha,
-                  flashbarView.scaleY,
+                  "exit progress=$progress container=(${containerLocation[0]}, ${containerLocation[1]}) " +
+                      "view=(${viewLocation[0]}, ${viewLocation[1]}) containerTY=$translationY " +
+                      "viewTY=${flashbarView.translationY} viewAlpha=${flashbarView.alpha} " +
+                      "viewSY=${flashbarView.scaleY}",
               )
             }
             onBarDismissListener?.onDismissProgress(parentFlashbar, progress)
@@ -349,15 +343,10 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
             flashbarView.getLocationOnScreen(viewLocation)
             android.util.Log.w(
                 "FlashbarTrace",
-                "exit animation stopped container=({}, {}) view=({}, {}) containerTY={} viewTY={} viewAlpha={} viewSY={}",
-                containerLocation[0],
-                containerLocation[1],
-                viewLocation[0],
-                viewLocation[1],
-                translationY,
-                flashbarView.translationY,
-                flashbarView.alpha,
-                flashbarView.scaleY,
+                "exit animation stopped container=(${containerLocation[0]}, ${containerLocation[1]}) " +
+                    "view=(${viewLocation[0]}, ${viewLocation[1]}) containerTY=$translationY " +
+                    "viewTY=${flashbarView.translationY} viewAlpha=${flashbarView.alpha} " +
+                    "viewSY=${flashbarView.scaleY}",
             )
             isBarDismissing = false
             isBarShown = false

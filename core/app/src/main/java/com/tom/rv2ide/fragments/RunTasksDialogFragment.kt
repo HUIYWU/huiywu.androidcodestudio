@@ -36,6 +36,7 @@ import com.tom.rv2ide.R.string
 import com.tom.rv2ide.adapters.RunTasksListAdapter
 import com.tom.rv2ide.databinding.LayoutRunTaskBinding
 import com.tom.rv2ide.databinding.LayoutRunTaskDialogBinding
+import com.tom.rv2ide.flashbar.Flashbar
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.models.Checkable
 import com.tom.rv2ide.projects.GradleProject
@@ -63,7 +64,8 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
   private lateinit var binding: LayoutRunTaskDialogBinding
   private lateinit var run: LayoutRunTaskBinding
   private val viewModel: RunTasksViewModel by viewModels()
-  private var activeFlashbar: com.tom.rv2ide.flashbar.Flashbar? = null
+  private var activeFlashbar: Flashbar? = null
+  private var waitingForFlashbarExit = false
 
   companion object {
     private val log = LoggerFactory.getLogger(RunTasksDialogFragment::class.java)
@@ -131,19 +133,16 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
   override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
     val dialog = object : BottomSheetDialog(requireContext(), theme) {
       override fun cancel() {
-        val dialogWindow = window
-        val beforeAnimations = dialogWindow?.attributes?.windowAnimations
-        log.warn("run-tasks dialog cancel: windowAnimationsBefore={}", beforeAnimations)
-        if (dialogWindow != null) {
-          dialogWindow.attributes = dialogWindow.attributes.apply { windowAnimations = 0 }
+        val flashbar = activeFlashbar
+        if (flashbar != null && (flashbar.isShown() || flashbar.isShowing())) {
+          if (!waitingForFlashbarExit) {
+            waitingForFlashbarExit = true
+            logDialogGeometry(this, "cancel-deferred")
+            log.warn("run-tasks dialog cancel deferred until flashbar exit")
+            flashbar.dismiss()
+          }
+          return
         }
-        log.warn(
-            "run-tasks dialog cancel: windowAnimationsAfter={}",
-            dialogWindow?.attributes?.windowAnimations,
-        )
-        logDialogGeometry(this, "cancel-before-flashbar")
-        activeFlashbar?.dismiss()
-        activeFlashbar = null
         super.cancel()
       }
     }
@@ -233,6 +232,23 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
                   .parentView(dialogDecor)
                   .infoIcon()
                   .message(getString(string.msg_err_select_tasks))
+                  .barDismissListener(
+                      object : Flashbar.OnBarDismissListener {
+                        override fun onDismissing(bar: Flashbar, isSwiped: Boolean) {}
+
+                        override fun onDismissProgress(bar: Flashbar, progress: Float) {}
+
+                        override fun onDismissed(bar: Flashbar, event: Flashbar.DismissEvent) {
+                          if (!waitingForFlashbarExit) {
+                            return
+                          }
+                          waitingForFlashbarExit = false
+                          activeFlashbar = null
+                          log.warn("run-tasks flashbar exit finished, closing dialog")
+                          dialog?.cancel()
+                        }
+                      }
+                  )
                   .showOnUiThread()
         }
         return@setOnClickListener
