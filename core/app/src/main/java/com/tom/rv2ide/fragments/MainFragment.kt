@@ -44,6 +44,7 @@ import com.tom.rv2ide.app.BaseIDEActivity
 import com.tom.rv2ide.common.databinding.LayoutDialogProgressBinding
 import com.tom.rv2ide.databinding.BottomsheetGitCloneBinding
 import com.tom.rv2ide.databinding.FragmentMainBinding
+import com.tom.rv2ide.flashbar.Flashbar
 import com.tom.rv2ide.models.MainScreenAction
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.tasks.runOnUiThread
@@ -81,6 +82,8 @@ class MainFragment : BaseFragment() {
 
   private val viewModel by viewModels<MainViewModel>(ownerProducer = { requireActivity() })
   private var binding: FragmentMainBinding? = null
+  private var activeProjectFlashbar: Flashbar? = null
+  private var waitingForProjectFlashbarExit = false
 
   companion object {
     private val log = LoggerFactory.getLogger(MainFragment::class.java)
@@ -153,7 +156,20 @@ class MainFragment : BaseFragment() {
   }
 
   private fun showProjectsBottomSheet() {
-    val bottomSheet = BottomSheetDialog(requireContext())
+    val bottomSheet =
+        object : BottomSheetDialog(requireContext()) {
+          override fun cancel() {
+            val flashbar = activeProjectFlashbar
+            if (flashbar != null && (flashbar.isShown() || flashbar.isShowing())) {
+              if (!waitingForProjectFlashbarExit) {
+                waitingForProjectFlashbarExit = true
+                flashbar.dismiss()
+              }
+              return
+            }
+            super.cancel()
+          }
+        }
     val sheetView = layoutInflater.inflate(R.layout.bottomsheet_project_list, null)
 
     val recyclerView = sheetView.findViewById<RecyclerView>(R.id.projectsRecyclerView)
@@ -329,12 +345,30 @@ class MainFragment : BaseFragment() {
             .flashbarBuilder()
             .parentView(dialogDecor)
             .message(message)
+            .barDismissListener(
+                object : Flashbar.OnBarDismissListener {
+                  override fun onDismissing(bar: Flashbar, isSwiped: Boolean) {}
+
+                  override fun onDismissProgress(bar: Flashbar, progress: Float) {}
+
+                  override fun onDismissed(bar: Flashbar, event: Flashbar.DismissEvent) {
+                    if (bar === activeProjectFlashbar) {
+                      activeProjectFlashbar = null
+                    }
+                    if (!waitingForProjectFlashbarExit) {
+                      return
+                    }
+                    waitingForProjectFlashbarExit = false
+                    bottomSheet.cancel()
+                  }
+                }
+            )
     if (success) {
       builder.successIcon()
     } else {
       builder.errorIcon()
     }
-    builder.showOnUiThread()
+    activeProjectFlashbar = builder.showOnUiThread()
   }
 
   private fun showRenameDialog(
