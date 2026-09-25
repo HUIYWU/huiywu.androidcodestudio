@@ -66,7 +66,6 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
   private var showOverlay: Boolean = false
   private var overlayBlockable: Boolean = false
   private var ignoreTopInsets = false
-  private var lastDismissLogBucket = -1
 
   init {
     ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
@@ -117,7 +116,6 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
   }
 
   override fun onDismiss(view: View) {
-    android.util.Log.w("FlashbarTrace", "container animation dismissed")
     removeCallbacks(dismissRunnable)
 
     (parent as? ViewGroup)?.removeView(this@FlashbarContainerView)
@@ -192,7 +190,6 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
       enterAnim.start(
           object : FlashAnim.InternalAnimListener {
             override fun onStart() {
-              android.util.Log.w("FlashbarTrace", "enter animation started")
               isBarShowing = true
               onBarShowListener?.onShowing(parentFlashbar)
             }
@@ -292,7 +289,6 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
   }
 
   private fun dismissInternal(event: DismissEvent) {
-    android.util.Log.w("FlashbarTrace", "dismiss requested: $event, showing=$isBarShowing, shown=$isBarShown")
     if (isBarShowing) {
       // Flashbar is currently being shown
       // but a dismissal has been requested
@@ -311,43 +307,15 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
     exitAnim.start(
         object : FlashAnim.InternalAnimListener {
           override fun onStart() {
-            lastDismissLogBucket = -1
-            android.util.Log.w("FlashbarTrace", "exit animation started")
             isBarDismissing = true
             onBarDismissListener?.onDismissing(parentFlashbar, false)
           }
 
           override fun onUpdate(progress: Float) {
-            val bucket = (progress * 4f).toInt().coerceAtMost(4)
-            if (bucket != lastDismissLogBucket) {
-              lastDismissLogBucket = bucket
-              val containerLocation = IntArray(2)
-              val viewLocation = IntArray(2)
-              getLocationOnScreen(containerLocation)
-              flashbarView.getLocationOnScreen(viewLocation)
-              android.util.Log.w(
-                  "FlashbarTrace",
-                  "exit progress=$progress container=(${containerLocation[0]}, ${containerLocation[1]}) " +
-                      "view=(${viewLocation[0]}, ${viewLocation[1]}) containerTY=$translationY " +
-                      "viewTY=${flashbarView.translationY} viewAlpha=${flashbarView.alpha} " +
-                      "viewSY=${flashbarView.scaleY}",
-              )
-            }
             onBarDismissListener?.onDismissProgress(parentFlashbar, progress)
           }
 
           override fun onStop() {
-            val containerLocation = IntArray(2)
-            val viewLocation = IntArray(2)
-            getLocationOnScreen(containerLocation)
-            flashbarView.getLocationOnScreen(viewLocation)
-            android.util.Log.w(
-                "FlashbarTrace",
-                "exit animation stopped container=(${containerLocation[0]}, ${containerLocation[1]}) " +
-                    "view=(${viewLocation[0]}, ${viewLocation[1]}) containerTY=$translationY " +
-                    "viewTY=${flashbarView.translationY} viewAlpha=${flashbarView.alpha} " +
-                    "viewSY=${flashbarView.scaleY}",
-            )
             isBarDismissing = false
             isBarShown = false
 

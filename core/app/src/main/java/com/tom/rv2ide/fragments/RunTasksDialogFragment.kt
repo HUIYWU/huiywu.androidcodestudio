@@ -27,7 +27,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.viewModels
 import androidx.transition.TransitionManager
-import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.blankj.utilcode.util.ThreadUtils
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -64,7 +63,16 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
   private lateinit var binding: LayoutRunTaskDialogBinding
   private lateinit var run: LayoutRunTaskBinding
   private val viewModel: RunTasksViewModel by viewModels()
+
+  /** The flashbar currently shown by this dialog, if any. */
   private var activeFlashbar: Flashbar? = null
+
+  /**
+   * Whether the dialog is waiting for [activeFlashbar] to finish its exit animation before closing.
+   *
+   * The dialog must not close while the flashbar is visible, otherwise the dialog window exit
+   * animation would drag the flashbar down together with the sheet.
+   */
   private var waitingForFlashbarExit = false
 
   companion object {
@@ -81,64 +89,16 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
     private const val SEARCH_DELAY = 500L
   }
 
-  private fun logDialogGeometry(dialog: Dialog, stage: String) {
-    val decor = dialog.window?.decorView ?: return
-    val decorLocation = IntArray(2)
-    decor.getLocationOnScreen(decorLocation)
-    log.warn(
-        "run-tasks geometry {} decor=({}, {}) tY={} sY={} alpha={} windowAnimations={}",
-        stage,
-        decorLocation[0],
-        decorLocation[1],
-        decor.translationY,
-        decor.scaleY,
-        decor.alpha,
-        dialog.window?.attributes?.windowAnimations,
-    )
-
-    val bottomSheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
-    if (bottomSheet != null) {
-      val bottomSheetLocation = IntArray(2)
-      bottomSheet.getLocationOnScreen(bottomSheetLocation)
-      log.warn(
-          "run-tasks geometry {} bottomSheet=({}, {}) tY={} sY={} alpha={}",
-          stage,
-          bottomSheetLocation[0],
-          bottomSheetLocation[1],
-          bottomSheet.translationY,
-          bottomSheet.scaleY,
-          bottomSheet.alpha,
-      )
-    }
-
-    val decorGroup = decor as? ViewGroup ?: return
-    for (index in 0 until decorGroup.childCount) {
-      val child = decorGroup.getChildAt(index)
-      val childLocation = IntArray(2)
-      child.getLocationOnScreen(childLocation)
-      log.warn(
-          "run-tasks geometry {} child={} class={} pos=({}, {}) tY={} sY={} alpha={}",
-          stage,
-          index,
-          child.javaClass.simpleName,
-          childLocation[0],
-          childLocation[1],
-          child.translationY,
-          child.scaleY,
-          child.alpha,
-      )
-    }
-  }
-
   override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
     val dialog = object : BottomSheetDialog(requireContext(), theme) {
       override fun cancel() {
         val flashbar = activeFlashbar
         if (flashbar != null && (flashbar.isShown() || flashbar.isShowing())) {
+          // The dialog must not close while the flashbar is visible, otherwise the dialog window
+          // exit animation would move the flashbar down together with the sheet. Let the flashbar
+          // exit first and resume closing from its dismiss listener.
           if (!waitingForFlashbarExit) {
             waitingForFlashbarExit = true
-            logDialogGeometry(this, "cancel-deferred")
-            log.warn("run-tasks dialog cancel deferred until flashbar exit")
             flashbar.dismiss()
           }
           return
@@ -146,33 +106,10 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
         super.cancel()
       }
     }
-    log.warn("run-tasks dialog created")
     dialog.behavior.apply {
       peekHeight = (getWindowHeight() * 0.7).toInt()
       isFitToContents = false
       expandedOffset = 0
-      addBottomSheetCallback(
-          object : BottomSheetBehavior.BottomSheetCallback() {
-            override fun onStateChanged(bottomSheet: View, newState: Int) {
-              log.warn("run-tasks bottom sheet state changed: {}", newState)
-              if (newState == BottomSheetBehavior.STATE_HIDDEN) {
-                log.warn("run-tasks bottom sheet hidden")
-              }
-            }
-
-            override fun onSlide(bottomSheet: View, slideOffset: Float) {
-              if (slideOffset < 0f) {
-                log.warn("run-tasks bottom sheet slide: {}", slideOffset)
-              }
-            }
-          }
-      )
-    }
-    dialog.setOnCancelListener {
-      log.warn("run-tasks dialog cancel listener")
-    }
-    dialog.setOnDismissListener {
-      log.warn("run-tasks dialog dismiss listener")
     }
     dialog.setOnShowListener {
       val bottomSheet =
@@ -226,6 +163,8 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
       if (viewModel.selected.isEmpty()) {
         val dialogDecor = dialog?.window?.decorView as? ViewGroup
         if (dialogDecor != null) {
+          // The flashbar is hosted by the dialog window so that it is drawn above the dim and
+          // above the bottom sheet.
           activeFlashbar =
               requireActivity()
                   .flashbarBuilder()
@@ -242,9 +181,10 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
                           if (!waitingForFlashbarExit) {
                             return
                           }
+
+                          // The flashbar has fully exited, so the dialog can close now.
                           waitingForFlashbarExit = false
                           activeFlashbar = null
-                          log.warn("run-tasks flashbar exit finished, closing dialog")
                           dialog?.cancel()
                         }
                       }
