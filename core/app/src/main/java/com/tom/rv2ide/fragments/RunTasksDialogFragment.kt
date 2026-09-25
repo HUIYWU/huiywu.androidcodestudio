@@ -64,7 +64,6 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
   private lateinit var run: LayoutRunTaskBinding
   private val viewModel: RunTasksViewModel by viewModels()
   private var activeFlashbar: com.tom.rv2ide.flashbar.Flashbar? = null
-  private var flashbarAnchorTop = 0
 
   companion object {
     private val log = LoggerFactory.getLogger(RunTasksDialogFragment::class.java)
@@ -82,6 +81,7 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
 
   override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
     val dialog = BottomSheetDialog(requireContext(), theme)
+    log.warn("run-tasks dialog created")
     dialog.behavior.apply {
       peekHeight = (getWindowHeight() * 0.7).toInt()
       isFitToContents = false
@@ -89,22 +89,26 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
       addBottomSheetCallback(
           object : BottomSheetBehavior.BottomSheetCallback() {
             override fun onStateChanged(bottomSheet: View, newState: Int) {
+              log.warn("run-tasks bottom sheet state changed: {}", newState)
               if (newState == BottomSheetBehavior.STATE_HIDDEN) {
+                activeFlashbar?.dismiss()
                 activeFlashbar = null
               }
             }
 
             override fun onSlide(bottomSheet: View, slideOffset: Float) {
-              val flashbar = activeFlashbar ?: return
-              val dialogDecor = dialog?.window?.decorView ?: return
-              val currentTop = IntArray(2)
-              dialogDecor.getLocationOnScreen(currentTop)
-              val downwardOffset =
-                  (currentTop[1] - flashbarAnchorTop).coerceAtLeast(0).toFloat()
-              flashbar.setWindowCompensation(-downwardOffset)
+              if (slideOffset < 0f) {
+                log.warn("run-tasks bottom sheet slide: {}", slideOffset)
+              }
             }
           }
       )
+    }
+    dialog.setOnCancelListener {
+      log.warn("run-tasks dialog cancel listener")
+    }
+    dialog.setOnDismissListener {
+      log.warn("run-tasks dialog dismiss listener")
     }
     dialog.setOnShowListener {
       val bottomSheet =
@@ -158,9 +162,6 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
       if (viewModel.selected.isEmpty()) {
         val dialogDecor = dialog?.window?.decorView as? ViewGroup
         if (dialogDecor != null) {
-          val location = IntArray(2)
-          dialogDecor.getLocationOnScreen(location)
-          flashbarAnchorTop = location[1]
           activeFlashbar =
               requireActivity()
                   .flashbarBuilder()
