@@ -80,7 +80,15 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
   }
 
   override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-    val dialog = BottomSheetDialog(requireContext(), theme)
+    val dialog = object : BottomSheetDialog(requireContext(), theme) {
+      override fun cancel() {
+        log.warn("run-tasks dialog cancel: windowAnimations={}", window?.attributes?.windowAnimations)
+        window?.setWindowAnimations(0)
+        activeFlashbar?.dismiss()
+        activeFlashbar = null
+        super.cancel()
+      }
+    }
     log.warn("run-tasks dialog created")
     dialog.behavior.apply {
       peekHeight = (getWindowHeight() * 0.7).toInt()
@@ -91,8 +99,7 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
             override fun onStateChanged(bottomSheet: View, newState: Int) {
               log.warn("run-tasks bottom sheet state changed: {}", newState)
               if (newState == BottomSheetBehavior.STATE_HIDDEN) {
-                activeFlashbar?.dismiss()
-                activeFlashbar = null
+                log.warn("run-tasks bottom sheet hidden")
               }
             }
 
