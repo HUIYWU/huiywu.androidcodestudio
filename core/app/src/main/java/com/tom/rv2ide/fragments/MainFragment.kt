@@ -51,8 +51,12 @@ import com.tom.rv2ide.templates.preferences.WizardPreferences
 import com.tom.rv2ide.utils.DialogUtils
 import com.tom.rv2ide.utils.Environment
 import com.tom.rv2ide.utils.GeneralFileUtils
+import com.tom.rv2ide.utils.errorIcon
 import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.flashSuccess
+import com.tom.rv2ide.utils.flashbarBuilder
+import com.tom.rv2ide.utils.showOnUiThread
+import com.tom.rv2ide.utils.successIcon
 import com.tom.rv2ide.viewmodel.MainViewModel
 import java.io.File
 import java.text.SimpleDateFormat
@@ -205,8 +209,8 @@ class MainFragment : BaseFragment() {
                 bottomSheet.dismiss()
                 openProject(selectedDir)
               },
-              onProjectLongClick = { project ->
-                showProjectOptionsDialog(project) {
+               onProjectLongClick = { project ->
+                 showProjectOptionsDialog(project, bottomSheet) {
                   val updatedProjectDirProjects =
                       GeneralFileUtils.listDirsInDirectory(Environment.PROJECTS_DIR).filter {
                         isValidAndroidProject(it)
@@ -283,7 +287,11 @@ class MainFragment : BaseFragment() {
     bottomSheet.show()
   }
 
-  private fun showProjectOptionsDialog(project: File, onActionComplete: () -> Unit) {
+  private fun showProjectOptionsDialog(
+      project: File,
+      bottomSheet: BottomSheetDialog,
+      onActionComplete: () -> Unit,
+  ) {
     val options =
         arrayOf(
             getString(string.project_option_backup),
@@ -299,10 +307,10 @@ class MainFragment : BaseFragment() {
           backupProject(project, onActionComplete)
         }
         1 -> {
-          showDeleteProjectConfirmation(project, onActionComplete)
+          showDeleteProjectConfirmation(project, bottomSheet, onActionComplete)
         }
         2 -> {
-          showRenameDialog(project, onActionComplete)
+          showRenameDialog(project, bottomSheet, onActionComplete)
         }
       }
       dialog.dismiss()
@@ -310,7 +318,30 @@ class MainFragment : BaseFragment() {
     builder.show()
   }
 
-  private fun showRenameDialog(project: File, onComplete: () -> Unit) {
+  private fun showProjectFlashbar(
+      bottomSheet: BottomSheetDialog,
+      message: Int,
+      success: Boolean,
+  ) {
+    val dialogDecor = bottomSheet.window?.decorView as? ViewGroup ?: return
+    val builder =
+        requireActivity()
+            .flashbarBuilder()
+            .parentView(dialogDecor)
+            .message(message)
+    if (success) {
+      builder.successIcon()
+    } else {
+      builder.errorIcon()
+    }
+    builder.showOnUiThread()
+  }
+
+  private fun showRenameDialog(
+      project: File,
+      bottomSheet: BottomSheetDialog,
+      onComplete: () -> Unit,
+  ) {
     val builder = DialogUtils.newMaterialDialogBuilder(requireContext())
     builder.setTitle(getString(string.rename_project))
 
@@ -335,7 +366,7 @@ class MainFragment : BaseFragment() {
 
       when {
         newName.isNullOrBlank() -> {
-          flashError(string.error)
+          showProjectFlashbar(bottomSheet, string.error, success = false)
         }
         newName == project.name -> {
           dialog.dismiss()
@@ -358,8 +389,13 @@ class MainFragment : BaseFragment() {
                 .setPositiveButton(getString(string.action_ok), null)
                 .show()
           } else {
-            renameProject(project, newProjectDir, onComplete)
+            input.clearFocus()
+            val imm =
+                requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                    as android.view.inputmethod.InputMethodManager
+            imm.hideSoftInputFromWindow(input.windowToken, 0)
             dialog.dismiss()
+            renameProject(project, newProjectDir, bottomSheet, onComplete)
           }
         }
       }
@@ -367,7 +403,7 @@ class MainFragment : BaseFragment() {
 
     builder.setNegativeButton(getString(string.cancel)) { dialog, _ -> dialog.dismiss() }
 
-    val alertDialog = builder.show()
+    builder.show()
 
     input.requestFocus()
     val imm =
@@ -379,7 +415,12 @@ class MainFragment : BaseFragment() {
     )
   }
 
-  private fun renameProject(oldProject: File, newProject: File, onComplete: () -> Unit) {
+  private fun renameProject(
+      oldProject: File,
+      newProject: File,
+      bottomSheet: BottomSheetDialog,
+      onComplete: () -> Unit,
+  ) {
     val coroutineScope = (activity as? BaseIDEActivity?)?.activityScope ?: viewLifecycleScope
 
     coroutineScope.launch(Dispatchers.IO) {
@@ -405,25 +446,31 @@ class MainFragment : BaseFragment() {
               WizardPreferences.addRecentProject(requireContext(), newProject.absolutePath)
             }
 
-            flashSuccess(string.project_renamed_success)
+            showProjectFlashbar(bottomSheet, string.project_renamed_success, success = true)
             onComplete()
           } else {
-            flashError(string.project_rename_failed)
+            showProjectFlashbar(bottomSheet, string.project_rename_failed, success = false)
           }
         }
       } catch (e: Exception) {
         log.error("Error renaming project: ${oldProject.absolutePath}", e)
-        withContext(Dispatchers.Main) { flashError(string.project_rename_failed) }
+        withContext(Dispatchers.Main) {
+          showProjectFlashbar(bottomSheet, string.project_rename_failed, success = false)
+        }
       }
     }
   }
 
-  private fun showDeleteProjectConfirmation(project: File, onDeleted: () -> Unit) {
+  private fun showDeleteProjectConfirmation(
+      project: File,
+      bottomSheet: BottomSheetDialog,
+      onDeleted: () -> Unit,
+  ) {
     val builder = DialogUtils.newMaterialDialogBuilder(requireContext())
     builder.setTitle(getString(string.delete_project_title))
     builder.setMessage(getString(string.delete_project_message, project.name))
     builder.setPositiveButton(getString(string.delete)) { dialog, _ ->
-      deleteProject(project, onDeleted)
+      deleteProject(project, bottomSheet, onDeleted)
       dialog.dismiss()
     }
     builder.setNegativeButton(getString(string.cancel)) { dialog, _ -> dialog.dismiss() }
@@ -531,7 +578,11 @@ class MainFragment : BaseFragment() {
     return buildGradle.exists() || buildGradleKts.exists()
   }
 
-  private fun deleteProject(project: File, onDeleted: () -> Unit) {
+  private fun deleteProject(
+      project: File,
+      bottomSheet: BottomSheetDialog,
+      onDeleted: () -> Unit,
+  ) {
     val coroutineScope = (activity as? BaseIDEActivity?)?.activityScope ?: viewLifecycleScope
 
     val builder = DialogUtils.newMaterialDialogBuilder(requireContext())
@@ -554,17 +605,17 @@ class MainFragment : BaseFragment() {
         withContext(Dispatchers.Main) {
           dialog.dismiss()
           if (deleted) {
-            flashSuccess(string.project_deleted_success)
+            showProjectFlashbar(bottomSheet, string.project_deleted_success, success = true)
             onDeleted()
           } else {
-            flashError(string.project_delete_failed)
+            showProjectFlashbar(bottomSheet, string.project_delete_failed, success = false)
           }
         }
       } catch (e: Exception) {
         log.error("Error deleting project: ${project.absolutePath}", e)
         withContext(Dispatchers.Main) {
           dialog.dismiss()
-          flashError(string.project_delete_failed)
+          showProjectFlashbar(bottomSheet, string.project_delete_failed, success = false)
         }
       }
     }
