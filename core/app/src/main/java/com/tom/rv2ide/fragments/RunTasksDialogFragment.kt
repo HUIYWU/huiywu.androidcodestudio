@@ -99,7 +99,8 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
               val dialogDecor = dialog?.window?.decorView ?: return
               val currentTop = IntArray(2)
               dialogDecor.getLocationOnScreen(currentTop)
-              val downwardOffset = (currentTop[1] - flashbarAnchorTop).coerceAtLeast(0)
+              val downwardOffset =
+                  (currentTop[1] - flashbarAnchorTop).coerceAtLeast(0).toFloat()
               flashbar.setWindowCompensation(-downwardOffset)
             }
           }
