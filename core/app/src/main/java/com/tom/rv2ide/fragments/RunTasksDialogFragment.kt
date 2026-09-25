@@ -27,6 +27,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.viewModels
 import androidx.transition.TransitionManager
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.blankj.utilcode.util.ThreadUtils
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -62,6 +63,8 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
   private lateinit var binding: LayoutRunTaskDialogBinding
   private lateinit var run: LayoutRunTaskBinding
   private val viewModel: RunTasksViewModel by viewModels()
+  private var activeFlashbar: com.tom.rv2ide.flashbar.Flashbar? = null
+  private var flashbarAnchorTop = 0
 
   companion object {
     private val log = LoggerFactory.getLogger(RunTasksDialogFragment::class.java)
@@ -83,6 +86,24 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
       peekHeight = (getWindowHeight() * 0.7).toInt()
       isFitToContents = false
       expandedOffset = 0
+      addBottomSheetCallback(
+          object : BottomSheetBehavior.BottomSheetCallback() {
+            override fun onStateChanged(bottomSheet: View, newState: Int) {
+              if (newState == BottomSheetBehavior.STATE_HIDDEN) {
+                activeFlashbar = null
+              }
+            }
+
+            override fun onSlide(bottomSheet: View, slideOffset: Float) {
+              val flashbar = activeFlashbar ?: return
+              val dialogDecor = dialog?.window?.decorView ?: return
+              val currentTop = IntArray(2)
+              dialogDecor.getLocationOnScreen(currentTop)
+              val downwardOffset = (currentTop[1] - flashbarAnchorTop).coerceAtLeast(0)
+              flashbar.setWindowCompensation(-downwardOffset)
+            }
+          }
+      )
     }
     dialog.setOnShowListener {
       val bottomSheet =
@@ -136,12 +157,16 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
       if (viewModel.selected.isEmpty()) {
         val dialogDecor = dialog?.window?.decorView as? ViewGroup
         if (dialogDecor != null) {
-          requireActivity()
-              .flashbarBuilder()
-              .parentView(dialogDecor)
-              .infoIcon()
-              .message(getString(string.msg_err_select_tasks))
-              .showOnUiThread()
+          val location = IntArray(2)
+          dialogDecor.getLocationOnScreen(location)
+          flashbarAnchorTop = location[1]
+          activeFlashbar =
+              requireActivity()
+                  .flashbarBuilder()
+                  .parentView(dialogDecor)
+                  .infoIcon()
+                  .message(getString(string.msg_err_select_tasks))
+                  .showOnUiThread()
         }
         return@setOnClickListener
       }

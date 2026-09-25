@@ -60,6 +60,10 @@ class Flashbar private constructor(private var builder: Builder) {
     flashbarContainerView.dismiss()
   }
 
+  fun setWindowCompensation(translationY: Float) {
+    flashbarContainerView.translationY = translationY
+  }
+
   /**
    * Returns true/false depending on whether the flashbar is showing or not This represents the
    * partial appearance of the flashbar
