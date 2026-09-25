@@ -79,11 +79,69 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
     private const val SEARCH_DELAY = 500L
   }
 
+  private fun logDialogGeometry(dialog: Dialog, stage: String) {
+    val decor = dialog.window?.decorView ?: return
+    val decorLocation = IntArray(2)
+    decor.getLocationOnScreen(decorLocation)
+    log.warn(
+        "run-tasks geometry {} decor=({}, {}) tY={} sY={} alpha={} windowAnimations={}",
+        stage,
+        decorLocation[0],
+        decorLocation[1],
+        decor.translationY,
+        decor.scaleY,
+        decor.alpha,
+        dialog.window?.attributes?.windowAnimations,
+    )
+
+    val bottomSheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+    if (bottomSheet != null) {
+      val bottomSheetLocation = IntArray(2)
+      bottomSheet.getLocationOnScreen(bottomSheetLocation)
+      log.warn(
+          "run-tasks geometry {} bottomSheet=({}, {}) tY={} sY={} alpha={}",
+          stage,
+          bottomSheetLocation[0],
+          bottomSheetLocation[1],
+          bottomSheet.translationY,
+          bottomSheet.scaleY,
+          bottomSheet.alpha,
+      )
+    }
+
+    val decorGroup = decor as? ViewGroup ?: return
+    for (index in 0 until decorGroup.childCount) {
+      val child = decorGroup.getChildAt(index)
+      val childLocation = IntArray(2)
+      child.getLocationOnScreen(childLocation)
+      log.warn(
+          "run-tasks geometry {} child={} class={} pos=({}, {}) tY={} sY={} alpha={}",
+          stage,
+          index,
+          child.javaClass.simpleName,
+          childLocation[0],
+          childLocation[1],
+          child.translationY,
+          child.scaleY,
+          child.alpha,
+      )
+    }
+  }
+
   override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
     val dialog = object : BottomSheetDialog(requireContext(), theme) {
       override fun cancel() {
-        log.warn("run-tasks dialog cancel: windowAnimations={}", window?.attributes?.windowAnimations)
-        window?.setWindowAnimations(0)
+        val dialogWindow = window
+        val beforeAnimations = dialogWindow?.attributes?.windowAnimations
+        log.warn("run-tasks dialog cancel: windowAnimationsBefore={}", beforeAnimations)
+        if (dialogWindow != null) {
+          dialogWindow.attributes = dialogWindow.attributes.apply { windowAnimations = 0 }
+        }
+        log.warn(
+            "run-tasks dialog cancel: windowAnimationsAfter={}",
+            dialogWindow?.attributes?.windowAnimations,
+        )
+        logDialogGeometry(this, "cancel-before-flashbar")
         activeFlashbar?.dismiss()
         activeFlashbar = null
         super.cancel()

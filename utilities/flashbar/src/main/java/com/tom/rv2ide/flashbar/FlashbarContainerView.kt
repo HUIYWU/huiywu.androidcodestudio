@@ -66,6 +66,7 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
   private var showOverlay: Boolean = false
   private var overlayBlockable: Boolean = false
   private var ignoreTopInsets = false
+  private var lastDismissLogBucket = -1
 
   init {
     ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
@@ -310,16 +311,54 @@ internal class FlashbarContainerView(context: Context) : RelativeLayout(context)
     exitAnim.start(
         object : FlashAnim.InternalAnimListener {
           override fun onStart() {
+            lastDismissLogBucket = -1
             android.util.Log.w("FlashbarTrace", "exit animation started")
             isBarDismissing = true
             onBarDismissListener?.onDismissing(parentFlashbar, false)
           }
 
           override fun onUpdate(progress: Float) {
+            val bucket = (progress * 4f).toInt().coerceAtMost(4)
+            if (bucket != lastDismissLogBucket) {
+              lastDismissLogBucket = bucket
+              val containerLocation = IntArray(2)
+              val viewLocation = IntArray(2)
+              getLocationOnScreen(containerLocation)
+              flashbarView.getLocationOnScreen(viewLocation)
+              android.util.Log.w(
+                  "FlashbarTrace",
+                  "exit progress={} container=({}, {}) view=({}, {}) containerTY={} viewTY={} viewAlpha={} viewSY={}",
+                  progress,
+                  containerLocation[0],
+                  containerLocation[1],
+                  viewLocation[0],
+                  viewLocation[1],
+                  translationY,
+                  flashbarView.translationY,
+                  flashbarView.alpha,
+                  flashbarView.scaleY,
+              )
+            }
             onBarDismissListener?.onDismissProgress(parentFlashbar, progress)
           }
 
           override fun onStop() {
+            val containerLocation = IntArray(2)
+            val viewLocation = IntArray(2)
+            getLocationOnScreen(containerLocation)
+            flashbarView.getLocationOnScreen(viewLocation)
+            android.util.Log.w(
+                "FlashbarTrace",
+                "exit animation stopped container=({}, {}) view=({}, {}) containerTY={} viewTY={} viewAlpha={} viewSY={}",
+                containerLocation[0],
+                containerLocation[1],
+                viewLocation[0],
+                viewLocation[1],
+                translationY,
+                flashbarView.translationY,
+                flashbarView.alpha,
+                flashbarView.scaleY,
+            )
             isBarDismissing = false
             isBarShown = false
 
