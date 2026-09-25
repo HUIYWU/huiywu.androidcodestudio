@@ -34,6 +34,7 @@ import androidx.appcompat.widget.TooltipCompat
 import androidx.core.graphics.Insets
 import androidx.core.animation.doOnEnd
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
@@ -41,7 +42,6 @@ import androidx.core.view.updatePaddingRelative
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.transition.TransitionManager
-import com.blankj.utilcode.util.KeyboardUtils
 import com.blankj.utilcode.util.SizeUtils
 import com.blankj.utilcode.util.ThreadUtils.runOnUiThread
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -111,6 +111,12 @@ constructor(
   private var anchorOffset = 0
   private var currentSheetOffset = 0f
   private var isImeVisible = false
+  private var isAnyImeVisible = false
+  private var editorInputFocused = false
+  private var imeAnimationEditorFocused = false
+  private var imeAnimationEndVisible = false
+  private var imeAnimationStartY = 0
+  private var imeAnimationStartTranslationY = 0f
   private var quickInputContainerAnimator: ValueAnimator? = null
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
@@ -227,6 +233,70 @@ constructor(
     }
   }
 
+  private fun installImeAnimationCallback() {
+    ViewCompat.setWindowInsetsAnimationCallback(
+        this,
+        object : WindowInsetsAnimationCompat.Callback(
+            WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_STOP
+        ) {
+          override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
+              return
+            }
+            imeAnimationEditorFocused = editorInputFocused
+            imeAnimationEndVisible = isAnyImeVisible
+            val location = IntArray(2)
+            getLocationOnScreen(location)
+            imeAnimationStartY = location[1]
+          }
+
+          override fun onStart(
+              animation: WindowInsetsAnimationCompat,
+              bounds: WindowInsetsAnimationCompat.BoundsCompat,
+          ): WindowInsetsAnimationCompat.BoundsCompat {
+            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
+              return bounds
+            }
+            val location = IntArray(2)
+            getLocationOnScreen(location)
+            imeAnimationStartTranslationY = (imeAnimationStartY - location[1]).toFloat()
+            translationY = imeAnimationStartTranslationY
+            return bounds
+          }
+
+          override fun onProgress(
+              insets: WindowInsetsCompat,
+              runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+          ): WindowInsetsCompat {
+            imeAnimationEndVisible =
+                insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > 0
+            runningAnimations.firstOrNull {
+              (it.typeMask and WindowInsetsCompat.Type.ime()) != 0
+            }?.let { animation ->
+              translationY =
+                  if (imeAnimationEditorFocused) {
+                    imeAnimationStartTranslationY * (1f - animation.interpolatedFraction)
+                  } else {
+                    imeAnimationStartTranslationY
+                  }
+            }
+            return insets
+          }
+
+          override fun onEnd(animation: WindowInsetsAnimationCompat) {
+            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
+              return
+            }
+            translationY = if (imeAnimationEndVisible && !imeAnimationEditorFocused) {
+              imeAnimationStartTranslationY
+            } else {
+              0f
+            }
+          }
+        },
+    )
+  }
+
   init {
     if (context !is FragmentActivity) {
       throw IllegalArgumentException("EditorBottomSheet must be set up with a FragmentActivity")
@@ -295,10 +365,12 @@ constructor(
     initialize(context)
   }
 
-  /** Set whether the input method is visible. */
-  fun setImeVisible(isVisible: Boolean) {
-    isImeVisible = isVisible
-    behavior.isGestureInsetBottomIgnored = isVisible
+  /** Set the global and editor-specific input method state. */
+  fun setImeVisible(editorImeVisible: Boolean, imeVisible: Boolean, editorInputFocused: Boolean) {
+    isImeVisible = editorImeVisible
+    isAnyImeVisible = imeVisible
+    this.editorInputFocused = editorInputFocused
+    behavior.isGestureInsetBottomIgnored = imeVisible
   }
 
   fun setOffsetAnchor(view: View, excludedChild: View? = null) {
@@ -317,7 +389,7 @@ constructor(
 
             behavior.peekHeight = collapsedHeight.roundToInt()
             behavior.expandedOffset = anchorOffset
-            behavior.isGestureInsetBottomIgnored = isImeVisible
+            behavior.isGestureInsetBottomIgnored = isAnyImeVisible
 
             binding.root.updatePadding(bottom = anchorOffset + insetBottom)
             binding.headerContainer.apply {
@@ -326,6 +398,7 @@ constructor(
                 height = (collapsedHeight + insetBottom).roundToInt()
               }
             }
+            installImeAnimationCallback()
           }
         }
 
@@ -648,16 +721,10 @@ constructor(
     return fragment.javaClass.simpleName.contains("Terminal", ignoreCase = true)
   }
 
-  fun onSoftInputChanged() {
-    if (context !is Activity) {
-      log.error("Bottom sheet is not attached to an activity!")
-      return
-    }
-
+  fun onSoftInputChanged(editorImeVisible: Boolean) {
     binding.symbolInput.endItemAnimations()
 
-    val activity = context as Activity
-    isImeVisible = KeyboardUtils.isSoftInputVisible(activity)
+    isImeVisible = editorImeVisible
     if (!isImeVisible) {
       setQuickInputOverlayActive(false)
     }

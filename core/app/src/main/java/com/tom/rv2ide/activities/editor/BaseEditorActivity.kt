@@ -288,9 +288,10 @@ abstract class BaseEditorActivity :
           }
         }
       }
-
   private var isImeVisible = false
+  private var isEditorImeVisible = false
   private var contentCardRealHeight: Int? = null
+
   private val editorSurfaceContainerBackground by lazy { resolveAttr(R.attr.colorSurfaceDim) }
   private val editorLayoutCorners by lazy {
     resources.getDimensionPixelSize(R.dimen.editor_container_corners).toFloat()
@@ -653,20 +654,45 @@ abstract class BaseEditorActivity :
     this.diagnosticInfoBinding = this.content.diagnosticInfo
     return this.binding.root
   }
-
   override fun onApplyWindowInsets(insets: WindowInsetsCompat) {
     super.onApplyWindowInsets(insets)
-    val height = contentCardRealHeight ?: return
-    val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
+    if (contentCardRealHeight == null) {
+      return
+    }
+    updateImeState(insets, currentFocus)
+  }
 
-    _binding?.content?.bottomSheet?.setImeVisible(imeInsets.bottom > 0)
+  private fun updateImeState(insets: WindowInsetsCompat, focusedView: View?) {
+    val isImeVisible = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > 0
+    val editorInputFocused = isEditorInputFocused(focusedView)
+    val isEditorImeVisible = isImeVisible && editorInputFocused
 
-    val isImeVisible = imeInsets.bottom > 0
-    if (this.isImeVisible != isImeVisible) {
+    _binding?.content?.bottomSheet?.setImeVisible(
+        editorImeVisible = isEditorImeVisible,
+        imeVisible = isImeVisible,
+        editorInputFocused = editorInputFocused,
+    )
+
+    if (this.isImeVisible != isImeVisible || this.isEditorImeVisible != isEditorImeVisible) {
       this.isImeVisible = isImeVisible
-      onSoftInputChanged()
+      this.isEditorImeVisible = isEditorImeVisible
+      onSoftInputChanged(isEditorImeVisible)
     }
   }
+
+  /** Returns whether [focusedView] belongs to the active file editor, not another Activity surface. */
+  private fun isEditorInputFocused(focusedView: View?): Boolean {
+    val editor = provideCurrentEditor()?.editor ?: return false
+    var view = focusedView
+    while (view != null) {
+      if (view === editor) {
+        return true
+      }
+      view = view.parent as? View
+    }
+    return false
+  }
+
 
 override fun onApplySystemBarInsets(insets: Insets) {
     super.onApplySystemBarInsets(insets)
@@ -729,7 +755,15 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     setupContainers()
     setupDiagnosticInfo()
-    
+
+    binding.root.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
+      if (contentCardRealHeight == null) {
+        return@addOnGlobalFocusChangeListener
+      }
+      val rootInsets = binding.root.rootWindowInsets ?: return@addOnGlobalFocusChangeListener
+      updateImeState(WindowInsetsCompat.toWindowInsetsCompat(rootInsets), newFocus)
+    }
+
     ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
         val systemBars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
 
@@ -1584,13 +1618,13 @@ override fun onApplySystemBarInsets(insets: Insets) {
     handleSearchResultVisibility(true)
   }
 
-  private fun onSoftInputChanged() {
+  private fun onSoftInputChanged(editorImeVisible: Boolean) {
     if (!isDestroying) {
       invalidateOptionsMenu()
-      if (!isImeVisible) {
+      if (!editorImeVisible) {
         quickInputOverlayController?.hide(false)
       }
-      content.bottomSheet.onSoftInputChanged()
+      content.bottomSheet.onSoftInputChanged(editorImeVisible)
     }
   }
 
