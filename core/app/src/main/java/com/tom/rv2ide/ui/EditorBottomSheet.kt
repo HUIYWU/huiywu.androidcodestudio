@@ -34,6 +34,7 @@ import androidx.appcompat.widget.TooltipCompat
 import androidx.core.graphics.Insets
 import androidx.core.animation.doOnEnd
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
@@ -110,8 +111,8 @@ constructor(
   private var anchorOffset = 0
   private var currentSheetOffset = 0f
   private var isImeVisible = false
-  private var imeAnimating = false
-  private var lastImePadding = 0
+  private var imeAnimationHandlesBottomSheet = false
+  private var imeAnimationInstallPosted = false
   private var quickInputContainerAnimator: ValueAnimator? = null
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
@@ -223,37 +224,73 @@ constructor(
     }
 ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
       this.windowInsets = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
-      if (!imeAnimating) {
-        applyImeBottomPadding(insets)
-      }
+      binding.root.updatePadding(bottom = anchorOffset + insetBottom)
       insets
     }
   }
-
-  fun applyImeAnimationFrame(insets: WindowInsetsCompat) {
-    imeAnimating = true
-    applyImeBottomPadding(insets)
-  }
-
-  fun finishImeAnimation() {
-    imeAnimating = false
-    applyImeBottomPadding(null)
-  }
-
-  private fun applyImeBottomPadding(dispatched: WindowInsetsCompat? = null) {
-    val fromWindow = rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
-    val source = dispatched ?: fromWindow
-    val imeBottom = source?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0
-    val gestureBottom = source?.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())?.bottom
-        ?: windowInsets?.bottom
-        ?: 0
-    val imePadding = if (imeAnimating || isImeVisible) maxOf(imeBottom, gestureBottom) else gestureBottom
-    if (imePadding == lastImePadding && binding.root.paddingBottom == anchorOffset + imePadding) {
-      return
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    super.onLayout(changed, left, top, right, bottom)
+    if (!imeAnimationInstallPosted) {
+      imeAnimationInstallPosted = true
+      post {
+        imeAnimationInstallPosted = false
+        installImeAnimationCallback()
+      }
     }
-    lastImePadding = imePadding
-    binding.root.updatePadding(bottom = anchorOffset + imePadding)
   }
+
+  private fun installImeAnimationCallback() {
+    ViewCompat.setWindowInsetsAnimationCallback(
+        this,
+        object : WindowInsetsAnimationCompat.Callback(
+            WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_STOP
+        ) {
+          override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+            imeAnimationHandlesBottomSheet =
+                (animation.typeMask and WindowInsetsCompat.Type.ime()) != 0 &&
+                    !isSidebarInputFocused()
+            log.warn(
+                "[EditorImeTrace] sheetAnimationPrepare typeMask=${animation.typeMask} " +
+                    "handlesBottomSheet=$imeAnimationHandlesBottomSheet focus=${(context as? FragmentActivity)?.currentFocus?.javaClass?.simpleName}"
+            )
+          }
+
+          override fun onProgress(
+              insets: WindowInsetsCompat,
+              runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+          ): WindowInsetsCompat {
+            if (imeAnimationHandlesBottomSheet) {
+              val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+              translationY = -imeBottom.toFloat()
+              traceImeGeometry("sheetTranslationFrame imeBottom=$imeBottom")
+            }
+            return insets
+          }
+
+          override fun onEnd(animation: WindowInsetsAnimationCompat) {
+            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) != 0) {
+              translationY = 0f
+              traceImeGeometry("sheetTranslationEnd")
+            }
+            imeAnimationHandlesBottomSheet = false
+          }
+        },
+    )
+  }
+
+  private fun isSidebarInputFocused(): Boolean {
+    val sidebar = (context as? FragmentActivity)?.findViewById<View>(R.id.drawer_sidebar)
+        ?: return false
+    var focused = (context as? FragmentActivity)?.currentFocus
+    while (focused != null) {
+      if (focused === sidebar) {
+        return true
+      }
+      focused = focused.parent as? View
+    }
+    return false
+  }
+
 
   // TODO(EditorImeTrace): Remove diagnostic geometry logging after IME behavior is verified on device.
   private fun traceImeGeometry(event: String, imeBottom: Int? = null) {
@@ -347,9 +384,6 @@ ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
   fun setImeVisible(isVisible: Boolean) {
     isImeVisible = isVisible
     behavior.isGestureInsetBottomIgnored = isVisible
-    if (!imeAnimating) {
-      applyImeBottomPadding()
-    }
     traceImeGeometry("setImeVisible isVisible=$isVisible")
   }
 
@@ -371,9 +405,7 @@ ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
             behavior.expandedOffset = anchorOffset
             behavior.isGestureInsetBottomIgnored = isImeVisible
 
-            if (!imeAnimating) {
-              binding.root.updatePadding(bottom = anchorOffset + insetBottom)
-            }
+            binding.root.updatePadding(bottom = anchorOffset + insetBottom)
             binding.headerContainer.apply {
               updatePaddingRelative(bottom = paddingBottom + insetBottom)
               updateLayoutParams<ViewGroup.LayoutParams> {

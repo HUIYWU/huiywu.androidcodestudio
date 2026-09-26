@@ -52,7 +52,6 @@ import androidx.drawerlayout.widget.DrawerLayout
 import androidx.core.view.GravityCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
@@ -291,7 +290,6 @@ abstract class BaseEditorActivity :
         }
       }
   private var isBottomSheetImeVisible = false
-  private var imeAnimationHandlesBottomSheet = false
   private var contentCardRealHeight: Int? = null
 
   private val editorSurfaceContainerBackground by lazy { resolveAttr(R.attr.colorSurfaceDim) }
@@ -772,47 +770,6 @@ override fun onApplySystemBarInsets(insets: Insets) {
       val rootInsets = binding.root.rootWindowInsets ?: return@addOnGlobalFocusChangeListener
       updateImeState(WindowInsetsCompat.toWindowInsetsCompat(rootInsets), newFocus)
     }
-
-    ViewCompat.setWindowInsetsAnimationCallback(
-        binding.root,
-        object : WindowInsetsAnimationCompat.Callback(
-            WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
-        ) {
-          override fun onPrepare(animation: WindowInsetsAnimationCompat) {
-            imeAnimationHandlesBottomSheet =
-                (animation.typeMask and WindowInsetsCompat.Type.ime()) != 0 &&
-                    !isSidebarInputFocused(currentFocus)
-            log.warn(
-                "[EditorImeTrace] activityAnimationPrepare typeMask=${animation.typeMask} " +
-                    "handlesBottomSheet=$imeAnimationHandlesBottomSheet focus=${currentFocus?.javaClass?.simpleName}"
-            )
-          }
-
-          override fun onProgress(
-              insets: WindowInsetsCompat,
-              runningAnimations: MutableList<WindowInsetsAnimationCompat>,
-          ): WindowInsetsCompat {
-            if (imeAnimationHandlesBottomSheet) {
-              _binding?.content?.bottomSheet?.applyImeAnimationFrame(insets)
-              log.warn(
-                  "[EditorImeTrace] activityAnimationProgress imeBottom=${insets.getInsets(WindowInsetsCompat.Type.ime()).bottom} " +
-                      "sheetPadding=${_binding?.content?.bottomSheet?.binding?.root?.paddingBottom}"
-              )
-            }
-            return insets
-          }
-
-          override fun onEnd(animation: WindowInsetsAnimationCompat) {
-            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
-              return
-            }
-            if (imeAnimationHandlesBottomSheet) {
-              _binding?.content?.bottomSheet?.finishImeAnimation()
-            }
-            imeAnimationHandlesBottomSheet = false
-          }
-        },
-    )
 
     ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
         val systemBars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
