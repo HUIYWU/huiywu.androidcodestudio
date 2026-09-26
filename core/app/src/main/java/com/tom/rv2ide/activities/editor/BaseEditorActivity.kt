@@ -33,6 +33,7 @@ import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.ViewTreeObserver.OnGlobalLayoutListener
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
@@ -663,9 +664,24 @@ abstract class BaseEditorActivity :
   }
 
   private fun updateImeState(insets: WindowInsetsCompat, focusedView: View?) {
-    val isImeVisible = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > 0
+    val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+    val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+    val isImeVisible = imeBottom > 0
+    val editor = provideCurrentEditor()?.editor
+    val editorHasFocus = editor?.hasFocus() == true
     val editorInputFocused = isEditorInputFocused(focusedView)
     val isEditorImeVisible = isImeVisible && editorInputFocused
+
+    val imeStateChanged = this.isImeVisible != isImeVisible
+    val editorImeStateChanged = this.isEditorImeVisible != isEditorImeVisible
+
+    log.warn(
+        "[EditorImeTrace] activityInsets imeBottom=$imeBottom systemBarsBottom=${systemBars.bottom} " +
+            "imeVisible=$isImeVisible editorImeVisible=$isEditorImeVisible " +
+            "editorInputFocused=$editorInputFocused editorHasFocus=$editorHasFocus " +
+            "focus=${focusedView?.javaClass?.simpleName} " +
+            "imeStateChanged=$imeStateChanged editorImeStateChanged=$editorImeStateChanged"
+    )
 
     _binding?.content?.bottomSheet?.setImeVisible(
         editorImeVisible = isEditorImeVisible,
@@ -673,16 +689,21 @@ abstract class BaseEditorActivity :
         editorInputFocused = editorInputFocused,
     )
 
-    if (this.isImeVisible != isImeVisible || this.isEditorImeVisible != isEditorImeVisible) {
+    if (imeStateChanged || editorImeStateChanged) {
       this.isImeVisible = isImeVisible
       this.isEditorImeVisible = isEditorImeVisible
-      onSoftInputChanged(isEditorImeVisible)
+      if (editorImeStateChanged) {
+        onSoftInputChanged(isEditorImeVisible)
+      }
     }
   }
 
   /** Returns whether [focusedView] belongs to the active file editor, not another Activity surface. */
   private fun isEditorInputFocused(focusedView: View?): Boolean {
     val editor = provideCurrentEditor()?.editor ?: return false
+    if (editor.hasFocus()) {
+      return true
+    }
     var view = focusedView
     while (view != null) {
       if (view === editor) {
@@ -733,6 +754,8 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     enableEdgeToEdge()
     WindowCompat.setDecorFitsSystemWindows(window, false)
+    // TODO(EditorImeTrace): Remove after device verification if the editor IME path remains correct.
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
 
     this.optionsMenuInvalidator = Runnable { super.invalidateOptionsMenu() }
 

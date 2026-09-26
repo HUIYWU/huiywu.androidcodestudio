@@ -114,8 +114,7 @@ constructor(
   private var isAnyImeVisible = false
   private var editorInputFocused = false
   private var imeAnimationEditorFocused = false
-  private var imeAnimationStartY = 0
-  private var imeAnimationStartTranslationY = 0f
+  private var imeAnimationLastTranslationY = 0f
   private var quickInputContainerAnimator: ValueAnimator? = null
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
@@ -232,6 +231,28 @@ constructor(
     }
   }
 
+  // TODO(EditorImeTrace): Remove diagnostic geometry logging after IME behavior is verified on device.
+  private fun traceImeGeometry(event: String, imeBottom: Int? = null) {
+    val sheetLocation = IntArray(2)
+    val rootLocation = IntArray(2)
+    val headerLocation = IntArray(2)
+    val pagerLocation = IntArray(2)
+    getLocationOnScreen(sheetLocation)
+    binding.root.getLocationOnScreen(rootLocation)
+    binding.headerContainer.getLocationOnScreen(headerLocation)
+    binding.pager.getLocationOnScreen(pagerLocation)
+    log.warn(
+        "[EditorImeTrace] $event " +
+            "imeBottom=${imeBottom ?: -1} editorIme=$isImeVisible anyIme=$isAnyImeVisible " +
+            "editorFocus=$editorInputFocused animationEditorFocus=$imeAnimationEditorFocused " +
+            "sheet(x=${sheetLocation[0]},y=${sheetLocation[1]},w=$width,h=$height,ty=$translationY,pb=$paddingBottom) " +
+            "root(y=${rootLocation[1]},h=${binding.root.height},pb=${binding.root.paddingBottom}) " +
+            "header(y=${headerLocation[1]},h=${binding.headerContainer.height},pb=${binding.headerContainer.paddingBottom}) " +
+            "pager(y=${pagerLocation[1]},h=${binding.pager.height})"
+    )
+  }
+
+  // TODO(EditorImeTrace): Remove this temporary Material IME callback after ADJUST_NOTHING is verified on device.
   private fun installImeAnimationCallback() {
     ViewCompat.setWindowInsetsAnimationCallback(
         this,
@@ -243,9 +264,8 @@ constructor(
               return
             }
             imeAnimationEditorFocused = editorInputFocused
-            val location = IntArray(2)
-            getLocationOnScreen(location)
-            imeAnimationStartY = location[1]
+            imeAnimationLastTranslationY = if (imeAnimationEditorFocused) translationY else 0f
+            traceImeGeometry("imeAnimationPrepare typeMask=${animation.typeMask}")
           }
 
           override fun onStart(
@@ -255,14 +275,13 @@ constructor(
             if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
               return bounds
             }
-            val location = IntArray(2)
-            getLocationOnScreen(location)
-            imeAnimationStartTranslationY = (imeAnimationStartY - location[1]).toFloat()
-            translationY = if (imeAnimationEditorFocused) {
-              imeAnimationStartTranslationY
-            } else {
-              0f
+            if (!imeAnimationEditorFocused) {
+              imeAnimationLastTranslationY = 0f
+              translationY = 0f
             }
+            traceImeGeometry(
+                "imeAnimationStart typeMask=${animation.typeMask} startTranslation=$imeAnimationLastTranslationY"
+            )
             return bounds
           }
 
@@ -273,11 +292,19 @@ constructor(
             runningAnimations.firstOrNull {
               (it.typeMask and WindowInsetsCompat.Type.ime()) != 0
             }?.let { animation ->
-              translationY = if (imeAnimationEditorFocused) {
-                imeAnimationStartTranslationY * (1f - animation.interpolatedFraction)
+              if (imeAnimationEditorFocused) {
+                val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+                val systemBarsBottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+                imeAnimationLastTranslationY =
+                    -(imeBottom - systemBarsBottom).coerceAtLeast(0).toFloat()
+                translationY = imeAnimationLastTranslationY
               } else {
-                0f
+                imeAnimationLastTranslationY = 0f
+                translationY = 0f
               }
+              traceImeGeometry(
+                  "imeAnimationProgress typeMask=${animation.typeMask} fraction=${animation.interpolatedFraction}"
+              )
             }
             return insets
           }
@@ -286,7 +313,8 @@ constructor(
             if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
               return
             }
-            translationY = 0f
+            translationY = imeAnimationLastTranslationY
+            traceImeGeometry("imeAnimationEnd typeMask=${animation.typeMask}")
           }
         },
     )
@@ -366,6 +394,10 @@ constructor(
     isAnyImeVisible = imeVisible
     this.editorInputFocused = editorInputFocused
     behavior.isGestureInsetBottomIgnored = imeVisible
+    traceImeGeometry(
+        "setImeVisible editorImeVisible=$editorImeVisible imeVisible=$imeVisible " +
+            "editorInputFocused=$editorInputFocused"
+    )
   }
 
   fun setOffsetAnchor(view: View, excludedChild: View? = null) {
@@ -393,6 +425,7 @@ constructor(
                 height = (collapsedHeight + insetBottom).roundToInt()
               }
             }
+            traceImeGeometry("offsetAnchor anchorOffset=$anchorOffset insetBottom=$insetBottom")
             installImeAnimationCallback()
           }
         }
@@ -723,7 +756,12 @@ constructor(
     if (!isImeVisible) {
       setQuickInputOverlayActive(false)
     }
+    log.warn(
+        "[EditorImeTrace] onSoftInputChanged editorImeVisible=$editorImeVisible " +
+            "topMode=${resolveTopContainerMode()}"
+    )
     applyTopContainerState(animated = true)
+    traceImeGeometry("afterSoftInputChanged")
   }
 
   
