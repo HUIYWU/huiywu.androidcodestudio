@@ -34,6 +34,7 @@ import androidx.appcompat.widget.TooltipCompat
 import androidx.core.graphics.Insets
 import androidx.core.animation.doOnEnd
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
@@ -53,6 +54,7 @@ import com.tom.rv2ide.adapters.DiagnosticsAdapter
 import com.tom.rv2ide.adapters.EditorBottomSheetTabAdapter
 import com.tom.rv2ide.adapters.SearchListAdapter
 import com.tom.rv2ide.databinding.LayoutEditorBottomSheetBinding
+import com.tom.rv2ide.editor.ui.EditorSearchLayout
 import com.tom.rv2ide.fragments.output.ShareableOutputFragment
 import com.tom.rv2ide.models.LogLine
 import com.tom.rv2ide.preferences.internal.EditorPreferences
@@ -115,6 +117,16 @@ constructor(
   private var windowInsets: Insets? = null
   private var currentSymbolInputEditor: CodeEditorView? = null
   private var imeLogLayoutPass = 0
+  private var imeAnimationActive = false
+  private val imeTargets = LinkedHashMap<String, ImeTarget>()
+  private var imeAnimationCallbackInstalled = false
+
+  private data class ImeTarget(
+      val view: View,
+      var startLayoutY: Int = 0,
+      var endLayoutY: Int = 0,
+      var startTranslationY: Float = 0f,
+  )
 
   private val insetBottom: Int
     get() = if (isImeVisible) 0 else windowInsets?.bottom ?: 0
@@ -144,6 +156,140 @@ constructor(
 
   private fun canShareOutput(fragment: Fragment?): Boolean {
     return fragment is ShareableOutputFragment
+  }
+
+  private fun installImeAnimationCoordinator() {
+    if (imeAnimationCallbackInstalled) {
+      return
+    }
+    val host = parent as? View ?: run {
+      log.warn("[EditorImeObserve] TODO(EditorImePending): parent host unavailable")
+      return
+    }
+    imeAnimationCallbackInstalled = true
+    ViewCompat.setWindowInsetsAnimationCallback(
+        host,
+        object : WindowInsetsAnimationCompat.Callback(
+            WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
+        ) {
+          override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0 || !isImeVisible) {
+              return
+            }
+            refreshImeTargets()
+            imeAnimationActive = true
+            imeTargets.values.forEach { target ->
+              target.startLayoutY = layoutScreenY(target.view)
+              target.view.translationY = 0f
+            }
+            log.warn(
+                "[EditorImeObserve] coordinatorPrepare targets=${imeTargets.keys} " +
+                    "sheetTranslationY=$translationY"
+            )
+          }
+
+          override fun onStart(
+              animation: WindowInsetsAnimationCompat,
+              bounds: WindowInsetsAnimationCompat.BoundsCompat,
+          ): WindowInsetsAnimationCompat.BoundsCompat {
+            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0 || !imeAnimationActive) {
+              return bounds
+            }
+            imeTargets.values.forEach { target ->
+              target.endLayoutY = layoutScreenY(target.view)
+              target.startTranslationY =
+                  (target.startLayoutY - target.endLayoutY).toFloat()
+              target.view.translationY = target.startTranslationY
+            }
+            log.warn(
+                "[EditorImeObserve] coordinatorStart " +
+                    imeTargets.entries.joinToString { (name, target) ->
+                      "$name:start=${target.startLayoutY},end=${target.endLayoutY}," +
+                          "translation=${target.startTranslationY}"
+                    }
+            )
+            return bounds
+          }
+
+          override fun onProgress(
+              insets: WindowInsetsCompat,
+              runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+          ): WindowInsetsCompat {
+            val animation = runningAnimations.firstOrNull {
+              (it.typeMask and WindowInsetsCompat.Type.ime()) != 0
+            } ?: return insets
+            if (!imeAnimationActive) {
+              return insets
+            }
+            val fraction = animation.interpolatedFraction
+            imeTargets.values.forEach { target ->
+              target.view.translationY =
+                  target.startTranslationY + (0f - target.startTranslationY) * fraction
+            }
+            log.warn(
+                "[EditorImeObserve] coordinatorProgress fraction=$fraction " +
+                    imeTargets.entries.joinToString { (name, target) ->
+                      "$name:translation=${target.view.translationY}"
+                    }
+            )
+            return insets
+          }
+
+          override fun onEnd(animation: WindowInsetsAnimationCompat) {
+            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0 || !imeAnimationActive) {
+              return
+            }
+            imeTargets.values.forEach { it.view.translationY = 0f }
+            imeAnimationActive = false
+            log.warn("[EditorImeObserve] coordinatorEnd targets=${imeTargets.keys}")
+          }
+        },
+    )
+  }
+
+  private fun refreshImeTargets() {
+    imeTargets.clear()
+    imeTargets["header"] = ImeTarget(binding.quickInputShell)
+    findSearchTarget()?.let { imeTargets["search"] = ImeTarget(it) }
+    findTerminalTarget()?.let { imeTargets["terminal"] = ImeTarget(it) }
+    if (imeTargets.size != 3) {
+      log.warn(
+          "[EditorImeObserve] TODO(EditorImePending): expected three targets, " +
+              "found=${imeTargets.keys}"
+      )
+    }
+  }
+
+  private fun findSearchTarget(): View? {
+    return findDescendant(this) { it is EditorSearchLayout && it.isShown }
+  }
+
+  private fun findTerminalTarget(): View? {
+    return findDescendant(this) { it.id == R.id.terminal_content && it.isShown }
+  }
+
+  private fun findDescendant(root: View, predicate: (View) -> Boolean): View? {
+    if (predicate(root)) {
+      return root
+    }
+    if (root !is ViewGroup) {
+      return null
+    }
+    for (index in 0 until root.childCount) {
+      findDescendant(root.getChildAt(index), predicate)?.let { return it }
+    }
+    return null
+  }
+
+  private fun layoutScreenY(view: View): Int {
+    val location = IntArray(2)
+    view.getLocationOnScreen(location)
+    return (location[1] - view.translationY).roundToInt()
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    installImeAnimationCoordinator()
   }
 
   private fun initialize(context: FragmentActivity) {
