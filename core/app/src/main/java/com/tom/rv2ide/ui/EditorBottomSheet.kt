@@ -114,6 +114,7 @@ constructor(
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
   private var currentSymbolInputEditor: CodeEditorView? = null
+  private var imeLogLayoutPass = 0
 
   private val insetBottom: Int
     get() = if (isImeVisible) 0 else windowInsets?.bottom ?: 0
@@ -222,7 +223,39 @@ constructor(
 
     ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
       this.windowInsets = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
+      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+      val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+      log.warn(
+          "[EditorImeObserve] sheetInsets imeBottom=${ime.bottom} " +
+              "systemBottom=${bars.bottom} gestureBottom=${windowInsets?.bottom ?: 0} " +
+              "imeVisible=$isImeVisible translationY=$translationY state=${behavior.state} " +
+              "top=$top height=$height paddingBottom=$paddingBottom"
+      )
       insets
+    }
+  }
+
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    super.onLayout(changed, left, top, right, bottom)
+    val ime = rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it).getInsets(WindowInsetsCompat.Type.ime()) }
+    if (ime != null && (ime.bottom > 0 || isImeVisible)) {
+      imeLogLayoutPass++
+      val sheetLocation = IntArray(2)
+      val rootLocation = IntArray(2)
+      val headerLocation = IntArray(2)
+      val pagerLocation = IntArray(2)
+      getLocationOnScreen(sheetLocation)
+      binding.root.getLocationOnScreen(rootLocation)
+      binding.headerContainer.getLocationOnScreen(headerLocation)
+      binding.pager.getLocationOnScreen(pagerLocation)
+      log.warn(
+          "[EditorImeObserve] layout pass=$imeLogLayoutPass changed=$changed " +
+              "imeBottom=${ime.bottom} state=${behavior.state} " +
+              "sheetTop=${sheetLocation[1]} sheetHeight=$height translationY=$translationY " +
+              "rootTop=${rootLocation[1]} rootHeight=${binding.root.height} " +
+              "headerTop=${headerLocation[1]} headerHeight=${binding.headerContainer.height} " +
+              "pagerTop=${pagerLocation[1]} pagerHeight=${binding.pager.height}"
+      )
     }
   }
 
@@ -338,11 +371,19 @@ constructor(
           BottomSheetBehavior.STATE_COLLAPSED -> 0f
           else -> currentSheetOffset
         }
+    log.warn(
+        "[EditorImeObserve] behaviorState state=$newState offset=$currentSheetOffset " +
+            "imeVisible=$isImeVisible top=$top height=$height translationY=$translationY"
+    )
     applyTopContainerState(animated = true)
   }
 
   fun onSlide(sheetOffset: Float) {
     currentSheetOffset = sheetOffset
+    log.warn(
+        "[EditorImeObserve] behaviorSlide offset=$sheetOffset imeVisible=$isImeVisible " +
+            "top=$top height=$height translationY=$translationY"
+    )
     updateQuickInputExpandDirection()
     binding.symbolInput.collapse()
     binding.headerContainer.updatePaddingRelative(bottom = 0)
