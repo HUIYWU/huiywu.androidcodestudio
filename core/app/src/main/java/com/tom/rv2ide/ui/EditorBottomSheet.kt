@@ -113,6 +113,7 @@ constructor(
   private var isImeVisible = false
   private var imeAnimationHandlesBottomSheet = false
   private var imeAnimationInstallPosted = false
+  private var lastImeAnimationBottom = 0
   private var quickInputContainerAnimator: ValueAnimator? = null
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
@@ -261,6 +262,7 @@ ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
           ): WindowInsetsCompat {
             if (imeAnimationHandlesBottomSheet) {
               val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+              lastImeAnimationBottom = imeBottom
               translationY = -imeBottom.toFloat()
               traceImeGeometry("sheetTranslationFrame imeBottom=$imeBottom")
             }
@@ -269,8 +271,8 @@ ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
 
           override fun onEnd(animation: WindowInsetsAnimationCompat) {
             if ((animation.typeMask and WindowInsetsCompat.Type.ime()) != 0) {
-              translationY = 0f
-              traceImeGeometry("sheetTranslationEnd")
+              translationY = if (isImeVisible) -lastImeAnimationBottom.toFloat() else 0f
+              traceImeGeometry("sheetTranslationEnd imeBottom=$lastImeAnimationBottom")
             }
             imeAnimationHandlesBottomSheet = false
           }
