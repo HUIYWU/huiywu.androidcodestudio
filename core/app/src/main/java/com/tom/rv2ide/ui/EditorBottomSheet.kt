@@ -114,7 +114,6 @@ constructor(
   private var isAnyImeVisible = false
   private var editorInputFocused = false
   private var imeAnimationEditorFocused = false
-  private var imeAnimationEndVisible = false
   private var imeAnimationStartY = 0
   private var imeAnimationStartTranslationY = 0f
   private var quickInputContainerAnimator: ValueAnimator? = null
@@ -260,7 +259,11 @@ constructor(
             val location = IntArray(2)
             getLocationOnScreen(location)
             imeAnimationStartTranslationY = (imeAnimationStartY - location[1]).toFloat()
-            translationY = imeAnimationStartTranslationY
+            translationY = if (imeAnimationEditorFocused) {
+              imeAnimationStartTranslationY
+            } else {
+              0f
+            }
             return bounds
           }
 
@@ -268,17 +271,14 @@ constructor(
               insets: WindowInsetsCompat,
               runningAnimations: MutableList<WindowInsetsAnimationCompat>,
           ): WindowInsetsCompat {
-            imeAnimationEndVisible =
-                insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > 0
             runningAnimations.firstOrNull {
               (it.typeMask and WindowInsetsCompat.Type.ime()) != 0
             }?.let { animation ->
-              translationY =
-                  if (imeAnimationEditorFocused) {
-                    imeAnimationStartTranslationY * (1f - animation.interpolatedFraction)
-                  } else {
-                    imeAnimationStartTranslationY
-                  }
+              translationY = if (imeAnimationEditorFocused) {
+                imeAnimationStartTranslationY * (1f - animation.interpolatedFraction)
+              } else {
+                0f
+              }
             }
             return insets
           }
@@ -287,11 +287,7 @@ constructor(
             if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
               return
             }
-            translationY = if (imeAnimationEndVisible && !imeAnimationEditorFocused) {
-              imeAnimationStartTranslationY
-            } else {
-              0f
-            }
+            translationY = 0f
           }
         },
     )
