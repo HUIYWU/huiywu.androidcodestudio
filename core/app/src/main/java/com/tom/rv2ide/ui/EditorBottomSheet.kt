@@ -111,9 +111,8 @@ constructor(
   private var anchorOffset = 0
   private var currentSheetOffset = 0f
   private var isImeVisible = false
-  private var imeAnimationHandlesBottomSheet = false
-  private var imeAnimationStartY = 0
-  private var imeAnimationStartTranslationY = 0f
+  private var imeAnimating = false
+  private var lastImePadding = 0
   private var quickInputContainerAnimator: ValueAnimator? = null
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
@@ -226,8 +225,76 @@ constructor(
 
     ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
       this.windowInsets = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
+      if (!imeAnimating) {
+        applyImeBottomPadding(insets)
+      }
       insets
     }
+    post { installImeAnimationCallback() }
+  }
+
+  private fun installImeAnimationCallback() {
+    ViewCompat.setWindowInsetsAnimationCallback(
+        this,
+        object : WindowInsetsAnimationCompat.Callback(
+            WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
+        ) {
+          override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+            if (shouldHandleImeAnimation(animation.typeMask)) {
+              imeAnimating = true
+            }
+          }
+
+          override fun onProgress(
+              insets: WindowInsetsCompat,
+              runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+          ): WindowInsetsCompat {
+            if (imeAnimating) {
+              applyImeBottomPadding(insets)
+            }
+            return insets
+          }
+
+          override fun onEnd(animation: WindowInsetsAnimationCompat) {
+            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
+              return
+            }
+            imeAnimating = false
+            applyImeBottomPadding(null)
+          }
+        },
+    )
+  }
+
+  private fun shouldHandleImeAnimation(typeMask: Int): Boolean {
+    if ((typeMask and WindowInsetsCompat.Type.ime()) == 0) {
+      return false
+    }
+    val sidebar = (context as? FragmentActivity)?.findViewById<View>(R.id.drawer_sidebar)
+        ?: return true
+    var focused = (context as? FragmentActivity)?.currentFocus
+    while (focused != null) {
+      if (focused === sidebar) {
+        return false
+      }
+      focused = focused.parent as? View
+    }
+    return true
+  }
+
+  private fun applyImeBottomPadding(dispatched: WindowInsetsCompat? = null) {
+    val fromWindow = rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
+    val source = dispatched ?: fromWindow
+    val imeBottom = source?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0
+    val gestureBottom = source?.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())?.bottom
+        ?: windowInsets?.bottom
+        ?: 0
+    val imePadding = if (imeAnimating || isImeVisible) maxOf(imeBottom, gestureBottom) else gestureBottom
+    if (imePadding == lastImePadding && binding.root.paddingBottom == anchorOffset + imePadding) {
+      return
+    }
+    lastImePadding = imePadding
+    binding.root.updatePadding(bottom = anchorOffset + imePadding)
   }
 
   // TODO(EditorImeTrace): Remove diagnostic geometry logging after IME behavior is verified on device.
@@ -243,83 +310,10 @@ constructor(
     log.warn(
         "[EditorImeTrace] $event " +
             "imeBottom=${imeBottom ?: -1} bottomSheetIme=$isImeVisible " +
-            "animationHandlesBottomSheet=$imeAnimationHandlesBottomSheet " +
             "sheet(x=${sheetLocation[0]},y=${sheetLocation[1]},w=$width,h=$height,ty=$translationY,pb=$paddingBottom) " +
             "root(y=${rootLocation[1]},h=${binding.root.height},pb=${binding.root.paddingBottom}) " +
             "header(y=${headerLocation[1]},h=${binding.headerContainer.height},pb=${binding.headerContainer.paddingBottom}) " +
             "pager(y=${pagerLocation[1]},h=${binding.pager.height})"
-    )
-  }
-
-  // TODO(EditorImeTrace): Remove this temporary callback after sidebar IME isolation is verified on device.
-  private fun installImeAnimationCallback() {
-    ViewCompat.setWindowInsetsAnimationCallback(
-        this,
-        object : WindowInsetsAnimationCompat.Callback(
-            WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_STOP
-        ) {
-          override fun onPrepare(animation: WindowInsetsAnimationCompat) {
-            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
-              return
-            }
-            imeAnimationHandlesBottomSheet = isImeVisible
-            traceImeGeometry("imeAnimationPrepare typeMask=${animation.typeMask}")
-            val location = IntArray(2)
-            getLocationOnScreen(location)
-            imeAnimationStartY = location[1]
-          }
-
-          override fun onStart(
-              animation: WindowInsetsAnimationCompat,
-              bounds: WindowInsetsAnimationCompat.BoundsCompat,
-          ): WindowInsetsAnimationCompat.BoundsCompat {
-            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
-              return bounds
-            }
-            val location = IntArray(2)
-            getLocationOnScreen(location)
-            imeAnimationStartTranslationY =
-                (imeAnimationStartY - location[1]).toFloat()
-            translationY = if (imeAnimationHandlesBottomSheet) {
-              imeAnimationStartTranslationY
-            } else {
-              0f
-            }
-            traceImeGeometry(
-                "imeAnimationStart typeMask=${animation.typeMask} " +
-                    "startTranslation=$imeAnimationStartTranslationY"
-            )
-            return bounds
-          }
-
-          override fun onProgress(
-              insets: WindowInsetsCompat,
-              runningAnimations: MutableList<WindowInsetsAnimationCompat>,
-          ): WindowInsetsCompat {
-            runningAnimations.firstOrNull {
-              (it.typeMask and WindowInsetsCompat.Type.ime()) != 0
-            }?.let { animation ->
-              translationY = if (imeAnimationHandlesBottomSheet) {
-                imeAnimationStartTranslationY * (1f - animation.interpolatedFraction)
-              } else {
-                0f
-              }
-              traceImeGeometry(
-                  "imeAnimationProgress typeMask=${animation.typeMask} " +
-                      "fraction=${animation.interpolatedFraction}"
-              )
-            }
-            return insets
-          }
-
-          override fun onEnd(animation: WindowInsetsAnimationCompat) {
-            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
-              return
-            }
-            translationY = 0f
-            traceImeGeometry("imeAnimationEnd typeMask=${animation.typeMask}")
-          }
-        },
     )
   }
 
@@ -395,6 +389,9 @@ constructor(
   fun setImeVisible(isVisible: Boolean) {
     isImeVisible = isVisible
     behavior.isGestureInsetBottomIgnored = isVisible
+    if (!imeAnimating) {
+      applyImeBottomPadding()
+    }
     traceImeGeometry("setImeVisible isVisible=$isVisible")
   }
 
@@ -416,7 +413,9 @@ constructor(
             behavior.expandedOffset = anchorOffset
             behavior.isGestureInsetBottomIgnored = isImeVisible
 
-            binding.root.updatePadding(bottom = anchorOffset + insetBottom)
+            if (!imeAnimating) {
+              binding.root.updatePadding(bottom = anchorOffset + insetBottom)
+            }
             binding.headerContainer.apply {
               updatePaddingRelative(bottom = paddingBottom + insetBottom)
               updateLayoutParams<ViewGroup.LayoutParams> {
@@ -424,7 +423,6 @@ constructor(
               }
             }
             traceImeGeometry("offsetAnchor anchorOffset=$anchorOffset insetBottom=$insetBottom")
-            installImeAnimationCallback()
           }
         }
 
