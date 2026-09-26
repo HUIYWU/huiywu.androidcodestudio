@@ -289,8 +289,7 @@ abstract class BaseEditorActivity :
           }
         }
       }
-  private var isImeVisible = false
-  private var isEditorImeVisible = false
+  private var isBottomSheetImeVisible = false
   private var contentCardRealHeight: Int? = null
 
   private val editorSurfaceContainerBackground by lazy { resolveAttr(R.attr.colorSurfaceDim) }
@@ -666,47 +665,40 @@ abstract class BaseEditorActivity :
   private fun updateImeState(insets: WindowInsetsCompat, focusedView: View?) {
     val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
     val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-    val isImeVisible = imeBottom > 0
-    val editor = provideCurrentEditor()?.editor
-    val editorHasFocus = editor?.hasFocus() == true
-    val editorInputFocused = isEditorInputFocused(focusedView)
-    val isEditorImeVisible = isImeVisible && editorInputFocused
+    val imeVisible = imeBottom > 0
+    val sidebarInputFocused = isSidebarInputFocused(focusedView)
+    val bottomSheetImeVisible = imeVisible && !sidebarInputFocused
+    val bottomSheetImeStateChanged = this.isBottomSheetImeVisible != bottomSheetImeVisible
 
-    val imeStateChanged = this.isImeVisible != isImeVisible
-    val editorImeStateChanged = this.isEditorImeVisible != isEditorImeVisible
+    // TODO(EditorImeTrace): Keep the window mode split until sidebar and non-sidebar IME behavior is verified.
+    window.setSoftInputMode(
+        if (sidebarInputFocused) {
+          WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        } else {
+          WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        }
+    )
 
     log.warn(
         "[EditorImeTrace] activityInsets imeBottom=$imeBottom systemBarsBottom=${systemBars.bottom} " +
-            "imeVisible=$isImeVisible editorImeVisible=$isEditorImeVisible " +
-            "editorInputFocused=$editorInputFocused editorHasFocus=$editorHasFocus " +
-            "focus=${focusedView?.javaClass?.simpleName} " +
-            "imeStateChanged=$imeStateChanged editorImeStateChanged=$editorImeStateChanged"
+            "imeVisible=$imeVisible bottomSheetImeVisible=$bottomSheetImeVisible " +
+            "sidebarInputFocused=$sidebarInputFocused focus=${focusedView?.javaClass?.simpleName} " +
+            "bottomSheetImeStateChanged=$bottomSheetImeStateChanged"
     )
 
-    _binding?.content?.bottomSheet?.setImeVisible(
-        editorImeVisible = isEditorImeVisible,
-        imeVisible = isImeVisible,
-        editorInputFocused = editorInputFocused,
-    )
-
-    if (imeStateChanged || editorImeStateChanged) {
-      this.isImeVisible = isImeVisible
-      this.isEditorImeVisible = isEditorImeVisible
-      if (editorImeStateChanged) {
-        onSoftInputChanged(isEditorImeVisible)
-      }
+    if (bottomSheetImeStateChanged) {
+      this.isBottomSheetImeVisible = bottomSheetImeVisible
+      _binding?.content?.bottomSheet?.setImeVisible(bottomSheetImeVisible)
+      onSoftInputChanged(bottomSheetImeVisible)
     }
   }
 
-  /** Returns whether [focusedView] belongs to the active file editor, not another Activity surface. */
-  private fun isEditorInputFocused(focusedView: View?): Boolean {
-    val editor = provideCurrentEditor()?.editor ?: return false
-    if (editor.hasFocus()) {
-      return true
-    }
+  /** Returns whether [focusedView] belongs to the editor activity's sidebar. */
+  private fun isSidebarInputFocused(focusedView: View?): Boolean {
+    val sidebar = _binding?.drawerSidebar ?: return false
     var view = focusedView
     while (view != null) {
-      if (view === editor) {
+      if (view === sidebar) {
         return true
       }
       view = view.parent as? View
@@ -754,8 +746,6 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     enableEdgeToEdge()
     WindowCompat.setDecorFitsSystemWindows(window, false)
-    // TODO(EditorImeTrace): Remove after device verification if the editor IME path remains correct.
-    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
 
     this.optionsMenuInvalidator = Runnable { super.invalidateOptionsMenu() }
 

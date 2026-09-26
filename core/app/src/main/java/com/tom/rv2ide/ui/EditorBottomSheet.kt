@@ -111,10 +111,9 @@ constructor(
   private var anchorOffset = 0
   private var currentSheetOffset = 0f
   private var isImeVisible = false
-  private var isAnyImeVisible = false
-  private var editorInputFocused = false
-  private var imeAnimationEditorFocused = false
-  private var imeAnimationLastTranslationY = 0f
+  private var imeAnimationHandlesBottomSheet = false
+  private var imeAnimationStartY = 0
+  private var imeAnimationStartTranslationY = 0f
   private var quickInputContainerAnimator: ValueAnimator? = null
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
@@ -243,8 +242,8 @@ constructor(
     binding.pager.getLocationOnScreen(pagerLocation)
     log.warn(
         "[EditorImeTrace] $event " +
-            "imeBottom=${imeBottom ?: -1} editorIme=$isImeVisible anyIme=$isAnyImeVisible " +
-            "editorFocus=$editorInputFocused animationEditorFocus=$imeAnimationEditorFocused " +
+            "imeBottom=${imeBottom ?: -1} bottomSheetIme=$isImeVisible " +
+            "animationHandlesBottomSheet=$imeAnimationHandlesBottomSheet " +
             "sheet(x=${sheetLocation[0]},y=${sheetLocation[1]},w=$width,h=$height,ty=$translationY,pb=$paddingBottom) " +
             "root(y=${rootLocation[1]},h=${binding.root.height},pb=${binding.root.paddingBottom}) " +
             "header(y=${headerLocation[1]},h=${binding.headerContainer.height},pb=${binding.headerContainer.paddingBottom}) " +
@@ -252,7 +251,7 @@ constructor(
     )
   }
 
-  // TODO(EditorImeTrace): Remove this temporary Material IME callback after ADJUST_NOTHING is verified on device.
+  // TODO(EditorImeTrace): Remove this temporary callback after sidebar IME isolation is verified on device.
   private fun installImeAnimationCallback() {
     ViewCompat.setWindowInsetsAnimationCallback(
         this,
@@ -263,9 +262,11 @@ constructor(
             if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
               return
             }
-            imeAnimationEditorFocused = editorInputFocused
-            imeAnimationLastTranslationY = if (imeAnimationEditorFocused) translationY else 0f
+            imeAnimationHandlesBottomSheet = isImeVisible
             traceImeGeometry("imeAnimationPrepare typeMask=${animation.typeMask}")
+            val location = IntArray(2)
+            getLocationOnScreen(location)
+            imeAnimationStartY = location[1]
           }
 
           override fun onStart(
@@ -275,12 +276,18 @@ constructor(
             if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
               return bounds
             }
-            if (!imeAnimationEditorFocused) {
-              imeAnimationLastTranslationY = 0f
-              translationY = 0f
+            val location = IntArray(2)
+            getLocationOnScreen(location)
+            imeAnimationStartTranslationY =
+                (imeAnimationStartY - location[1]).toFloat()
+            translationY = if (imeAnimationHandlesBottomSheet) {
+              imeAnimationStartTranslationY
+            } else {
+              0f
             }
             traceImeGeometry(
-                "imeAnimationStart typeMask=${animation.typeMask} startTranslation=$imeAnimationLastTranslationY"
+                "imeAnimationStart typeMask=${animation.typeMask} " +
+                    "startTranslation=$imeAnimationStartTranslationY"
             )
             return bounds
           }
@@ -292,18 +299,14 @@ constructor(
             runningAnimations.firstOrNull {
               (it.typeMask and WindowInsetsCompat.Type.ime()) != 0
             }?.let { animation ->
-              if (imeAnimationEditorFocused) {
-                val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-                val systemBarsBottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
-                imeAnimationLastTranslationY =
-                    -(imeBottom - systemBarsBottom).coerceAtLeast(0).toFloat()
-                translationY = imeAnimationLastTranslationY
+              translationY = if (imeAnimationHandlesBottomSheet) {
+                imeAnimationStartTranslationY * (1f - animation.interpolatedFraction)
               } else {
-                imeAnimationLastTranslationY = 0f
-                translationY = 0f
+                0f
               }
               traceImeGeometry(
-                  "imeAnimationProgress typeMask=${animation.typeMask} fraction=${animation.interpolatedFraction}"
+                  "imeAnimationProgress typeMask=${animation.typeMask} " +
+                      "fraction=${animation.interpolatedFraction}"
               )
             }
             return insets
@@ -313,7 +316,7 @@ constructor(
             if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
               return
             }
-            translationY = imeAnimationLastTranslationY
+            translationY = 0f
             traceImeGeometry("imeAnimationEnd typeMask=${animation.typeMask}")
           }
         },
@@ -388,16 +391,11 @@ constructor(
     initialize(context)
   }
 
-  /** Set the global and editor-specific input method state. */
-  fun setImeVisible(editorImeVisible: Boolean, imeVisible: Boolean, editorInputFocused: Boolean) {
-    isImeVisible = editorImeVisible
-    isAnyImeVisible = imeVisible
-    this.editorInputFocused = editorInputFocused
-    behavior.isGestureInsetBottomIgnored = imeVisible
-    traceImeGeometry(
-        "setImeVisible editorImeVisible=$editorImeVisible imeVisible=$imeVisible " +
-            "editorInputFocused=$editorInputFocused"
-    )
+  /** Set whether the input method is visible. */
+  fun setImeVisible(isVisible: Boolean) {
+    isImeVisible = isVisible
+    behavior.isGestureInsetBottomIgnored = isVisible
+    traceImeGeometry("setImeVisible isVisible=$isVisible")
   }
 
   fun setOffsetAnchor(view: View, excludedChild: View? = null) {
@@ -416,7 +414,7 @@ constructor(
 
             behavior.peekHeight = collapsedHeight.roundToInt()
             behavior.expandedOffset = anchorOffset
-            behavior.isGestureInsetBottomIgnored = isAnyImeVisible
+            behavior.isGestureInsetBottomIgnored = isImeVisible
 
             binding.root.updatePadding(bottom = anchorOffset + insetBottom)
             binding.headerContainer.apply {
@@ -749,15 +747,15 @@ constructor(
     return fragment.javaClass.simpleName.contains("Terminal", ignoreCase = true)
   }
 
-  fun onSoftInputChanged(editorImeVisible: Boolean) {
+  fun onSoftInputChanged(isVisible: Boolean) {
     binding.symbolInput.endItemAnimations()
 
-    isImeVisible = editorImeVisible
+    isImeVisible = isVisible
     if (!isImeVisible) {
       setQuickInputOverlayActive(false)
     }
     log.warn(
-        "[EditorImeTrace] onSoftInputChanged editorImeVisible=$editorImeVisible " +
+        "[EditorImeTrace] onSoftInputChanged isVisible=$isVisible " +
             "topMode=${resolveTopContainerMode()}"
     )
     applyTopContainerState(animated = true)
