@@ -243,7 +243,6 @@ constructor(
               return
             }
             imeAnimationEditorFocused = editorInputFocused
-            imeAnimationEndVisible = isAnyImeVisible
             val location = IntArray(2)
             getLocationOnScreen(location)
             imeAnimationStartY = location[1]
