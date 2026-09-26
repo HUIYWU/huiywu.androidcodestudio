@@ -34,7 +34,6 @@ import androidx.appcompat.widget.TooltipCompat
 import androidx.core.graphics.Insets
 import androidx.core.animation.doOnEnd
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
@@ -222,64 +221,23 @@ constructor(
         behavior.state = BottomSheetBehavior.STATE_EXPANDED
       }
     }
-
-    ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
+ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
       this.windowInsets = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
       if (!imeAnimating) {
         applyImeBottomPadding(insets)
       }
       insets
     }
-    post { installImeAnimationCallback() }
   }
 
-  private fun installImeAnimationCallback() {
-    ViewCompat.setWindowInsetsAnimationCallback(
-        this,
-        object : WindowInsetsAnimationCompat.Callback(
-            WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
-        ) {
-          override fun onPrepare(animation: WindowInsetsAnimationCompat) {
-            if (shouldHandleImeAnimation(animation.typeMask)) {
-              imeAnimating = true
-            }
-          }
-
-          override fun onProgress(
-              insets: WindowInsetsCompat,
-              runningAnimations: MutableList<WindowInsetsAnimationCompat>,
-          ): WindowInsetsCompat {
-            if (imeAnimating) {
-              applyImeBottomPadding(insets)
-            }
-            return insets
-          }
-
-          override fun onEnd(animation: WindowInsetsAnimationCompat) {
-            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) == 0) {
-              return
-            }
-            imeAnimating = false
-            applyImeBottomPadding(null)
-          }
-        },
-    )
+  fun applyImeAnimationFrame(insets: WindowInsetsCompat) {
+    imeAnimating = true
+    applyImeBottomPadding(insets)
   }
 
-  private fun shouldHandleImeAnimation(typeMask: Int): Boolean {
-    if ((typeMask and WindowInsetsCompat.Type.ime()) == 0) {
-      return false
-    }
-    val sidebar = (context as? FragmentActivity)?.findViewById<View>(R.id.drawer_sidebar)
-        ?: return true
-    var focused = (context as? FragmentActivity)?.currentFocus
-    while (focused != null) {
-      if (focused === sidebar) {
-        return false
-      }
-      focused = focused.parent as? View
-    }
-    return true
+  fun finishImeAnimation() {
+    imeAnimating = false
+    applyImeBottomPadding(null)
   }
 
   private fun applyImeBottomPadding(dispatched: WindowInsetsCompat? = null) {
