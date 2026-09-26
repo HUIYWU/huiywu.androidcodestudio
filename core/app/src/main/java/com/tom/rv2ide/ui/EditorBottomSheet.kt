@@ -34,7 +34,6 @@ import androidx.appcompat.widget.TooltipCompat
 import androidx.core.graphics.Insets
 import androidx.core.animation.doOnEnd
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
@@ -111,9 +110,6 @@ constructor(
   private var anchorOffset = 0
   private var currentSheetOffset = 0f
   private var isImeVisible = false
-  private var imeAnimationHandlesBottomSheet = false
-  private var imeAnimationInstallPosted = false
-  private var lastImeAnimationBottom = 0
   private var quickInputContainerAnimator: ValueAnimator? = null
   private var basicContainerChild = CHILD_HEADER
   private var windowInsets: Insets? = null
@@ -223,95 +219,11 @@ constructor(
         behavior.state = BottomSheetBehavior.STATE_EXPANDED
       }
     }
-ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
+
+    ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
       this.windowInsets = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
-      binding.root.updatePadding(bottom = anchorOffset + insetBottom)
       insets
     }
-  }
-  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-    super.onLayout(changed, left, top, right, bottom)
-    if (!imeAnimationInstallPosted) {
-      imeAnimationInstallPosted = true
-      post {
-        imeAnimationInstallPosted = false
-        installImeAnimationCallback()
-      }
-    }
-  }
-
-  private fun installImeAnimationCallback() {
-    ViewCompat.setWindowInsetsAnimationCallback(
-        this,
-        object : WindowInsetsAnimationCompat.Callback(
-            WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_STOP
-        ) {
-          override fun onPrepare(animation: WindowInsetsAnimationCompat) {
-            imeAnimationHandlesBottomSheet =
-                (animation.typeMask and WindowInsetsCompat.Type.ime()) != 0 &&
-                    !isSidebarInputFocused()
-            log.warn(
-                "[EditorImeTrace] sheetAnimationPrepare typeMask=${animation.typeMask} " +
-                    "handlesBottomSheet=$imeAnimationHandlesBottomSheet focus=${(context as? FragmentActivity)?.currentFocus?.javaClass?.simpleName}"
-            )
-          }
-
-          override fun onProgress(
-              insets: WindowInsetsCompat,
-              runningAnimations: MutableList<WindowInsetsAnimationCompat>,
-          ): WindowInsetsCompat {
-            if (imeAnimationHandlesBottomSheet) {
-              val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-              lastImeAnimationBottom = imeBottom
-              translationY = -imeBottom.toFloat()
-              traceImeGeometry("sheetTranslationFrame imeBottom=$imeBottom")
-            }
-            return insets
-          }
-
-          override fun onEnd(animation: WindowInsetsAnimationCompat) {
-            if ((animation.typeMask and WindowInsetsCompat.Type.ime()) != 0) {
-              translationY = if (isImeVisible) -lastImeAnimationBottom.toFloat() else 0f
-              traceImeGeometry("sheetTranslationEnd imeBottom=$lastImeAnimationBottom")
-            }
-            imeAnimationHandlesBottomSheet = false
-          }
-        },
-    )
-  }
-
-  private fun isSidebarInputFocused(): Boolean {
-    val sidebar = (context as? FragmentActivity)?.findViewById<View>(R.id.drawer_sidebar)
-        ?: return false
-    var focused = (context as? FragmentActivity)?.currentFocus
-    while (focused != null) {
-      if (focused === sidebar) {
-        return true
-      }
-      focused = focused.parent as? View
-    }
-    return false
-  }
-
-
-  // TODO(EditorImeTrace): Remove diagnostic geometry logging after IME behavior is verified on device.
-  private fun traceImeGeometry(event: String, imeBottom: Int? = null) {
-    val sheetLocation = IntArray(2)
-    val rootLocation = IntArray(2)
-    val headerLocation = IntArray(2)
-    val pagerLocation = IntArray(2)
-    getLocationOnScreen(sheetLocation)
-    binding.root.getLocationOnScreen(rootLocation)
-    binding.headerContainer.getLocationOnScreen(headerLocation)
-    binding.pager.getLocationOnScreen(pagerLocation)
-    log.warn(
-        "[EditorImeTrace] $event " +
-            "imeBottom=${imeBottom ?: -1} bottomSheetIme=$isImeVisible " +
-            "sheet(x=${sheetLocation[0]},y=${sheetLocation[1]},w=$width,h=$height,ty=$translationY,pb=$paddingBottom) " +
-            "root(y=${rootLocation[1]},h=${binding.root.height},pb=${binding.root.paddingBottom}) " +
-            "header(y=${headerLocation[1]},h=${binding.headerContainer.height},pb=${binding.headerContainer.paddingBottom}) " +
-            "pager(y=${pagerLocation[1]},h=${binding.pager.height})"
-    )
   }
 
   init {
@@ -386,7 +298,6 @@ ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
   fun setImeVisible(isVisible: Boolean) {
     isImeVisible = isVisible
     behavior.isGestureInsetBottomIgnored = isVisible
-    traceImeGeometry("setImeVisible isVisible=$isVisible")
   }
 
   fun setOffsetAnchor(view: View, excludedChild: View? = null) {
@@ -414,7 +325,6 @@ ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
                 height = (collapsedHeight + insetBottom).roundToInt()
               }
             }
-            traceImeGeometry("offsetAnchor anchorOffset=$anchorOffset insetBottom=$insetBottom")
           }
         }
 
@@ -744,12 +654,7 @@ ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
     if (!isImeVisible) {
       setQuickInputOverlayActive(false)
     }
-    log.warn(
-        "[EditorImeTrace] onSoftInputChanged isVisible=$isVisible " +
-            "topMode=${resolveTopContainerMode()}"
-    )
     applyTopContainerState(animated = true)
-    traceImeGeometry("afterSoftInputChanged")
   }
 
   

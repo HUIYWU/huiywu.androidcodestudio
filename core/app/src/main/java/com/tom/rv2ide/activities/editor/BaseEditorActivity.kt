@@ -670,8 +670,14 @@ abstract class BaseEditorActivity :
     val bottomSheetImeVisible = imeVisible && !sidebarInputFocused
     val bottomSheetImeStateChanged = this.isBottomSheetImeVisible != bottomSheetImeVisible
 
-    // TODO(EditorImeTrace): Keep ADJUST_NOTHING until editor IME animation is verified on device.
-    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+    // TODO(EditorImeTrace): Keep the window mode split until sidebar and non-sidebar IME behavior is verified.
+    window.setSoftInputMode(
+        if (sidebarInputFocused) {
+          WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        } else {
+          WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        }
+    )
 
     log.warn(
         "[EditorImeTrace] activityInsets imeBottom=$imeBottom systemBarsBottom=${systemBars.bottom} " +
